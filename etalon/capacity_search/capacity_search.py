@@ -59,7 +59,7 @@ class CapacitySearch:
         self.prefill_model = None
         self.transformer = None
 
-        if self.args.slo_type == "deadline":
+        if self.args.slo_type == "deadline" or self.args.slo_type == "ttft_multiplier":
             prefill_model_path = os.path.join(
                 self.args.profile_dir, f"prefill_predictor.pkl"
             )
@@ -139,6 +139,26 @@ class CapacitySearch:
 
         return is_under_sla, deadline_miss_rate
 
+    def _use_ttft_multiplier_based_slo(
+        self, request_level_metrics_file: str
+    ) -> Tuple[bool, float, float, float]:
+        with open(request_level_metrics_file, "r") as f:
+            request_level_metrics = json.load(f)
+
+        ttfts = request_level_metrics["ttft"]
+
+        prompt_lens = request_level_metrics["num_prompt_tokens"]
+        prompt_lens = self.transformer.fit_transform(
+            np.array(prompt_lens).reshape(-1, 1)
+        )
+        ttft_deadlines = self.prefill_model.predict(prompt_lens) * self.args.ttft_multiplier
+
+        slo_attainment_rate = sum(ttfts[i] <= ttft_deadlines[i] for i in range(len(ttfts))) / len(ttfts)
+        
+        is_under_sla = slo_attainment_rate <= self.args.ttft_multiplier_slo_attainment_rate
+
+        return is_under_sla, slo_attainment_rate
+
     def _use_tbt_and_ttft_slo(
         self,
         request_level_metrics_file: str,
@@ -192,9 +212,14 @@ class CapacitySearch:
         ttft = None
         tpot = None
         deadline_miss_rate = None
+        ttft_slo_attainment_rate = None
 
         if self.args.slo_type == "deadline":
             is_under_sla, deadline_miss_rate = self._use_deadline_based_slo(
+                request_level_metrics_file
+            )
+        elif self.args.slo_type == "ttft_multiplier":
+            is_under_sla, ttft_slo_attainment_rate = self._use_ttft_multiplier_based_slo(
                 request_level_metrics_file
             )
         elif self.args.slo_type == "tbt_ttft":
@@ -213,6 +238,7 @@ class CapacitySearch:
             f" - TBT P{self.args.tbt_percentile * 100} Tokens: {tbt}"
             f" - TTFT P{self.args.ttft_percentile * 100} Tokens: {ttft}"
             f" - TPOT P{self.args.tpot_percentile * 100} Requests: {tpot}"
+            f" - TTFT Multiplier SLO Attainment Rate: {ttft_slo_attainment_rate}"
             f" - Deadline Miss Rate P{self.args.deadline_miss_rate_percentile * 100} Requests: {deadline_miss_rate}",
         )
         return (
@@ -220,6 +246,7 @@ class CapacitySearch:
             tbt,
             ttft,
             tpot,
+            ttft_slo_attainment_rate,
             deadline_miss_rate,
             benchmark_config.get_run_id(),
         )
@@ -288,6 +315,7 @@ class CapacitySearch:
         ttft_at_max_qps = None
         tpot_at_max_qps = None
         deadline_miss_rate_at_max_qps = None
+        ttft_slo_attainment_rate_at_max_qps = None
         best_run_id = None
         found_valid_qps = False
 
@@ -311,6 +339,7 @@ class CapacitySearch:
                 tbt,
                 ttft,
                 tpot,
+                ttft_slo_attainment_rate,
                 deadline_miss_rate,
                 run_id,
             ) = self.is_under_sla(qps)
@@ -322,6 +351,7 @@ class CapacitySearch:
                 ttft_at_max_qps = ttft
                 tpot_at_max_qps = tpot
                 deadline_miss_rate_at_max_qps = deadline_miss_rate
+                ttft_slo_attainment_rate_at_max_qps = ttft_slo_attainment_rate
                 best_run_id = run_id
 
                 if qps > VICINITY_THRESHOLD * right:
@@ -344,6 +374,7 @@ class CapacitySearch:
             f"TBT P{self.args.tbt_percentile * 100}: {tbt_at_max_qps}, "
             f"TTFT P{self.args.ttft_percentile * 100}: {ttft_at_max_qps}, "
             f"TPOT P{self.args.tpot_percentile * 100}: {tpot_at_max_qps}, "
+            f"TTFT Multiplier SLO Attainment Rate: {ttft_slo_attainment_rate_at_max_qps}, "
             f"Deadline Miss Rate P{self.args.deadline_miss_rate_percentile * 100}: {deadline_miss_rate_at_max_qps}"
             f"Best Run ID: {best_run_id}",
         )
@@ -356,5 +387,6 @@ class CapacitySearch:
         return {
             **self.job_config.to_config_dict(),
             "max_qps_under_sla": max_qps_under_sla,
+            "ttft_slo_attainment_rate_at_max_qps": ttft_slo_attainment_rate_at_max_qps,
             "deadline_miss_rate_at_max_qps": deadline_miss_rate_at_max_qps,
         }

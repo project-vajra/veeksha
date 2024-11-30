@@ -31,11 +31,13 @@ def get_args():
         type=str,
         default="./etalon/capacity_search/config/default_config.yml",
     )
-    parser.add_argument("--slo-type", type=str, default="deadline")
+    parser.add_argument("--slo-type", type=str, default="deadline", choices=["deadline", "tbt_ttft", "ttft_tpot", "ttft_multiplier"])
     parser.add_argument("--tbt-slo", type=float, default=0.03)
     parser.add_argument("--tbt-percentile", type=float, default=0.99)
     parser.add_argument("--ttft-slo", type=float, default=0.1)
     parser.add_argument("--ttft-percentile", type=float, default=0.9)
+    parser.add_argument("--ttft-multiplier", type=float, default=1.5)
+    parser.add_argument("--ttft-multiplier-slo-attainment-rate", type=float, default=0.9)
     parser.add_argument("--tpot-slo", type=float, default=0.1)
     parser.add_argument("--tpot-percentile", type=float, default=0.9)
     parser.add_argument("--ttft-slack-slo", type=float, default=0.3)

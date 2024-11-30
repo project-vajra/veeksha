@@ -57,7 +57,7 @@ def get_request_params(
         num_output_tokens=num_output_tokens,
         corpus_lines=corpus_lines,
     )
-    default_sampling_params = {"max_tokens": num_output_tokens}
+    default_sampling_params = {"max_tokens": num_output_tokens, "ignore_eos": True}
     default_sampling_params.update(additional_sampling_params)
     request_config = RequestConfig(
         model=model,

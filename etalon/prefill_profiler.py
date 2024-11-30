@@ -16,8 +16,35 @@ from etalon.run_benchmark import parse_args, run_benchmark
 
 logger = init_logger(__name__)
 
-# Prefill lengths profile over, all powers of 2 between 256 and 128K
-PREFILL_VALUES = [2**i for i in range(8, 15)]
+# Prefill lengths profile over, all values in range 128 to 1M
+PREFILL_VALUES = [
+    128,
+    256,
+    512,
+    768,
+    1024,
+    1536,
+    2048,
+    3072,
+    4096,
+    6144,
+    8192,
+    12288,
+    16384,
+    24576,
+    32768,
+    49152,
+    65536,
+    98304,
+    131072,
+    196608,
+    262144,
+    393216,
+    524288,
+    786432,
+    1048576,
+]
+
 # Model to train on the prefill values and prefill times
 PREFILL_MODEL = "RandomForestRegressor"
 # Random Forest Regressor parameters
