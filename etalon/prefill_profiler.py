@@ -24,32 +24,36 @@ PREFILL_VALUES = [
     768,
     1024,
     1536,
-    2048,
-    3072,
-    4096,
-    6144,
-    8192,
-    12288,
-    16384,
-    24576,
-    32768,
-    49152,
-    65536,
-    98304,
-    131072,
-    196608,
-    262144,
-    393216,
-    524288,
-    786432,
-    1048576,
+    2 * 1024,
+    3 * 1024,
+    4 * 1024,
+    6 * 1024,
+    8 * 1024,
+    12 * 1024,
+    16 * 1024,
+    24 * 1024,
+    32 * 1024,
+    48 * 1024,
+    64 * 1024,
+    96 * 1024,
+    128 * 1024,
+    192 * 1024,
+    256 * 1024,
+    384 * 1024,
+    512 * 1024,
+    640 * 1024,
+    768 * 1024,
+    896 * 1024,
+    1023 * 1024,
 ]
 
 # Model to train on the prefill values and prefill times
 PREFILL_MODEL = "RandomForestRegressor"
 # Random Forest Regressor parameters
 PREFILL_RANDOM_FOREST_PARAMS = {
-    "n_estimators": 10,
+    "n_estimators": 200,
+    "max_depth": 16,
+    "min_samples_split": 2,
     "random_state": 0,
 }
 # Request length generator provider for prefill profiling
@@ -59,11 +63,11 @@ PREFILL_POLYNOMIAL_DEGREE = 2
 # RMSE threshold for the prefill time predictor
 PREFILL_RMSE_THRESHOLD = 0.05
 # Number of Ray clients to use for prefill profiling
-PREFILL_NUM_RAY_CLIENTS = 1
+PREFILL_NUM_CLIENTS = 1
 # Number of concurrent requests per client for prefill profiling
 PREFILL_NUM_CONCURRENT_REQUESTS_PER_CLIENT = 1
 # Number of completed requests to wait for before stopping the prefill profiling for a prompt length
-PREFILL_MAX_NUM_COMPLETED_REQUESTS = 1
+PREFILL_MAX_NUM_COMPLETED_REQUESTS = 5
 
 
 class PrefillProfiler:
@@ -111,7 +115,7 @@ class PrefillProfiler:
                 tokenizer_name=self.args.tokenizer,
                 output_dir=run_dir,
                 additional_sampling_params=self.args.additional_sampling_params,
-                num_ray_clients=PREFILL_NUM_RAY_CLIENTS,
+                num_clients=PREFILL_NUM_CLIENTS,
                 num_concurrent_requests_per_client=PREFILL_NUM_CONCURRENT_REQUESTS_PER_CLIENT,
                 max_num_completed_requests=PREFILL_MAX_NUM_COMPLETED_REQUESTS,
                 timeout=self.args.timeout,

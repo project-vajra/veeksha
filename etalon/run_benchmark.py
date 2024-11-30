@@ -1,5 +1,4 @@
 import argparse
-import asyncio
 import datetime
 import json
 import os
@@ -92,12 +91,12 @@ def should_send_new_request(
     )
 
 
-async def collect_results(
+def collect_results(
     req_launcher: RequestsLauncher,
     service_metrics: ServiceMetrics,
     generated_texts: List[str],
 ) -> None:
-    results = await req_launcher.collect_results()
+    results = req_launcher.collect_results()
     for out in results:
         request_metrics, generated_text = out
         if generated_text:
@@ -105,7 +104,7 @@ async def collect_results(
             generated_texts.append(generated_text)
 
 
-async def run_main_loop(
+def run_main_loop(
     model: str,
     tokenizer_name: str,
     llm_api: str,
@@ -117,25 +116,26 @@ async def run_main_loop(
     address_append_value: Optional[str] = None,
     request_every_minute: bool = False,
     service_metrics: ServiceMetrics = None,
-    num_ray_clients: int = 2,
+    num_clients: int = 2,
     num_concurrent_requests_per_client: int = 5,
     generated_texts: List[str] = None,
     pbar: tqdm = None,
 ):
+    print("Running main loop")
     req_launcher = RequestsLauncher(
         model=model,
         tokenizer_name=tokenizer_name,
         llm_api=llm_api,
-        num_ray_clients=num_ray_clients,
+        num_clients=num_clients,
         num_concurrent_requests_per_client=num_concurrent_requests_per_client,
     )
     num_errored_requests_handled = 0
-    await req_launcher.start()
+    req_launcher.start()
     with service_metrics:
         while not service_metrics.should_stop():
             if should_send_new_request(service_metrics, num_errored_requests_handled):
                 request_start_time = time.monotonic()
-                if await req_launcher.is_free():
+                if req_launcher.is_free():
                     if service_metrics.num_requests >= service_metrics.max_requests:
                         num_errored_requests_handled += 1
                     service_metrics.register_launched_request()
@@ -149,12 +149,13 @@ async def run_main_loop(
                         address_append_value=address_append_value,
                         request_id=service_metrics.num_requests,
                     )
-                    await req_launcher.launch_requests(request_config)
+                    print("Launching request")
+                    req_launcher.launch_requests(request_config)
 
                 # poll less frequently when the number of requests is less than the max requests
-                if not (service_metrics.num_requests % num_ray_clients):
-                    await req_launcher.free_pool()
-                    await collect_results(
+                if not (service_metrics.num_requests % num_clients):
+                    req_launcher.free_pool()
+                    collect_results(
                         req_launcher, service_metrics, generated_texts
                     )
 
@@ -170,16 +171,14 @@ async def run_main_loop(
             else:
                 # just keep freeing pool and polling for results when no more requests can be sent.
                 # If errored requests are encountered, they will be handled
-                await req_launcher.free_pool()
-                await collect_results(req_launcher, service_metrics, generated_texts)
+                req_launcher.free_pool()
+                collect_results(req_launcher, service_metrics, generated_texts)
 
             pbar.update(service_metrics.num_completed_requests - pbar.n)
 
     # wait for all requests to complete and collect all results
-    await req_launcher.complete_tasks()
-    await collect_results(req_launcher, service_metrics, generated_texts)
-    # shut down clients and actors
-    await req_launcher.shutdown()
+    req_launcher.complete_tasks()
+    collect_results(req_launcher, service_metrics, generated_texts)
 
     pbar.update(service_metrics.num_completed_requests - pbar.n)
     pbar.close()
@@ -190,7 +189,7 @@ def run_benchmark(
     tokenizer_name: str,
     output_dir: str,
     additional_sampling_params: Optional[Dict[str, Any]] = None,
-    num_ray_clients: int = 2,
+    num_clients: int = 2,
     num_concurrent_requests_per_client: int = 5,
     max_num_completed_requests: int = 500,
     timeout=90,
@@ -212,7 +211,7 @@ def run_benchmark(
         model: The name of the model to query.
         additional_sampling_params: Additional sampling parameters to send with the request.
             For more information see the LLM APIs documentation for the completions
-        num_ray_clients: The number of ray actors to use for the benchmark. Each actor handles one LLM client.
+        num_clients: The number of ray actors to use for the benchmark. Each actor handles one LLM client.
         num_concurrent_requests_per_client: The number of concurrent requests per ray actor to make. Increase
             this to increase the amount of load and vice versa.
         timeout The amount of time to run the test for before reporting results.
@@ -265,24 +264,22 @@ def run_benchmark(
     with open(corpus_path, "r") as f:
         corpus_lines = f.readlines()
 
-    asyncio.run(
-        run_main_loop(
-            model=model,
-            tokenizer_name=tokenizer_name,
-            llm_api=llm_api,
-            tokenizer=tokenizer,
-            additional_sampling_params=additional_sampling_params,
-            requests_interval_generator=requests_interval_generator,
-            requests_length_generator=requests_length_generator,
-            corpus_lines=corpus_lines,
-            address_append_value=address_append_value,
-            request_every_minute=request_every_minute,
-            service_metrics=service_metrics,
-            num_ray_clients=num_ray_clients,
-            num_concurrent_requests_per_client=num_concurrent_requests_per_client,
-            generated_texts=generated_texts,
-            pbar=pbar,
-        )
+    run_main_loop(
+        model=model,
+        tokenizer_name=tokenizer_name,
+        llm_api=llm_api,
+        tokenizer=tokenizer,
+        additional_sampling_params=additional_sampling_params,
+        requests_interval_generator=requests_interval_generator,
+        requests_length_generator=requests_length_generator,
+        corpus_lines=corpus_lines,
+        address_append_value=address_append_value,
+        request_every_minute=request_every_minute,
+        service_metrics=service_metrics,
+        num_clients=num_clients,
+        num_concurrent_requests_per_client=num_concurrent_requests_per_client,
+        generated_texts=generated_texts,
+        pbar=pbar,
     )
 
     logger.info(
@@ -311,10 +308,10 @@ def parse_args():
         help="The tokenizer to use for this load test. By default, the tokenizer is inferred from the model.",
     )
     args.add_argument(
-        "--num-ray-clients",
+        "--num-clients",
         type=int,
         default=2,
-        help=("The number of ray actors to use for benchmark. (default: %(default)s)"),
+        help=("The number of client processes to use for benchmark. (default: %(default)s)"),
     )
     args.add_argument(
         "--num-concurrent-requests-per-client",
@@ -645,7 +642,7 @@ if __name__ == "__main__":
         tokenizer_name=args.tokenizer,
         timeout=args.timeout,
         max_num_completed_requests=args.max_num_completed_requests,
-        num_ray_clients=args.num_ray_clients,
+        num_clients=args.num_clients,
         num_concurrent_requests_per_client=args.num_concurrent_requests_per_client,
         additional_sampling_params=args.additional_sampling_params,
         request_generator_config=request_generator_config,
