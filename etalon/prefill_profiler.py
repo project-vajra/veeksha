@@ -44,7 +44,9 @@ PREFILL_VALUES = [
     640 * 1024,
     768 * 1024,
     896 * 1024,
-    1023 * 1024,
+    1024 * 1024,
+    1280 * 1024,
+    1536 * 1024,
 ]
 
 # Model to train on the prefill values and prefill times
@@ -58,6 +60,7 @@ PREFILL_RANDOM_FOREST_PARAMS = {
 }
 # Request length generator provider for prefill profiling
 PREFILL_REQUEST_LENGTH_GENERATOR_PROVIDER = "fixed"
+PREFILL_REQUEST_INTERVAL_GENERATOR_PROVIDER = "static"
 # Polynomial degree for the prefill time predictor
 PREFILL_POLYNOMIAL_DEGREE = 2
 # RMSE threshold for the prefill time predictor
@@ -67,7 +70,7 @@ PREFILL_NUM_CLIENTS = 1
 # Number of concurrent requests per client for prefill profiling
 PREFILL_NUM_CONCURRENT_REQUESTS_PER_CLIENT = 1
 # Number of completed requests to wait for before stopping the prefill profiling for a prompt length
-PREFILL_MAX_NUM_COMPLETED_REQUESTS = 5
+PREFILL_MAX_NUM_COMPLETED_REQUESTS = 1
 
 
 class PrefillProfiler:
@@ -99,6 +102,9 @@ class PrefillProfiler:
 
     def run(self):
         request_generator_config = RequestGeneratorConfig(self.args)
+        request_generator_config.request_interval_generator_provider = (
+            PREFILL_REQUEST_INTERVAL_GENERATOR_PROVIDER
+        )
         request_generator_config.request_length_generator_provider = (
             PREFILL_REQUEST_LENGTH_GENERATOR_PROVIDER
         )

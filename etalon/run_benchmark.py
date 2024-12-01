@@ -5,9 +5,12 @@ import os
 import random
 import re
 import time
+import threading
+from queue import Empty
+from multiprocessing import Queue
+from threading import Thread
 from typing import Any, Dict, List, Optional, Tuple
 
-import ray
 from tqdm import tqdm
 
 from etalon.core.hf_utils import get_tokenizer
@@ -73,35 +76,81 @@ def get_request_params(
 def should_send_new_request(
     service_metrics: ServiceMetrics, num_errored_requests_handled: int
 ) -> bool:
-    """Check if a request should be sent based on the current state of the service.
-
-    If the number of requests is less than the maximum number of requests, a request should always be sent.
-    If the number of requests is greater than the maximum number of requests and not all errored requests are handled, a request should be sent.
-
-    Args:
-        service_metrics: The metrics for the service.
-        num_errored_requests_handled: The number of errored requests handled.
-
-    Returns:
-        True if a request should be sent, False otherwise.
-    """
+    """Check if a request should be sent based on the current state of the service."""
     return (service_metrics.num_requests < service_metrics.max_requests) or (
         service_metrics.num_requests >= service_metrics.max_requests
         and num_errored_requests_handled < service_metrics.num_errored_requests
     )
 
 
-def collect_results(
-    req_launcher: RequestsLauncher,
+def dispatch_requests(
+    input_queue: Queue,
+    service_metrics: ServiceMetrics,
+    model: str,
+    llm_api: str,
+    tokenizer: Any,
+    additional_sampling_params: Dict[str, Any],
+    requests_interval_generator: BaseRequestIntervalGenerator,
+    requests_length_generator: BaseRequestLengthGenerator,
+    corpus_lines: List[str],
+    address_append_value: str,
+    stop_event: threading.Event
+) -> None:
+    """Thread function to generate and dispatch requests."""
+    num_errored_requests_handled = 0
+    
+    while not stop_event.is_set():
+        if should_send_new_request(service_metrics, num_errored_requests_handled):
+            request_start_time = time.monotonic()
+            
+            # Check if we should handle error request
+            if service_metrics.num_requests >= service_metrics.max_requests:
+                num_errored_requests_handled += 1
+                
+            # Create and dispatch request
+            service_metrics.register_launched_request()
+            request_config = get_request_params(
+                model=model,
+                llm_api=llm_api,
+                tokenizer=tokenizer,
+                additional_sampling_params=additional_sampling_params,
+                request_length_generator=requests_length_generator,
+                corpus_lines=corpus_lines.copy(),
+                address_append_value=address_append_value,
+                request_id=service_metrics.num_requests,
+            )
+            print(f"Request {service_metrics.num_requests} dispatched")
+            input_queue.put(request_config)
+            
+            # Wait for next interval
+            next_request_interval = requests_interval_generator.get_next_inter_request_time()
+            while not stop_event.is_set():
+                if time.monotonic() - request_start_time >= next_request_interval:
+                    break
+                time.sleep(0.01)
+        else:
+            time.sleep(0.01)
+
+
+def process_results(
+    output_queue: Queue,
     service_metrics: ServiceMetrics,
     generated_texts: List[str],
+    pbar: tqdm,
+    stop_event: threading.Event
 ) -> None:
-    results = req_launcher.collect_results()
-    for out in results:
-        request_metrics, generated_text = out
-        if generated_text:
-            service_metrics.add_request_metrics(request_metrics)
-            generated_texts.append(generated_text)
+    """Thread function to process results from the output queue."""
+    while not stop_event.is_set() or not output_queue.empty():
+        try:
+            result = output_queue.get(timeout=0.1)
+            request_metrics, generated_text = result
+            if generated_text:
+                service_metrics.add_request_metrics(request_metrics)
+                generated_texts.append(generated_text)
+                
+            pbar.update(service_metrics.num_completed_requests - pbar.n)
+        except Empty:
+            continue
 
 
 def run_main_loop(
@@ -114,7 +163,6 @@ def run_main_loop(
     requests_length_generator: Optional[BaseRequestLengthGenerator] = None,
     corpus_lines: List[str] = None,
     address_append_value: Optional[str] = None,
-    request_every_minute: bool = False,
     service_metrics: ServiceMetrics = None,
     num_clients: int = 2,
     num_concurrent_requests_per_client: int = 5,
@@ -122,65 +170,69 @@ def run_main_loop(
     pbar: tqdm = None,
 ):
     print("Running main loop")
+    
+    # Create queues for communication
+    input_queue = Queue()
+    output_queue = Queue()
+    stop_event = threading.Event()
+    
+    # Initialize request launcher
     req_launcher = RequestsLauncher(
         model=model,
         tokenizer_name=tokenizer_name,
         llm_api=llm_api,
         num_clients=num_clients,
         num_concurrent_requests_per_client=num_concurrent_requests_per_client,
+        input_queue=input_queue,
+        output_queue=output_queue,
     )
-    num_errored_requests_handled = 0
+    
+    # Start the request launcher processes
     req_launcher.start()
+    
+    # Create and start producer-consumer threads
+    dispatcher_thread = Thread(
+        target=dispatch_requests,
+        args=(
+            input_queue, service_metrics, model, llm_api, tokenizer,
+            additional_sampling_params, requests_interval_generator,
+            requests_length_generator, corpus_lines, address_append_value,
+            stop_event
+        )
+    )
+    
+    processor_thread = Thread(
+        target=process_results,
+        args=(output_queue, service_metrics, generated_texts, pbar, stop_event)
+    )
+    
+    dispatcher_thread.start()
+    processor_thread.start()
+    
+    # Monitor and wait for completion
     with service_metrics:
         while not service_metrics.should_stop():
-            if should_send_new_request(service_metrics, num_errored_requests_handled):
-                request_start_time = time.monotonic()
-                if req_launcher.is_free():
-                    if service_metrics.num_requests >= service_metrics.max_requests:
-                        num_errored_requests_handled += 1
-                    service_metrics.register_launched_request()
-                    request_config = get_request_params(
-                        model=model,
-                        llm_api=llm_api,
-                        tokenizer=tokenizer,
-                        additional_sampling_params=additional_sampling_params,
-                        request_length_generator=requests_length_generator,
-                        corpus_lines=corpus_lines.copy(),  # pass a copy of the corpus lines to avoid modifying the original
-                        address_append_value=address_append_value,
-                        request_id=service_metrics.num_requests,
-                    )
-                    print("Launching request")
-                    req_launcher.launch_requests(request_config)
-
-                # poll less frequently when the number of requests is less than the max requests
-                if not (service_metrics.num_requests % num_clients):
-                    req_launcher.free_pool()
-                    collect_results(
-                        req_launcher, service_metrics, generated_texts
-                    )
-
-                # sleep for the next request interval
-                next_request_interval = (
-                    60
-                    if request_every_minute
-                    else requests_interval_generator.get_next_inter_request_time()
-                )
-                while True:
-                    if time.monotonic() - request_start_time >= next_request_interval:
-                        break
-            else:
-                # just keep freeing pool and polling for results when no more requests can be sent.
-                # If errored requests are encountered, they will be handled
-                req_launcher.free_pool()
-                collect_results(req_launcher, service_metrics, generated_texts)
-
-            pbar.update(service_metrics.num_completed_requests - pbar.n)
-
-    # wait for all requests to complete and collect all results
+            time.sleep(0.1)
+    
+    # Signal threads to stop and wait for completion
+    stop_event.set()
+    dispatcher_thread.join()
+    processor_thread.join()
+    
+    # Clean up request launcher
+    for _ in range(num_clients * num_concurrent_requests_per_client):
+        input_queue.put(None)
     req_launcher.complete_tasks()
-    collect_results(req_launcher, service_metrics, generated_texts)
-
-    pbar.update(service_metrics.num_completed_requests - pbar.n)
+    
+    # Process any remaining results
+    while not output_queue.empty():
+        result = output_queue.get()
+        request_metrics, generated_text = result
+        if generated_text:
+            service_metrics.add_request_metrics(request_metrics)
+            generated_texts.append(generated_text)
+            pbar.update(service_metrics.num_completed_requests - pbar.n)
+    
     pbar.close()
 
 
@@ -203,31 +255,7 @@ def run_benchmark(
     wandb_group: str = None,
     wandb_run_name: str = None,
     address_append_value: Optional[str] = "chat/completions",
-    request_every_minute: bool = False,
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
-    """Get the token throughput and latencies for the given model.
-
-    Args:
-        model: The name of the model to query.
-        additional_sampling_params: Additional sampling parameters to send with the request.
-            For more information see the LLM APIs documentation for the completions
-        num_clients: The number of ray actors to use for the benchmark. Each actor handles one LLM client.
-        num_concurrent_requests_per_client: The number of concurrent requests per ray actor to make. Increase
-            this to increase the amount of load and vice versa.
-        timeout The amount of time to run the test for before reporting results.
-        llm_api: The name of the llm api to use. Either "openai" or "litellm".
-        request_interval_generator_provider: The name of the request generator provider to use for determining intervals.
-        request_length_generator_provider: The name of the request generator provider to use for determining lengths.
-        request_generator_config: The configuration for the request generator provider.
-        ttft_deadline: The deadline for time to first token.
-        tbt_deadline: The deadline between tokens.
-        target_deadline_miss_rate: The target deadline miss rate.
-
-    Returns:
-        A summary of the performance metrics collected across all completed requests
-        (e.g. throughput, latencies, etc.)
-        The individual metrics for each request.
-    """
     service_metrics = ServiceMetrics(
         max_requests=max_num_completed_requests,
         timeout=timeout,
@@ -246,7 +274,6 @@ def run_benchmark(
     )
 
     generated_texts = []
-
     pbar = tqdm(total=max_num_completed_requests)
 
     requests_interval_generator = RequestIntervalGeneratorRegistry.get_from_str(
@@ -274,7 +301,6 @@ def run_benchmark(
         requests_length_generator=requests_length_generator,
         corpus_lines=corpus_lines,
         address_append_value=address_append_value,
-        request_every_minute=request_every_minute,
         service_metrics=service_metrics,
         num_clients=num_clients,
         num_concurrent_requests_per_client=num_concurrent_requests_per_client,
@@ -288,7 +314,7 @@ def run_benchmark(
 
     service_metrics.store_output(output_dir)
 
-    # store the generated texts
+    # Store the generated texts
     with open(os.path.join(output_dir, "generated_texts.txt"), "w") as f:
         f.write(("\n" + "-" * 30 + "\n").join(generated_texts))
 
@@ -628,11 +654,7 @@ def parse_args():
 
 if __name__ == "__main__":
     random.seed(11111)
-
-    ray.init(runtime_env={"env_vars": dict(os.environ)})
-
     args = parse_args()
-
     request_generator_config = RequestGeneratorConfig(args=args)
 
     run_benchmark(
@@ -654,5 +676,4 @@ if __name__ == "__main__":
         wandb_group=args.wandb_group,
         wandb_run_name=args.wandb_run_name,
         address_append_value=args.address_append_value,
-        request_every_minute=args.request_every_minute,
     )

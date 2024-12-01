@@ -20,6 +20,18 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
 
     def __init__(self, model_name: str, tokenizer_name: str) -> None:
         super().__init__(model_name, tokenizer_name)
+        self.address = os.environ.get("OPENAI_API_BASE")
+        if not self.address:
+            self.address = "http://localhost:8000/v1"
+            print(
+                "Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost."
+            )
+        self.key = os.environ.get("OPENAI_API_KEY")
+        if not self.key:
+            self.key = ""
+            print(
+                "Warning: OPENAI_API_KEY environment variable not set. Defaulting to empty string."
+            )
 
     def total_tokens(self, response_list: List[str]) -> int:
         merged_content = "".join(response_list)
@@ -58,21 +70,9 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
         sampling_params = request_config.sampling_params
         body.update(sampling_params or {})
 
-        address = os.environ.get("OPENAI_API_BASE")
-        if not address:
-            address = "http://localhost:8000/v1"
-            print(
-                "Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost."
-            )
-            # raise ValueError("the environment variable OPENAI_API_BASE must be set.")
-        key = os.environ.get("OPENAI_API_KEY")
-        if not key:
-            key = ""
-            print(
-                "Warning: OPENAI_API_KEY environment variable not set. Defaulting to empty string."
-            )
-            # raise ValueError("the environment variable OPENAI_API_KEY must be set.")
-        headers = {"Authorization": f"Bearer {key}"}
+        headers = {"Authorization": f"Bearer {self.key}"}
+        address = self.address
+
         if not address:
             raise ValueError("No host provided.")
         if not address.endswith("/"):
@@ -89,7 +89,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
 
         most_recent_received_token_time = time.monotonic()
 
-        print(f"Sending request to {address}")
+        print(f"Sending request {request_config}")
 
         try:
             with requests.post(

@@ -1,9 +1,7 @@
-from typing import Any, List
 from threading import Thread, Lock
-from queue import Queue
+from multiprocessing import Queue as MPQueue
 
 from etalon.core.llm_clients import construct_client
-from etalon.core.request_config import RequestConfig
 
 
 class AsyncRequestsManager:
@@ -16,9 +14,12 @@ class AsyncRequestsManager:
         tokenizer_name: str,
         llm_api: str,
         max_concurrent_requests: int,
+        input_queue: MPQueue,
+        output_queue: MPQueue,
     ):
         self.max_concurrent_requests = max_concurrent_requests
-        self.requests_queue = Queue()
+        self.input_queue = input_queue
+        self.output_queue = output_queue
         self.result_lock = Lock()
         self.results = []
         # just create a single client per manager
@@ -28,6 +29,7 @@ class AsyncRequestsManager:
             llm_api=llm_api,
         )
         self.client_id = client_id
+        self.start_tasks()
 
     def start_tasks(self):
         """Starts the tasks to handle requests.
@@ -45,43 +47,9 @@ class AsyncRequestsManager:
 
     def process_requests(self) -> None:
         while True:
-            request_config = self.requests_queue.get()
+            request_config = self.input_queue.get()
             if request_config is None:
                 break
+            print(f"Client {self.client_id} received request {request_config}")
             result = self.llm_client.send_llm_request(request_config)
-            with self.result_lock:
-                self.results.append(result)
-
-    def launch_requests(self, request_config: RequestConfig) -> List[Any]:
-        """Launch requests to the LLM API.
-
-        Args:
-            request_config: The configuration for the request.
-
-        """
-        self.requests_queue.put(request_config)
-
-    def get_results(self) -> List[Any]:
-        """Return results that are ready from completed requests.
-
-        Returns:
-            A list of results that are ready.
-
-        """
-        with self.result_lock:
-            curr_results = self.results
-            self.results = []
-        return curr_results
-
-    def complete_tasks(self):
-        """Waits for all tasks to complete.
-
-        Returns:
-            None
-        """
-        for _ in range(self.max_concurrent_requests):
-            self.requests_queue.put(None)
-
-        for thread in self.client_threads:
-            thread.join()
-
+            self.output_queue.put(result)
