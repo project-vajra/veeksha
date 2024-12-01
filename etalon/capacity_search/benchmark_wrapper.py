@@ -167,72 +167,85 @@ def is_default_engine(engine) -> bool:
     return engine == "default" or engine is None
 
 
+# def run(
+#     job_config: JobConfig,
+#     benchmark_config: BenchmarkConfig,
+#     replica_resource_mapping: ReplicaResourceMapping,
+# ):
+#     """
+#     Main function
+#     """
+
+#     openai_port = job_config.server_config.port
+#     num_gpus = (
+#         job_config.parallel_config.get_num_gpus()
+#         if not is_default_engine(job_config.server_config.openai_server_engine)
+#         else 0
+#     )
+
+#     # If server runs across multiple nodes, then just create set of nodes and pass it to resources parameter for Ray Actor
+#     set_of_nodes = set(
+#         replica_resource_mapping["0"][i][0]
+#         for i in range(len(replica_resource_mapping["0"]))
+#     )
+#     resources = {i: 0.001 for i in set_of_nodes}
+
+#     openai_server_wrapper = OpenAIServerWrapper.options(
+#         num_gpus=num_gpus, resources=resources
+#     ).remote(replica_resource_mapping=replica_resource_mapping, port=openai_port)
+
+#     # Launch the OPEN AI server
+#     ray.get(
+#         openai_server_wrapper.launch_openai_server.remote(
+#             openai_server_engine=job_config.server_config.openai_server_engine,
+#             openai_server_model=job_config.model_config.identifier,
+#             openai_api_key=job_config.server_config.openai_api_key,
+#             tp=job_config.parallel_config.tp_dimension,
+#             pp=job_config.parallel_config.pp_dimension,
+#         )
+#     )
+
+#     setup_api_environment(
+#         openai_server_engine=job_config.server_config.openai_server_engine,
+#         openai_api_key=job_config.server_config.openai_api_key,
+#         openai_port=openai_port,
+#     )
+
+#     # Wait for the server to start. For 70B model, it takes around 2 minutes to start
+#     sleep_time = (
+#         0 if is_default_engine(job_config.server_config.openai_server_engine) else 60
+#     )
+#     time.sleep(sleep_time)
+
+#     # Additional retry mechanism to check if server is up
+#     count = 0
+#     while not is_port_in_use(openai_port):
+#         logger.info(
+#             f"Waiting for OPEN AI server to start. Port {openai_port} is not in use"
+#         )
+#         time.sleep(60)
+#         if count > 5:
+#             raise RuntimeError("OPEN AI server did not start after 6 mins")
+#         count += 1
+
+#     # Run the benchmark
+#     benchmark_command = f"python -m etalon.run_benchmark {job_config.to_args()} {benchmark_config.to_args()}"
+#     logger.info(f"Running benchmark with command: {benchmark_command}")
+#     benchmark_process = subprocess.Popen(benchmark_command, shell=True)
+#     benchmark_process.wait()
+
+#     # Stop the OPEN AI server
+#     ray.get(openai_server_wrapper.stop_openai_server.remote())
 def run(
     job_config: JobConfig,
     benchmark_config: BenchmarkConfig,
-    replica_resource_mapping: ReplicaResourceMapping,
 ):
     """
     Main function
     """
-
-    openai_port = job_config.server_config.port
-    num_gpus = (
-        job_config.parallel_config.get_num_gpus()
-        if not is_default_engine(job_config.server_config.openai_server_engine)
-        else 0
-    )
-
-    # If server runs across multiple nodes, then just create set of nodes and pass it to resources parameter for Ray Actor
-    set_of_nodes = set(
-        replica_resource_mapping["0"][i][0]
-        for i in range(len(replica_resource_mapping["0"]))
-    )
-    resources = {i: 0.001 for i in set_of_nodes}
-
-    openai_server_wrapper = OpenAIServerWrapper.options(
-        num_gpus=num_gpus, resources=resources
-    ).remote(replica_resource_mapping=replica_resource_mapping, port=openai_port)
-
-    # Launch the OPEN AI server
-    ray.get(
-        openai_server_wrapper.launch_openai_server.remote(
-            openai_server_engine=job_config.server_config.openai_server_engine,
-            openai_server_model=job_config.model_config.identifier,
-            openai_api_key=job_config.server_config.openai_api_key,
-            tp=job_config.parallel_config.tp_dimension,
-            pp=job_config.parallel_config.pp_dimension,
-        )
-    )
-
-    setup_api_environment(
-        openai_server_engine=job_config.server_config.openai_server_engine,
-        openai_api_key=job_config.server_config.openai_api_key,
-        openai_port=openai_port,
-    )
-
-    # Wait for the server to start. For 70B model, it takes around 2 minutes to start
-    sleep_time = (
-        0 if is_default_engine(job_config.server_config.openai_server_engine) else 60
-    )
-    time.sleep(sleep_time)
-
-    # Additional retry mechanism to check if server is up
-    count = 0
-    while not is_port_in_use(openai_port):
-        logger.info(
-            f"Waiting for OPEN AI server to start. Port {openai_port} is not in use"
-        )
-        time.sleep(60)
-        if count > 5:
-            raise RuntimeError("OPEN AI server did not start after 6 mins")
-        count += 1
 
     # Run the benchmark
     benchmark_command = f"python -m etalon.run_benchmark {job_config.to_args()} {benchmark_config.to_args()}"
     logger.info(f"Running benchmark with command: {benchmark_command}")
     benchmark_process = subprocess.Popen(benchmark_command, shell=True)
     benchmark_process.wait()
-
-    # Stop the OPEN AI server
-    ray.get(openai_server_wrapper.stop_openai_server.remote())

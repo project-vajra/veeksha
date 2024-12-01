@@ -223,16 +223,7 @@ def run_main_loop(
     for _ in range(num_clients * num_concurrent_requests_per_client):
         input_queue.put(None)
     req_launcher.complete_tasks()
-    
-    # Process any remaining results
-    while not output_queue.empty():
-        result = output_queue.get()
-        request_metrics, generated_text = result
-        if generated_text:
-            service_metrics.add_request_metrics(request_metrics)
-            generated_texts.append(generated_text)
-            pbar.update(service_metrics.num_completed_requests - pbar.n)
-    
+
     pbar.close()
 
 

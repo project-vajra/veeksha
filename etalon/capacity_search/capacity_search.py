@@ -48,14 +48,14 @@ class CapacitySearch:
         self,
         job_config: JobConfig,
         args: argparse.Namespace,
-        resource_manager: ResourceManager,
-        resource_mapping: ReplicaResourceMapping,
+        # resource_manager: ResourceManager,
+        # resource_mapping: ReplicaResourceMapping,
     ) -> None:
         self.node_ip = get_ip()
         self.job_config = job_config
         self.args = args
-        self.resource_manager = resource_manager
-        self.resource_mapping = resource_mapping
+        # self.resource_manager = resource_manager
+        # self.resource_mapping = resource_mapping
         self.prefill_model = None
         self.transformer = None
 
@@ -69,13 +69,15 @@ class CapacitySearch:
             )
 
     def release_resources(self):
-        if not self.resource_mapping:
-            return
+        pass
+        # if not self.resource_mapping:
+        #     return
 
-        ray.get(self.resource_manager.release_resources.remote(self.resource_mapping))
+        # ray.get(self.resource_manager.release_resources.remote(self.resource_mapping))
 
     def _run_benchmark(self, benchmark_config: BenchmarkConfig):
-        run(self.job_config, benchmark_config, self.resource_mapping)
+        run(self.job_config, benchmark_config)
+        # run(self.job_config, benchmark_config, self.resource_mapping)
 
     def _get_result_file(self, run_dir: str, metric_name: str) -> str:
         files = glob.glob(os.path.join(run_dir, f"{metric_name}.csv"))
@@ -152,10 +154,11 @@ class CapacitySearch:
             np.array(prompt_lens).reshape(-1, 1)
         )
         ttft_deadlines = self.prefill_model.predict(prompt_lens) * self.args.ttft_multiplier
+        ttft_deadlines = np.maximum(ttft_deadlines, self.args.ttft_multiplier_min_ttft)
 
         slo_attainment_rate = sum(ttfts[i] <= ttft_deadlines[i] for i in range(len(ttfts))) / len(ttfts)
         
-        is_under_sla = slo_attainment_rate <= self.args.ttft_multiplier_slo_attainment_rate
+        is_under_sla = slo_attainment_rate >= self.args.ttft_multiplier_slo_attainment_rate
 
         return is_under_sla, slo_attainment_rate
 

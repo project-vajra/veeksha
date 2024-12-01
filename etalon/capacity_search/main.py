@@ -37,6 +37,7 @@ def get_args():
     parser.add_argument("--ttft-slo", type=float, default=0.1)
     parser.add_argument("--ttft-percentile", type=float, default=0.9)
     parser.add_argument("--ttft-multiplier", type=float, default=1.5)
+    parser.add_argument("--ttft-multiplier-min-ttft", type=float, default=0.5)
     parser.add_argument("--ttft-multiplier-slo-attainment-rate", type=float, default=0.9)
     parser.add_argument("--tpot-slo", type=float, default=0.1)
     parser.add_argument("--tpot-percentile", type=float, default=0.9)
@@ -45,7 +46,7 @@ def get_args():
     parser.add_argument("--deadline-miss-rate-percentile", type=float, default=0.99)
     parser.add_argument("--max-iterations", type=int, default=20)
     parser.add_argument(
-        "--time-limit", type=int, default=20, help="Time limit in minutes"
+        "--time-limit", type=int, default=30, help="Time limit in minutes"
     )
     parser.add_argument(
         "--debug", action="store_true", help="Print debug logs and commands"
@@ -56,7 +57,7 @@ def get_args():
         "--should-write-metrics-to-wandb",
         type=bool,
         action=argparse.BooleanOptionalAction,
-        default=False,
+        default=True,
     )
     parser.add_argument("--wandb-sweep-name", type=str, default=None)
     parser.add_argument("--wandb-sweep-id", type=str, default=None)

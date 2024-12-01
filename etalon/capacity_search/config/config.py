@@ -193,7 +193,7 @@ class RequestConfig:
 
     def to_config_dict(self):
         return {
-            "num-ray-clients": self.num_ray_clients,
+            "num-clients": self.num_ray_clients,
             "num-concurrent-requests-per-client": self.num_concurrent_requests_per_client,
             "timeout": self.timeout,
             "max-num-completed-requests": self.max_num_completed_requests,

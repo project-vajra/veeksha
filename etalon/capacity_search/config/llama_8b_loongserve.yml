@@ -1,0 +1,41 @@
+servers:
+  - openai_server_engine: default
+
+models:
+  - name: llama-3-8b-instruct
+    identifier: meta-llama/Meta-Llama-3-8B-Instruct
+    parallel_specs: ["tp_1"]
+    traces: null
+
+parallel_specs:
+  - name: tp_1 # ignored
+    tp_dimension: 1
+    pp_dimension: 1
+
+request_generator_configs:
+  - start_qps: 0.5
+    request_interval_generator_provider: "poisson"
+    request_length_generator_provider: "trace"
+    trace_request_length_generator_trace_file: "data/processed_traces/merged_df_1_percent_long_context_mixed.csv"
+    trace_file_name: "1pc"
+  # - start_qps: 0.5
+  #   request_interval_generator_provider: "poisson"
+  #   request_length_generator_provider: "trace"
+  #   trace_request_length_generator_trace_file: "data/processed_traces/merged_df_5_percent_long_context_mixed.csv"
+  #   trace_file_name: "5pc"
+
+request_configs:
+  - num_ray_clients: 10
+    num_concurrent_requests_per_client: 10
+    timeout: 1800
+    max_num_completed_requests: 10000
+    additional_sampling_params: {}
+    llm_api: "openai"
+    request_generator_max_tokens: 2097152 # 2M
+  # - num_ray_clients: 10
+  #   num_concurrent_requests_per_client: 10
+  #   timeout: 1800
+  #   max_num_completed_requests: 10000
+  #   additional_sampling_params: {}
+  #   llm_api: "openai"
+  #   request_generator_max_tokens: 2097152 #2M
