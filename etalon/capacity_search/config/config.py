@@ -110,7 +110,7 @@ class RequestGeneratorConfig:
         return key
 
     def get_human_readable_name(self):
-        return f"Start QPS: {self.start_qps}, Request interval generator: {self.request_interval_generator_provider}, Request length generator: {self.request_length_generator_provider}"
+        return f"Start QPS: {self.start_qps}, Request interval generator: {self.request_interval_generator_provider}, Request length generator: {self.request_length_generator_provider}, Trace file name: {self.trace_file_name}"
 
     def to_config_dict(self):
         config_dict = {
