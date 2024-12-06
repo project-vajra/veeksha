@@ -147,7 +147,7 @@ def process_results(
             if generated_text:
                 service_metrics.add_request_metrics(request_metrics)
                 generated_texts.append(generated_text)
-                
+
             pbar.update(service_metrics.num_completed_requests - pbar.n)
         except Empty:
             continue
@@ -213,18 +213,23 @@ def run_main_loop(
     with service_metrics:
         while not service_metrics.should_stop():
             time.sleep(0.1)
+        logger.info(">>> service_metrics.should_stop()")
     
     # Signal threads to stop and wait for completion
     stop_event.set()
     dispatcher_thread.join()
     processor_thread.join()
     
-    # Clean up request launcher
-    for _ in range(num_clients * num_concurrent_requests_per_client):
-        input_queue.put(None)
-    req_launcher.complete_tasks()
+    # # Clean up request launcher
+    # for _ in range(num_clients * num_concurrent_requests_per_client):
+    #     input_queue.put(None)
+    # req_launcher.complete_tasks()
+
+    # Terminate all clients
+    req_launcher.kill_clients()
 
     pbar.close()
+    logger.info('>>> run_main_loop() returns')
 
 
 def run_benchmark(
@@ -304,10 +309,11 @@ def run_benchmark(
     )
 
     service_metrics.store_output(output_dir)
+    logger.info(f"metrics stored to {output_dir}")
 
     # Store the generated texts
-    with open(os.path.join(output_dir, "generated_texts.txt"), "w") as f:
-        f.write(("\n" + "-" * 30 + "\n").join(generated_texts))
+    # with open(os.path.join(output_dir, "generated_texts.txt"), "w") as f:
+        # f.write(("\n" + "-" * 30 + "\n").join(generated_texts))
 
 
 def parse_args():

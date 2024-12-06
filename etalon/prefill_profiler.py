@@ -45,8 +45,8 @@ PREFILL_VALUES = [
     768 * 1024,
     896 * 1024,
     1024 * 1024,
-    1280 * 1024,
-    1536 * 1024,
+    # 1280 * 1024,
+    # 1536 * 1024,
 ]
 
 # Model to train on the prefill values and prefill times
@@ -115,7 +115,11 @@ class PrefillProfiler:
             run_dir = os.path.join(
                 self.args.output_dir, f"{self.args.model}_{prefill_value}"
             )
+            if os.path.isdir(run_dir):
+                print(f"Skipped {prefill_value}")
+                continue
             os.makedirs(run_dir, exist_ok=True)
+            logger.info(f"Running profiling for prefill value = {prefill_value}...")
             run_benchmark(
                 model=self.args.model,
                 tokenizer_name=self.args.tokenizer,

@@ -3,21 +3,16 @@ servers:
 
 models:
   - name: llama-3-8b-instruct
-    identifier: meta-llama/Meta-Llama-3-8B-Instruct
+    identifier: gradientai/Llama-3-8B-Instruct-Gradient-1048k
     parallel_specs: ["tp_1"]
     traces: null
 
 parallel_specs:
   - name: tp_1 # ignored
-    tp_dimension: 1
-    pp_dimension: 1
+    tp_dimension: 8
+    pp_dimension: 2
 
 request_generator_configs:
-  - start_qps: 0.5
-    request_interval_generator_provider: "poisson"
-    request_length_generator_provider: "trace"
-    trace_request_length_generator_trace_file: "data/processed_traces/merged_df_0_percent_long_context_mixed.csv"
-    trace_file_name: "0pc"
   - start_qps: 0.5
     request_interval_generator_provider: "poisson"
     request_length_generator_provider: "trace"
@@ -26,13 +21,8 @@ request_generator_configs:
   - start_qps: 0.5
     request_interval_generator_provider: "poisson"
     request_length_generator_provider: "trace"
-    trace_request_length_generator_trace_file: "data/processed_traces/merged_df_1_percent_long_context_mixed.csv"
-    trace_file_name: "1pc"
-  - start_qps: 0.5
-    request_interval_generator_provider: "poisson"
-    request_length_generator_provider: "trace"
-    trace_request_length_generator_trace_file: "data/processed_traces/merged_df_2_percent_long_context_mixed.csv"
-    trace_file_name: "2.5pc"
+    trace_request_length_generator_trace_file: "data/processed_traces/merged_df_0_percent_long_context_mixed.csv"
+    trace_file_name: "0pc"
 
 request_configs:
   - num_ray_clients: 10

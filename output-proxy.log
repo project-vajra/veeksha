@@ -1,0 +1,215 @@
+nohup: ignoring input
+[2024-12-04 23:01:25 +0000] [2514316] [INFO] Running on http://127.0.0.1:8000 (CTRL + C to quit)
+ * Serving Quart app 'disagg_prefill_proxy_server'
+ * Debug mode: False
+ * Please use an ASGI server (e.g. Hypercorn) directly in production
+ * Running on http://127.0.0.1:8000 (CTRL + C to quit)
+[2024-12-04 23:01:55 +0000] [2514316] [INFO] 127.0.0.1:58052 GET /v1/chat/completions 1.1 405 153 1531
+[2024-12-04 23:02:00 +0000] [2514316] [INFO] 127.0.0.1:58060 GET /v1/completions 1.1 405 153 675
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-04 23:02:51 +0000] [2514316] [INFO] 127.0.0.1:47680 POST /v1/completions 1.1 200 - 10852
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-04 23:04:49 +0000] [2514316] [INFO] 127.0.0.1:34622 POST /v1/completions 1.1 200 - 71525
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-04 23:24:44 +0000] [2514316] [INFO] 127.0.0.1:48132 POST /v1/completions 1.1 200 - 2177114
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-04 23:27:00 +0000] [2514316] [INFO] 127.0.0.1:51668 POST /v1/chat/completions 1.1 200 - 221910
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-04 23:29:49 +0000] [2514316] [INFO] 127.0.0.1:34688 POST /v1/chat/completions 1.1 - - 162489004
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-04 23:45:10 +0000] [2514316] [INFO] 127.0.0.1:54272 POST /v1/completions 1.1 200 - 858764978
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:34:01 +0000] [2514316] [INFO] 127.0.0.1:33258 POST /v1/completions 1.1 200 - 2138986
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:34:22 +0000] [2514316] [INFO] 127.0.0.1:58372 POST /v1/completions 1.1 200 - 108400
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:34:30 +0000] [2514316] [INFO] 127.0.0.1:58374 POST /v1/completions 1.1 200 - 103888
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:34:53 +0000] [2514316] [INFO] 127.0.0.1:43206 POST /v1/chat/completions 1.1 200 - 64655
+[2024-12-05 00:36:53,052] ERROR in app: Exception on request POST /v1/chat/completions
+Traceback (most recent call last):
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/app.py", line 1404, in handle_request
+    return await self.full_dispatch_request(request_context)
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/app.py", line 1443, in full_dispatch_request
+    return await self.finalize_request(result, request_context)
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/app.py", line 1567, in finalize_request
+    response = await self.make_response(result)
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/app.py", line 1374, in make_response
+    raise TypeError("The response value returned by the view function cannot be None")
+TypeError: The response value returned by the view function cannot be None
+Error occurred in disagg prefill proxy server
+400 Bad Request: The browser (or proxy) sent a request that this server could not understand.
+Traceback (most recent call last):
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/wrappers/request.py", line 317, in get_json
+    result = self.json_module.loads(data)
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/flask/json/provider.py", line 187, in loads
+    return json.loads(s, **kwargs)
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/json/decoder.py", line 355, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 3 column 60 (char 119)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/mount/mnemosyne-profiling/vllm/vllm/benchmarks/disagg_benchmarks/disagg_prefill_proxy_server.py", line 64, in handle_request
+    original_request_data = await request.get_json()
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/wrappers/request.py", line 322, in get_json
+    result = self.on_json_loading_failed(error)
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/wrappers/request.py", line 341, in on_json_loading_failed
+    raise BadRequest()
+werkzeug.exceptions.BadRequest: 400 Bad Request: The browser (or proxy) sent a request that this server could not understand.
+
+[2024-12-05 00:36:53 +0000] [2514316] [INFO] 127.0.0.1:47224 POST /v1/chat/completions 1.1 500 265 9430
+[2024-12-05 00:39:04,037] ERROR in app: Exception on request POST /v1/chat/completions
+Traceback (most recent call last):
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/app.py", line 1404, in handle_request
+    return await self.full_dispatch_request(request_context)
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/app.py", line 1443, in full_dispatch_request
+    return await self.finalize_request(result, request_context)
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/app.py", line 1567, in finalize_request
+    response = await self.make_response(result)
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/app.py", line 1374, in make_response
+    raise TypeError("The response value returned by the view function cannot be None")
+TypeError: The response value returned by the view function cannot be None
+Error occurred in disagg prefill proxy server
+400 Bad Request: The browser (or proxy) sent a request that this server could not understand.
+Traceback (most recent call last):
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/wrappers/request.py", line 317, in get_json
+    result = self.json_module.loads(data)
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/flask/json/provider.py", line 187, in loads
+    return json.loads(s, **kwargs)
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/json/decoder.py", line 355, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 3 column 60 (char 119)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/mount/mnemosyne-profiling/vllm/vllm/benchmarks/disagg_benchmarks/disagg_prefill_proxy_server.py", line 64, in handle_request
+    original_request_data = await request.get_json()
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/wrappers/request.py", line 322, in get_json
+    result = self.on_json_loading_failed(error)
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/wrappers/request.py", line 341, in on_json_loading_failed
+    raise BadRequest()
+werkzeug.exceptions.BadRequest: 400 Bad Request: The browser (or proxy) sent a request that this server could not understand.
+
+[2024-12-05 00:39:04 +0000] [2514316] [INFO] 127.0.0.1:42458 POST /v1/chat/completions 1.1 500 265 6632
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:39:21 +0000] [2514316] [INFO] 127.0.0.1:57600 POST /v1/completions 1.1 200 - 117650
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:41:43 +0000] [2514316] [INFO] 127.0.0.1:55004 POST /v1/chat/completions 1.1 200 - 127438
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:42:23 +0000] [2514316] [INFO] 127.0.0.1:34920 POST /v1/chat/completions 1.1 200 - 106165
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:42:56 +0000] [2514316] [INFO] 127.0.0.1:53430 POST /v1/chat/completions 1.1 200 - 107099
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:46:33 +0000] [2514316] [INFO] 127.0.0.1:46910 POST /v1/chat/completions 1.1 200 - 153539
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:46:37 +0000] [2514316] [INFO] 127.0.0.1:46924 POST /v1/chat/completions 1.1 200 - 140797
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:46:40 +0000] [2514316] [INFO] 127.0.0.1:46932 POST /v1/chat/completions 1.1 200 - 146207
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:46:43 +0000] [2514316] [INFO] 127.0.0.1:41236 POST /v1/chat/completions 1.1 200 - 150140
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:46:45 +0000] [2514316] [INFO] 127.0.0.1:41242 POST /v1/chat/completions 1.1 200 - 153142
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:46:48 +0000] [2514316] [INFO] 127.0.0.1:41248 POST /v1/chat/completions 1.1 200 - 166198
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:46:51 +0000] [2514316] [INFO] 127.0.0.1:41250 POST /v1/chat/completions 1.1 200 - 180872
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:46:54 +0000] [2514316] [INFO] 127.0.0.1:43762 POST /v1/chat/completions 1.1 200 - 644988
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:46:57 +0000] [2514316] [INFO] 127.0.0.1:43774 POST /v1/chat/completions 1.1 200 - 275812
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:47:00 +0000] [2514316] [INFO] 127.0.0.1:43786 POST /v1/chat/completions 1.1 200 - 395215
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:47:03 +0000] [2514316] [INFO] 127.0.0.1:57936 POST /v1/chat/completions 1.1 200 - 513546
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:47:07 +0000] [2514316] [INFO] 127.0.0.1:57946 POST /v1/chat/completions 1.1 200 - 1362337
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:47:11 +0000] [2514316] [INFO] 127.0.0.1:57950 POST /v1/chat/completions 1.1 200 - 1275027
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:47:15 +0000] [2514316] [INFO] 127.0.0.1:43216 POST /v1/chat/completions 1.1 200 - 1811633
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 00:47:20 +0000] [2514316] [INFO] 127.0.0.1:43232 POST /v1/chat/completions 1.1 200 - 2337393
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 01:16:28 +0000] [2514316] [INFO] 127.0.0.1:49468 POST /v1/chat/completions 1.1 - - 1745536990
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 01:41:15 +0000] [2514316] [INFO] 127.0.0.1:40010 POST /v1/chat/completions 1.1 - - 225381273
+{'Authorization': 'Bearer token-abc123'}
+{'Authorization': 'Bearer token-abc123'}
+[2024-12-05 04:45:04 +0000] [2514316] [INFO] 127.0.0.1:35680 POST /v1/completions 1.1 200 - 2105921
+[2024-12-05 10:49:46,620] ERROR in app: Exception on request POST /v1/chat/completions
+Traceback (most recent call last):
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/app.py", line 1404, in handle_request
+    return await self.full_dispatch_request(request_context)
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/app.py", line 1443, in full_dispatch_request
+    return await self.finalize_request(result, request_context)
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/app.py", line 1567, in finalize_request
+    response = await self.make_response(result)
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/quart/app.py", line 1374, in make_response
+    raise TypeError("The response value returned by the view function cannot be None")
+TypeError: The response value returned by the view function cannot be None
+{'Authorization': 'Bearer token-abc123'}
+Error occurred in disagg prefill proxy server
+
+Traceback (most recent call last):
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/aiohttp/streams.py", line 344, in _wait
+    await waiter
+asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/mount/mnemosyne-profiling/vllm/vllm/benchmarks/disagg_benchmarks/disagg_prefill_proxy_server.py", line 71, in handle_request
+    async for _ in forward_request('http://localhost:8100/v1/chat/completions',
+  File "/mount/mnemosyne-profiling/vllm/vllm/benchmarks/disagg_benchmarks/disagg_prefill_proxy_server.py", line 22, in forward_request
+    async for chunk_bytes in response.content.iter_chunked(
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/aiohttp/streams.py", line 52, in __anext__
+    rv = await self.read_func()
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/aiohttp/streams.py", line 425, in read
+    await self._wait("read")
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/aiohttp/streams.py", line 343, in _wait
+    with self._timer:
+  File "/home/azrsadmin/.conda/envs/vllm-splitwise/lib/python3.10/site-packages/aiohttp/helpers.py", line 671, in __exit__
+    raise asyncio.TimeoutError from exc_val
+asyncio.exceptions.TimeoutError
+
+[2024-12-05 10:49:46 +0000] [2514316] [INFO] 127.0.0.1:58608 POST /v1/chat/completions 1.1 500 265 21600656219

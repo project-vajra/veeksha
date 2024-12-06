@@ -1,0 +1,71 @@
+nohup: ignoring input
+None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
+Skipped 128
+Skipped 256
+Skipped 512
+Skipped 768
+Skipped 1024
+Skipped 1536
+Skipped 2048
+Skipped 3072
+Skipped 4096
+Skipped 6144
+Skipped 8192
+Skipped 12288
+Skipped 16384
+Skipped 24576
+Skipped 32768
+WARNING 12-05 04:49:44 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+  0%|          | 0/1 [10:00<?, ?it/s]
+Request 1 dispatched
+INFO 12-05 04:59:45 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-05 04:59:45 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-05 04:59:45 run_benchmark.py:302] Number of Completed Requests: 0.00000
+INFO 12-05 04:59:45 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-05 04:59:45 run_benchmark.py:302] Deadline Miss Rate: 0.00000
+INFO 12-05 04:59:45 run_benchmark.py:302] Duration: 600.06359
+INFO 12-05 04:59:45 run_benchmark.py:302] Completed Requests Per Min: 0.00000
+INFO 12-05 04:59:45 run_benchmark.py:302] Number of Prompt Tokens - Mean: 0.00000, P50: 0.00000, P90: 0.00000, P99: 0.00000
+INFO 12-05 04:59:45 run_benchmark.py:302] Number of Output Tokens - Mean: 0.00000, P50: 0.00000, P90: 0.00000, P99: 0.00000
+INFO 12-05 04:59:45 run_benchmark.py:302] Number of Total Tokens - Mean: 0.00000, P50: 0.00000, P90: 0.00000, P99: 0.00000
+INFO 12-05 04:59:45 run_benchmark.py:302] Time per Output Token - Mean: 0.00000, P50: 0.00000, P90: 0.00000, P99: 0.00000
+INFO 12-05 04:59:45 run_benchmark.py:302] Time to First Token - Mean: 0.00000, P50: 0.00000, P90: 0.00000, P99: 0.00000
+INFO 12-05 04:59:45 run_benchmark.py:302] Time Between Tokens - Mean: 0.00000, P50: 0.00000, P90: 0.00000, P99: 0.00000
+INFO 12-05 04:59:45 run_benchmark.py:302] End to End Latency - Mean: 0.00000, P50: 0.00000, P90: 0.00000, P99: 0.00000
+INFO 12-05 04:59:45 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.00000, P50: 0.00000, P90: 0.00000, P99: 0.00000
+INFO 12-05 04:59:45 run_benchmark.py:302] Output Throughput - Mean: 0.00000, P50: 0.00000, P90: 0.00000, P99: 0.00000
+INFO 12-05 04:59:45 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.00000, P50: 0.00000, P90: 0.00000, P99: 0.00000
+INFO 12-05 04:59:45 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 0.00000, P50: 0.00000, P90: 0.00000, P99: 0.00000
+Traceback (most recent call last):
+  File "/home/azureuser/mambaforge/envs/etalon/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/azureuser/mambaforge/envs/etalon/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/mount/mnemosyne-profiling/etalon/etalon/prefill_profiler.py", line 261, in <module>
+    prefill_profiler.run()
+  File "/mount/mnemosyne-profiling/etalon/etalon/prefill_profiler.py", line 123, in run
+    run_benchmark(
+  File "/mount/mnemosyne-profiling/etalon/etalon/run_benchmark.py", line 306, in run_benchmark
+    service_metrics.store_output(output_dir)
+  File "/mount/mnemosyne-profiling/etalon/etalon/metrics/service_metrics.py", line 107, in store_output
+    self.metric_store.store_output(output_dir)
+  File "/mount/mnemosyne-profiling/etalon/etalon/metrics/metric_store.py", line 228, in store_output
+    self.store_additional_outputs(output_dir)
+  File "/mount/mnemosyne-profiling/etalon/etalon/metrics/metric_store.py", line 231, in store_additional_outputs
+    self.store_deadline_miss_rate_for_target_tbt(output_dir)
+  File "/mount/mnemosyne-profiling/etalon/etalon/metrics/metric_store.py", line 239, in store_deadline_miss_rate_for_target_tbt
+    get_deadline_miss_rate_for_target_tbt_values(
+  File "/mount/mnemosyne-profiling/etalon/etalon/metrics/metric_utils.py", line 106, in get_deadline_miss_rate_for_target_tbt_values
+    assert len(tbt_times)
+AssertionError
+Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+ERROR 12-05 10:49:46 openai_chat_completions_client.py:101] Request Error: <!doctype html>
+ERROR 12-05 10:49:46 openai_chat_completions_client.py:101] <html lang=en>
+ERROR 12-05 10:49:46 openai_chat_completions_client.py:101] <title>500 Internal Server Error</title>
+ERROR 12-05 10:49:46 openai_chat_completions_client.py:101] <h1>Internal Server Error</h1>
+ERROR 12-05 10:49:46 openai_chat_completions_client.py:101] <p>The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.</p>
+ERROR 12-05 10:49:46 openai_chat_completions_client.py:101] 
+ERROR 12-05 10:49:46 openai_chat_completions_client.py:147] Warning Or Error: (500) 500 Server Error:  for url: http://localhost:8000/v1/chat/completions

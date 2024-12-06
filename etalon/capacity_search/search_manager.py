@@ -26,6 +26,10 @@ def run_search(
         # resource_manager,
         # resource_mapping,
     )
+
+    if args.fixed_qps_values:
+        return capacity_search.num_fixed_qps_values()
+
     return capacity_search.search()
 
 
@@ -38,7 +42,7 @@ class SearchManager:
         self.args = args
         self.config = config
 
-        ray.init(ignore_reinit_error=True)
+        # ray.init(ignore_reinit_error=True)
 
     def run(self):
         job_configs = JobConfig.generate_job_configs(self.config)

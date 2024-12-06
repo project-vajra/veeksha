@@ -67,6 +67,13 @@ def get_args():
         action=argparse.BooleanOptionalAction,
         default=False,
     )
+    parser.add_argument(
+        "--fixed-qps-values",
+        type=float,
+        nargs="+",
+        default=[0.25, 0.75, 1.25],
+        help="Fixed QPS values to search for",
+    )
 
     args = parser.parse_args()
 

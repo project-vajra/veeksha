@@ -1,0 +1,1078 @@
+nohup: ignoring input
+None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
+WARNING 12-04 07:19:47 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+100%|██████████| 1/1 [00:00<00:00,  1.48it/s]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:00<00:00,  1.20it/s]
+Request 1 dispatched
+INFO 12-04 07:19:50 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:19:50 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:19:50 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:19:50 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:19:50 run_benchmark.py:302] Deadline Miss Rate: 0.00000
+INFO 12-04 07:19:50 run_benchmark.py:302] Duration: 0.70103
+INFO 12-04 07:19:50 run_benchmark.py:302] Completed Requests Per Min: 85.58808
+INFO 12-04 07:19:50 run_benchmark.py:302] Number of Prompt Tokens - Mean: 128.00000, P50: 128.12433, P90: 128.12433, P99: 128.12433
+INFO 12-04 07:19:50 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:19:50 run_benchmark.py:302] Number of Total Tokens - Mean: 145.00000, P50: 145.03878, P90: 145.03878, P99: 145.03878
+INFO 12-04 07:19:50 run_benchmark.py:302] Time per Output Token - Mean: 0.00695, P50: 0.00695, P90: 0.00695, P99: 0.00695
+INFO 12-04 07:19:50 run_benchmark.py:302] Time to First Token - Mean: 0.05995, P50: 0.05990, P90: 0.05990, P99: 0.05990
+INFO 12-04 07:19:50 run_benchmark.py:302] Time Between Tokens - Mean: 0.00695, P50: 0.00779, P90: 0.00816, P99: 0.00827
+INFO 12-04 07:19:50 run_benchmark.py:302] End to End Latency - Mean: 0.17118, P50: 0.17119, P90: 0.17119, P99: 0.17119
+INFO 12-04 07:19:50 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.01007, P50: 0.01006, P90: 0.01006, P99: 0.01006
+INFO 12-04 07:19:50 run_benchmark.py:302] Output Throughput - Mean: 99.31256, P50: 99.38498, P90: 99.38498, P99: 99.38498
+INFO 12-04 07:19:50 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.00000, P50: 0.00000, P90: 0.00000, P99: 0.00000
+INFO 12-04 07:19:50 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 0.00445, P50: 0.00445, P90: 0.00445, P99: 0.00445
+INFO 12-04 07:19:50 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 128, max: 128, mean: 128.0, 25th percentile: 128.12432962288904, median: 128.12432962288904, 75th percentile: 128.12432962288904, 95th percentile: 128.12432962288904, 99th percentile: 128.12432962288904 99.9th percentile: 128.12432962288904
+INFO 12-04 07:19:51 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:19:51 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 145, max: 145, mean: 145.0, 25th percentile: 145.03878058917988, median: 145.03878058917988, 75th percentile: 145.03878058917988, 95th percentile: 145.03878058917988, 99th percentile: 145.03878058917988 99.9th percentile: 145.03878058917988
+INFO 12-04 07:19:51 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.006951400748221204, max: 0.006951400748221204, mean: 0.006951400748221204, 25th percentile: 0.0069500796687990965, median: 0.0069500796687990965, 75th percentile: 0.0069500796687990965, 95th percentile: 0.0069500796687990965, 99th percentile: 0.0069500796687990965 99.9th percentile: 0.0069500796687990965
+INFO 12-04 07:19:51 cdf_sketch.py:56] ttft: Time to First Token stats: min: 0.0599543169955723, max: 0.0599543169955723, mean: 0.0599543169955723, 25th percentile: 0.05990463257717167, median: 0.05990463257717167, 75th percentile: 0.05990463257717167, 95th percentile: 0.05990463257717167, 99th percentile: 0.05990463257717167 99.9th percentile: 0.05990463257717167
+INFO 12-04 07:19:51 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.00839764199918136, mean: 0.006951400748221204, 25th percentile: 0.0075289316252923465, median: 0.007789316852914951, 75th percentile: 0.008010499910893521, 95th percentile: 0.008270981472466509, 99th percentile: 0.008270981472466509 99.9th percentile: 0.008270981472466509
+INFO 12-04 07:19:51 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 0.17117672896711156, max: 0.17117672896711156, mean: 0.17117672896711156, 25th percentile: 0.17118660017665313, median: 0.17118660017665313, 75th percentile: 0.17118660017665313, 95th percentile: 0.17118660017665313, 99th percentile: 0.17118660017665313 99.9th percentile: 0.17118660017665313
+INFO 12-04 07:19:51 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.010069219351006561, max: 0.010069219351006561, mean: 0.010069219351006561, 25th percentile: 0.010061872152153168, median: 0.010061872152153168, 75th percentile: 0.010061872152153168, 95th percentile: 0.010061872152153168, 99th percentile: 0.010061872152153168 99.9th percentile: 0.010061872152153168
+INFO 12-04 07:19:51 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 99.31256487128128, max: 99.31256487128128, mean: 99.31256487128128, 25th percentile: 99.38498371657478, median: 99.38498371657478, 75th percentile: 99.38498371657478, 95th percentile: 99.38498371657478, 99th percentile: 99.38498371657478 99.9th percentile: 99.38498371657478
+INFO 12-04 07:19:51 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.0, max: 0.0, mean: 0.0, 25th percentile: 0, median: 0, 75th percentile: 0, 95th percentile: 0, 99th percentile: 0 99.9th percentile: 0
+INFO 12-04 07:19:52 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 0.004447473508864732, max: 0.004447473508864732, mean: 0.004447473508864732, 25th percentile: 0.004449327557033626, median: 0.004449327557033626, 75th percentile: 0.004449327557033626, 95th percentile: 0.004449327557033626, 99th percentile: 0.004449327557033626 99.9th percentile: 0.004449327557033626
+WARNING 12-04 07:19:52 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:00<00:00,  1.51it/s]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:00<00:00,  1.24it/s]
+Request 1 dispatched
+INFO 12-04 07:19:53 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:19:53 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:19:53 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:19:53 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:19:53 run_benchmark.py:302] Deadline Miss Rate: 0.00000
+INFO 12-04 07:19:53 run_benchmark.py:302] Duration: 0.70091
+INFO 12-04 07:19:53 run_benchmark.py:302] Completed Requests Per Min: 85.60270
+INFO 12-04 07:19:53 run_benchmark.py:302] Number of Prompt Tokens - Mean: 256.00000, P50: 255.95492, P90: 255.95492, P99: 255.95492
+INFO 12-04 07:19:53 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:19:53 run_benchmark.py:302] Number of Total Tokens - Mean: 273.00000, P50: 272.87160, P90: 272.87160, P99: 272.87160
+INFO 12-04 07:19:53 run_benchmark.py:302] Time per Output Token - Mean: 0.00761, P50: 0.00760, P90: 0.00760, P99: 0.00760
+INFO 12-04 07:19:53 run_benchmark.py:302] Time to First Token - Mean: 0.04747, P50: 0.04750, P90: 0.04750, P99: 0.04750
+INFO 12-04 07:19:53 run_benchmark.py:302] Time Between Tokens - Mean: 0.00761, P50: 0.00798, P90: 0.00821, P99: 0.00832
+INFO 12-04 07:19:53 run_benchmark.py:302] End to End Latency - Mean: 0.16917, P50: 0.16914, P90: 0.16914, P99: 0.16914
+INFO 12-04 07:19:53 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.00995, P50: 0.00994, P90: 0.00994, P99: 0.00994
+INFO 12-04 07:19:53 run_benchmark.py:302] Output Throughput - Mean: 100.49329, P50: 100.58479, P90: 100.58479, P99: 100.58479
+INFO 12-04 07:19:53 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.00000, P50: 0.00000, P90: 0.00000, P99: 0.00000
+INFO 12-04 07:19:53 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 0.00416, P50: 0.00417, P90: 0.00417, P99: 0.00417
+INFO 12-04 07:19:53 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 256, max: 256, mean: 256.0, 25th percentile: 255.95492335581315, median: 255.95492335581315, 75th percentile: 255.95492335581315, 95th percentile: 255.95492335581315, 99th percentile: 255.95492335581315 99.9th percentile: 255.95492335581315
+INFO 12-04 07:19:53 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:19:53 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 273, max: 273, mean: 273.0, 25th percentile: 272.8716040364805, median: 272.8716040364805, 75th percentile: 272.8716040364805, 95th percentile: 272.8716040364805, 99th percentile: 272.8716040364805 99.9th percentile: 272.8716040364805
+INFO 12-04 07:19:54 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.007606031376781175, max: 0.007606031376781175, mean: 0.007606031376781175, 25th percentile: 0.007604598671440492, median: 0.007604598671440492, 75th percentile: 0.007604598671440492, 95th percentile: 0.007604598671440492, 99th percentile: 0.007604598671440492 99.9th percentile: 0.007604598671440492
+INFO 12-04 07:19:54 cdf_sketch.py:56] ttft: Time to First Token stats: min: 0.0474690209957771, max: 0.0474690209957771, mean: 0.0474690209957771, 25th percentile: 0.047501142496755494, median: 0.047501142496755494, 75th percentile: 0.047501142496755494, 95th percentile: 0.047501142496755494, 99th percentile: 0.047501142496755494 99.9th percentile: 0.047501142496755494
+INFO 12-04 07:19:54 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.010631171986460686, mean: 0.007606031376781175, 25th percentile: 0.007696403614098345, median: 0.007978521899251242, 75th percentile: 0.008139698787313627, 95th percentile: 0.008320756553811835, 99th percentile: 0.008320756553811835 99.9th percentile: 0.008320756553811835
+INFO 12-04 07:19:54 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 0.1691655230242759, max: 0.1691655230242759, mean: 0.1691655230242759, 25th percentile: 0.1691446365789772, median: 0.1691446365789772, 75th percentile: 0.1691446365789772, 95th percentile: 0.1691446365789772, 99th percentile: 0.1691446365789772 99.9th percentile: 0.1691446365789772
+INFO 12-04 07:19:54 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.009950913119075052, max: 0.009950913119075052, mean: 0.009950913119075052, 25th percentile: 0.009941851212208306, median: 0.009941851212208306, 75th percentile: 0.009941851212208306, 95th percentile: 0.009941851212208306, 99th percentile: 0.009941851212208306 99.9th percentile: 0.009941851212208306
+INFO 12-04 07:19:54 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 100.49329021706411, max: 100.49329021706411, mean: 100.49329021706411, 25th percentile: 100.5847883512911, median: 100.5847883512911, 75th percentile: 100.5847883512911, 95th percentile: 100.5847883512911, 99th percentile: 100.5847883512911 99.9th percentile: 100.5847883512911
+INFO 12-04 07:19:54 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.0, max: 0.0, mean: 0.0, 25th percentile: 0, median: 0, 75th percentile: 0, 95th percentile: 0, 99th percentile: 0 99.9th percentile: 0
+INFO 12-04 07:19:54 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 0.004163256414560686, max: 0.004163256414560686, mean: 0.004163256414560686, 25th percentile: 0.004165152759848989, median: 0.004165152759848989, 75th percentile: 0.004165152759848989, 95th percentile: 0.004165152759848989, 99th percentile: 0.004165152759848989 99.9th percentile: 0.004165152759848989
+WARNING 12-04 07:19:55 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:00<00:00,  1.49it/s]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:00<00:00,  1.22it/s]
+Request 1 dispatched
+INFO 12-04 07:19:56 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:19:56 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:19:56 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:19:56 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:19:56 run_benchmark.py:302] Deadline Miss Rate: 0.00000
+INFO 12-04 07:19:56 run_benchmark.py:302] Duration: 0.70098
+INFO 12-04 07:19:56 run_benchmark.py:302] Completed Requests Per Min: 85.59404
+INFO 12-04 07:19:56 run_benchmark.py:302] Number of Prompt Tokens - Mean: 512.00000, P50: 512.34672, P90: 512.34672, P99: 512.34672
+INFO 12-04 07:19:56 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:19:56 run_benchmark.py:302] Number of Total Tokens - Mean: 529.00000, P50: 529.00696, P90: 529.00696, P99: 529.00696
+INFO 12-04 07:19:56 run_benchmark.py:302] Time per Output Token - Mean: 0.00736, P50: 0.00737, P90: 0.00737, P99: 0.00737
+INFO 12-04 07:19:56 run_benchmark.py:302] Time to First Token - Mean: 0.05112, P50: 0.05115, P90: 0.05115, P99: 0.05115
+INFO 12-04 07:19:56 run_benchmark.py:302] Time Between Tokens - Mean: 0.00736, P50: 0.00782, P90: 0.00830, P99: 0.00837
+INFO 12-04 07:19:56 run_benchmark.py:302] End to End Latency - Mean: 0.16890, P50: 0.16881, P90: 0.16881, P99: 0.16881
+INFO 12-04 07:19:56 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.00994, P50: 0.00994, P90: 0.00994, P99: 0.00994
+INFO 12-04 07:19:56 run_benchmark.py:302] Output Throughput - Mean: 100.65209, P50: 100.58479, P90: 100.58479, P99: 100.58479
+INFO 12-04 07:19:56 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.00000, P50: 0.00000, P90: 0.00000, P99: 0.00000
+INFO 12-04 07:19:56 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 0.00416, P50: 0.00417, P90: 0.00417, P99: 0.00417
+INFO 12-04 07:19:56 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 512, max: 512, mean: 512.0, 25th percentile: 512.3467181125903, median: 512.3467181125903, 75th percentile: 512.3467181125903, 95th percentile: 512.3467181125903, 99th percentile: 512.3467181125903 99.9th percentile: 512.3467181125903
+INFO 12-04 07:19:56 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:19:56 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 529, max: 529, mean: 529.0, 25th percentile: 529.0069608796209, median: 529.0069608796209, 75th percentile: 529.0069608796209, 95th percentile: 529.0069608796209, 99th percentile: 529.0069608796209 99.9th percentile: 529.0069608796209
+INFO 12-04 07:19:56 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.007361280255281599, max: 0.007361280255281599, mean: 0.007361280255281599, 25th percentile: 0.007365103788799681, median: 0.007365103788799681, 75th percentile: 0.007365103788799681, 95th percentile: 0.007365103788799681, 99th percentile: 0.007365103788799681 99.9th percentile: 0.007365103788799681
+INFO 12-04 07:19:56 cdf_sketch.py:56] ttft: Time to First Token stats: min: 0.05111814002157189, max: 0.05111814002157189, mean: 0.05111814002157189, 25th percentile: 0.05114955477104179, median: 0.05114955477104179, 75th percentile: 0.05114955477104179, 95th percentile: 0.05114955477104179, 99th percentile: 0.05114955477104179 99.9th percentile: 0.05114955477104179
+INFO 12-04 07:19:56 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.008497348986566067, mean: 0.007361280255281599, 25th percentile: 0.007248199814943368, median: 0.007820536528458022, 75th percentile: 0.008221504147545959, 95th percentile: 0.008370831183491446, 99th percentile: 0.008370831183491446 99.9th percentile: 0.008370831183491446
+INFO 12-04 07:19:57 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 0.16889862410607748, max: 0.16889862410607748, mean: 0.16889862410607748, 25th percentile: 0.16880668525714104, median: 0.16880668525714104, 75th percentile: 0.16880668525714104, 95th percentile: 0.16880668525714104, 99th percentile: 0.16880668525714104 99.9th percentile: 0.16880668525714104
+INFO 12-04 07:19:57 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.00993521318271044, max: 0.00993521318271044, mean: 0.00993521318271044, 25th percentile: 0.009941851212208306, median: 0.009941851212208306, 75th percentile: 0.009941851212208306, 95th percentile: 0.009941851212208306, 99th percentile: 0.009941851212208306 99.9th percentile: 0.009941851212208306
+INFO 12-04 07:19:57 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 100.65209287509104, max: 100.65209287509104, mean: 100.65209287509104, 25th percentile: 100.5847883512911, median: 100.5847883512911, 75th percentile: 100.5847883512911, 95th percentile: 100.5847883512911, 99th percentile: 100.5847883512911 99.9th percentile: 100.5847883512911
+INFO 12-04 07:19:57 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.0, max: 0.0, mean: 0.0, 25th percentile: 0, median: 0, 75th percentile: 0, 95th percentile: 0, 99th percentile: 0 99.9th percentile: 0
+INFO 12-04 07:19:57 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 0.004163256414560686, max: 0.004163256414560686, mean: 0.004163256414560686, 25th percentile: 0.004165152759848989, median: 0.004165152759848989, 75th percentile: 0.004165152759848989, 95th percentile: 0.004165152759848989, 99th percentile: 0.004165152759848989 99.9th percentile: 0.004165152759848989
+WARNING 12-04 07:19:57 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:00<00:00,  1.31it/s]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:00<00:00,  1.09it/s]
+Request 1 dispatched
+INFO 12-04 07:19:59 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:19:59 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:19:59 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:19:59 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:19:59 run_benchmark.py:302] Deadline Miss Rate: 0.00000
+INFO 12-04 07:19:59 run_benchmark.py:302] Duration: 0.80113
+INFO 12-04 07:19:59 run_benchmark.py:302] Completed Requests Per Min: 74.89441
+INFO 12-04 07:19:59 run_benchmark.py:302] Number of Prompt Tokens - Mean: 768.00000, P50: 767.39504, P90: 767.39504, P99: 767.39504
+INFO 12-04 07:19:59 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:19:59 run_benchmark.py:302] Number of Total Tokens - Mean: 785.00000, P50: 784.46482, P90: 784.46482, P99: 784.46482
+INFO 12-04 07:19:59 run_benchmark.py:302] Time per Output Token - Mean: 0.00733, P50: 0.00732, P90: 0.00732, P99: 0.00732
+INFO 12-04 07:19:59 run_benchmark.py:302] Time to First Token - Mean: 0.08800, P50: 0.08795, P90: 0.08795, P99: 0.08795
+INFO 12-04 07:19:59 run_benchmark.py:302] Time Between Tokens - Mean: 0.00733, P50: 0.00776, P90: 0.00819, P99: 0.00821
+INFO 12-04 07:19:59 run_benchmark.py:302] End to End Latency - Mean: 0.20524, P50: 0.20536, P90: 0.20536, P99: 0.20536
+INFO 12-04 07:19:59 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.01207, P50: 0.01207, P90: 0.01207, P99: 0.01207
+INFO 12-04 07:19:59 run_benchmark.py:302] Output Throughput - Mean: 82.82982, P50: 82.84745, P90: 82.84745, P99: 82.84745
+INFO 12-04 07:19:59 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.00000, P50: 0.00000, P90: 0.00000, P99: 0.00000
+INFO 12-04 07:19:59 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 0.00672, P50: 0.00672, P90: 0.00672, P99: 0.00672
+INFO 12-04 07:19:59 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 768, max: 768, mean: 768.0, 25th percentile: 767.3950399426743, median: 767.3950399426743, 75th percentile: 767.3950399426743, 95th percentile: 767.3950399426743, 99th percentile: 767.3950399426743 99.9th percentile: 767.3950399426743
+INFO 12-04 07:19:59 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:19:59 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 785, max: 785, mean: 785.0, 25th percentile: 784.4648155675877, median: 784.4648155675877, 75th percentile: 784.4648155675877, 95th percentile: 784.4648155675877, 99th percentile: 784.4648155675877 99.9th percentile: 784.4648155675877
+INFO 12-04 07:19:59 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.007327550249101478, max: 0.007327550249101478, mean: 0.007327550249101478, 25th percentile: 0.007321045458546483, median: 0.007321045458546483, 75th percentile: 0.007321045458546483, 95th percentile: 0.007321045458546483, 99th percentile: 0.007321045458546483 99.9th percentile: 0.007321045458546483
+INFO 12-04 07:19:59 cdf_sketch.py:56] ttft: Time to First Token stats: min: 0.0879992870031856, max: 0.0879992870031856, mean: 0.0879992870031856, 25th percentile: 0.08794872451125174, median: 0.08794872451125174, 75th percentile: 0.08794872451125174, 95th percentile: 0.08794872451125174, 99th percentile: 0.08794872451125174 99.9th percentile: 0.08794872451125174
+INFO 12-04 07:19:59 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.008603366994066164, mean: 0.007327550249101478, 25th percentile: 0.007394623213284427, median: 0.0077582218066907845, 75th percentile: 0.008091006800395751, 95th percentile: 0.00820507756583258, 99th percentile: 0.00820507756583258 99.9th percentile: 0.00820507756583258
+INFO 12-04 07:19:59 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 0.20524009098880924, max: 0.20524009098880924, mean: 0.20524009098880924, 25th percentile: 0.2053578878323367, median: 0.2053578878323367, 75th percentile: 0.2053578878323367, 95th percentile: 0.2053578878323367, 99th percentile: 0.2053578878323367 99.9th percentile: 0.2053578878323367
+INFO 12-04 07:19:59 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.012072946528753485, max: 0.012072946528753485, mean: 0.012072946528753485, 25th percentile: 0.012070365382996768, median: 0.012070365382996768, 75th percentile: 0.012070365382996768, 95th percentile: 0.012070365382996768, 99th percentile: 0.012070365382996768 99.9th percentile: 0.012070365382996768
+INFO 12-04 07:19:59 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 82.82982100669078, max: 82.82982100669078, mean: 82.82982100669078, 25th percentile: 82.84745061725091, median: 82.84745061725091, 75th percentile: 82.84745061725091, 95th percentile: 82.84745061725091, 99th percentile: 82.84745061725091 99.9th percentile: 82.84745061725091
+INFO 12-04 07:19:59 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.0, max: 0.0, mean: 0.0, 25th percentile: 0, median: 0, 75th percentile: 0, 95th percentile: 0, 99th percentile: 0 99.9th percentile: 0
+INFO 12-04 07:20:00 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 0.006721210263297098, max: 0.006721210263297098, mean: 0.006721210263297098, 25th percentile: 0.006717748886687155, median: 0.006717748886687155, 75th percentile: 0.006717748886687155, 95th percentile: 0.006717748886687155, 99th percentile: 0.006717748886687155 99.9th percentile: 0.006717748886687155
+WARNING 12-04 07:20:00 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:00<00:00,  1.43it/s]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:00<00:00,  1.18it/s]
+Request 1 dispatched
+INFO 12-04 07:20:01 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:20:01 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:20:01 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:20:01 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:20:01 run_benchmark.py:302] Deadline Miss Rate: 0.00000
+INFO 12-04 07:20:01 run_benchmark.py:302] Duration: 0.70088
+INFO 12-04 07:20:01 run_benchmark.py:302] Completed Requests Per Min: 85.60641
+INFO 12-04 07:20:01 run_benchmark.py:302] Number of Prompt Tokens - Mean: 1024.00000, P50: 1023.51884, P90: 1023.51884, P99: 1023.51884
+INFO 12-04 07:20:01 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:20:01 run_benchmark.py:302] Number of Total Tokens - Mean: 1041.00000, P50: 1040.02686, P90: 1040.02686, P99: 1040.02686
+INFO 12-04 07:20:01 run_benchmark.py:302] Time per Output Token - Mean: 0.00768, P50: 0.00768, P90: 0.00768, P99: 0.00768
+INFO 12-04 07:20:01 run_benchmark.py:302] Time to First Token - Mean: 0.08376, P50: 0.08383, P90: 0.08383, P99: 0.08383
+INFO 12-04 07:20:01 run_benchmark.py:302] Time Between Tokens - Mean: 0.00768, P50: 0.00824, P90: 0.00873, P99: 0.00876
+INFO 12-04 07:20:01 run_benchmark.py:302] End to End Latency - Mean: 0.20659, P50: 0.20659, P90: 0.20659, P99: 0.20659
+INFO 12-04 07:20:01 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.01215, P50: 0.01214, P90: 0.01214, P99: 0.01214
+INFO 12-04 07:20:01 run_benchmark.py:302] Output Throughput - Mean: 82.28683, P50: 82.35185, P90: 82.35185, P99: 82.35185
+INFO 12-04 07:20:01 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.00000, P50: 0.00000, P90: 0.00000, P99: 0.00000
+INFO 12-04 07:20:01 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 0.00672, P50: 0.00672, P90: 0.00672, P99: 0.00672
+INFO 12-04 07:20:01 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 1024, max: 1024, mean: 1024.0, 25th percentile: 1023.5188379294614, median: 1023.5188379294614, 75th percentile: 1023.5188379294614, 95th percentile: 1023.5188379294614, 99th percentile: 1023.5188379294614 99.9th percentile: 1023.5188379294614
+INFO 12-04 07:20:01 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:20:01 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 1041, max: 1041, mean: 1041.0, 25th percentile: 1040.0268568204501, median: 1040.0268568204501, 75th percentile: 1040.0268568204501, 95th percentile: 1040.0268568204501, 99th percentile: 1040.0268568204501 99.9th percentile: 1040.0268568204501
+INFO 12-04 07:20:02 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.007676949746382888, max: 0.007676949746382888, mean: 0.007676949746382888, 25th percentile: 0.007681026184299946, median: 0.007681026184299946, 75th percentile: 0.007681026184299946, 95th percentile: 0.007681026184299946, 99th percentile: 0.007681026184299946 99.9th percentile: 0.007681026184299946
+INFO 12-04 07:20:02 cdf_sketch.py:56] ttft: Time to First Token stats: min: 0.08376322197727859, max: 0.08376322197727859, mean: 0.08376322197727859, 25th percentile: 0.08382689952081433, median: 0.08382689952081433, 75th percentile: 0.08382689952081433, 95th percentile: 0.08382689952081433, 99th percentile: 0.08382689952081433 99.9th percentile: 0.08382689952081433
+INFO 12-04 07:20:02 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.009369329985929653, mean: 0.007676949746382888, 25th percentile: 0.007454017479082802, median: 0.008237963615308814, 75th percentile: 0.008387589604279218, 95th percentile: 0.00876488326506922, 99th percentile: 0.00876488326506922 99.9th percentile: 0.00876488326506922
+INFO 12-04 07:20:02 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 0.2065944179194048, max: 0.2065944179194048, mean: 0.2065944179194048, 25th percentile: 0.20659373941848602, median: 0.20659373941848602, 75th percentile: 0.20659373941848602, 95th percentile: 0.20659373941848602, 99th percentile: 0.20659373941848602 99.9th percentile: 0.20659373941848602
+INFO 12-04 07:20:02 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.012152612818788518, max: 0.012152612818788518, mean: 0.012152612818788518, 25th percentile: 0.0121430053013434, median: 0.0121430053013434, 75th percentile: 0.0121430053013434, 95th percentile: 0.0121430053013434, 99th percentile: 0.0121430053013434 99.9th percentile: 0.0121430053013434
+INFO 12-04 07:20:02 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 82.28683122809215, max: 82.28683122809215, mean: 82.28683122809215, 25th percentile: 82.35185402491493, median: 82.35185402491493, 75th percentile: 82.35185402491493, 95th percentile: 82.35185402491493, 99th percentile: 82.35185402491493 99.9th percentile: 82.35185402491493
+INFO 12-04 07:20:02 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.0, max: 0.0, mean: 0.0, 25th percentile: 0, median: 0, 75th percentile: 0, 95th percentile: 0, 99th percentile: 0 99.9th percentile: 0
+INFO 12-04 07:20:02 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 0.006721210263297098, max: 0.006721210263297098, mean: 0.006721210263297098, 25th percentile: 0.006717748886687155, median: 0.006717748886687155, 75th percentile: 0.006717748886687155, 95th percentile: 0.006717748886687155, 99th percentile: 0.006717748886687155 99.9th percentile: 0.006717748886687155
+WARNING 12-04 07:20:03 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:00<00:00,  1.33it/s]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:00<00:00,  1.10it/s]
+Request 1 dispatched
+INFO 12-04 07:20:04 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:20:04 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:20:04 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:20:04 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:20:04 run_benchmark.py:302] Deadline Miss Rate: 0.05882
+INFO 12-04 07:20:04 run_benchmark.py:302] Duration: 0.80114
+INFO 12-04 07:20:04 run_benchmark.py:302] Completed Requests Per Min: 74.89281
+INFO 12-04 07:20:04 run_benchmark.py:302] Number of Prompt Tokens - Mean: 1536.00000, P50: 1536.09989, P90: 1536.09989, P99: 1536.09989
+INFO 12-04 07:20:04 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:20:04 run_benchmark.py:302] Number of Total Tokens - Mean: 1553.00000, P50: 1551.53796, P90: 1551.53796, P99: 1551.53796
+INFO 12-04 07:20:04 run_benchmark.py:302] Time per Output Token - Mean: 0.00739, P50: 0.00738, P90: 0.00738, P99: 0.00738
+INFO 12-04 07:20:04 run_benchmark.py:302] Time to First Token - Mean: 0.12505, P50: 0.12506, P90: 0.12506, P99: 0.12506
+INFO 12-04 07:20:04 run_benchmark.py:302] Time Between Tokens - Mean: 0.00739, P50: 0.00782, P90: 0.00812, P99: 0.00856
+INFO 12-04 07:20:04 run_benchmark.py:302] End to End Latency - Mean: 0.24324, P50: 0.24341, P90: 0.24341, P99: 0.24341
+INFO 12-04 07:20:04 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.01431, P50: 0.01431, P90: 0.01431, P99: 0.01431
+INFO 12-04 07:20:04 run_benchmark.py:302] Output Throughput - Mean: 69.88894, P50: 69.89548, P90: 69.89548, P99: 69.89548
+INFO 12-04 07:20:04 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.05882, P50: 0.05884, P90: 0.05884, P99: 0.05884
+INFO 12-04 07:20:04 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 0.02520, P50: 0.02520, P90: 0.02520, P99: 0.02520
+INFO 12-04 07:20:04 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 1536, max: 1536, mean: 1536.0, 25th percentile: 1536.0998923390307, median: 1536.0998923390307, 75th percentile: 1536.0998923390307, 95th percentile: 1536.0998923390307, 99th percentile: 1536.0998923390307 99.9th percentile: 1536.0998923390307
+INFO 12-04 07:20:04 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:20:04 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 1553, max: 1553, mean: 1553.0, 25th percentile: 1551.5379580868073, median: 1551.5379580868073, 75th percentile: 1551.5379580868073, 95th percentile: 1551.5379580868073, 99th percentile: 1551.5379580868073 99.9th percentile: 1551.5379580868073
+INFO 12-04 07:20:04 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.007386869498077431, max: 0.007386869498077431, mean: 0.007386869498077431, 25th percentile: 0.007379848741329812, median: 0.007379848741329812, 75th percentile: 0.007379848741329812, 95th percentile: 0.007379848741329812, 99th percentile: 0.007379848741329812 99.9th percentile: 0.007379848741329812
+INFO 12-04 07:20:04 cdf_sketch.py:56] ttft: Time to First Token stats: min: 0.12505316297756508, max: 0.12505316297756508, mean: 0.12505316297756508, 25th percentile: 0.1250550557058603, median: 0.1250550557058603, 75th percentile: 0.1250550557058603, 95th percentile: 0.1250550557058603, 99th percentile: 0.1250550557058603 99.9th percentile: 0.1250550557058603
+INFO 12-04 07:20:04 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.0088388979784213, mean: 0.007386869498077431, 25th percentile: 0.007544004561479118, median: 0.007820536528458022, 75th percentile: 0.007962580796555435, 95th percentile: 0.008557030210927043, 99th percentile: 0.008557030210927043 99.9th percentile: 0.008557030210927043
+INFO 12-04 07:20:05 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 0.24324307494680397, max: 0.24324307494680397, mean: 0.24324307494680397, 25th percentile: 0.24341171449791046, median: 0.24341171449791046, 75th percentile: 0.24341171449791046, 95th percentile: 0.24341171449791046, 99th percentile: 0.24341171449791046 99.9th percentile: 0.24341171449791046
+INFO 12-04 07:20:05 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.01430841617334141, max: 0.01430841617334141, mean: 0.01430841617334141, 25th percentile: 0.014307063456409525, median: 0.014307063456409525, 75th percentile: 0.014307063456409525, 95th percentile: 0.014307063456409525, 99th percentile: 0.014307063456409525 99.9th percentile: 0.014307063456409525
+INFO 12-04 07:20:05 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 69.88893724402149, max: 69.88893724402149, mean: 69.88893724402149, 25th percentile: 69.89547526973487, median: 69.89547526973487, 75th percentile: 69.89547526973487, 95th percentile: 69.89547526973487, 99th percentile: 69.89547526973487 99.9th percentile: 69.89547526973487
+INFO 12-04 07:20:05 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.058823529411764705, max: 0.058823529411764705, mean: 0.058823529411764705, 25th percentile: 0.058835995422023425, median: 0.058835995422023425, 75th percentile: 0.058835995422023425, 95th percentile: 0.058835995422023425, 99th percentile: 0.058835995422023425 99.9th percentile: 0.058835995422023425
+INFO 12-04 07:20:05 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 0.02519532139306007, max: 0.02519532139306007, mean: 0.02519532139306007, 25th percentile: 0.025197720951150127, median: 0.025197720951150127, 75th percentile: 0.025197720951150127, 95th percentile: 0.025197720951150127, 99th percentile: 0.025197720951150127 99.9th percentile: 0.025197720951150127
+WARNING 12-04 07:20:05 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:00<00:00,  1.28it/s]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:00<00:00,  1.08it/s]
+Request 1 dispatched
+INFO 12-04 07:20:07 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:20:07 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:20:07 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:20:07 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:20:07 run_benchmark.py:302] Deadline Miss Rate: 0.11111
+INFO 12-04 07:20:07 run_benchmark.py:302] Duration: 0.80112
+INFO 12-04 07:20:07 run_benchmark.py:302] Completed Requests Per Min: 74.89483
+INFO 12-04 07:20:07 run_benchmark.py:302] Number of Prompt Tokens - Mean: 2048.00000, P50: 2048.78465, P90: 2048.78465, P99: 2048.78465
+INFO 12-04 07:20:07 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:20:07 run_benchmark.py:302] Number of Total Tokens - Mean: 2065.00000, P50: 2065.24067, P90: 2065.24067, P99: 2065.24067
+INFO 12-04 07:20:07 run_benchmark.py:302] Time per Output Token - Mean: 0.00754, P50: 0.00754, P90: 0.00754, P99: 0.00754
+INFO 12-04 07:20:07 run_benchmark.py:302] Time to First Token - Mean: 0.16113, P50: 0.16122, P90: 0.16122, P99: 0.16122
+INFO 12-04 07:20:07 run_benchmark.py:302] Time Between Tokens - Mean: 0.00754, P50: 0.00796, P90: 0.00812, P99: 0.00840
+INFO 12-04 07:20:07 run_benchmark.py:302] End to End Latency - Mean: 0.28179, P50: 0.28168, P90: 0.28168, P99: 0.28168
+INFO 12-04 07:20:07 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.01658, P50: 0.01659, P90: 0.01659, P99: 0.01659
+INFO 12-04 07:20:07 run_benchmark.py:302] Output Throughput - Mean: 60.32960, P50: 60.28003, P90: 60.28003, P99: 60.28003
+INFO 12-04 07:20:07 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.11111, P50: 0.11114, P90: 0.11114, P99: 0.11114
+INFO 12-04 07:20:07 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 0.06129, P50: 0.06124, P90: 0.06124, P99: 0.06124
+INFO 12-04 07:20:07 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 2048, max: 2048, mean: 2048.0, 25th percentile: 2048.784647953762, median: 2048.784647953762, 75th percentile: 2048.784647953762, 95th percentile: 2048.784647953762, 99th percentile: 2048.784647953762 99.9th percentile: 2048.784647953762
+INFO 12-04 07:20:07 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:20:07 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 2065, max: 2065, mean: 2065.0, 25th percentile: 2065.2406669332795, median: 2065.2406669332795, 75th percentile: 2065.2406669332795, 95th percentile: 2065.2406669332795, 99th percentile: 2065.2406669332795 99.9th percentile: 2065.2406669332795
+INFO 12-04 07:20:07 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.0075411061916383915, max: 0.0075411061916383915, mean: 0.0075411061916383915, 25th percentile: 0.007544004561479118, median: 0.007544004561479118, 75th percentile: 0.007544004561479118, 95th percentile: 0.007544004561479118, 99th percentile: 0.007544004561479118 99.9th percentile: 0.007544004561479118
+INFO 12-04 07:20:07 cdf_sketch.py:56] ttft: Time to First Token stats: min: 0.16112771499319933, max: 0.16112771499319933, mean: 0.16112771499319933, 25th percentile: 0.16121746544688773, median: 0.16121746544688773, 75th percentile: 0.16121746544688773, 95th percentile: 0.16121746544688773, 99th percentile: 0.16121746544688773 99.9th percentile: 0.16121746544688773
+INFO 12-04 07:20:07 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.00988971401238814, mean: 0.0075411061916383915, 25th percentile: 0.007544004561479118, median: 0.007962580796555435, 75th percentile: 0.00804260609079071, 95th percentile: 0.008404381575458955, 99th percentile: 0.008404381575458955 99.9th percentile: 0.008404381575458955
+INFO 12-04 07:20:07 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 0.2817854140594136, max: 0.2817854140594136, mean: 0.2817854140594136, 25th percentile: 0.28167512185208793, median: 0.28167512185208793, 75th percentile: 0.28167512185208793, 95th percentile: 0.28167512185208793, 99th percentile: 0.28167512185208793 99.9th percentile: 0.28167512185208793
+INFO 12-04 07:20:07 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.01657561259173021, max: 0.01657561259173021, mean: 0.01657561259173021, 25th percentile: 0.01658922540519253, median: 0.01658922540519253, 75th percentile: 0.01658922540519253, 95th percentile: 0.01658922540519253, 99th percentile: 0.01658922540519253 99.9th percentile: 0.01658922540519253
+INFO 12-04 07:20:08 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 60.329595329641876, max: 60.329595329641876, mean: 60.329595329641876, 25th percentile: 60.280029692464964, median: 60.280029692464964, 75th percentile: 60.280029692464964, 95th percentile: 60.280029692464964, 99th percentile: 60.280029692464964 99.9th percentile: 60.280029692464964
+INFO 12-04 07:20:08 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.1111111111111111, max: 0.1111111111111111, mean: 0.1111111111111111, 25th percentile: 0.11113592999394986, median: 0.11113592999394986, 75th percentile: 0.11113592999394986, 95th percentile: 0.11113592999394986, 99th percentile: 0.11113592999394986 99.9th percentile: 0.11113592999394986
+INFO 12-04 07:20:08 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 0.06129089236967389, max: 0.06129089236967389, mean: 0.06129089236967389, 25th percentile: 0.06123713876207167, median: 0.06123713876207167, 75th percentile: 0.06123713876207167, 95th percentile: 0.06123713876207167, 99th percentile: 0.06123713876207167 99.9th percentile: 0.06123713876207167
+WARNING 12-04 07:20:08 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:00<00:00,  1.16it/s]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:01<00:00,  1.01s/it]
+Request 1 dispatched
+INFO 12-04 07:20:10 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:20:10 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:20:10 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:20:10 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:20:10 run_benchmark.py:302] Deadline Miss Rate: 0.15789
+INFO 12-04 07:20:10 run_benchmark.py:302] Duration: 0.90125
+INFO 12-04 07:20:10 run_benchmark.py:302] Completed Requests Per Min: 66.57433
+INFO 12-04 07:20:10 run_benchmark.py:302] Number of Prompt Tokens - Mean: 3072.00000, P50: 3074.82165, P90: 3074.82165, P99: 3074.82165
+INFO 12-04 07:20:10 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:20:10 run_benchmark.py:302] Number of Total Tokens - Mean: 3089.00000, P50: 3087.14557, P90: 3087.14557, P99: 3087.14557
+INFO 12-04 07:20:10 run_benchmark.py:302] Time per Output Token - Mean: 0.00750, P50: 0.00750, P90: 0.00750, P99: 0.00750
+INFO 12-04 07:20:10 run_benchmark.py:302] Time to First Token - Mean: 0.23858, P50: 0.23859, P90: 0.23859, P99: 0.23859
+INFO 12-04 07:20:10 run_benchmark.py:302] Time Between Tokens - Mean: 0.00750, P50: 0.00791, P90: 0.00835, P99: 0.00837
+INFO 12-04 07:20:10 run_benchmark.py:302] End to End Latency - Mean: 0.35858, P50: 0.35880, P90: 0.35880, P99: 0.35880
+INFO 12-04 07:20:10 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.02109, P50: 0.02109, P90: 0.02109, P99: 0.02109
+INFO 12-04 07:20:10 run_benchmark.py:302] Output Throughput - Mean: 47.40970, P50: 47.41795, P90: 47.41795, P99: 47.41795
+INFO 12-04 07:20:10 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.15789, P50: 0.15803, P90: 0.15803, P99: 0.15803
+INFO 12-04 07:20:10 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 0.13860, P50: 0.13848, P90: 0.13848, P99: 0.13848
+INFO 12-04 07:20:10 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 3072, max: 3072, mean: 3072.0, 25th percentile: 3074.821645211894, median: 3074.821645211894, 75th percentile: 3074.821645211894, 95th percentile: 3074.821645211894, 99th percentile: 3074.821645211894 99.9th percentile: 3074.821645211894
+INFO 12-04 07:20:10 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:20:10 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 3089, max: 3089, mean: 3089.0, 25th percentile: 3087.1455673130226, median: 3087.1455673130226, 75th percentile: 3087.1455673130226, 95th percentile: 3087.1455673130226, 99th percentile: 3087.1455673130226 99.9th percentile: 3087.1455673130226
+INFO 12-04 07:20:10 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.0074997889369115, max: 0.0074997889369115, mean: 0.0074997889369115, 25th percentile: 0.007498876040017316, median: 0.007498876040017316, 75th percentile: 0.007498876040017316, 95th percentile: 0.007498876040017316, 99th percentile: 0.007498876040017316 99.9th percentile: 0.007498876040017316
+INFO 12-04 07:20:10 cdf_sketch.py:56] ttft: Time to First Token stats: min: 0.23857976202270947, max: 0.23857976202270947, mean: 0.23857976202270947, 25th percentile: 0.23859183802756134, median: 0.23859183802756134, 75th percentile: 0.23859183802756134, 95th percentile: 0.23859183802756134, 99th percentile: 0.23859183802756134 99.9th percentile: 0.23859183802756134
+INFO 12-04 07:20:10 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.008544326992705464, mean: 0.0074997889369115, 25th percentile: 0.007544004561479118, median: 0.007914948336177091, 75th percentile: 0.008254456034959083, 95th percentile: 0.008370831183491446, 99th percentile: 0.008370831183491446 99.9th percentile: 0.008370831183491446
+INFO 12-04 07:20:10 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 0.3585763850132935, max: 0.3585763850132935, mean: 0.3585763850132935, 25th percentile: 0.3587961634188904, median: 0.3587961634188904, 75th percentile: 0.3587961634188904, 95th percentile: 0.3587961634188904, 99th percentile: 0.3587961634188904 99.9th percentile: 0.3587961634188904
+INFO 12-04 07:20:10 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.021092728530193734, max: 0.021092728530193734, mean: 0.021092728530193734, 25th percentile: 0.021089040387965444, median: 0.021089040387965444, 75th percentile: 0.021089040387965444, 95th percentile: 0.021089040387965444, 99th percentile: 0.021089040387965444 99.9th percentile: 0.021089040387965444
+INFO 12-04 07:20:10 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 47.4097032334401, max: 47.4097032334401, mean: 47.4097032334401, 25th percentile: 47.41794702857384, median: 47.41794702857384, 75th percentile: 47.41794702857384, 95th percentile: 47.41794702857384, 99th percentile: 47.41794702857384 99.9th percentile: 47.41794702857384
+INFO 12-04 07:20:10 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.15789473684210525, max: 0.15789473684210525, mean: 0.15789473684210525, 25th percentile: 0.1580251446914154, median: 0.1580251446914154, 75th percentile: 0.1580251446914154, 95th percentile: 0.1580251446914154, 99th percentile: 0.1580251446914154 99.9th percentile: 0.1580251446914154
+INFO 12-04 07:20:11 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 0.13859794202037434, max: 0.13859794202037434, mean: 0.13859794202037434, 25th percentile: 0.13848390645314124, median: 0.13848390645314124, 75th percentile: 0.13848390645314124, 95th percentile: 0.13848390645314124, 99th percentile: 0.13848390645314124 99.9th percentile: 0.13848390645314124
+WARNING 12-04 07:20:11 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:00<00:00,  1.08it/s]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:01<00:00,  1.07s/it]
+Request 1 dispatched
+INFO 12-04 07:20:12 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:20:12 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:20:12 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:20:12 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:20:12 run_benchmark.py:302] Deadline Miss Rate: 0.20000
+INFO 12-04 07:20:12 run_benchmark.py:302] Duration: 1.00144
+INFO 12-04 07:20:12 run_benchmark.py:302] Completed Requests Per Min: 59.91385
+INFO 12-04 07:20:12 run_benchmark.py:302] Number of Prompt Tokens - Mean: 4096.00000, P50: 4092.87228, P90: 4092.87228, P99: 4092.87228
+INFO 12-04 07:20:12 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:20:12 run_benchmark.py:302] Number of Total Tokens - Mean: 4113.00000, P50: 4109.27656, P90: 4109.27656, P99: 4109.27656
+INFO 12-04 07:20:12 run_benchmark.py:302] Time per Output Token - Mean: 0.00744, P50: 0.00744, P90: 0.00744, P99: 0.00744
+INFO 12-04 07:20:12 run_benchmark.py:302] Time to First Token - Mean: 0.29961, P50: 0.29969, P90: 0.29969, P99: 0.29969
+INFO 12-04 07:20:12 run_benchmark.py:302] Time Between Tokens - Mean: 0.00744, P50: 0.00795, P90: 0.00839, P99: 0.00856
+INFO 12-04 07:20:12 run_benchmark.py:302] End to End Latency - Mean: 0.41862, P50: 0.41853, P90: 0.41853, P99: 0.41853
+INFO 12-04 07:20:12 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.02462, P50: 0.02460, P90: 0.02460, P99: 0.02460
+INFO 12-04 07:20:12 run_benchmark.py:302] Output Throughput - Mean: 40.60968, P50: 40.65008, P90: 40.65008, P99: 40.65008
+INFO 12-04 07:20:12 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.20000, P50: 0.20009, P90: 0.20009, P99: 0.20009
+INFO 12-04 07:20:12 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 0.19970, P50: 0.19969, P90: 0.19969, P99: 0.19969
+INFO 12-04 07:20:12 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 4096, max: 4096, mean: 4096.0, 25th percentile: 4092.872283375366, median: 4092.872283375366, 75th percentile: 4092.872283375366, 95th percentile: 4092.872283375366, 99th percentile: 4092.872283375366 99.9th percentile: 4092.872283375366
+INFO 12-04 07:20:12 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:20:13 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 4113, max: 4113, mean: 4113.0, 25th percentile: 4109.2765646671705, median: 4109.2765646671705, 75th percentile: 4109.2765646671705, 95th percentile: 4109.2765646671705, 99th percentile: 4109.2765646671705 99.9th percentile: 4109.2765646671705
+INFO 12-04 07:20:13 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.007438344373440486, max: 0.007438344373440486, mean: 0.007438344373440486, 25th percentile: 0.007439124337266453, median: 0.007439124337266453, 75th percentile: 0.007439124337266453, 95th percentile: 0.007439124337266453, 99th percentile: 0.007439124337266453 99.9th percentile: 0.007439124337266453
+INFO 12-04 07:20:13 cdf_sketch.py:56] ttft: Time to First Token stats: min: 0.2996058659919072, max: 0.2996058659919072, mean: 0.2996058659919072, 25th percentile: 0.2996917292909348, median: 0.2996917292909348, 75th percentile: 0.2996917292909348, 95th percentile: 0.2996917292909348, 99th percentile: 0.2996917292909348 99.9th percentile: 0.2996917292909348
+INFO 12-04 07:20:13 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.008714463998330757, mean: 0.007438344373440486, 25th percentile: 0.007468940436998884, median: 0.007946671544214669, 75th percentile: 0.008107205012208357, 95th percentile: 0.008557030210927043, 99th percentile: 0.008557030210927043 99.9th percentile: 0.008557030210927043
+INFO 12-04 07:20:13 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 0.418619375966955, max: 0.418619375966955, mean: 0.418619375966955, 25th percentile: 0.41853247632388274, median: 0.41853247632388274, 75th percentile: 0.41853247632388274, 95th percentile: 0.41853247632388274, 99th percentile: 0.41853247632388274 99.9th percentile: 0.41853247632388274
+INFO 12-04 07:20:13 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.024624669174526763, max: 0.024624669174526763, mean: 0.024624669174526763, 25th percentile: 0.02460017468627383, median: 0.02460017468627383, 75th percentile: 0.02460017468627383, 95th percentile: 0.02460017468627383, 99th percentile: 0.02460017468627383 99.9th percentile: 0.02460017468627383
+INFO 12-04 07:20:13 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 40.60968262812075, max: 40.60968262812075, mean: 40.60968262812075, 25th percentile: 40.65007719469447, median: 40.65007719469447, 75th percentile: 40.65007719469447, 95th percentile: 40.65007719469447, 99th percentile: 40.65007719469447 99.9th percentile: 40.65007719469447
+INFO 12-04 07:20:13 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.2, max: 0.2, mean: 0.2, 25th percentile: 0.2000873943088915, median: 0.2000873943088915, 75th percentile: 0.2000873943088915, 95th percentile: 0.2000873943088915, 99th percentile: 0.2000873943088915 99.9th percentile: 0.2000873943088915
+INFO 12-04 07:20:13 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 0.19970461729574412, max: 0.19970461729574412, mean: 0.19970461729574412, 25th percentile: 0.1996876192952873, median: 0.1996876192952873, 75th percentile: 0.1996876192952873, 95th percentile: 0.1996876192952873, 99th percentile: 0.1996876192952873 99.9th percentile: 0.1996876192952873
+WARNING 12-04 07:20:14 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:01<00:00,  1.05s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:01<00:00,  1.20s/it]
+Request 1 dispatched
+INFO 12-04 07:20:15 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:20:15 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:20:15 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:20:15 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:20:15 run_benchmark.py:302] Deadline Miss Rate: 0.30435
+INFO 12-04 07:20:15 run_benchmark.py:302] Duration: 1.10154
+INFO 12-04 07:20:15 run_benchmark.py:302] Completed Requests Per Min: 54.46907
+INFO 12-04 07:20:15 run_benchmark.py:302] Number of Prompt Tokens - Mean: 6144.00000, P50: 6142.59400, P90: 6142.59400, P99: 6142.59400
+INFO 12-04 07:20:15 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:20:15 run_benchmark.py:302] Number of Total Tokens - Mean: 6161.00000, P50: 6154.89149, P90: 6154.89149, P99: 6154.89149
+INFO 12-04 07:20:15 run_benchmark.py:302] Time per Output Token - Mean: 0.00761, P50: 0.00760, P90: 0.00760, P99: 0.00760
+INFO 12-04 07:20:15 run_benchmark.py:302] Time to First Token - Mean: 0.43750, P50: 0.43736, P90: 0.43736, P99: 0.43736
+INFO 12-04 07:20:15 run_benchmark.py:302] Time Between Tokens - Mean: 0.00761, P50: 0.00795, P90: 0.00868, P99: 0.00882
+INFO 12-04 07:20:15 run_benchmark.py:302] End to End Latency - Mean: 0.55926, P50: 0.55934, P90: 0.55934, P99: 0.55934
+INFO 12-04 07:20:15 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.03290, P50: 0.03288, P90: 0.03288, P99: 0.03288
+INFO 12-04 07:20:15 run_benchmark.py:302] Output Throughput - Mean: 30.39746, P50: 30.41697, P90: 30.41697, P99: 30.41697
+INFO 12-04 07:20:15 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.30435, P50: 0.30453, P90: 0.30453, P99: 0.30453
+INFO 12-04 07:20:15 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 0.33755, P50: 0.33723, P90: 0.33723, P99: 0.33723
+INFO 12-04 07:20:15 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 6144, max: 6144, mean: 6144.0, 25th percentile: 6142.5940010725935, median: 6142.5940010725935, 75th percentile: 6142.5940010725935, 95th percentile: 6142.5940010725935, 99th percentile: 6142.5940010725935 99.9th percentile: 6142.5940010725935
+INFO 12-04 07:20:15 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:20:16 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 6161, max: 6161, mean: 6161.0, 25th percentile: 6154.891486560227, median: 6154.891486560227, 75th percentile: 6154.891486560227, 95th percentile: 6154.891486560227, 99th percentile: 6154.891486560227 99.9th percentile: 6154.891486560227
+INFO 12-04 07:20:16 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.007609764625158277, max: 0.007609764625158277, mean: 0.007609764625158277, 25th percentile: 0.007604598671440492, median: 0.007604598671440492, 75th percentile: 0.007604598671440492, 95th percentile: 0.007604598671440492, 99th percentile: 0.007604598671440492 99.9th percentile: 0.007604598671440492
+INFO 12-04 07:20:16 cdf_sketch.py:56] ttft: Time to First Token stats: min: 0.4375010840012692, max: 0.4375010840012692, mean: 0.4375010840012692, 25th percentile: 0.43735905912082623, median: 0.43735905912082623, 75th percentile: 0.43735905912082623, 95th percentile: 0.43735905912082623, 99th percentile: 0.43735905912082623 99.9th percentile: 0.43735905912082623
+INFO 12-04 07:20:16 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.008998466975754127, mean: 0.007609764625158277, 25th percentile: 0.007773753782279754, median: 0.007946671544214669, 75th percentile: 0.008270981472466509, 95th percentile: 0.008817630666203351, 99th percentile: 0.008817630666203351 99.9th percentile: 0.008817630666203351
+INFO 12-04 07:20:16 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 0.5592573180038016, max: 0.5592573180038016, mean: 0.5592573180038016, 25th percentile: 0.5593383600600117, median: 0.5593383600600117, 75th percentile: 0.5593383600600117, 95th percentile: 0.5593383600600117, 99th percentile: 0.5593383600600117 99.9th percentile: 0.5593383600600117
+INFO 12-04 07:20:16 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.032897489294341276, max: 0.032897489294341276, mean: 0.032897489294341276, 25th percentile: 0.03287635283901393, median: 0.03287635283901393, 75th percentile: 0.03287635283901393, 95th percentile: 0.03287635283901393, 99th percentile: 0.03287635283901393 99.9th percentile: 0.03287635283901393
+INFO 12-04 07:20:16 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 30.397456506567234, max: 30.397456506567234, mean: 30.397456506567234, 25th percentile: 30.416968843737266, median: 30.416968843737266, 75th percentile: 30.416968843737266, 95th percentile: 30.416968843737266, 99th percentile: 30.416968843737266 99.9th percentile: 30.416968843737266
+INFO 12-04 07:20:16 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.30434782608695654, max: 0.30434782608695654, mean: 0.30434782608695654, 25th percentile: 0.3045253645356131, median: 0.3045253645356131, 75th percentile: 0.3045253645356131, 95th percentile: 0.3045253645356131, 99th percentile: 0.3045253645356131 99.9th percentile: 0.3045253645356131
+INFO 12-04 07:20:16 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 0.3375499080332063, max: 0.3375499080332063, mean: 0.3375499080332063, 25th percentile: 0.3372263668743648, median: 0.3372263668743648, 75th percentile: 0.3372263668743648, 95th percentile: 0.3372263668743648, 99th percentile: 0.3372263668743648 99.9th percentile: 0.3372263668743648
+WARNING 12-04 07:20:17 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:01<00:00,  1.33s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:01<00:00,  1.48s/it]
+Request 1 dispatched
+INFO 12-04 07:20:19 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:20:19 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:20:19 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:20:19 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:20:19 run_benchmark.py:302] Deadline Miss Rate: 0.38462
+INFO 12-04 07:20:19 run_benchmark.py:302] Duration: 1.40201
+INFO 12-04 07:20:19 run_benchmark.py:302] Completed Requests Per Min: 42.79583
+INFO 12-04 07:20:19 run_benchmark.py:302] Number of Prompt Tokens - Mean: 8192.00000, P50: 8192.73040, P90: 8192.73040, P99: 8192.73040
+INFO 12-04 07:20:19 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:20:19 run_benchmark.py:302] Number of Total Tokens - Mean: 8209.00000, P50: 8209.13226, P90: 8209.13226, P99: 8209.13226
+INFO 12-04 07:20:19 run_benchmark.py:302] Time per Output Token - Mean: 0.01018, P50: 0.01018, P90: 0.01018, P99: 0.01018
+INFO 12-04 07:20:19 run_benchmark.py:302] Time to First Token - Mean: 0.55720, P50: 0.55711, P90: 0.55711, P99: 0.55711
+INFO 12-04 07:20:19 run_benchmark.py:302] Time Between Tokens - Mean: 0.01018, P50: 0.01071, P90: 0.01205, P99: 0.01249
+INFO 12-04 07:20:19 run_benchmark.py:302] End to End Latency - Mean: 0.72001, P50: 0.71964, P90: 0.71964, P99: 0.71964
+INFO 12-04 07:20:19 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.04235, P50: 0.04238, P90: 0.04238, P99: 0.04238
+INFO 12-04 07:20:19 run_benchmark.py:302] Output Throughput - Mean: 23.61083, P50: 23.59419, P90: 23.59419, P99: 23.59419
+INFO 12-04 07:20:19 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.38462, P50: 0.38481, P90: 0.38481, P99: 0.38481
+INFO 12-04 07:20:19 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 0.45721, P50: 0.45703, P90: 0.45703, P99: 0.45703
+INFO 12-04 07:20:19 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 8192, max: 8192, mean: 8192.0, 25th percentile: 8192.730401697612, median: 8192.730401697612, 75th percentile: 8192.730401697612, 95th percentile: 8192.730401697612, 99th percentile: 8192.730401697612 99.9th percentile: 8192.730401697612
+INFO 12-04 07:20:19 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:20:19 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 8209, max: 8209, mean: 8209.0, 25th percentile: 8209.132264363674, median: 8209.132264363674, 75th percentile: 8209.132264363674, 95th percentile: 8209.132264363674, 99th percentile: 8209.132264363674 99.9th percentile: 8209.132264363674
+INFO 12-04 07:20:19 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.0101758217515453, max: 0.0101758217515453, mean: 0.0101758217515453, 25th percentile: 0.010183342020040896, median: 0.010183342020040896, 75th percentile: 0.010183342020040896, 95th percentile: 0.010183342020040896, 99th percentile: 0.010183342020040896 99.9th percentile: 0.010183342020040896
+INFO 12-04 07:20:19 cdf_sketch.py:56] ttft: Time to First Token stats: min: 0.5571953640028369, max: 0.5571953640028369, mean: 0.5571953640028369, 25th percentile: 0.55710547462353, median: 0.55710547462353, 75th percentile: 0.55710547462353, 95th percentile: 0.55710547462353, 99th percentile: 0.55710547462353 99.9th percentile: 0.55710547462353
+INFO 12-04 07:20:19 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.012774581991834566, mean: 0.0101758217515453, 25th percentile: 0.009686694407772431, median: 0.010705453308604753, 75th percentile: 0.011209406389011986, 95th percentile: 0.012487814364361043, 99th percentile: 0.012487814364361043 99.9th percentile: 0.012487814364361043
+INFO 12-04 07:20:19 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 0.7200085120275617, max: 0.7200085120275617, mean: 0.7200085120275617, 25th percentile: 0.7196425780046226, median: 0.7196425780046226, 75th percentile: 0.7196425780046226, 95th percentile: 0.7196425780046226, 99th percentile: 0.7196425780046226 99.9th percentile: 0.7196425780046226
+INFO 12-04 07:20:19 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.04235344188397422, max: 0.04235344188397422, mean: 0.04235344188397422, 25th percentile: 0.042383270695668794, median: 0.042383270695668794, 75th percentile: 0.042383270695668794, 95th percentile: 0.042383270695668794, 99th percentile: 0.042383270695668794 99.9th percentile: 0.042383270695668794
+INFO 12-04 07:20:19 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 23.610831977704795, max: 23.610831977704795, mean: 23.610831977704795, 25th percentile: 23.594191377547254, median: 23.594191377547254, 75th percentile: 23.594191377547254, 95th percentile: 23.594191377547254, 99th percentile: 23.594191377547254 99.9th percentile: 23.594191377547254
+INFO 12-04 07:20:20 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.38461538461538464, max: 0.38461538461538464, mean: 0.38461538461538464, 25th percentile: 0.3848118296483327, median: 0.3848118296483327, 75th percentile: 0.3848118296483327, 95th percentile: 0.3848118296483327, 99th percentile: 0.3848118296483327 99.9th percentile: 0.3848118296483327
+INFO 12-04 07:20:20 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 0.4572053047352096, max: 0.4572053047352096, mean: 0.4572053047352096, 25th percentile: 0.45703250623502245, median: 0.45703250623502245, 75th percentile: 0.45703250623502245, 95th percentile: 0.45703250623502245, 99th percentile: 0.45703250623502245 99.9th percentile: 0.45703250623502245
+WARNING 12-04 07:20:20 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:01<00:00,  1.88s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:02<00:00,  2.02s/it]
+Request 1 dispatched
+INFO 12-04 07:20:22 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:20:22 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:20:22 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:20:22 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:20:22 run_benchmark.py:302] Deadline Miss Rate: 0.50000
+INFO 12-04 07:20:22 run_benchmark.py:302] Duration: 1.90235
+INFO 12-04 07:20:22 run_benchmark.py:302] Completed Requests Per Min: 31.53995
+INFO 12-04 07:20:22 run_benchmark.py:302] Number of Prompt Tokens - Mean: 12288.00000, P50: 12295.67236, P90: 12295.67236, P99: 12295.67236
+INFO 12-04 07:20:22 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:20:22 run_benchmark.py:302] Number of Total Tokens - Mean: 12305.00000, P50: 12295.67236, P90: 12295.67236, P99: 12295.67236
+INFO 12-04 07:20:22 run_benchmark.py:302] Time per Output Token - Mean: 0.03265, P50: 0.03268, P90: 0.03268, P99: 0.03268
+INFO 12-04 07:20:22 run_benchmark.py:302] Time to First Token - Mean: 0.85211, P50: 0.85129, P90: 0.85129, P99: 0.85129
+INFO 12-04 07:20:22 run_benchmark.py:302] Time Between Tokens - Mean: 0.03265, P50: 0.03456, P90: 0.03655, P99: 0.03663
+INFO 12-04 07:20:22 run_benchmark.py:302] End to End Latency - Mean: 1.37456, P50: 1.37575, P90: 1.37575, P99: 1.37575
+INFO 12-04 07:20:22 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.08086, P50: 0.08086, P90: 0.08086, P99: 0.08086
+INFO 12-04 07:20:22 run_benchmark.py:302] Output Throughput - Mean: 12.36761, P50: 12.36661, P90: 12.36661, P99: 12.36661
+INFO 12-04 07:20:22 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.50000, P50: 0.50007, P90: 0.50007, P99: 0.50007
+INFO 12-04 07:20:22 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 0.75222, P50: 0.75201, P90: 0.75201, P99: 0.75201
+INFO 12-04 07:20:22 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 12288, max: 12288, mean: 12288.0, 25th percentile: 12295.6723624834, median: 12295.6723624834, 75th percentile: 12295.6723624834, 95th percentile: 12295.6723624834, 99th percentile: 12295.6723624834 99.9th percentile: 12295.6723624834
+INFO 12-04 07:20:23 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:20:23 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 12305, max: 12305, mean: 12305.0, 25th percentile: 12295.6723624834, median: 12295.6723624834, 75th percentile: 12295.6723624834, 95th percentile: 12295.6723624834, 99th percentile: 12295.6723624834 99.9th percentile: 12295.6723624834
+INFO 12-04 07:20:23 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.03265327837470977, max: 0.03265327837470977, mean: 0.03265327837470977, 25th percentile: 0.032679685249196025, median: 0.032679685249196025, 75th percentile: 0.032679685249196025, 95th percentile: 0.032679685249196025, 99th percentile: 0.032679685249196025 99.9th percentile: 0.032679685249196025
+INFO 12-04 07:20:23 cdf_sketch.py:56] ttft: Time to First Token stats: min: 0.8521053419972304, max: 0.8521053419972304, mean: 0.8521053419972304, 25th percentile: 0.8512915997749979, median: 0.8512915997749979, 75th percentile: 0.8512915997749979, 95th percentile: 0.8512915997749979, 99th percentile: 0.8512915997749979 99.9th percentile: 0.8512915997749979
+INFO 12-04 07:20:23 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.03702896201866679, mean: 0.03265327837470977, 25th percentile: 0.03347348546025249, median: 0.03456196006994819, 75th percentile: 0.03597246089764227, 95th percentile: 0.036625828075364034, 99th percentile: 0.036625828075364034 99.9th percentile: 0.036625828075364034
+INFO 12-04 07:20:23 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 1.3745577959925868, max: 1.3745577959925868, mean: 1.3745577959925868, 25th percentile: 1.3757507833184515, median: 1.3757507833184515, 75th percentile: 1.3757507833184515, 95th percentile: 1.3757507833184515, 99th percentile: 1.3757507833184515 99.9th percentile: 1.3757507833184515
+INFO 12-04 07:20:23 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.0808563409407404, max: 0.0808563409407404, mean: 0.0808563409407404, 25th percentile: 0.08086280398518435, median: 0.08086280398518435, 75th percentile: 0.08086280398518435, 95th percentile: 0.08086280398518435, 99th percentile: 0.08086280398518435 99.9th percentile: 0.08086280398518435
+INFO 12-04 07:20:23 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 12.367613824287448, max: 12.367613824287448, mean: 12.367613824287448, 25th percentile: 12.366612963151994, median: 12.366612963151994, 75th percentile: 12.366612963151994, 95th percentile: 12.366612963151994, 99th percentile: 12.366612963151994 99.9th percentile: 12.366612963151994
+INFO 12-04 07:20:23 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.5, max: 0.5, mean: 0.5, 25th percentile: 0.5000732301419085, median: 0.5000732301419085, 75th percentile: 0.5000732301419085, 95th percentile: 0.5000732301419085, 99th percentile: 0.5000732301419085 99.9th percentile: 0.5000732301419085
+INFO 12-04 07:20:23 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 0.752222648622809, max: 0.752222648622809, mean: 0.752222648622809, 25th percentile: 0.7520138068708034, median: 0.7520138068708034, 75th percentile: 0.7520138068708034, 95th percentile: 0.7520138068708034, 99th percentile: 0.7520138068708034 99.9th percentile: 0.7520138068708034
+WARNING 12-04 07:20:24 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:02<00:00,  2.13s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:02<00:00,  2.28s/it]
+Request 1 dispatched
+INFO 12-04 07:20:26 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:20:26 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:20:26 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:20:26 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:20:26 run_benchmark.py:302] Deadline Miss Rate: 0.56757
+INFO 12-04 07:20:26 run_benchmark.py:302] Duration: 2.20353
+INFO 12-04 07:20:26 run_benchmark.py:302] Completed Requests Per Min: 27.22903
+INFO 12-04 07:20:26 run_benchmark.py:302] Number of Prompt Tokens - Mean: 16384.00000, P50: 16399.44440, P90: 16399.44440, P99: 16399.44440
+INFO 12-04 07:20:26 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:20:26 run_benchmark.py:302] Number of Total Tokens - Mean: 16401.00000, P50: 16399.44440, P90: 16399.44440, P99: 16399.44440
+INFO 12-04 07:20:26 run_benchmark.py:302] Time per Output Token - Mean: 0.03228, P50: 0.03229, P90: 0.03229, P99: 0.03229
+INFO 12-04 07:20:26 run_benchmark.py:302] Time to First Token - Mean: 1.10756, P50: 1.10849, P90: 1.10849, P99: 1.10849
+INFO 12-04 07:20:26 run_benchmark.py:302] Time Between Tokens - Mean: 0.03228, P50: 0.03422, P90: 0.03612, P99: 0.03619
+INFO 12-04 07:20:26 run_benchmark.py:302] End to End Latency - Mean: 1.62397, P50: 1.62417, P90: 1.62417, P99: 1.62417
+INFO 12-04 07:20:26 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.09553, P50: 0.09546, P90: 0.09546, P99: 0.09546
+INFO 12-04 07:20:26 run_benchmark.py:302] Output Throughput - Mean: 10.46816, P50: 10.47509, P90: 10.47509, P99: 10.47509
+INFO 12-04 07:20:26 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.56757, P50: 0.56722, P90: 0.56722, P99: 0.56722
+INFO 12-04 07:20:26 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 1.00773, P50: 1.00702, P90: 1.00702, P99: 1.00702
+INFO 12-04 07:20:27 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 16384, max: 16384, mean: 16384.0, 25th percentile: 16399.444396917803, median: 16399.444396917803, 75th percentile: 16399.444396917803, 95th percentile: 16399.444396917803, 99th percentile: 16399.444396917803 99.9th percentile: 16399.444396917803
+INFO 12-04 07:20:27 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:20:27 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 16401, max: 16401, mean: 16401.0, 25th percentile: 16399.444396917803, median: 16399.444396917803, 75th percentile: 16399.444396917803, 95th percentile: 16399.444396917803, 99th percentile: 16399.444396917803 99.9th percentile: 16399.444396917803
+INFO 12-04 07:20:27 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.03227605693791702, max: 0.03227605693791702, mean: 0.03227605693791702, 25th percentile: 0.03228987245080231, median: 0.03228987245080231, 75th percentile: 0.03228987245080231, 95th percentile: 0.03228987245080231, 99th percentile: 0.03228987245080231 99.9th percentile: 0.03228987245080231
+INFO 12-04 07:20:27 cdf_sketch.py:56] ttft: Time to First Token stats: min: 1.107555681024678, max: 1.107555681024678, mean: 1.107555681024678, 25th percentile: 1.1084908928883734, median: 1.1084908928883734, 75th percentile: 1.1084908928883734, 95th percentile: 1.1084908928883734, 99th percentile: 1.1084908928883734 99.9th percentile: 1.1084908928883734
+INFO 12-04 07:20:27 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.03704027400817722, mean: 0.03227605693791702, 25th percentile: 0.03274511004448971, median: 0.03421806270723731, 75th percentile: 0.03533074911971233, 95th percentile: 0.03618894453665566, 99th percentile: 0.03618894453665566 99.9th percentile: 0.03618894453665566
+INFO 12-04 07:20:27 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 1.6239725920313504, max: 1.6239725920313504, mean: 1.6239725920313504, 25th percentile: 1.624174459331529, median: 1.624174459331529, 75th percentile: 1.624174459331529, 95th percentile: 1.624174459331529, 99th percentile: 1.624174459331529 99.9th percentile: 1.624174459331529
+INFO 12-04 07:20:27 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.0955277995312559, max: 0.0955277995312559, mean: 0.0955277995312559, 25th percentile: 0.09546445659720001, median: 0.09546445659720001, 75th percentile: 0.09546445659720001, 95th percentile: 0.09546445659720001, 99th percentile: 0.09546445659720001 99.9th percentile: 0.09546445659720001
+INFO 12-04 07:20:27 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 10.46815696485093, max: 10.46815696485093, mean: 10.46815696485093, 25th percentile: 10.47509236049357, median: 10.47509236049357, 75th percentile: 10.47509236049357, 95th percentile: 10.47509236049357, 99th percentile: 10.47509236049357 99.9th percentile: 10.47509236049357
+INFO 12-04 07:20:27 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.5675675675675675, max: 0.5675675675675675, mean: 0.5675675675675675, 25th percentile: 0.5672241716090891, median: 0.5672241716090891, 75th percentile: 0.5672241716090891, 95th percentile: 0.5672241716090891, 99th percentile: 0.5672241716090891 99.9th percentile: 0.5672241716090891
+INFO 12-04 07:20:28 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 1.0077338164021459, max: 1.0077338164021459, mean: 1.0077338164021459, 25th percentile: 1.0070240561041681, median: 1.0070240561041681, 75th percentile: 1.0070240561041681, 95th percentile: 1.0070240561041681, 99th percentile: 1.0070240561041681 99.9th percentile: 1.0070240561041681
+WARNING 12-04 07:20:28 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:02<00:00,  2.73s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:02<00:00,  2.87s/it]
+Request 1 dispatched
+INFO 12-04 07:20:31 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:20:31 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:20:31 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:20:31 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:20:31 run_benchmark.py:302] Deadline Miss Rate: 0.66667
+INFO 12-04 07:20:31 run_benchmark.py:302] Duration: 2.80408
+INFO 12-04 07:20:31 run_benchmark.py:302] Completed Requests Per Min: 21.39738
+INFO 12-04 07:20:31 run_benchmark.py:302] Number of Prompt Tokens - Mean: 24576.00000, P50: 24563.15585, P90: 24563.15585, P99: 24563.15585
+INFO 12-04 07:20:31 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:20:31 run_benchmark.py:302] Number of Total Tokens - Mean: 24593.00000, P50: 24612.33134, P90: 24612.33134, P99: 24612.33134
+INFO 12-04 07:20:31 run_benchmark.py:302] Time per Output Token - Mean: 0.03430, P50: 0.03429, P90: 0.03429, P99: 0.03429
+INFO 12-04 07:20:31 run_benchmark.py:302] Time to First Token - Mean: 1.68332, P50: 1.68371, P90: 1.68371, P99: 1.68371
+INFO 12-04 07:20:31 run_benchmark.py:302] Time Between Tokens - Mean: 0.03430, P50: 0.03626, P90: 0.03850, P99: 0.03858
+INFO 12-04 07:20:31 run_benchmark.py:302] End to End Latency - Mean: 2.23218, P50: 2.23223, P90: 2.23223, P99: 2.23223
+INFO 12-04 07:20:31 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.13130, P50: 0.13120, P90: 0.13120, P99: 0.13120
+INFO 12-04 07:20:31 run_benchmark.py:302] Output Throughput - Mean: 7.61587, P50: 7.62171, P90: 7.62171, P99: 7.62171
+INFO 12-04 07:20:31 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.66667, P50: 0.66698, P90: 0.66698, P99: 0.66698
+INFO 12-04 07:20:31 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 1.58356, P50: 1.58249, P90: 1.58249, P99: 1.58249
+INFO 12-04 07:20:31 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 24576, max: 24576, mean: 24576.0, 25th percentile: 24563.155853464115, median: 24563.155853464115, 75th percentile: 24563.155853464115, 95th percentile: 24563.155853464115, 99th percentile: 24563.155853464115 99.9th percentile: 24563.155853464115
+INFO 12-04 07:20:31 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:20:31 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 24593, max: 24593, mean: 24593.0, 25th percentile: 24612.331340658242, median: 24612.331340658242, 75th percentile: 24612.331340658242, 95th percentile: 24612.331340658242, 99th percentile: 24612.331340658242 99.9th percentile: 24612.331340658242
+INFO 12-04 07:20:32 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.03430399431272235, max: 0.03430399431272235, mean: 0.03430399431272235, 25th percentile: 0.03428656733728183, median: 0.03428656733728183, 75th percentile: 0.03428656733728183, 95th percentile: 0.03428656733728183, 99th percentile: 0.03428656733728183 99.9th percentile: 0.03428656733728183
+INFO 12-04 07:20:32 cdf_sketch.py:56] ttft: Time to First Token stats: min: 1.6833183559938334, max: 1.6833183559938334, mean: 1.6833183559938334, 25th percentile: 1.683709969191796, median: 1.683709969191796, 75th percentile: 1.683709969191796, 95th percentile: 1.683709969191796, 99th percentile: 1.683709969191796 99.9th percentile: 1.683709969191796
+INFO 12-04 07:20:32 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.03880618797848001, mean: 0.03430399431272235, 25th percentile: 0.03476995526128824, median: 0.036261394876068394, 75th percentile: 0.03796837926251835, 95th percentile: 0.03858075951278698, 99th percentile: 0.03858075951278698 99.9th percentile: 0.03858075951278698
+INFO 12-04 07:20:32 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 2.232182264997391, max: 2.232182264997391, mean: 2.232182264997391, 25th percentile: 2.23222705761356, median: 2.23222705761356, 75th percentile: 2.23222705761356, 95th percentile: 2.23222705761356, 99th percentile: 2.23222705761356 99.9th percentile: 2.23222705761356
+INFO 12-04 07:20:32 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.13130483911749358, max: 0.13130483911749358, mean: 0.13130483911749358, 25th percentile: 0.13120409684582243, median: 0.13120409684582243, 75th percentile: 0.13120409684582243, 95th percentile: 0.13120409684582243, 99th percentile: 0.13120409684582243 99.9th percentile: 0.13120409684582243
+INFO 12-04 07:20:32 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 7.615865544035164, max: 7.615865544035164, mean: 7.615865544035164, 25th percentile: 7.621705602494227, median: 7.621705602494227, 75th percentile: 7.621705602494227, 95th percentile: 7.621705602494227, 99th percentile: 7.621705602494227 99.9th percentile: 7.621705602494227
+INFO 12-04 07:20:32 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.6666666666666666, max: 0.6666666666666666, mean: 0.6666666666666666, 25th percentile: 0.6669763873281132, median: 0.6669763873281132, 75th percentile: 0.6669763873281132, 95th percentile: 0.6669763873281132, 99th percentile: 0.6669763873281132 99.9th percentile: 0.6669763873281132
+INFO 12-04 07:20:32 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 1.5835576494621426, max: 1.5835576494621426, mean: 1.5835576494621426, 25th percentile: 1.5824901536581044, median: 1.5824901536581044, 75th percentile: 1.5824901536581044, 95th percentile: 1.5824901536581044, 99th percentile: 1.5824901536581044 99.9th percentile: 1.5824901536581044
+WARNING 12-04 07:20:33 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:03<00:00,  3.40s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:03<00:00,  3.56s/it]
+Request 1 dispatched
+INFO 12-04 07:20:37 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:20:37 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:20:37 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:20:37 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:20:37 run_benchmark.py:302] Deadline Miss Rate: 0.73770
+INFO 12-04 07:20:37 run_benchmark.py:302] Duration: 3.40514
+INFO 12-04 07:20:37 run_benchmark.py:302] Completed Requests Per Min: 17.62041
+INFO 12-04 07:20:37 run_benchmark.py:302] Number of Prompt Tokens - Mean: 32768.00000, P50: 32761.29168, P90: 32761.29168, P99: 32761.29168
+INFO 12-04 07:20:37 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:20:37 run_benchmark.py:302] Number of Total Tokens - Mean: 32785.00000, P50: 32761.29168, P90: 32761.29168, P99: 32761.29168
+INFO 12-04 07:20:37 run_benchmark.py:302] Time per Output Token - Mean: 0.03448, P50: 0.03449, P90: 0.03449, P99: 0.03449
+INFO 12-04 07:20:37 run_benchmark.py:302] Time to First Token - Mean: 2.33515, P50: 2.33731, P90: 2.33731, P99: 2.33731
+INFO 12-04 07:20:37 run_benchmark.py:302] Time Between Tokens - Mean: 0.03448, P50: 0.03648, P90: 0.03789, P99: 0.03920
+INFO 12-04 07:20:37 run_benchmark.py:302] End to End Latency - Mean: 2.88679, P50: 2.88926, P90: 2.88926, P99: 2.88926
+INFO 12-04 07:20:37 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.16981, P50: 0.16982, P90: 0.16982, P99: 0.16982
+INFO 12-04 07:20:37 run_benchmark.py:302] Output Throughput - Mean: 5.88890, P50: 5.88849, P90: 5.88849, P99: 5.88849
+INFO 12-04 07:20:37 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.73770, P50: 0.73712, P90: 0.73712, P99: 0.73712
+INFO 12-04 07:20:37 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 2.23527, P50: 2.23670, P90: 2.23670, P99: 2.23670
+INFO 12-04 07:20:37 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 32768, max: 32768, mean: 32768.0, 25th percentile: 32761.291676964538, median: 32761.291676964538, 75th percentile: 32761.291676964538, 95th percentile: 32761.291676964538, 99th percentile: 32761.291676964538 99.9th percentile: 32761.291676964538
+INFO 12-04 07:20:37 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:20:37 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 32785, max: 32785, mean: 32785.0, 25th percentile: 32761.291676964538, median: 32761.291676964538, 75th percentile: 32761.291676964538, 95th percentile: 32761.291676964538, 99th percentile: 32761.291676964538 99.9th percentile: 32761.291676964538
+INFO 12-04 07:20:37 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.03447714162575721, max: 0.03447714162575721, mean: 0.03447714162575721, 25th percentile: 0.03449290520467356, median: 0.03449290520467356, 75th percentile: 0.03449290520467356, 95th percentile: 0.03449290520467356, 99th percentile: 0.03449290520467356 99.9th percentile: 0.03449290520467356
+INFO 12-04 07:20:37 cdf_sketch.py:56] ttft: Time to First Token stats: min: 2.3351547780039255, max: 2.3351547780039255, mean: 2.3351547780039255, 25th percentile: 2.337307867311597, median: 2.337307867311597, 75th percentile: 2.337307867311597, 95th percentile: 2.337307867311597, 99th percentile: 2.337307867311597 99.9th percentile: 2.337307867311597
+INFO 12-04 07:20:37 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.039674341009231284, mean: 0.03447714162575721, 25th percentile: 0.03540148135018221, median: 0.036479617330762514, 75th percentile: 0.03721655473261771, 95th percentile: 0.03920301665477981, 99th percentile: 0.03920301665477981 99.9th percentile: 0.03920301665477981
+INFO 12-04 07:20:37 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 2.886789044016041, max: 2.886789044016041, mean: 2.886789044016041, 25th percentile: 2.8892583811289523, median: 2.8892583811289523, 75th percentile: 2.8892583811289523, 95th percentile: 2.8892583811289523, 99th percentile: 2.8892583811289523 99.9th percentile: 2.8892583811289523
+INFO 12-04 07:20:37 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.1698111202362377, max: 0.1698111202362377, mean: 0.1698111202362377, 25th percentile: 0.16982257031483106, median: 0.16982257031483106, 75th percentile: 0.16982257031483106, 95th percentile: 0.16982257031483106, 99th percentile: 0.16982257031483106 99.9th percentile: 0.16982257031483106
+INFO 12-04 07:20:37 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 5.8888958426799185, max: 5.8888958426799185, mean: 5.8888958426799185, 25th percentile: 5.888492902598986, median: 5.888492902598986, 75th percentile: 5.888492902598986, 95th percentile: 5.888492902598986, 99th percentile: 5.888492902598986 99.9th percentile: 5.888492902598986
+INFO 12-04 07:20:37 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.7377049180327869, max: 0.7377049180327869, mean: 0.7377049180327869, 25th percentile: 0.7371229308889683, median: 0.7371229308889683, 75th percentile: 0.7371229308889683, 95th percentile: 0.7371229308889683, 99th percentile: 0.7371229308889683 99.9th percentile: 0.7371229308889683
+INFO 12-04 07:20:38 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 2.235267446701319, max: 2.235267446701319, mean: 2.235267446701319, 25th percentile: 2.236695980651825, median: 2.236695980651825, 75th percentile: 2.236695980651825, 95th percentile: 2.236695980651825, 99th percentile: 2.236695980651825 99.9th percentile: 2.236695980651825
+WARNING 12-04 07:20:38 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:04<00:00,  4.68s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:04<00:00,  4.82s/it]
+Request 1 dispatched
+INFO 12-04 07:20:43 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:20:43 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:20:43 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:20:43 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:20:43 run_benchmark.py:302] Deadline Miss Rate: 0.81395
+INFO 12-04 07:20:43 run_benchmark.py:302] Duration: 4.70688
+INFO 12-04 07:20:43 run_benchmark.py:302] Completed Requests Per Min: 12.74730
+INFO 12-04 07:20:43 run_benchmark.py:302] Number of Prompt Tokens - Mean: 49152.00000, P50: 49168.23682, P90: 49168.23682, P99: 49168.23682
+INFO 12-04 07:20:43 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:20:43 run_benchmark.py:302] Number of Total Tokens - Mean: 49169.00000, P50: 49168.23682, P90: 49168.23682, P99: 49168.23682
+INFO 12-04 07:20:43 run_benchmark.py:302] Time per Output Token - Mean: 0.03468, P50: 0.03470, P90: 0.03470, P99: 0.03470
+INFO 12-04 07:20:43 run_benchmark.py:302] Time to First Token - Mean: 3.55302, P50: 3.55019, P90: 3.55019, P99: 3.55019
+INFO 12-04 07:20:43 run_benchmark.py:302] Time Between Tokens - Mean: 0.03468, P50: 0.03692, P90: 0.03976, P99: 0.03999
+INFO 12-04 07:20:43 run_benchmark.py:302] End to End Latency - Mean: 4.10791, P50: 4.10826, P90: 4.10826, P99: 4.10826
+INFO 12-04 07:20:43 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.24164, P50: 0.24147, P90: 0.24147, P99: 0.24147
+INFO 12-04 07:20:43 run_benchmark.py:302] Output Throughput - Mean: 4.13836, P50: 4.14126, P90: 4.14126, P99: 4.14126
+INFO 12-04 07:20:43 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.81395, P50: 0.81465, P90: 0.81465, P99: 0.81465
+INFO 12-04 07:20:43 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 3.45314, P50: 3.45216, P90: 3.45216, P99: 3.45216
+INFO 12-04 07:20:43 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 49152, max: 49152, mean: 49152.0, 25th percentile: 49168.23682471502, median: 49168.23682471502, 75th percentile: 49168.23682471502, 95th percentile: 49168.23682471502, 99th percentile: 49168.23682471502 99.9th percentile: 49168.23682471502
+INFO 12-04 07:20:43 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:20:43 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 49169, max: 49169, mean: 49169.0, 25th percentile: 49168.23682471502, median: 49168.23682471502, 75th percentile: 49168.23682471502, 95th percentile: 49168.23682471502, 99th percentile: 49168.23682471502 99.9th percentile: 49168.23682471502
+INFO 12-04 07:20:43 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.034680303437198745, max: 0.034680303437198745, mean: 0.034680303437198745, 25th percentile: 0.034700484821205746, median: 0.034700484821205746, 75th percentile: 0.034700484821205746, 95th percentile: 0.034700484821205746, 99th percentile: 0.034700484821205746 99.9th percentile: 0.034700484821205746
+INFO 12-04 07:20:44 cdf_sketch.py:56] ttft: Time to First Token stats: min: 3.5530219030042645, max: 3.5530219030042645, mean: 3.5530219030042645, 25th percentile: 3.550185736762067, median: 3.550185736762067, 75th percentile: 3.550185736762067, 95th percentile: 3.550185736762067, 99th percentile: 3.550185736762067 99.9th percentile: 3.550185736762067
+INFO 12-04 07:20:44 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.04116797499591485, mean: 0.034680303437198745, 25th percentile: 0.03456196006994819, median: 0.03692000995658359, 75th percentile: 0.03873539166050142, 95th percentile: 0.039994970390930897, 99th percentile: 0.039994970390930897 99.9th percentile: 0.039994970390930897
+INFO 12-04 07:20:44 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 4.107906757999444, max: 4.107906757999444, mean: 4.107906757999444, 25th percentile: 4.108261601388884, median: 4.108261601388884, 75th percentile: 4.108261601388884, 95th percentile: 4.108261601388884, 99th percentile: 4.108261601388884 99.9th percentile: 4.108261601388884
+INFO 12-04 07:20:44 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.24164157399996733, max: 0.24164157399996733, mean: 0.24164157399996733, 25th percentile: 0.24147218858320788, median: 0.24147218858320788, 75th percentile: 0.24147218858320788, 95th percentile: 0.24147218858320788, 99th percentile: 0.24147218858320788 99.9th percentile: 0.24147218858320788
+INFO 12-04 07:20:44 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 4.138360727612771, max: 4.138360727612771, mean: 4.138360727612771, 25th percentile: 4.1412595208885286, median: 4.1412595208885286, 75th percentile: 4.1412595208885286, 95th percentile: 4.1412595208885286, 99th percentile: 4.1412595208885286 99.9th percentile: 4.1412595208885286
+INFO 12-04 07:20:44 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.813953488372093, max: 0.813953488372093, mean: 0.813953488372093, 25th percentile: 0.8146468534200841, median: 0.8146468534200841, 75th percentile: 0.8146468534200841, 95th percentile: 0.8146468534200841, 99th percentile: 0.8146468534200841 99.9th percentile: 0.8146468534200841
+INFO 12-04 07:20:44 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 3.4531376957941555, max: 3.4531376957941555, mean: 3.4531376957941555, 25th percentile: 3.4521592781909747, median: 3.4521592781909747, 75th percentile: 3.4521592781909747, 95th percentile: 3.4521592781909747, 99th percentile: 3.4521592781909747 99.9th percentile: 3.4521592781909747
+WARNING 12-04 07:20:44 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:05<00:00,  5.83s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:05<00:00,  5.98s/it]
+Request 1 dispatched
+INFO 12-04 07:20:51 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:20:51 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:20:51 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:20:51 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:20:51 run_benchmark.py:302] Deadline Miss Rate: 0.85321
+INFO 12-04 07:20:51 run_benchmark.py:302] Duration: 5.80846
+INFO 12-04 07:20:51 run_benchmark.py:302] Completed Requests Per Min: 10.32976
+INFO 12-04 07:20:51 run_benchmark.py:302] Number of Prompt Tokens - Mean: 65536.00000, P50: 65578.50129, P90: 65578.50129, P99: 65578.50129
+INFO 12-04 07:20:51 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:20:51 run_benchmark.py:302] Number of Total Tokens - Mean: 65553.00000, P50: 65578.50129, P90: 65578.50129, P99: 65578.50129
+INFO 12-04 07:20:51 run_benchmark.py:302] Time per Output Token - Mean: 0.03569, P50: 0.03569, P90: 0.03569, P99: 0.03569
+INFO 12-04 07:20:51 run_benchmark.py:302] Time to First Token - Mean: 4.73888, P50: 4.73509, P90: 4.73509, P99: 4.73509
+INFO 12-04 07:20:51 run_benchmark.py:302] Time Between Tokens - Mean: 0.03569, P50: 0.03812, P90: 0.04064, P99: 0.04072
+INFO 12-04 07:20:51 run_benchmark.py:302] End to End Latency - Mean: 5.30994, P50: 5.30686, P90: 5.30686, P99: 5.30686
+INFO 12-04 07:20:51 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.31235, P50: 0.31255, P90: 0.31255, P99: 0.31255
+INFO 12-04 07:20:51 run_benchmark.py:302] Output Throughput - Mean: 3.20154, P50: 3.19952, P90: 3.19952, P99: 3.19952
+INFO 12-04 07:20:51 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.85321, P50: 0.85300, P90: 0.85300, P99: 0.85300
+INFO 12-04 07:20:51 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 4.63889, P50: 4.64133, P90: 4.64133, P99: 4.64133
+INFO 12-04 07:20:51 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 65536, max: 65536, mean: 65536.0, 25th percentile: 65578.50129137158, median: 65578.50129137158, 75th percentile: 65578.50129137158, 95th percentile: 65578.50129137158, 99th percentile: 65578.50129137158 99.9th percentile: 65578.50129137158
+INFO 12-04 07:20:51 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:20:51 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 65553, max: 65553, mean: 65553.0, 25th percentile: 65578.50129137158, median: 65578.50129137158, 75th percentile: 65578.50129137158, 95th percentile: 65578.50129137158, 99th percentile: 65578.50129137158 99.9th percentile: 65578.50129137158
+INFO 12-04 07:20:51 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.03569109212367039, max: 0.03569109212367039, mean: 0.03569109212367039, 25th percentile: 0.03568582917052709, median: 0.03568582917052709, 75th percentile: 0.03568582917052709, 95th percentile: 0.03568582917052709, 99th percentile: 0.03568582917052709 99.9th percentile: 0.03568582917052709
+INFO 12-04 07:20:51 cdf_sketch.py:56] ttft: Time to First Token stats: min: 4.7388809800031595, max: 4.7388809800031595, mean: 4.7388809800031595, 25th percentile: 4.735086611969632, median: 4.735086611969632, 75th percentile: 4.735086611969632, 95th percentile: 4.735086611969632, 99th percentile: 4.735086611969632 99.9th percentile: 4.735086611969632
+INFO 12-04 07:20:51 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.04117166102514602, mean: 0.03569109212367039, 25th percentile: 0.03449290520467356, median: 0.038120556982831344, 75th percentile: 0.03991506036017978, 95th percentile: 0.04072139833818039, 99th percentile: 0.04072139833818039 99.9th percentile: 0.04072139833818039
+INFO 12-04 07:20:52 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 5.309938453981886, max: 5.309938453981886, mean: 5.309938453981886, 25th percentile: 5.306858583536214, median: 5.306858583536214, 75th percentile: 5.306858583536214, 95th percentile: 5.306858583536214, 99th percentile: 5.306858583536214 99.9th percentile: 5.306858583536214
+INFO 12-04 07:20:52 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.31234932082246386, max: 0.31234932082246386, mean: 0.31234932082246386, 25th percentile: 0.3125468541804428, median: 0.3125468541804428, 75th percentile: 0.3125468541804428, 95th percentile: 0.3125468541804428, 99th percentile: 0.3125468541804428 99.9th percentile: 0.3125468541804428
+INFO 12-04 07:20:52 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 3.2015436991085684, max: 3.2015436991085684, mean: 3.2015436991085684, 25th percentile: 3.1995170855972517, median: 3.1995170855972517, 75th percentile: 3.1995170855972517, 95th percentile: 3.1995170855972517, 99th percentile: 3.1995170855972517 99.9th percentile: 3.1995170855972517
+INFO 12-04 07:20:52 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.8532110091743119, max: 0.8532110091743119, mean: 0.8532110091743119, 25th percentile: 0.852995887262035, median: 0.852995887262035, 75th percentile: 0.852995887262035, 95th percentile: 0.852995887262035, 99th percentile: 0.852995887262035 99.9th percentile: 0.852995887262035
+INFO 12-04 07:20:52 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 4.638891413230635, max: 4.638891413230635, mean: 4.638891413230635, 25th percentile: 4.641325584103023, median: 4.641325584103023, 75th percentile: 4.641325584103023, 95th percentile: 4.641325584103023, 99th percentile: 4.641325584103023 99.9th percentile: 4.641325584103023
+WARNING 12-04 07:20:52 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:09<00:00,  9.18s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:09<00:00,  9.33s/it]
+Request 1 dispatched
+INFO 12-04 07:21:02 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:21:02 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:21:02 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:21:02 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:21:02 run_benchmark.py:302] Deadline Miss Rate: 0.90698
+INFO 12-04 07:21:02 run_benchmark.py:302] Duration: 9.21201
+INFO 12-04 07:21:02 run_benchmark.py:302] Completed Requests Per Min: 6.51324
+INFO 12-04 07:21:02 run_benchmark.py:302] Number of Prompt Tokens - Mean: 98304.00000, P50: 98223.75130, P90: 98223.75130, P99: 98223.75130
+INFO 12-04 07:21:02 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:21:02 run_benchmark.py:302] Number of Total Tokens - Mean: 98321.00000, P50: 98223.75130, P90: 98223.75130, P99: 98223.75130
+INFO 12-04 07:21:02 run_benchmark.py:302] Time per Output Token - Mean: 0.03758, P50: 0.03759, P90: 0.03759, P99: 0.03759
+INFO 12-04 07:21:02 run_benchmark.py:302] Time to First Token - Mean: 7.86166, P50: 7.85382, P90: 7.85382, P99: 7.85382
+INFO 12-04 07:21:02 run_benchmark.py:302] Time Between Tokens - Mean: 0.03758, P50: 0.03960, P90: 0.04289, P99: 0.04527
+INFO 12-04 07:21:02 run_benchmark.py:302] End to End Latency - Mean: 8.46292, P50: 8.45705, P90: 8.45705, P99: 8.45705
+INFO 12-04 07:21:02 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.49782, P50: 0.49808, P90: 0.49808, P99: 0.49808
+INFO 12-04 07:21:02 run_benchmark.py:302] Output Throughput - Mean: 2.00876, P50: 2.00772, P90: 2.00772, P99: 2.00772
+INFO 12-04 07:21:02 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.90698, P50: 0.90756, P90: 0.90756, P99: 0.90756
+INFO 12-04 07:21:02 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 7.76187, P50: 7.76014, P90: 7.76014, P99: 7.76014
+INFO 12-04 07:21:02 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 98304, max: 98304, mean: 98304.0, 25th percentile: 98223.75129728802, median: 98223.75129728802, 75th percentile: 98223.75129728802, 95th percentile: 98223.75129728802, 99th percentile: 98223.75129728802 99.9th percentile: 98223.75129728802
+INFO 12-04 07:21:02 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:21:02 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 98321, max: 98321, mean: 98321.0, 25th percentile: 98223.75129728802, median: 98223.75129728802, 75th percentile: 98223.75129728802, 95th percentile: 98223.75129728802, 99th percentile: 98223.75129728802 99.9th percentile: 98223.75129728802
+INFO 12-04 07:21:02 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.037578701247184654, max: 0.037578701247184654, mean: 0.037578701247184654, 25th percentile: 0.03759058745127963, median: 0.03759058745127963, 75th percentile: 0.03759058745127963, 95th percentile: 0.03759058745127963, 99th percentile: 0.03759058745127963 99.9th percentile: 0.03759058745127963
+INFO 12-04 07:21:02 cdf_sketch.py:56] ttft: Time to First Token stats: min: 7.861663014977239, max: 7.861663014977239, mean: 7.861663014977239, 25th percentile: 7.853821173087354, median: 7.853821173087354, 75th percentile: 7.853821173087354, 95th percentile: 7.853821173087354, 99th percentile: 7.853821173087354 99.9th percentile: 7.853821173087354
+INFO 12-04 07:21:03 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.045676632988033816, mean: 0.037578701247184654, 25th percentile: 0.03744052537568777, median: 0.03959701365435389, 75th percentile: 0.040558838028008345, 95th percentile: 0.04527494311404125, 99th percentile: 0.04527494311404125 99.9th percentile: 0.04527494311404125
+INFO 12-04 07:21:03 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 8.462922234932194, max: 8.462922234932194, mean: 8.462922234932194, 25th percentile: 8.457048296938083, median: 8.457048296938083, 75th percentile: 8.457048296938083, 95th percentile: 8.457048296938083, 99th percentile: 8.457048296938083 99.9th percentile: 8.457048296938083
+INFO 12-04 07:21:03 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.49781895499601136, max: 0.49781895499601136, mean: 0.49781895499601136, 25th percentile: 0.4980769318142944, median: 0.4980769318142944, 75th percentile: 0.4980769318142944, 95th percentile: 0.4980769318142944, 99th percentile: 0.4980769318142944 99.9th percentile: 0.4980769318142944
+INFO 12-04 07:21:03 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 2.0087624024039266, max: 2.0087624024039266, mean: 2.0087624024039266, 25th percentile: 2.007719964780149, median: 2.007719964780149, 75th percentile: 2.007719964780149, 95th percentile: 2.007719964780149, 99th percentile: 2.007719964780149 99.9th percentile: 2.007719964780149
+INFO 12-04 07:21:03 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.9069767441860465, max: 0.9069767441860465, mean: 0.9069767441860465, 25th percentile: 0.9075555230108427, median: 0.9075555230108427, 75th percentile: 0.9075555230108427, 95th percentile: 0.9075555230108427, 99th percentile: 0.9075555230108427 99.9th percentile: 0.9075555230108427
+INFO 12-04 07:21:03 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 7.761868845443489, max: 7.761868845443489, mean: 7.761868845443489, 25th percentile: 7.760138507963147, median: 7.760138507963147, 75th percentile: 7.760138507963147, 95th percentile: 7.760138507963147, 99th percentile: 7.760138507963147 99.9th percentile: 7.760138507963147
+WARNING 12-04 07:21:03 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:13<00:00, 13.13s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:13<00:00, 13.28s/it]
+Request 1 dispatched
+INFO 12-04 07:21:17 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:21:17 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:21:17 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:21:17 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:21:17 run_benchmark.py:302] Deadline Miss Rate: 0.93496
+INFO 12-04 07:21:17 run_benchmark.py:302] Duration: 13.11732
+INFO 12-04 07:21:17 run_benchmark.py:302] Completed Requests Per Min: 4.57410
+INFO 12-04 07:21:17 run_benchmark.py:302] Number of Prompt Tokens - Mean: 131072.00000, P50: 131006.65831, P90: 131006.65831, P99: 131006.65831
+INFO 12-04 07:21:17 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:21:17 run_benchmark.py:302] Number of Total Tokens - Mean: 131089.00000, P50: 131006.65831, P90: 131006.65831, P99: 131006.65831
+INFO 12-04 07:21:17 run_benchmark.py:302] Time per Output Token - Mean: 0.03823, P50: 0.03820, P90: 0.03820, P99: 0.03820
+INFO 12-04 07:21:17 run_benchmark.py:302] Time to First Token - Mean: 11.58974, P50: 11.59994, P90: 11.59994, P99: 11.59994
+INFO 12-04 07:21:17 run_benchmark.py:302] Time Between Tokens - Mean: 0.03823, P50: 0.04024, P90: 0.04527, P99: 0.04665
+INFO 12-04 07:21:17 run_benchmark.py:302] End to End Latency - Mean: 12.20143, P50: 12.19469, P90: 12.19469, P99: 12.19469
+INFO 12-04 07:21:17 run_benchmark.py:302] Normalized End to End Latency - Mean: 0.71773, P50: 0.71820, P90: 0.71820, P99: 0.71820
+INFO 12-04 07:21:17 run_benchmark.py:302] Output Throughput - Mean: 1.39328, P50: 1.39236, P90: 1.39236, P99: 1.39236
+INFO 12-04 07:21:17 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.93496, P50: 0.93519, P90: 0.93519, P99: 0.93519
+INFO 12-04 07:21:17 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 11.48994, P50: 11.48452, P90: 11.48452, P99: 11.48452
+INFO 12-04 07:21:17 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 131072, max: 131072, mean: 131072.0, 25th percentile: 131006.65830780283, median: 131006.65830780283, 75th percentile: 131006.65830780283, 95th percentile: 131006.65830780283, 99th percentile: 131006.65830780283 99.9th percentile: 131006.65830780283
+INFO 12-04 07:21:17 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:21:17 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 131089, max: 131089, mean: 131089.0, 25th percentile: 131006.65830780283, median: 131006.65830780283, 75th percentile: 131006.65830780283, 95th percentile: 131006.65830780283, 99th percentile: 131006.65830780283 99.9th percentile: 131006.65830780283
+INFO 12-04 07:21:17 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.038230577749345684, max: 0.038230577749345684, mean: 0.038230577749345684, 25th percentile: 0.0381968744142284, median: 0.0381968744142284, 75th percentile: 0.0381968744142284, 95th percentile: 0.0381968744142284, 99th percentile: 0.0381968744142284 99.9th percentile: 0.0381968744142284
+INFO 12-04 07:21:18 cdf_sketch.py:56] ttft: Time to First Token stats: min: 11.589742060983554, max: 11.589742060983554, mean: 11.589742060983554, 25th percentile: 11.599944539232464, median: 11.599944539232464, 75th percentile: 11.599944539232464, 95th percentile: 11.599944539232464, 99th percentile: 11.599944539232464 99.9th percentile: 11.599944539232464
+INFO 12-04 07:21:18 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.04669291799655184, mean: 0.038230577749345684, 25th percentile: 0.03611663895316584, median: 0.04023566164519613, 75th percentile: 0.04146102038352242, 95th percentile: 0.046653770872889355, 99th percentile: 0.046653770872889355 99.9th percentile: 0.046653770872889355
+INFO 12-04 07:21:18 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 12.201431304973084, max: 12.201431304973084, mean: 12.201431304973084, 25th percentile: 12.194686616904884, median: 12.194686616904884, 75th percentile: 12.194686616904884, 95th percentile: 12.194686616904884, 99th percentile: 12.194686616904884 99.9th percentile: 12.194686616904884
+INFO 12-04 07:21:18 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 0.7177312532337109, max: 0.7177312532337109, mean: 0.7177312532337109, 25th percentile: 0.7182047306959221, median: 0.7182047306959221, 75th percentile: 0.7182047306959221, 95th percentile: 0.7182047306959221, 99th percentile: 0.7182047306959221 99.9th percentile: 0.7182047306959221
+INFO 12-04 07:21:18 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 1.3932791633282486, max: 1.3932791633282486, mean: 1.3932791633282486, 25th percentile: 1.3923592497518447, median: 1.3923592497518447, 75th percentile: 1.3923592497518447, 95th percentile: 1.3923592497518447, 99th percentile: 1.3923592497518447 99.9th percentile: 1.3923592497518447
+INFO 12-04 07:21:18 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.9349593495934959, max: 0.9349593495934959, mean: 0.9349593495934959, 25th percentile: 0.9351947128530309, median: 0.9351947128530309, 75th percentile: 0.9351947128530309, 95th percentile: 0.9351947128530309, 99th percentile: 0.9351947128530309 99.9th percentile: 0.9351947128530309
+INFO 12-04 07:21:18 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 11.489944471429656, max: 11.489944471429656, mean: 11.489944471429656, 25th percentile: 11.484523124284905, median: 11.484523124284905, 75th percentile: 11.484523124284905, 95th percentile: 11.484523124284905, 99th percentile: 11.484523124284905 99.9th percentile: 11.484523124284905
+WARNING 12-04 07:21:19 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:23<00:00, 23.74s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:23<00:00, 23.89s/it]
+Request 1 dispatched
+INFO 12-04 07:21:43 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:21:43 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:21:43 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:21:43 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:21:43 run_benchmark.py:302] Deadline Miss Rate: 0.96429
+INFO 12-04 07:21:43 run_benchmark.py:302] Duration: 23.73072
+INFO 12-04 07:21:43 run_benchmark.py:302] Completed Requests Per Min: 2.52837
+INFO 12-04 07:21:43 run_benchmark.py:302] Number of Prompt Tokens - Mean: 196608.00000, P50: 196615.15379, P90: 196615.15379, P99: 196615.15379
+INFO 12-04 07:21:43 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:21:43 run_benchmark.py:302] Number of Total Tokens - Mean: 196625.00000, P50: 196615.15379, P90: 196615.15379, P99: 196615.15379
+INFO 12-04 07:21:43 run_benchmark.py:302] Time per Output Token - Mean: 0.04160, P50: 0.04163, P90: 0.04163, P99: 0.04163
+INFO 12-04 07:21:43 run_benchmark.py:302] Time to First Token - Mean: 21.66770, P50: 21.64989, P90: 21.64989, P99: 21.64989
+INFO 12-04 07:21:43 run_benchmark.py:302] Time Between Tokens - Mean: 0.04160, P50: 0.04333, P90: 0.04974, P99: 0.05044
+INFO 12-04 07:21:43 run_benchmark.py:302] End to End Latency - Mean: 22.33335, P50: 22.35389, P90: 22.35389, P99: 22.35389
+INFO 12-04 07:21:43 run_benchmark.py:302] Normalized End to End Latency - Mean: 1.31373, P50: 1.31390, P90: 1.31390, P99: 1.31390
+INFO 12-04 07:21:43 run_benchmark.py:302] Output Throughput - Mean: 0.76119, P50: 0.76109, P90: 0.76109, P99: 0.76109
+INFO 12-04 07:21:43 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.96429, P50: 0.96368, P90: 0.96368, P99: 0.96368
+INFO 12-04 07:21:43 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 21.56771, P50: 21.56347, P90: 21.56347, P99: 21.56347
+INFO 12-04 07:21:43 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 196608, max: 196608, mean: 196608.0, 25th percentile: 196615.15378594436, median: 196615.15378594436, 75th percentile: 196615.15378594436, 95th percentile: 196615.15378594436, 99th percentile: 196615.15378594436 99.9th percentile: 196615.15378594436
+INFO 12-04 07:21:43 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:21:43 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 196625, max: 196625, mean: 196625.0, 25th percentile: 196615.15378594436, median: 196615.15378594436, 75th percentile: 196615.15378594436, 95th percentile: 196615.15378594436, 99th percentile: 196615.15378594436 99.9th percentile: 196615.15378594436
+INFO 12-04 07:21:43 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.0416032128068764, max: 0.0416032128068764, mean: 0.0416032128068764, 25th percentile: 0.041627196651416044, median: 0.041627196651416044, 75th percentile: 0.041627196651416044, 95th percentile: 0.041627196651416044, 99th percentile: 0.041627196651416044 99.9th percentile: 0.041627196651416044
+INFO 12-04 07:21:43 cdf_sketch.py:56] ttft: Time to First Token stats: min: 21.667700571008027, max: 21.667700571008027, mean: 21.667700571008027, 25th percentile: 21.64989327771094, median: 21.64989327771094, 75th percentile: 21.64989327771094, 95th percentile: 21.64989327771094, 99th percentile: 21.64989327771094 99.9th percentile: 21.64989327771094
+INFO 12-04 07:21:44 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.05415045900736004, mean: 0.0416032128068764, 25th percentile: 0.03766584388261353, median: 0.04332603535189993, 75th percentile: 0.0491439513861072, 95th percentile: 0.05043845011448348, 99th percentile: 0.05043845011448348 99.9th percentile: 0.05043845011448348
+INFO 12-04 07:21:44 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 22.33335197591805, max: 22.33335197591805, mean: 22.33335197591805, 25th percentile: 22.353894035665824, median: 22.353894035665824, 75th percentile: 22.353894035665824, 95th percentile: 22.353894035665824, 99th percentile: 22.353894035665824 99.9th percentile: 22.353894035665824
+INFO 12-04 07:21:44 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 1.3137265868187087, max: 1.3137265868187087, mean: 1.3137265868187087, 25th percentile: 1.313899707439392, median: 1.313899707439392, 75th percentile: 1.313899707439392, 95th percentile: 1.313899707439392, 99th percentile: 1.313899707439392 99.9th percentile: 1.313899707439392
+INFO 12-04 07:21:44 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 0.7611933944501937, max: 0.7611933944501937, mean: 0.7611933944501937, 25th percentile: 0.7610923378229978, median: 0.7610923378229978, 75th percentile: 0.7610923378229978, 95th percentile: 0.7610923378229978, 99th percentile: 0.7610923378229978 99.9th percentile: 0.7610923378229978
+INFO 12-04 07:21:44 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.9642857142857143, max: 0.9642857142857143, mean: 0.9642857142857143, 25th percentile: 0.9636756416255251, median: 0.9636756416255251, 75th percentile: 0.9636756416255251, 95th percentile: 0.9636756416255251, 99th percentile: 0.9636756416255251 99.9th percentile: 0.9636756416255251
+INFO 12-04 07:21:44 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 21.56771420126251, max: 21.56771420126251, mean: 21.56771420126251, 25th percentile: 21.563466644293563, median: 21.563466644293563, 75th percentile: 21.563466644293563, 95th percentile: 21.563466644293563, 99th percentile: 21.563466644293563 99.9th percentile: 21.563466644293563
+WARNING 12-04 07:21:44 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [00:38<00:00, 38.40s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [00:38<00:00, 38.56s/it]
+Request 1 dispatched
+INFO 12-04 07:22:23 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:22:23 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:22:23 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:22:23 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:22:23 run_benchmark.py:302] Deadline Miss Rate: 0.98217
+INFO 12-04 07:22:23 run_benchmark.py:302] Duration: 38.44852
+INFO 12-04 07:22:23 run_benchmark.py:302] Completed Requests Per Min: 1.56053
+INFO 12-04 07:22:23 run_benchmark.py:302] Number of Prompt Tokens - Mean: 262144.00000, P50: 262236.92264, P90: 262236.92264, P99: 262236.92264
+INFO 12-04 07:22:23 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:22:23 run_benchmark.py:302] Number of Total Tokens - Mean: 262161.00000, P50: 262236.92264, P90: 262236.92264, P99: 262236.92264
+INFO 12-04 07:22:23 run_benchmark.py:302] Time per Output Token - Mean: 0.05320, P50: 0.05324, P90: 0.05324, P99: 0.05324
+INFO 12-04 07:22:23 run_benchmark.py:302] Time to First Token - Mean: 35.70188, P50: 35.69465, P90: 35.69465, P99: 35.69465
+INFO 12-04 07:22:23 run_benchmark.py:302] Time Between Tokens - Mean: 0.05320, P50: 0.05218, P90: 0.07101, P99: 0.07129
+INFO 12-04 07:22:23 run_benchmark.py:302] End to End Latency - Mean: 36.55301, P50: 36.56168, P90: 36.56168, P99: 36.56168
+INFO 12-04 07:22:23 run_benchmark.py:302] Normalized End to End Latency - Mean: 2.15018, P50: 2.14899, P90: 2.14899, P99: 2.14899
+INFO 12-04 07:22:23 run_benchmark.py:302] Output Throughput - Mean: 0.46508, P50: 0.46533, P90: 0.46533, P99: 0.46533
+INFO 12-04 07:22:23 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.98217, P50: 0.98314, P90: 0.98314, P99: 0.98314
+INFO 12-04 07:22:23 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 35.60207, P50: 35.62333, P90: 35.62333, P99: 35.62333
+INFO 12-04 07:22:23 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 262144, max: 262144, mean: 262144.0, 25th percentile: 262236.92263810436, median: 262236.92263810436, 75th percentile: 262236.92263810436, 95th percentile: 262236.92263810436, 99th percentile: 262236.92263810436 99.9th percentile: 262236.92263810436
+INFO 12-04 07:22:24 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:22:24 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 262161, max: 262161, mean: 262161.0, 25th percentile: 262236.92263810436, median: 262236.92263810436, 75th percentile: 262236.92263810436, 95th percentile: 262236.92263810436, 99th percentile: 262236.92263810436 99.9th percentile: 262236.92263810436
+INFO 12-04 07:22:24 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.05319560768293741, max: 0.05319560768293741, mean: 0.05319560768293741, 25th percentile: 0.053237008410671166, median: 0.053237008410671166, 75th percentile: 0.053237008410671166, 95th percentile: 0.053237008410671166, 99th percentile: 0.053237008410671166 99.9th percentile: 0.053237008410671166
+INFO 12-04 07:22:24 cdf_sketch.py:56] ttft: Time to First Token stats: min: 35.70187640597578, max: 35.70187640597578, mean: 35.70187640597578, 25th percentile: 35.6946455044604, median: 35.6946455044604, 75th percentile: 35.6946455044604, 95th percentile: 35.6946455044604, 99th percentile: 35.6946455044604 99.9th percentile: 35.6946455044604
+INFO 12-04 07:22:24 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.07212392598739825, mean: 0.05319560768293741, 25th percentile: 0.04609727111345461, median: 0.05218284466707463, 75th percentile: 0.061852582444562265, 95th percentile: 0.07128984555170034, 99th percentile: 0.07128984555170034 99.9th percentile: 0.07128984555170034
+INFO 12-04 07:22:24 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 36.55300612890278, max: 36.55300612890278, mean: 36.55300612890278, 25th percentile: 36.561680083250394, median: 36.561680083250394, 75th percentile: 36.561680083250394, 95th percentile: 36.561680083250394, 99th percentile: 36.561680083250394 99.9th percentile: 36.561680083250394
+INFO 12-04 07:22:24 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 2.1501768311119283, max: 2.1501768311119283, mean: 2.1501768311119283, 25th percentile: 2.148993848151454, median: 2.148993848151454, 75th percentile: 2.148993848151454, 95th percentile: 2.148993848151454, 99th percentile: 2.148993848151454 99.9th percentile: 2.148993848151454
+INFO 12-04 07:22:24 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 0.4650780277838203, max: 0.4650780277838203, mean: 0.4650780277838203, 25th percentile: 0.46533357964714056, median: 0.46533357964714056, 75th percentile: 0.46533357964714056, 95th percentile: 0.46533357964714056, 99th percentile: 0.46533357964714056 99.9th percentile: 0.46533357964714056
+INFO 12-04 07:22:24 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.9821673525377229, max: 0.9821673525377229, mean: 0.9821673525377229, 25th percentile: 0.9831431874917963, median: 0.9831431874917963, 75th percentile: 0.9831431874917963, 95th percentile: 0.9831431874917963, 99th percentile: 0.9831431874917963 99.9th percentile: 0.9831431874917963
+INFO 12-04 07:22:24 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 35.60207010090198, max: 35.60207010090198, mean: 35.60207010090198, 25th percentile: 35.623327531424515, median: 35.623327531424515, 75th percentile: 35.623327531424515, 95th percentile: 35.623327531424515, 99th percentile: 35.623327531424515 99.9th percentile: 35.623327531424515
+WARNING 12-04 07:22:25 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [01:20<00:00, 80.63s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [01:20<00:00, 80.78s/it]
+Request 1 dispatched
+INFO 12-04 07:23:46 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:23:46 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:23:46 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:23:46 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:23:46 run_benchmark.py:302] Deadline Miss Rate: 0.99935
+INFO 12-04 07:23:46 run_benchmark.py:302] Duration: 80.69585
+INFO 12-04 07:23:46 run_benchmark.py:302] Completed Requests Per Min: 0.74353
+INFO 12-04 07:23:46 run_benchmark.py:302] Number of Prompt Tokens - Mean: 393216.00000, P50: 393565.89611, P90: 393565.89611, P99: 393565.89611
+INFO 12-04 07:23:46 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:23:46 run_benchmark.py:302] Number of Total Tokens - Mean: 393233.00000, P50: 393565.89611, P90: 393565.89611, P99: 393565.89611
+INFO 12-04 07:23:46 run_benchmark.py:302] Time per Output Token - Mean: 0.08417, P50: 0.08416, P90: 0.08416, P99: 0.08416
+INFO 12-04 07:23:46 run_benchmark.py:302] Time to First Token - Mean: 76.55973, P50: 76.63094, P90: 76.63094, P99: 76.63094
+INFO 12-04 07:23:46 run_benchmark.py:302] Time Between Tokens - Mean: 0.08417, P50: 0.08707, P90: 0.10056, P99: 0.10699
+INFO 12-04 07:23:46 run_benchmark.py:302] End to End Latency - Mean: 77.90648, P50: 77.86690, P90: 77.86690, P99: 77.86690
+INFO 12-04 07:23:46 run_benchmark.py:302] Normalized End to End Latency - Mean: 4.58273, P50: 4.58596, P90: 4.58596, P99: 4.58596
+INFO 12-04 07:23:46 run_benchmark.py:302] Output Throughput - Mean: 0.21821, P50: 0.21806, P90: 0.21806, P99: 0.21806
+INFO 12-04 07:23:46 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.99935, P50: 0.99900, P90: 0.99900, P99: 0.99900
+INFO 12-04 07:23:46 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 76.45998, P50: 76.47783, P90: 76.47783, P99: 76.47783
+INFO 12-04 07:23:46 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 393216, max: 393216, mean: 393216.0, 25th percentile: 393565.8961066161, median: 393565.8961066161, 75th percentile: 393565.8961066161, 95th percentile: 393565.8961066161, 99th percentile: 393565.8961066161 99.9th percentile: 393565.8961066161
+INFO 12-04 07:23:46 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:23:46 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 393233, max: 393233, mean: 393233.0, 25th percentile: 393565.8961066161, median: 393565.8961066161, 75th percentile: 393565.8961066161, 95th percentile: 393565.8961066161, 99th percentile: 393565.8961066161 99.9th percentile: 393565.8961066161
+INFO 12-04 07:23:46 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.08417169056519924, max: 0.08417169056519924, mean: 0.08417169056519924, 25th percentile: 0.08416287874135946, median: 0.08416287874135946, 75th percentile: 0.08416287874135946, 95th percentile: 0.08416287874135946, 99th percentile: 0.08416287874135946 99.9th percentile: 0.08416287874135946
+INFO 12-04 07:23:46 cdf_sketch.py:56] ttft: Time to First Token stats: min: 76.55973117201938, max: 76.55973117201938, mean: 76.55973117201938, 25th percentile: 76.63094265837398, median: 76.63094265837398, 75th percentile: 76.63094265837398, 95th percentile: 76.63094265837398, 99th percentile: 76.63094265837398 99.9th percentile: 76.63094265837398
+INFO 12-04 07:23:47 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.10744098998839036, mean: 0.08417169056519924, 25th percentile: 0.0843313729930939, median: 0.0870736197905706, 75th percentile: 0.09044608958190409, 95th percentile: 0.10699199664792114, 99th percentile: 0.10699199664792114 99.9th percentile: 0.10699199664792114
+INFO 12-04 07:23:47 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 77.90647822106257, max: 77.90647822106257, mean: 77.90647822106257, 25th percentile: 77.86689944017377, median: 77.86689944017377, 75th percentile: 77.86689944017377, 95th percentile: 77.86689944017377, 99th percentile: 77.86689944017377 99.9th percentile: 77.86689944017377
+INFO 12-04 07:23:47 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 4.58273401300368, max: 4.58273401300368, mean: 4.58273401300368, 25th percentile: 4.585962501490713, median: 4.585962501490713, 75th percentile: 4.585962501490713, 95th percentile: 4.585962501490713, 99th percentile: 4.585962501490713 99.9th percentile: 4.585962501490713
+INFO 12-04 07:23:47 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 0.21821035154177884, max: 0.21821035154177884, mean: 0.21821035154177884, 25th percentile: 0.21805651478287055, median: 0.21805651478287055, 75th percentile: 0.21805651478287055, 95th percentile: 0.21805651478287055, 99th percentile: 0.21805651478287055 99.9th percentile: 0.21805651478287055
+INFO 12-04 07:23:47 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.9993540051679587, max: 0.9993540051679587, mean: 0.9993540051679587, 25th percentile: 0.9989999999999999, median: 0.9989999999999999, 75th percentile: 0.9989999999999999, 95th percentile: 0.9989999999999999, 99th percentile: 0.9989999999999999 99.9th percentile: 0.9989999999999999
+INFO 12-04 07:23:47 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 76.45998270967439, max: 76.45998270967439, mean: 76.45998270967439, 25th percentile: 76.47783388183377, median: 76.47783388183377, 75th percentile: 76.47783388183377, 95th percentile: 76.47783388183377, 99th percentile: 76.47783388183377 99.9th percentile: 76.47783388183377
+WARNING 12-04 07:23:47 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [02:15<00:00, 135.33s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [02:15<00:00, 135.49s/it]
+Request 1 dispatched
+INFO 12-04 07:26:03 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:26:03 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:26:03 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:26:03 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:26:03 run_benchmark.py:302] Deadline Miss Rate: 0.99962
+INFO 12-04 07:26:03 run_benchmark.py:302] Duration: 135.36677
+INFO 12-04 07:26:03 run_benchmark.py:302] Completed Requests Per Min: 0.44324
+INFO 12-04 07:26:03 run_benchmark.py:302] Number of Prompt Tokens - Mean: 524288.00000, P50: 523872.64489, P90: 523872.64489, P99: 523872.64489
+INFO 12-04 07:26:03 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:26:03 run_benchmark.py:302] Number of Total Tokens - Mean: 524305.00000, P50: 523872.64489, P90: 523872.64489, P99: 523872.64489
+INFO 12-04 07:26:03 run_benchmark.py:302] Time per Output Token - Mean: 0.09493, P50: 0.09489, P90: 0.09489, P99: 0.09489
+INFO 12-04 07:26:03 run_benchmark.py:302] Time to First Token - Mean: 130.08173, P50: 130.19081, P90: 130.19081, P99: 130.19081
+INFO 12-04 07:26:03 run_benchmark.py:302] Time Between Tokens - Mean: 0.09493, P50: 0.09996, P90: 0.10699, P99: 0.11361
+INFO 12-04 07:26:03 run_benchmark.py:302] End to End Latency - Mean: 131.60067, P50: 131.49925, P90: 131.49925, P99: 131.49925
+INFO 12-04 07:26:03 run_benchmark.py:302] Normalized End to End Latency - Mean: 7.74122, P50: 7.74463, P90: 7.74463, P99: 7.74463
+INFO 12-04 07:26:03 run_benchmark.py:302] Output Throughput - Mean: 0.12918, P50: 0.12912, P90: 0.12912, P99: 0.12912
+INFO 12-04 07:26:03 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.99962, P50: 0.99900, P90: 0.99900, P99: 0.99900
+INFO 12-04 07:26:03 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 129.98176, P50: 129.93069, P90: 129.93069, P99: 129.93069
+INFO 12-04 07:26:03 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 524288, max: 524288, mean: 524288.0, 25th percentile: 523872.6448946766, median: 523872.6448946766, 75th percentile: 523872.6448946766, 95th percentile: 523872.6448946766, 99th percentile: 523872.6448946766 99.9th percentile: 523872.6448946766
+INFO 12-04 07:26:03 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:26:04 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 524305, max: 524305, mean: 524305.0, 25th percentile: 523872.6448946766, median: 523872.6448946766, 75th percentile: 523872.6448946766, 95th percentile: 523872.6448946766, 99th percentile: 523872.6448946766 99.9th percentile: 523872.6448946766
+INFO 12-04 07:26:04 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.09493355506128864, max: 0.09493355506128864, mean: 0.09493355506128864, 25th percentile: 0.09489338459647714, median: 0.09489338459647714, 75th percentile: 0.09489338459647714, 95th percentile: 0.09489338459647714, 99th percentile: 0.09489338459647714 99.9th percentile: 0.09489338459647714
+INFO 12-04 07:26:04 cdf_sketch.py:56] ttft: Time to First Token stats: min: 130.08173488202738, max: 130.08173488202738, mean: 130.08173488202738, 25th percentile: 130.1908073225948, median: 130.1908073225948, 75th percentile: 130.1908073225948, 95th percentile: 130.1908073225948, 99th percentile: 130.1908073225948 99.9th percentile: 130.1908073225948
+INFO 12-04 07:26:04 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.12264319398673251, mean: 0.09493355506128864, 25th percentile: 0.09603896533096172, median: 0.09995839119153355, 75th percentile: 0.10341541401211014, 95th percentile: 0.11360801450078294, 99th percentile: 0.11360801450078294 99.9th percentile: 0.11360801450078294
+INFO 12-04 07:26:04 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 131.600671763008, max: 131.600671763008, mean: 131.600671763008, 25th percentile: 131.49924712734068, median: 131.49924712734068, 75th percentile: 131.49924712734068, 95th percentile: 131.49924712734068, 99th percentile: 131.49924712734068 99.9th percentile: 131.49924712734068
+INFO 12-04 07:26:04 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 7.741215986059294, max: 7.741215986059294, mean: 7.741215986059294, 25th percentile: 7.7446337357194635, median: 7.7446337357194635, 75th percentile: 7.7446337357194635, 95th percentile: 7.7446337357194635, 99th percentile: 7.7446337357194635 99.9th percentile: 7.7446337357194635
+INFO 12-04 07:26:04 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 0.12917867190385102, max: 0.12917867190385102, mean: 0.12917867190385102, 25th percentile: 0.12912153552050468, median: 0.12912153552050468, 75th percentile: 0.12912153552050468, 95th percentile: 0.12912153552050468, 99th percentile: 0.12912153552050468 99.9th percentile: 0.12912153552050468
+INFO 12-04 07:26:04 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.9996189024390244, max: 0.9996189024390244, mean: 0.9996189024390244, 25th percentile: 0.9989999999999999, median: 0.9989999999999999, 75th percentile: 0.9989999999999999, 95th percentile: 0.9989999999999999, 99th percentile: 0.9989999999999999 99.9th percentile: 0.9989999999999999
+INFO 12-04 07:26:04 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 129.98175638935214, max: 129.98175638935214, mean: 129.98175638935214, 25th percentile: 129.93068582944278, median: 129.93068582944278, 75th percentile: 129.93068582944278, 95th percentile: 129.93068582944278, 99th percentile: 129.93068582944278 99.9th percentile: 129.93068582944278
+WARNING 12-04 07:26:05 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [03:26<00:00, 206.62s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [03:26<00:00, 206.78s/it]
+Request 1 dispatched
+INFO 12-04 07:29:32 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:29:32 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:29:32 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:29:32 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:29:32 run_benchmark.py:302] Deadline Miss Rate: 0.99975
+INFO 12-04 07:29:32 run_benchmark.py:302] Duration: 206.64482
+INFO 12-04 07:29:32 run_benchmark.py:302] Completed Requests Per Min: 0.29035
+INFO 12-04 07:29:32 run_benchmark.py:302] Number of Prompt Tokens - Mean: 655360.00000, P50: 655401.93284, P90: 655401.93284, P99: 655401.93284
+INFO 12-04 07:29:32 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:29:32 run_benchmark.py:302] Number of Total Tokens - Mean: 655377.00000, P50: 655401.93284, P90: 655401.93284, P99: 655401.93284
+INFO 12-04 07:29:32 run_benchmark.py:302] Time per Output Token - Mean: 0.11879, P50: 0.11872, P90: 0.11872, P99: 0.11872
+INFO 12-04 07:29:32 run_benchmark.py:302] Time to First Token - Mean: 200.21773, P50: 200.13683, P90: 200.13683, P99: 200.13683
+INFO 12-04 07:29:32 run_benchmark.py:302] Time Between Tokens - Mean: 0.11879, P50: 0.12087, P90: 0.14972, P99: 0.15305
+INFO 12-04 07:29:32 run_benchmark.py:302] End to End Latency - Mean: 202.11841, P50: 202.14824, P90: 202.14824, P99: 202.14824
+INFO 12-04 07:29:32 run_benchmark.py:302] Normalized End to End Latency - Mean: 11.88932, P50: 11.88171, P90: 11.88171, P99: 11.88171
+INFO 12-04 07:29:32 run_benchmark.py:302] Output Throughput - Mean: 0.08411, P50: 0.08416, P90: 0.08416, P99: 0.08416
+INFO 12-04 07:29:32 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.99975, P50: 0.99900, P90: 0.99900, P99: 0.99900
+INFO 12-04 07:29:32 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 200.11801, P50: 200.13683, P90: 200.13683, P99: 200.13683
+INFO 12-04 07:29:32 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 655360, max: 655360, mean: 655360.0, 25th percentile: 655401.9328357206, median: 655401.9328357206, 75th percentile: 655401.9328357206, 95th percentile: 655401.9328357206, 99th percentile: 655401.9328357206 99.9th percentile: 655401.9328357206
+INFO 12-04 07:29:32 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:29:32 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 655377, max: 655377, mean: 655377.0, 25th percentile: 655401.9328357206, median: 655401.9328357206, 75th percentile: 655401.9328357206, 95th percentile: 655401.9328357206, 99th percentile: 655401.9328357206 99.9th percentile: 655401.9328357206
+INFO 12-04 07:29:32 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.11879206406410958, max: 0.11879206406410958, mean: 0.11879206406410958, 25th percentile: 0.11871837226843242, median: 0.11871837226843242, 75th percentile: 0.11871837226843242, 95th percentile: 0.11871837226843242, 99th percentile: 0.11871837226843242 99.9th percentile: 0.11871837226843242
+INFO 12-04 07:29:32 cdf_sketch.py:56] ttft: Time to First Token stats: min: 200.2177324530203, max: 200.2177324530203, mean: 200.2177324530203, 25th percentile: 200.13682673977718, median: 200.13682673977718, 75th percentile: 200.13682673977718, 95th percentile: 200.13682673977718, 99th percentile: 200.13682673977718 99.9th percentile: 200.13682673977718
+INFO 12-04 07:29:33 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.18666316699818708, mean: 0.11879206406410958, 25th percentile: 0.09837178311571189, median: 0.12087465198622706, 75th percentile: 0.1387611515111055, 95th percentile: 0.15304839113513624, 99th percentile: 0.15304839113513624 99.9th percentile: 0.15304839113513624
+INFO 12-04 07:29:33 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 202.11840547804604, max: 202.11840547804604, mean: 202.11840547804604, 25th percentile: 202.14823596203493, median: 202.14823596203493, 75th percentile: 202.14823596203493, 95th percentile: 202.14823596203493, 99th percentile: 202.14823596203493 99.9th percentile: 202.14823596203493
+INFO 12-04 07:29:33 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 11.889317969296826, max: 11.889317969296826, mean: 11.889317969296826, 25th percentile: 11.881710974657745, median: 11.881710974657745, 75th percentile: 11.881710974657745, 95th percentile: 11.881710974657745, 99th percentile: 11.881710974657745 99.9th percentile: 11.881710974657745
+INFO 12-04 07:29:33 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 0.08410911396115545, max: 0.08410911396115545, mean: 0.08410911396115545, 25th percentile: 0.08416287874135946, median: 0.08416287874135946, 75th percentile: 0.08416287874135946, 95th percentile: 0.08416287874135946, 99th percentile: 0.08416287874135946 99.9th percentile: 0.08416287874135946
+INFO 12-04 07:29:33 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.9997519841269841, max: 0.9997519841269841, mean: 0.9997519841269841, 25th percentile: 0.9989999999999999, median: 0.9989999999999999, 75th percentile: 0.9989999999999999, 95th percentile: 0.9989999999999999, 99th percentile: 0.9989999999999999 99.9th percentile: 0.9989999999999999
+INFO 12-04 07:29:33 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 200.11800875076153, max: 200.11800875076153, mean: 200.11800875076153, 25th percentile: 200.13682673977718, median: 200.13682673977718, 75th percentile: 200.13682673977718, 95th percentile: 200.13682673977718, 99th percentile: 200.13682673977718 99.9th percentile: 200.13682673977718
+WARNING 12-04 07:29:33 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [04:55<00:00, 295.47s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [04:55<00:00, 295.62s/it]
+Request 1 dispatched
+INFO 12-04 07:34:29 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:34:29 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:34:29 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:34:29 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:34:29 run_benchmark.py:302] Deadline Miss Rate: 0.99983
+INFO 12-04 07:34:29 run_benchmark.py:302] Duration: 295.45497
+INFO 12-04 07:34:29 run_benchmark.py:302] Completed Requests Per Min: 0.20308
+INFO 12-04 07:34:29 run_benchmark.py:302] Number of Prompt Tokens - Mean: 786432.00000, P50: 786229.50902, P90: 786229.50902, P99: 786229.50902
+INFO 12-04 07:34:29 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:34:29 run_benchmark.py:302] Number of Total Tokens - Mean: 786449.00000, P50: 786229.50902, P90: 786229.50902, P99: 786229.50902
+INFO 12-04 07:34:29 run_benchmark.py:302] Time per Output Token - Mean: 0.13945, P50: 0.13932, P90: 0.13932, P99: 0.13932
+INFO 12-04 07:34:29 run_benchmark.py:302] Time to First Token - Mean: 287.76869, P50: 288.01178, P90: 288.01178, P99: 288.01178
+INFO 12-04 07:34:29 run_benchmark.py:302] Time Between Tokens - Mean: 0.13945, P50: 0.14242, P90: 0.16982, P99: 0.17853
+INFO 12-04 07:34:29 run_benchmark.py:302] End to End Latency - Mean: 289.99988, P50: 289.74505, P90: 289.74505, P99: 289.74505
+INFO 12-04 07:34:29 run_benchmark.py:302] Normalized End to End Latency - Mean: 17.05882, P50: 17.06450, P90: 17.06450, P99: 17.06450
+INFO 12-04 07:34:29 run_benchmark.py:302] Output Throughput - Mean: 0.05862, P50: 0.05860, P90: 0.05860, P99: 0.05860
+INFO 12-04 07:34:29 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.99983, P50: 0.99900, P90: 0.99900, P99: 0.99900
+INFO 12-04 07:34:29 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 287.66881, P50: 287.43633, P90: 287.43633, P99: 287.43633
+INFO 12-04 07:34:29 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 786432, max: 786432, mean: 786432.0, 25th percentile: 786229.5090239828, median: 786229.5090239828, 75th percentile: 786229.5090239828, 95th percentile: 786229.5090239828, 99th percentile: 786229.5090239828 99.9th percentile: 786229.5090239828
+INFO 12-04 07:34:30 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:34:30 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 786449, max: 786449, mean: 786449.0, 25th percentile: 786229.5090239828, median: 786229.5090239828, 75th percentile: 786229.5090239828, 95th percentile: 786229.5090239828, 99th percentile: 786229.5090239828 99.9th percentile: 786229.5090239828
+INFO 12-04 07:34:30 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.13944899724992865, max: 0.13944899724992865, mean: 0.13944899724992865, 25th percentile: 0.1393173078737188, median: 0.1393173078737188, 75th percentile: 0.1393173078737188, 95th percentile: 0.1393173078737188, 99th percentile: 0.1393173078737188 99.9th percentile: 0.1393173078737188
+INFO 12-04 07:34:30 cdf_sketch.py:56] ttft: Time to First Token stats: min: 287.76869254899793, max: 287.76869254899793, mean: 287.76869254899793, 25th percentile: 288.01178161007823, median: 288.01178161007823, 75th percentile: 288.01178161007823, 95th percentile: 288.01178161007823, 99th percentile: 288.01178161007823 99.9th percentile: 288.01178161007823
+INFO 12-04 07:34:30 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.21984629199141636, mean: 0.13944899724992865, 25th percentile: 0.11730226496624101, median: 0.14241625308744993, 75th percentile: 0.1592944165901874, 95th percentile: 0.17852956265976133, 99th percentile: 0.17852956265976133 99.9th percentile: 0.17852956265976133
+INFO 12-04 07:34:30 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 289.9998765049968, max: 289.9998765049968, mean: 289.9998765049968, 25th percentile: 289.7450474752937, median: 289.7450474752937, 75th percentile: 289.7450474752937, 95th percentile: 289.7450474752937, 99th percentile: 289.7450474752937 99.9th percentile: 289.7450474752937
+INFO 12-04 07:34:30 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 17.058816264999813, max: 17.058816264999813, mean: 17.058816264999813, 25th percentile: 17.064502789599942, median: 17.064502789599942, 75th percentile: 17.064502789599942, 95th percentile: 17.064502789599942, 99th percentile: 17.064502789599942 99.9th percentile: 17.064502789599942
+INFO 12-04 07:34:30 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 0.05862071461850117, max: 0.05862071461850117, mean: 0.05862071461850117, 25th percentile: 0.058601121423206955, median: 0.058601121423206955, 75th percentile: 0.058601121423206955, 95th percentile: 0.058601121423206955, 99th percentile: 0.058601121423206955 99.9th percentile: 0.058601121423206955
+INFO 12-04 07:34:30 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.9998273480662984, max: 0.9998273480662984, mean: 0.9998273480662984, 25th percentile: 0.9989999999999999, median: 0.9989999999999999, 75th percentile: 0.9989999999999999, 95th percentile: 0.9989999999999999, 99th percentile: 0.9989999999999999 99.9th percentile: 0.9989999999999999
+INFO 12-04 07:34:30 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 287.66881091436835, max: 287.66881091436835, mean: 287.66881091436835, 25th percentile: 287.43633349497316, median: 287.43633349497316, 75th percentile: 287.43633349497316, 95th percentile: 287.43633349497316, 99th percentile: 287.43633349497316 99.9th percentile: 287.43633349497316
+WARNING 12-04 07:34:31 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [06:35<00:00, 395.17s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [06:35<00:00, 395.33s/it]
+Request 1 dispatched
+INFO 12-04 07:41:07 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:41:07 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:41:07 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:41:07 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:41:07 run_benchmark.py:302] Deadline Miss Rate: 0.99987
+INFO 12-04 07:41:07 run_benchmark.py:302] Duration: 395.19267
+INFO 12-04 07:41:07 run_benchmark.py:302] Completed Requests Per Min: 0.15182
+INFO 12-04 07:41:07 run_benchmark.py:302] Number of Prompt Tokens - Mean: 917504.00000, P50: 917129.60427, P90: 917129.60427, P99: 917129.60427
+INFO 12-04 07:41:07 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:41:07 run_benchmark.py:302] Number of Total Tokens - Mean: 917521.00000, P50: 917129.60427, P90: 917129.60427, P99: 917129.60427
+INFO 12-04 07:41:07 run_benchmark.py:302] Time per Output Token - Mean: 0.15604, P50: 0.15614, P90: 0.15614, P99: 0.15614
+INFO 12-04 07:41:07 run_benchmark.py:302] Time to First Token - Mean: 386.23557, P50: 386.44961, P90: 386.44961, P99: 386.44961
+INFO 12-04 07:41:07 run_benchmark.py:302] Time Between Tokens - Mean: 0.15604, P50: 0.15929, P90: 0.19186, P99: 0.20250
+INFO 12-04 07:41:07 run_benchmark.py:302] End to End Latency - Mean: 388.73216, P50: 388.77528, P90: 388.77528, P99: 388.77528
+INFO 12-04 07:41:07 run_benchmark.py:302] Normalized End to End Latency - Mean: 22.86660, P50: 22.85113, P90: 22.85113, P99: 22.85113
+INFO 12-04 07:41:07 run_benchmark.py:302] Output Throughput - Mean: 0.04373, P50: 0.04376, P90: 0.04376, P99: 0.04376
+INFO 12-04 07:41:07 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.99987, P50: 0.99900, P90: 0.99900, P99: 0.99900
+INFO 12-04 07:41:07 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 386.13582, P50: 386.44961, P90: 386.44961, P99: 386.44961
+INFO 12-04 07:41:07 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 917504, max: 917504, mean: 917504.0, 25th percentile: 917129.6042721078, median: 917129.6042721078, 75th percentile: 917129.6042721078, 95th percentile: 917129.6042721078, 99th percentile: 917129.6042721078 99.9th percentile: 917129.6042721078
+INFO 12-04 07:41:07 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:41:07 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 917521, max: 917521, mean: 917521.0, 25th percentile: 917129.6042721078, median: 917129.6042721078, 75th percentile: 917129.6042721078, 95th percentile: 917129.6042721078, 99th percentile: 917129.6042721078 99.9th percentile: 917129.6042721078
+INFO 12-04 07:41:07 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.1560364298766217, max: 0.1560364298766217, mean: 0.1560364298766217, 25th percentile: 0.15614017476594017, median: 0.15614017476594017, 75th percentile: 0.15614017476594017, 95th percentile: 0.15614017476594017, 99th percentile: 0.15614017476594017 99.9th percentile: 0.15614017476594017
+INFO 12-04 07:41:07 cdf_sketch.py:56] ttft: Time to First Token stats: min: 386.2355723590008, max: 386.2355723590008, mean: 386.2355723590008, 25th percentile: 386.4496105029325, median: 386.4496105029325, 75th percentile: 386.4496105029325, 95th percentile: 386.4496105029325, 99th percentile: 386.4496105029325 99.9th percentile: 386.4496105029325
+INFO 12-04 07:41:07 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.23074530099984258, mean: 0.1560364298766217, 25th percentile: 0.13547052820607952, median: 0.1592944165901874, 75th percentile: 0.18656024554161996, 95th percentile: 0.20250290794146134, 99th percentile: 0.20250290794146134 99.9th percentile: 0.20250290794146134
+INFO 12-04 07:41:07 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 388.73215523702675, max: 388.73215523702675, mean: 388.73215523702675, 25th percentile: 388.77527896956957, median: 388.77527896956957, 75th percentile: 388.77527896956957, 95th percentile: 388.77527896956957, 99th percentile: 388.77527896956957 99.9th percentile: 388.77527896956957
+INFO 12-04 07:41:07 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 22.866597366883926, max: 22.866597366883926, mean: 22.866597366883926, 25th percentile: 22.85112940424525, median: 22.85112940424525, 75th percentile: 22.85112940424525, 95th percentile: 22.85112940424525, 99th percentile: 22.85112940424525 99.9th percentile: 22.85112940424525
+INFO 12-04 07:41:08 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 0.04373191095970532, max: 0.04373191095970532, mean: 0.04373191095970532, 25th percentile: 0.04376146939215274, median: 0.04376146939215274, 75th percentile: 0.04376146939215274, 95th percentile: 0.04376146939215274, 99th percentile: 0.04376146939215274 99.9th percentile: 0.04376146939215274
+INFO 12-04 07:41:08 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.9998712335822817, max: 0.9998712335822817, mean: 0.9998712335822817, 25th percentile: 0.9989999999999999, median: 0.9989999999999999, 75th percentile: 0.9989999999999999, 95th percentile: 0.9989999999999999, 99th percentile: 0.9989999999999999 99.9th percentile: 0.9989999999999999
+INFO 12-04 07:41:08 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 386.13582323600497, max: 386.13582323600497, mean: 386.13582323600497, 25th percentile: 386.4496105029325, median: 386.4496105029325, 75th percentile: 386.4496105029325, 95th percentile: 386.4496105029325, 99th percentile: 386.4496105029325 99.9th percentile: 386.4496105029325
+WARNING 12-04 07:41:08 metric_store.py:102] wandb not initialized
+  0%|          | 0/1 [00:00<?, ?it/s]Running main loop
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 1/1 [08:31<00:00, 511.32s/it]Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost.
+Client 0 received request RequestConfig(id=1)
+Sending request RequestConfig(id=1)
+100%|██████████| 1/1 [08:31<00:00, 511.48s/it]
+Request 1 dispatched
+INFO 12-04 07:49:40 run_benchmark.py:302] Results for token benchmark for gradientai/Llama-3-8B-Instruct-Gradient-1048k queried with the openai api. Number of Requests: 1.00000
+INFO 12-04 07:49:40 run_benchmark.py:302] Number of Errored Requests: 0.00000
+INFO 12-04 07:49:40 run_benchmark.py:302] Number of Completed Requests: 1.00000
+INFO 12-04 07:49:40 run_benchmark.py:302] Error Rate: 0.00000
+INFO 12-04 07:49:40 run_benchmark.py:302] Deadline Miss Rate: 0.99990
+INFO 12-04 07:49:40 run_benchmark.py:302] Duration: 511.32180
+INFO 12-04 07:49:40 run_benchmark.py:302] Completed Requests Per Min: 0.11734
+INFO 12-04 07:49:40 run_benchmark.py:302] Number of Prompt Tokens - Mean: 1048576.00000, P50: 1048639.45105, P90: 1048639.45105, P99: 1048639.45105
+INFO 12-04 07:49:40 run_benchmark.py:302] Number of Output Tokens - Mean: 17.00000, P50: 16.99638, P90: 16.99638, P99: 16.99638
+INFO 12-04 07:49:40 run_benchmark.py:302] Number of Total Tokens - Mean: 1048593.00000, P50: 1048639.45105, P90: 1048639.45105, P99: 1048639.45105
+INFO 12-04 07:49:40 run_benchmark.py:302] Time per Output Token - Mean: 0.18211, P50: 0.18214, P90: 0.18214, P99: 0.18214
+INFO 12-04 07:49:40 run_benchmark.py:302] Time to First Token - Mean: 501.00849, P50: 501.19817, P90: 501.19817, P99: 501.19817
+INFO 12-04 07:49:40 run_benchmark.py:302] Time Between Tokens - Mean: 0.18211, P50: 0.18844, P90: 0.20784, P99: 0.21331
+INFO 12-04 07:49:40 run_benchmark.py:302] End to End Latency - Mean: 503.92228, P50: 504.21440, P90: 504.21440, P99: 504.21440
+INFO 12-04 07:49:40 run_benchmark.py:302] Normalized End to End Latency - Mean: 29.64249, P50: 29.63632, P90: 29.63632, P99: 29.63632
+INFO 12-04 07:49:40 run_benchmark.py:302] Output Throughput - Mean: 0.03374, P50: 0.03374, P90: 0.03374, P99: 0.03374
+INFO 12-04 07:49:40 run_benchmark.py:302] Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline - Mean: 0.99990, P50: 0.99900, P90: 0.99900, P99: 0.99900
+INFO 12-04 07:49:40 run_benchmark.py:302] Min Deadline to Meet Target Deadline Miss Rate of 10.0% - Mean: 500.90865, P50: 501.19817, P90: 501.19817, P99: 501.19817
+INFO 12-04 07:49:40 cdf_sketch.py:56] num_prompt_tokens: Number of Prompt Tokens stats: min: 1048576, max: 1048576, mean: 1048576.0, 25th percentile: 1048639.4510475227, median: 1048639.4510475227, 75th percentile: 1048639.4510475227, 95th percentile: 1048639.4510475227, 99th percentile: 1048639.4510475227 99.9th percentile: 1048639.4510475227
+INFO 12-04 07:49:40 cdf_sketch.py:56] num_output_tokens: Number of Output Tokens stats: min: 17, max: 17, mean: 17.0, 25th percentile: 16.996381089962515, median: 16.996381089962515, 75th percentile: 16.996381089962515, 95th percentile: 16.996381089962515, 99th percentile: 16.996381089962515 99.9th percentile: 16.996381089962515
+INFO 12-04 07:49:40 cdf_sketch.py:56] num_total_tokens: Number of Total Tokens stats: min: 1048593, max: 1048593, mean: 1048593.0, 25th percentile: 1048639.4510475227, median: 1048639.4510475227, 75th percentile: 1048639.4510475227, 95th percentile: 1048639.4510475227, 99th percentile: 1048639.4510475227 99.9th percentile: 1048639.4510475227
+INFO 12-04 07:49:40 cdf_sketch.py:56] tpot: Time per Output Token stats: min: 0.18211203856481006, max: 0.18211203856481006, mean: 0.18211203856481006, 25th percentile: 0.18213610027412055, median: 0.18213610027412055, 75th percentile: 0.18213610027412055, 95th percentile: 0.18213610027412055, 99th percentile: 0.18213610027412055 99.9th percentile: 0.18213610027412055
+INFO 12-04 07:49:40 cdf_sketch.py:56] ttft: Time to First Token stats: min: 501.008488129999, max: 501.008488129999, mean: 501.008488129999, 25th percentile: 501.19817027872114, median: 501.19817027872114, 75th percentile: 501.19817027872114, 95th percentile: 501.19817027872114, 99th percentile: 501.19817027872114 99.9th percentile: 501.19817027872114
+INFO 12-04 07:49:41 cdf_sketch.py:56] tbt: Time Between Tokens stats: min: 0, max: 0.2894630430091638, mean: 0.18211203856481006, 25th percentile: 0.1764000100681213, median: 0.18843520780869435, 75th percentile: 0.19109185474031404, 95th percentile: 0.21331165471135655, 99th percentile: 0.21331165471135655 99.9th percentile: 0.21331165471135655
+INFO 12-04 07:49:41 cdf_sketch.py:56] end_to_end_latency: End to End Latency stats: min: 503.922280747036, max: 503.922280747036, mean: 503.922280747036, 25th percentile: 504.2143999461194, median: 504.2143999461194, 75th percentile: 504.2143999461194, 95th percentile: 504.2143999461194, 99th percentile: 504.2143999461194 99.9th percentile: 504.2143999461194
+INFO 12-04 07:49:41 cdf_sketch.py:56] normalized_end_to_end_latency: Normalized End to End Latency stats: min: 29.64248710276682, max: 29.64248710276682, mean: 29.64248710276682, 25th percentile: 29.636319807141025, median: 29.636319807141025, 75th percentile: 29.636319807141025, 95th percentile: 29.636319807141025, 99th percentile: 29.636319807141025 99.9th percentile: 29.636319807141025
+INFO 12-04 07:49:41 cdf_sketch.py:56] output_throughput: Output Throughput stats: min: 0.03373536088699724, max: 0.03373536088699724, mean: 0.03373536088699724, 25th percentile: 0.03374234744757494, median: 0.03374234744757494, 75th percentile: 0.03374234744757494, 95th percentile: 0.03374234744757494, 99th percentile: 0.03374234744757494 99.9th percentile: 0.03374234744757494
+INFO 12-04 07:49:41 cdf_sketch.py:56] deadline_miss_rate: Deadline Miss Rate with 0.05s TBT Deadline, 0.1s TTFT Deadline stats: min: 0.9999006852716258, max: 0.9999006852716258, mean: 0.9999006852716258, 25th percentile: 0.9989999999999999, median: 0.9989999999999999, 75th percentile: 0.9989999999999999, 95th percentile: 0.9989999999999999, 99th percentile: 0.9989999999999999 99.9th percentile: 0.9989999999999999
+INFO 12-04 07:49:41 cdf_sketch.py:56] min_tbt_deadline_to_meet: Min Deadline to Meet Target Deadline Miss Rate of 10.0% stats: min: 500.9086544749591, max: 500.9086544749591, mean: 500.9086544749591, 25th percentile: 501.19817027872114, median: 501.19817027872114, 75th percentile: 501.19817027872114, 95th percentile: 501.19817027872114, 99th percentile: 501.19817027872114 99.9th percentile: 501.19817027872114

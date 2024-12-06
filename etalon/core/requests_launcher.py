@@ -64,3 +64,10 @@ class RequestsLauncher:
         for client in self.clients:
             client.join()
 
+    def kill_clients(self) -> None:
+        """Kill all the clients."""
+        for client in self.clients:
+            client.terminate()
+            client.join(30)
+            client.kill()
+            client.close()
