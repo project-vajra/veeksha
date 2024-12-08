@@ -117,27 +117,28 @@ class PrefillProfiler:
             )
             if os.path.isdir(run_dir):
                 print(f"Skipped {prefill_value}")
-                continue
-            os.makedirs(run_dir, exist_ok=True)
-            logger.info(f"Running profiling for prefill value = {prefill_value}...")
-            run_benchmark(
-                model=self.args.model,
-                tokenizer_name=self.args.tokenizer,
-                output_dir=run_dir,
-                additional_sampling_params=self.args.additional_sampling_params,
-                num_clients=PREFILL_NUM_CLIENTS,
-                num_concurrent_requests_per_client=PREFILL_NUM_CONCURRENT_REQUESTS_PER_CLIENT,
-                max_num_completed_requests=PREFILL_MAX_NUM_COMPLETED_REQUESTS,
-                timeout=self.args.timeout,
-                llm_api=self.args.llm_api,
-                request_generator_config=request_generator_config,
-                should_write_metrics=False,
-                wandb_project=self.args.wandb_project,
-                wandb_group=self.args.wandb_group,
-                wandb_run_name=f"prefill_p{prefill_value}_{self.args.model}",
-            )
-            if wandb.run:
-                wandb.finish()
+                # continue
+            else:
+                os.makedirs(run_dir, exist_ok=True)
+                logger.info(f"Running profiling for prefill value = {prefill_value}...")
+                run_benchmark(
+                    model=self.args.model,
+                    tokenizer_name=self.args.tokenizer,
+                    output_dir=run_dir,
+                    additional_sampling_params=self.args.additional_sampling_params,
+                    num_clients=PREFILL_NUM_CLIENTS,
+                    num_concurrent_requests_per_client=PREFILL_NUM_CONCURRENT_REQUESTS_PER_CLIENT,
+                    max_num_completed_requests=PREFILL_MAX_NUM_COMPLETED_REQUESTS,
+                    timeout=self.args.timeout,
+                    llm_api=self.args.llm_api,
+                    request_generator_config=request_generator_config,
+                    should_write_metrics=False,
+                    wandb_project=self.args.wandb_project,
+                    wandb_group=self.args.wandb_group,
+                    wandb_run_name=f"prefill_p{prefill_value}_{self.args.model}",
+                )
+                # if wandb.run:
+                #     wandb.finish()
 
             json_file = self._get_result_file(run_dir)
             if json_file is not None:
@@ -154,6 +155,9 @@ class PrefillProfiler:
                         """
                     )
                     self.prefill_times.append(min(ttft))
+            else:
+                logger.error(f"Could not find the result file {json_file} for {run_dir}")
+                exit()
 
         transformed_prefill_values = self.transformer.fit_transform(
             np.array(self.prefill_values).reshape(-1, 1)

@@ -23,6 +23,16 @@ request_generator_configs:
     request_length_generator_provider: "trace"
     trace_request_length_generator_trace_file: "data/processed_traces/merged_df_0_percent_long_context_mixed.csv"
     trace_file_name: "0pc"
+  - start_qps: 0.5
+    request_interval_generator_provider: "poisson"
+    request_length_generator_provider: "trace"
+    trace_request_length_generator_trace_file: "data/processed_traces/merged_df_1_percent_long_context_mixed.csv"
+    trace_file_name: "1pc"
+  - start_qps: 0.5
+    request_interval_generator_provider: "poisson"
+    request_length_generator_provider: "trace"
+    trace_request_length_generator_trace_file: "data/processed_traces/merged_df_2_percent_long_context_mixed.csv"
+    trace_file_name: "2.5pc"
 
 request_configs:
   - num_ray_clients: 10

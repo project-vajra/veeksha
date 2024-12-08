@@ -32,6 +32,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
             print(
                 "Warning: OPENAI_API_KEY environment variable not set. Defaulting to empty string."
             )
+        start_time = time.monotonic()
 
     def total_tokens(self, response_list: List[str]) -> int:
         merged_content = "".join(response_list)
@@ -88,6 +89,8 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
         previous_token_count = 0
 
         most_recent_received_token_time = time.monotonic()
+
+        request_dispatched_at = time.monotonic() - self.start_time
 
         print(f"Sending request {request_config}")
 
@@ -147,6 +150,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
             logger.error(f"Warning Or Error: ({error_response_code}) {e}")
 
         metrics = RequestMetrics(
+            request_dispatched_at=request_dispatched_at,
             inter_token_times=inter_token_times,
             num_prompt_tokens=prompt_len,
             num_output_tokens=tokens_received,
