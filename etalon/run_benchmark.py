@@ -311,6 +311,8 @@ def run_benchmark(
     service_metrics.store_output(output_dir)
     logger.info(f"metrics stored to {output_dir}")
 
+    os._exit(0)
+
     # Store the generated texts
     # with open(os.path.join(output_dir, "generated_texts.txt"), "w") as f:
         # f.write(("\n" + "-" * 30 + "\n").join(generated_texts))
