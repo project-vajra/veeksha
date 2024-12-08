@@ -32,7 +32,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
             print(
                 "Warning: OPENAI_API_KEY environment variable not set. Defaulting to empty string."
             )
-        start_time = time.monotonic()
+        self.start_time = time.monotonic()
 
     def total_tokens(self, response_list: List[str]) -> int:
         merged_content = "".join(response_list)
