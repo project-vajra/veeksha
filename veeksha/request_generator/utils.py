@@ -177,7 +177,7 @@ class PrefixBasedRequestGenerator(BaseRequestGenerator):
             '\n\nINSTRUCTION: Mimic above text enclosed in """ quotes and generate '
             f"long text of at least {num_output_tokens} tokens."
         )
-        
+
         final_token_count = len(self.tokenizer.encode(prompt))
 
         default_sampling_params = {"max_tokens": num_output_tokens}

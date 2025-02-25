@@ -107,7 +107,7 @@ class PrefixRequestLengthGenerator(TraceRequestLengthGenerator):
 
     def __init__(self, config: PrefixRequestLengthGeneratorConfig):
         super().__init__(config)
-        
+
         self.config = config
 
         assert "hash_ids" in self.trace_df.columns
@@ -123,12 +123,14 @@ class PrefixRequestLengthGenerator(TraceRequestLengthGenerator):
 
         row = self.trace_df.iloc[self.next_request_idx]
         self.next_request_idx += 1
-        
+
         hash_ids = row["hash_ids"]
         hash_count = len(hash_ids)
         num_prefill_tokens = row["num_prefill_tokens"]
         num_decode_tokens = row["num_decode_tokens"]
-        block_count = (num_prefill_tokens + self.config.block_size - 1) // self.config.block_size
+        block_count = (
+            num_prefill_tokens + self.config.block_size - 1
+        ) // self.config.block_size
 
         assert hash_count >= block_count, f"{hash_count} >= {block_count}"
 
