@@ -4,7 +4,7 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
-from veeksha.config.config import TraceRequestLengthGeneratorConfig
+from veeksha.config.config import TraceRequestLengthGeneratorConfig, PrefixRequestLengthGeneratorConfig
 from veeksha.logger import init_logger
 from veeksha.request_generator.length_generator.base_generator import (
     BaseRequestLengthGenerator,
@@ -102,7 +102,7 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
 
 class PrefixRequestLengthGenerator(TraceRequestLengthGenerator):
 
-    def __init__(self, config: TraceRequestLengthGeneratorConfig):
+    def __init__(self, config: PrefixRequestLengthGeneratorConfig):
         super().__init__(config)
 
         assert "hash_ids" in self.trace_df.columns
@@ -119,3 +119,6 @@ class PrefixRequestLengthGenerator(TraceRequestLengthGenerator):
         row = self.trace_df.iloc[self.next_request_idx]
 
         return (row["hash_ids"], row["num_prefill_tokens"], row["num_decode_tokens"])
+
+    def get_block_size(self) -> int:
+        return self.config.block_size

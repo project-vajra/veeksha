@@ -120,7 +120,9 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
 
 @dataclass
 class PrefixRequestLengthGeneratorConfig(TraceRequestLengthGeneratorConfig):
-
+    block_size: int = field(
+        default=512, metadata={"help": "Number of tokens per block."}
+    )
     @classmethod
     def get_type(cls) -> RequestLengthGeneratorType:
         return RequestLengthGeneratorType.PREFIX
