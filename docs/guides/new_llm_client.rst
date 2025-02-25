@@ -1,11 +1,11 @@
 Implementing New LLM Clients
 ============================
 
-To implement a new LLM client, you need to implement the base class ``etalon.llm_client.BaseLLMClient`` and decorate it as a ray actor.
+To implement a new LLM client, you need to implement the base class ``veeksha.llm_client.BaseLLMClient`` and decorate it as a ray actor.
 
 .. code-block:: python
 
-    from etalon.llm_client import BaseLLMClient
+    from veeksha.llm_client import BaseLLMClient
     import ray
 
 

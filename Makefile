@@ -2,13 +2,13 @@
 .DEFAULT_GOAL := help
 
 lint/black: ## check style with black
-	black --check etalon
+	black --check veeksha
 
 lint/isort: ## check style with isort
-	isort --check-only --profile black etalon
+	isort --check-only --profile black veeksha
 
 lint/autoflake: ## check for unused imports
-	autoflake --recursive --remove-all-unused-imports --check etalon
+	autoflake --recursive --remove-all-unused-imports --check veeksha
 
 lint/pyright: ## run type checking
 	pyright
@@ -19,12 +19,12 @@ lint/codespell:
 lint: lint/isort lint/black lint/autoflake lint/codespell lint/pyright	## check style
 
 format/black: ## format code with black
-	black etalon
+	black veeksha
 
 format/isort: ## format code with isort
-	isort --profile black etalon
+	isort --profile black veeksha
 
 format/autoflake: ## remove unused imports
-	autoflake --in-place --recursive --remove-all-unused-imports etalon
+	autoflake --in-place --recursive --remove-all-unused-imports veeksha
 
 format: format/isort format/autoflake format/black ## format code

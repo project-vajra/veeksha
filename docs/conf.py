@@ -6,9 +6,9 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = "etalon"
+project = "veeksha"
 copyright = "2024-onwards Systems for AI Lab, Georgia Institute of Technology"
-author = "etalon Team"
+author = "veeksha Team"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -29,12 +29,12 @@ html_theme = "furo"
 html_static_path = ["_static"]
 
 # -- Added configurations ----------------------------------------------------
-html_title = "etalon"
+html_title = "veeksha"
 
 html_context = {
     "display_github": True, # Integrate GitHub
-    "github_user": "project-etalon", # Username
-    "github_repo": "etalon", # Repo name
+    "github_user": "project-veeksha", # Username
+    "github_repo": "veeksha", # Repo name
     "github_version": "main", # Version
     "conf_py_path": "/docs/", # Path in the checkout to the docs root
 }

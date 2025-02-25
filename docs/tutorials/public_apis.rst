@@ -1,6 +1,6 @@
 Proprietary Systems
 ===================
-``etalon`` can benchmark the performance of LLM Inference Systems that are exposed as public APIs. The following sections describe how to benchmark these systems.
+``veeksha`` can benchmark the performance of LLM Inference Systems that are exposed as public APIs. The following sections describe how to benchmark these systems.
 
 .. note::
 
@@ -18,7 +18,7 @@ Running Benchmark
 
 .. code-block:: shell
 
-    python -m etalon.run_benchmark \
+    python -m veeksha.run_benchmark \
     --client_config_model "meta-llama/Meta-Llama-3-8B-Instruct" \
     --max_completed_requests 20 \
     --request_interval_generator_config_type "gamma" \
@@ -30,7 +30,7 @@ Be sure to update ``--client_config_model`` flag to the model used in the propri
 
 .. note::
 
-    ``etalon`` supports different generator providers for request interval and request length. For more details, refer to :doc:`../guides/request_generator_providers`.
+    ``veeksha`` supports different generator providers for request interval and request length. For more details, refer to :doc:`../guides/request_generator_providers`.
 
 .. _wandb_args_proprietary_systems:
 
@@ -52,7 +52,7 @@ There are many more arguments for running benchmark, run the following to know m
 
 .. code-block:: shell
 
-    python -m etalon.run_benchmark -h
+    python -m veeksha.run_benchmark -h
 
 
 Saving Results

@@ -1,7 +1,7 @@
 Prefill Profiler
 ================
 
-To profile prefill times of open source systems and create a prefill time predictor for a given client_config_model and open source system combination, based on input prompt length, we can run ``etalon.prefill_profiler``.
+To profile prefill times of open source systems and create a prefill time predictor for a given client_config_model and open source system combination, based on input prompt length, we can run ``veeksha.prefill_profiler``.
 
 .. image:: ../_static/assets/yi-prefill-time-curve.png
     :align: center
@@ -15,7 +15,7 @@ And, then run the following command:
 
 .. code-block:: shell
 
-    python -m etalon.prefill_profiler \
+    python -m veeksha.prefill_profiler \
     --client_config_model "meta-llama/Meta-Llama-3-8B-Instruct" \
     --timeout 600 \
     --metrics_config_output_dir "prefill_experiments/prefill_profiler_vllm_llama-3-8b"
@@ -33,7 +33,7 @@ To profile a custom range of prompt lengths, use the flag ``--prefill-lengths`` 
 
 .. code-block:: shell
 
-    python -m etalon.prefill_profiler \
+    python -m veeksha.prefill_profiler \
     --client_config_model "meta-llama/Meta-Llama-3-8B-Instruct" \
     --timeout 600 \
     --metrics_config_output_dir "prefill_experiments/prefill_profiler_vllm_llama-3-8b" \

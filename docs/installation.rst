@@ -9,20 +9,20 @@ Clone Repository
 
 .. code-block:: shell
 
-    git clone https://github.com/project-etalon/etalon.git
+    git clone https://github.com/project-vajra/veeksha.git
 
 Create Conda Environment
 ~~~~~~~~~~~~~~~~~~~~~~~~
 .. code-block:: shell
 
-    conda create -n etalon python=3.10
-    conda activate etalon
+    conda create -n veeksha python=3.10
+    conda activate veeksha
 
-Install etalon
+Install Veeksha
 ~~~~~~~~~~~~~~~
 .. code-block:: shell
 
-    cd etalon
+    cd veeksha
     pip install -e .
 
 .. _huggingface_setup:

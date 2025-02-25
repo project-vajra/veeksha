@@ -1,4 +1,4 @@
-# etalon-docs
+# veeksha-docs
 
 ## Setup
 ```bash

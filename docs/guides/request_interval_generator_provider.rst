@@ -1,7 +1,7 @@
 Interval Generators
 ===================
 
-Interval generators determine the time interval between consecutive requests. The following interval generators are available in ``etalon``:
+Interval generators determine the time interval between consecutive requests. The following interval generators are available in ``veeksha``:
 
 Poisson Interval Generator
 --------------------------
@@ -10,7 +10,7 @@ The Poisson interval generator generates intervals between requests according to
 
 .. code-block:: shell
 
-    python -m etalon.run_benchmark
+    python -m veeksha.run_benchmark
         # other arguments
         ... \
         --request_interval_generator_config_type "poisson" \
@@ -26,7 +26,7 @@ The Gamma interval generator generates intervals between requests according to a
 
 .. code-block:: shell
 
-    python -m etalon.run_benchmark
+    python -m veeksha.run_benchmark
         # other arguments
         ... \
         --request_interval_generator_config_type "gamma" \
@@ -43,7 +43,7 @@ The static interval generator generates no interval between requests, i.e., each
 
 .. code-block:: shell
 
-    python -m etalon.run_benchmark
+    python -m veeksha.run_benchmark
         # other arguments
         ... \
         --request_interval_generator_config_type "static"
@@ -55,7 +55,7 @@ The trace interval generator generates intervals between requests based on a tra
 
 .. code-block:: shell
 
-    python -m etalon.run_benchmark
+    python -m veeksha.run_benchmark
         # other arguments
         ... \
         --request_interval_generator_config_type "trace" \

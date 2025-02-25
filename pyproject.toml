@@ -1,0 +1,12 @@
+
+[tool.isort]
+profile = "black"
+known_first_party = "veeksha"
+known_third_party = "wandb"
+
+[tool.pyright]
+include = ["veeksha", "test"]
+exclude = [
+    "**/__pycache__",
+]
+reportMissingImports = false

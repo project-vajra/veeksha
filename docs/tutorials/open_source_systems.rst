@@ -1,7 +1,7 @@
 Open Source Systems
 ===================
 
-``etalon`` can be run with any open source LLM inference system. If open source system does not provide OpenAI Compatible APIs, then new LLM clients can be implemented to support new open source system as explained in :doc:`../guides/new_llm_client`.
+``veeksha`` can be run with any open source LLM inference system. If open source system does not provide OpenAI Compatible APIs, then new LLM clients can be implemented to support new open source system as explained in :doc:`../guides/new_llm_client`.
 
 .. note::
 
@@ -32,7 +32,7 @@ Benchmark can be run as shown below:
 
 .. code-block:: shell
 
-    python -m etalon.run_benchmark \
+    python -m veeksha.run_benchmark \
     --client_config_model "meta-llama/Meta-Llama-3-8B-Instruct" \
     --max_completed_requests 20 \
     --request_interval_generator_config_type "gamma" \
@@ -44,7 +44,7 @@ Be sure to update ``--client_config_model`` flag to same model used to launch vL
 
 .. note::
 
-    ``etalon`` supports different generator providers for request interval and request length. For more details, refer to :doc:`../guides/request_generator_providers`.
+    ``veeksha`` supports different generator providers for request interval and request length. For more details, refer to :doc:`../guides/request_generator_providers`.
 
 .. _wandb_args_open_source_systems:
 
@@ -66,7 +66,7 @@ There are many more arguments for running benchmark, run the following to know m
 
 .. code-block:: shell
 
-    python -m etalon.run_benchmark -h
+    python -m veeksha.run_benchmark -h
 
 
 Saving Results

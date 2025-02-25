@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 from typing import List
+from setuptools_scm import get_version
 
 from setuptools import find_packages, setup
 
@@ -60,17 +61,17 @@ def get_requirements() -> List[str]:
 
 
 setup(
-    name="etalon",
-    version="0.1.0",
-    author="etalon Team",
+    name="veeksha",
+    version=get_version(),
+    author="Vajra Team",
     license="Apache 2.0",
     description="A framework for benchmarking LLM Inference Systems",
     long_description=read_readme(),
     long_description_content_type="text/markdown",
-    url="https://github.com/project-etalon/etalon",
+    url="https://github.com/project-vajra/veeksha",
     project_urls={
-        "Homepage": "https://github.com/project-etalon/etalon",
-        "Documentation": "project-etalon.readthedocs.io",
+        "Homepage": "https://github.com/project-vajra/veeksha",
+        "Documentation": "https://project-vajra.github.io/veeksha",
     },
     classifiers=[
         "Programming Language :: Python :: 3.8",
@@ -83,7 +84,4 @@ setup(
     packages=find_packages(exclude=("docs")),
     python_requires=">=3.8",
     install_requires=get_requirements(),
-    extras_require={
-        "vllm": ["vllm"]
-    },
 )
