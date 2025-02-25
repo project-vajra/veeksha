@@ -171,7 +171,7 @@ def create_flat_dataclass(input_dataclass: Any) -> Any:
                 )
 
                 type_field_name = f"{field.name}_type"
-                default_value = str(field.default_factory().get_type()) # type: ignore
+                default_value = str(field.default_factory().get_type())  # type: ignore
                 meta_fields_with_defaults.append(
                     (type_field_name, type(default_value), default_value)
                 )
@@ -189,7 +189,7 @@ def create_flat_dataclass(input_dataclass: Any) -> Any:
                 dataclass_args[_input_dataclass].append(
                     (field.name, field.name, field_type)
                 )
-                process_dataclass(field_type, f"{to_snake_case(field_type.__name__)}_") # type: ignore
+                process_dataclass(field_type, f"{to_snake_case(field_type.__name__)}_")  # type: ignore
                 continue
 
             field_default = field.default if field.default is not MISSING else MISSING

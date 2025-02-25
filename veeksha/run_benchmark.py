@@ -9,7 +9,7 @@ from queue import Empty
 from threading import Thread
 from typing import Any, List, Optional
 
-from tqdm import tqdm # type: ignore
+from tqdm import tqdm  # type: ignore
 
 from veeksha.config.config import BenchmarkConfig, ClientConfig
 from veeksha.core.hf_utils import get_tokenizer
