@@ -13,7 +13,6 @@ from tqdm import tqdm  # type: ignore
 
 from veeksha.config.config import BenchmarkConfig, ClientConfig
 from veeksha.core.hf_utils import get_tokenizer
-from veeksha.core.request_config import RequestConfig
 from veeksha.core.requests_launcher import RequestsLauncher
 from veeksha.logger import init_logger
 from veeksha.metrics.service_metrics import ServiceMetrics
@@ -31,6 +30,10 @@ from veeksha.request_generator.length_generator.generator_registry import (
 )
 from veeksha.request_generator.length_generator.trace_generator import (
     PrefixRequestLengthGenerator,
+)
+from veeksha.request_generator.utils import (
+    PrefixBasedRequestGenerator,
+    RequestGenerator,
 )
 
 logger = init_logger(__name__)

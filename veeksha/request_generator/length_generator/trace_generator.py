@@ -4,7 +4,10 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
-from veeksha.config.config import TraceRequestLengthGeneratorConfig, PrefixRequestLengthGeneratorConfig
+from veeksha.config.config import (
+    PrefixRequestLengthGeneratorConfig,
+    TraceRequestLengthGeneratorConfig,
+)
 from veeksha.logger import init_logger
 from veeksha.request_generator.length_generator.base_generator import (
     BaseRequestLengthGenerator,

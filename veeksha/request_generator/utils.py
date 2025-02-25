@@ -14,7 +14,6 @@ from veeksha.request_generator.length_generator.base_generator import (
 from veeksha.request_generator.length_generator.trace_generator import (
     PrefixRequestLengthGenerator,
 )
-from veeksha.request_generator.utils import generate_random_prompt
 
 logger = init_logger(__name__)
 
