@@ -163,7 +163,7 @@ class PrefixBasedRequestGenerator(BaseRequestGenerator):
             if hash_id not in self.past_prompts:
                 prompt_segment, num_tokens = generate_random_prompt(
                     tokenizer=self.tokenizer,
-                    num_prompt_tokens=num_prompt_tokens,
+                    num_prompt_tokens=self.request_length_generator.get_block_size(),
                     num_output_tokens=num_output_tokens,
                     corpus_lines=self.corpus_lines,
                     add_instruction=False,
@@ -177,14 +177,17 @@ class PrefixBasedRequestGenerator(BaseRequestGenerator):
             '\n\nINSTRUCTION: Mimic above text enclosed in """ quotes and generate '
             f"long text of at least {num_output_tokens} tokens."
         )
+        
+        final_token_count = len(self.tokenizer.encode(prompt))
 
         default_sampling_params = {"max_tokens": num_output_tokens}
         default_sampling_params.update(
             self.client_config.additional_sampling_params_dict
         )
+
         request_config = RequestConfig(
             model=self.client_config.model,
-            prompt=prompt,
+            prompt=(prompt, final_token_count),
             sampling_params=default_sampling_params,
             llm_api=self.client_config.llm_api,
             address_append_value=self.client_config.address_append_value,

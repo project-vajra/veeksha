@@ -106,11 +106,15 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
 class PrefixRequestLengthGenerator(TraceRequestLengthGenerator):
 
     def __init__(self, config: PrefixRequestLengthGeneratorConfig):
+        #TODO(prakhar): find a better way to do this
+        assert config.decode_scale_factor == 1.0 and config.prefill_scale_factor == 1.0
         super().__init__(config)
+        
+        self.config = config
 
         assert "hash_ids" in self.trace_df.columns
 
-        if self.trace_df["hash_ids"].dtype == str:
+        if not isinstance(self.trace_df["hash_ids"].iloc[0], list):
             self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
                 ast.literal_eval
             )
@@ -120,8 +124,17 @@ class PrefixRequestLengthGenerator(TraceRequestLengthGenerator):
             return [], -1, -1
 
         row = self.trace_df.iloc[self.next_request_idx]
+        self.next_request_idx += 1
+        
+        hash_ids = row["hash_ids"]
+        hash_count = len(hash_ids)
+        num_prefill_tokens = row["num_prefill_tokens"]
+        num_decode_tokens = row["num_decode_tokens"]
+        block_count = (num_prefill_tokens + self.config.block_size - 1) // self.config.block_size
 
-        return (row["hash_ids"], row["num_prefill_tokens"], row["num_decode_tokens"])
+        assert hash_count == block_count, f"{hash_count} != {block_count}"
+
+        return (hash_ids, num_prefill_tokens, num_decode_tokens)
 
     def get_block_size(self) -> int:
         return self.config.block_size

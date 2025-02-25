@@ -2,7 +2,7 @@ from veeksha.types.base_registry import BaseRegistry
 from veeksha.types.request_length_generator_type import RequestLengthGeneratorType
 
 from .fixed_generator import FixedRequestLengthGenerator
-from .trace_generator import TraceRequestLengthGenerator
+from .trace_generator import PrefixRequestLengthGenerator, TraceRequestLengthGenerator
 from .uniform_generator import UniformRequestLengthGenerator
 from .zipf_generator import ZipfRequestLengthGenerator
 
@@ -24,4 +24,7 @@ RequestLengthGeneratorRegistry.register(
 )
 RequestLengthGeneratorRegistry.register(
     RequestLengthGeneratorType.FIXED, FixedRequestLengthGenerator
+)
+RequestLengthGeneratorRegistry.register(
+    RequestLengthGeneratorType.PREFIX, PrefixRequestLengthGenerator
 )

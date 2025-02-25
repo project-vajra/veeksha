@@ -4,7 +4,7 @@ import re
 from abc import ABC
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 import joblib
 import numpy as np
@@ -120,9 +120,13 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
 
 @dataclass
 class PrefixRequestLengthGeneratorConfig(TraceRequestLengthGeneratorConfig):
+    prefill_scale_factor: float = 1.0
+    decode_scale_factor: float = 1.0
+
     block_size: int = field(
         default=512, metadata={"help": "Number of tokens per block."}
     )
+
     @classmethod
     def get_type(cls) -> RequestLengthGeneratorType:
         return RequestLengthGeneratorType.PREFIX
@@ -334,7 +338,7 @@ class DeadlineConfig:
 
 @dataclass
 class PrefillProfilerConfig:
-    prefill_lengths: List[int] = field(
+    prefill_lengths: list[int] = field(
         default_factory=lambda: [],
         metadata={"help": "The lengths to prefill the profiler with."},
     )
