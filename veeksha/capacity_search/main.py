@@ -6,7 +6,7 @@ import platform
 import time
 
 import wandb
-import yaml # type: ignore
+import yaml  # type: ignore
 
 from veeksha.capacity_search.search_manager import SearchManager
 from veeksha.logger import init_logger

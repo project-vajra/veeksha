@@ -79,9 +79,9 @@ def dataclass_to_dict(obj):
                 data[key] = dataclass_to_dict(value)
         # Include the name of the class
         if hasattr(obj, "get_type") and callable(getattr(obj, "get_type")):
-            data["name"] = str(obj.get_type()) # type: ignore
+            data["name"] = str(obj.get_type())  # type: ignore
         elif hasattr(obj, "get_name") and callable(getattr(obj, "get_name")):
-            data["name"] = obj.get_name() # type: ignore
+            data["name"] = obj.get_name()  # type: ignore
         return data
     else:
         return obj

@@ -7,7 +7,7 @@ from functools import partial
 from multiprocessing import Pool
 
 import wandb
-import yaml # type: ignore
+import yaml  # type: ignore
 
 from veeksha.capacity_search.capacity_search import CapacitySearch
 from veeksha.capacity_search.config.config import JobConfig
