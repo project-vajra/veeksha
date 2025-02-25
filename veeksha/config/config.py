@@ -120,8 +120,6 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
 
 @dataclass
 class PrefixRequestLengthGeneratorConfig(TraceRequestLengthGeneratorConfig):
-    prefill_scale_factor: float = 1.0
-    decode_scale_factor: float = 1.0
 
     block_size: int = field(
         default=512, metadata={"help": "Number of tokens per block."}

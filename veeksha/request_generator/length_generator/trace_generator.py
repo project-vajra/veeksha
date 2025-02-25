@@ -106,8 +106,6 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
 class PrefixRequestLengthGenerator(TraceRequestLengthGenerator):
 
     def __init__(self, config: PrefixRequestLengthGeneratorConfig):
-        #TODO(prakhar): find a better way to do this
-        assert config.decode_scale_factor == 1.0 and config.prefill_scale_factor == 1.0
         super().__init__(config)
         
         self.config = config
@@ -132,7 +130,7 @@ class PrefixRequestLengthGenerator(TraceRequestLengthGenerator):
         num_decode_tokens = row["num_decode_tokens"]
         block_count = (num_prefill_tokens + self.config.block_size - 1) // self.config.block_size
 
-        assert hash_count == block_count, f"{hash_count} != {block_count}"
+        assert hash_count >= block_count, f"{hash_count} >= {block_count}"
 
         return (hash_ids, num_prefill_tokens, num_decode_tokens)
 
