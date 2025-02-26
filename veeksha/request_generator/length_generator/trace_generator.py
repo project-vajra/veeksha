@@ -129,11 +129,9 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
 
         return (hash_ids, num_prefill_tokens, num_decode_tokens)
 
-        raise NotImplementedError
-
     def has_hash_ids(self) -> bool:
         return self._has_hash_ids
 
     def get_block_size(self) -> int:
-        assert self._hash_hash_ids
+        assert self.has_hash_ids()
         return self.config.block_size
