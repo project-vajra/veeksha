@@ -121,6 +121,7 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
     def get_type(cls) -> RequestLengthGeneratorType:
         return RequestLengthGeneratorType.TRACE
 
+
 @dataclass
 class ZipfRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
     theta: float = field(

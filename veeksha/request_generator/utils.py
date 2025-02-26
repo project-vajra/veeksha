@@ -82,13 +82,14 @@ class RequestGenerator:
         self.request_length_generator = request_length_generator
         self.corpus_lines = corpus_lines
 
-        self.past_prompts : dict[int, str] = {}
-    
+        self.past_prompts: dict[int, str] = {}
+
     @property
     def uses_prefix(self) -> bool:
-        return isinstance(
-            self.request_length_generator, TraceRequestLengthGenerator
-        ) and self.request_length_generator.has_hash_ids()
+        return (
+            isinstance(self.request_length_generator, TraceRequestLengthGenerator)
+            and self.request_length_generator.has_hash_ids()
+        )
 
     def get_request_params(
         self,
@@ -135,12 +136,14 @@ class RequestGenerator:
 
         return request_config
 
-
     def get_request_params_prefix(
         self,
         request_id: Optional[int] = None,
     ) -> RequestConfig:
-        assert isinstance(self.request_length_generator, TraceRequestLengthGenerator) and self.request_length_generator.has_hash_ids()
+        assert (
+            isinstance(self.request_length_generator, TraceRequestLengthGenerator)
+            and self.request_length_generator.has_hash_ids()
+        )
 
         (
             hash_ids,

@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 
 from veeksha.config.config import (
-    PrefixRequestLengthGeneratorConfig,
     TraceRequestLengthGeneratorConfig,
 )
 from veeksha.logger import init_logger
@@ -22,7 +21,7 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
 
         trace_file = self.config.trace_file
         self.trace_df = pd.read_csv(trace_file)
-        
+
         self._has_hash_ids = "hash_ids" in self.trace_df.columns
 
         if self._has_hash_ids:
@@ -129,7 +128,6 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
         assert hash_count >= block_count, f"{hash_count} >= {block_count}"
 
         return (hash_ids, num_prefill_tokens, num_decode_tokens)
-
 
         raise NotImplementedError
 

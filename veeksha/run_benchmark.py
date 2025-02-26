@@ -29,7 +29,6 @@ from veeksha.request_generator.length_generator.generator_registry import (
     RequestLengthGeneratorRegistry,
 )
 from veeksha.request_generator.utils import (
-    PrefixBasedRequestGenerator,
     RequestGenerator,
 )
 
