@@ -113,22 +113,13 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
         default=1, metadata={"help": "Scale factor for decode tokens."}
     )
 
-    @classmethod
-    def get_type(cls) -> RequestLengthGeneratorType:
-        return RequestLengthGeneratorType.TRACE
-
-
-@dataclass
-class PrefixRequestLengthGeneratorConfig(TraceRequestLengthGeneratorConfig):
-
     block_size: int = field(
         default=512, metadata={"help": "Number of tokens per block."}
     )
 
     @classmethod
     def get_type(cls) -> RequestLengthGeneratorType:
-        return RequestLengthGeneratorType.PREFIX
-
+        return RequestLengthGeneratorType.TRACE
 
 @dataclass
 class ZipfRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):

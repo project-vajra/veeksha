@@ -1,6 +1,5 @@
 import math
 import random
-from abc import ABC, abstractmethod
 from typing import Any, List, Optional, Tuple, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
@@ -12,7 +11,7 @@ from veeksha.request_generator.length_generator.base_generator import (
     BaseRequestLengthGenerator,
 )
 from veeksha.request_generator.length_generator.trace_generator import (
-    PrefixRequestLengthGenerator,
+    TraceRequestLengthGenerator,
 )
 
 logger = init_logger(__name__)
@@ -69,7 +68,7 @@ def generate_random_prompt(
     return (prompt, num_prompt_tokens)
 
 
-class BaseRequestGenerator(ABC):
+class RequestGenerator:
 
     def __init__(
         self,
@@ -83,17 +82,24 @@ class BaseRequestGenerator(ABC):
         self.request_length_generator = request_length_generator
         self.corpus_lines = corpus_lines
 
-    @abstractmethod
+        self.past_prompts : dict[int, str] = {}
+    
+    @property
+    def uses_prefix(self) -> bool:
+        return isinstance(
+            self.request_length_generator, TraceRequestLengthGenerator
+        ) and self.request_length_generator.has_hash_ids()
+
     def get_request_params(
         self,
         request_id: Optional[int] = None,
     ) -> RequestConfig:
-        raise NotImplementedError("Subclasses must implement generate_request method")
+        if self.uses_prefix:
+            return self.get_request_params_prefix(request_id=request_id)
+        else:
+            return self.get_request_params_normal(request_id=request_id)
 
-
-class RequestGenerator(BaseRequestGenerator):
-
-    def get_request_params(
+    def get_request_params_normal(
         self,
         request_id: Optional[int] = None,
     ) -> RequestConfig:
@@ -130,44 +136,30 @@ class RequestGenerator(BaseRequestGenerator):
         return request_config
 
 
-class PrefixBasedRequestGenerator(BaseRequestGenerator):
-    def __init__(
-        self,
-        client_config: ClientConfig,
-        tokenizer: Any,
-        request_length_generator: BaseRequestLengthGenerator,
-        corpus_lines: Optional[List[str]] = None,
-    ):
-        super().__init__(
-            client_config=client_config,
-            tokenizer=tokenizer,
-            request_length_generator=request_length_generator,
-            corpus_lines=corpus_lines,
-        )
-        self.past_prompts: dict[str, str] = {}
-
-    def get_request_params(
+    def get_request_params_prefix(
         self,
         request_id: Optional[int] = None,
     ) -> RequestConfig:
-        assert isinstance(self.request_length_generator, PrefixRequestLengthGenerator)
+        assert isinstance(self.request_length_generator, TraceRequestLengthGenerator) and self.request_length_generator.has_hash_ids()
 
         (
             hash_ids,
-            num_prompt_tokens,
+            remaining_prompt_tokens,
             num_output_tokens,
         ) = self.request_length_generator.get_next_request_params()
+        block_size = self.request_length_generator.get_block_size()
 
         prompt = '"""'
         for hash_id in hash_ids:
             if hash_id not in self.past_prompts:
                 prompt_segment, num_tokens = generate_random_prompt(
                     tokenizer=self.tokenizer,
-                    num_prompt_tokens=self.request_length_generator.get_block_size(),
+                    num_prompt_tokens=min(block_size, remaining_prompt_tokens),
                     num_output_tokens=num_output_tokens,
                     corpus_lines=self.corpus_lines,
                     add_instruction=False,
                 )
+                remaining_prompt_tokens -= num_tokens
                 self.past_prompts[hash_id] = prompt_segment
             prompt += self.past_prompts[hash_id]
 

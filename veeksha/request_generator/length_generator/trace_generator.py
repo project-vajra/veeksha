@@ -22,6 +22,14 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
 
         trace_file = self.config.trace_file
         self.trace_df = pd.read_csv(trace_file)
+        
+        self._has_hash_ids = "hash_ids" in self.trace_df.columns
+
+        if self._has_hash_ids:
+            if not isinstance(self.trace_df["hash_ids"].iloc[0], list):
+                self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
+                    ast.literal_eval
+                )
 
         # scale prefill and decode tokens
         self.trace_df["num_prefill_tokens"] = (
@@ -102,22 +110,8 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
             row["num_decode_tokens"],
         )
 
-
-class PrefixRequestLengthGenerator(TraceRequestLengthGenerator):
-
-    def __init__(self, config: PrefixRequestLengthGeneratorConfig):
-        super().__init__(config)
-
-        self.config = config
-
-        assert "hash_ids" in self.trace_df.columns
-
-        if not isinstance(self.trace_df["hash_ids"].iloc[0], list):
-            self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
-                ast.literal_eval
-            )
-
-    def get_next_request_params(self) -> Tuple[list[str], int, int]:
+    def get_next_request_params(self) -> Tuple[list[int], int, int]:
+        assert self._has_hash_ids
         if self.next_request_idx >= len(self.trace_df):
             return [], -1, -1
 
@@ -136,5 +130,12 @@ class PrefixRequestLengthGenerator(TraceRequestLengthGenerator):
 
         return (hash_ids, num_prefill_tokens, num_decode_tokens)
 
+
+        raise NotImplementedError
+
+    def has_hash_ids(self) -> bool:
+        return self._has_hash_ids
+
     def get_block_size(self) -> int:
+        assert self._hash_hash_ids
         return self.config.block_size

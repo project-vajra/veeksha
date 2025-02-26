@@ -28,9 +28,6 @@ from veeksha.request_generator.length_generator.base_generator import (
 from veeksha.request_generator.length_generator.generator_registry import (
     RequestLengthGeneratorRegistry,
 )
-from veeksha.request_generator.length_generator.trace_generator import (
-    PrefixRequestLengthGenerator,
-)
 from veeksha.request_generator.utils import (
     PrefixBasedRequestGenerator,
     RequestGenerator,
@@ -62,13 +59,7 @@ def dispatch_requests(
     """Thread function to generate and dispatch requests."""
     num_errored_requests_handled = 0
 
-    request_generator_cls = (
-        PrefixBasedRequestGenerator
-        if isinstance(requests_length_generator, PrefixRequestLengthGenerator)
-        else RequestGenerator
-    )
-
-    request_generator = request_generator_cls(
+    request_generator = RequestGenerator(
         client_config=client_config,
         tokenizer=tokenizer,
         request_length_generator=requests_length_generator,
