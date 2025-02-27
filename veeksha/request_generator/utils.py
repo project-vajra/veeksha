@@ -84,26 +84,11 @@ class RequestGenerator:
 
         self.past_prompts: dict[int, str] = {}
 
-        rare_unicode_chars = [
-            "₳",  # Armenian dram
-            "‽",  # Interrobang
-            "♆",  # Neptune symbol
-            "⚕",  # Staff of Aesculapius
-            "⚘",  # Flower
-            "⚛",  # Atom symbol
-            "⛥",  # Pentagram
-            "⛩",  # Shinto shrine
-            "⛰",  # Mountain
-            "⛱",  # Umbrella
-        ]
-        self.probable_separators = [
-            self.tokenizer.encode(x) for x in rare_unicode_chars
-        ]
-        self.probable_separators = [
-            x[0] for x in self.probable_separators if len(x) == 1
-        ]
+    def encode(self, text: str) -> List[int]:
+        return self.tokenizer.encode(text, add_special_tokens=False)
 
-        assert len(self.probable_separators) > 0
+    def decode(self, tokens: List[int]) -> str:
+        return self.tokenizer.decode(tokens) 
 
     @property
     def uses_prefix(self) -> bool:
@@ -161,19 +146,47 @@ class RequestGenerator:
         self,
         tokens: List[int],
     ) -> bool:
+        return self.encode(self.decode(tokens)) == tokens
 
-        return self.tokenizer.decode(self.tokenizer.encode(tokens)) == tokens
+    def get_text_chunk(self, token: int) -> List[int]:
+        base_52 = []
+        while token > 0:
+            mod = token % 52 
+            if mod < 26:
+                base_52.append(chr(ord("a") + mod))
+            else:
+                base_52.append(chr(ord("A") + mod - 26))
+            token = token // 52
+        text_chunk = " " + "".join(base_52)
+        encoding = self.encode(text_chunk)
+        if self.check_tokens(encoding + encoding):
+            return encoding
+        return []
+        
 
-    def find_separator(
-        self,
-        token: int,
-    ) -> int:
+    def get_digit_chunk(self, token: int) -> List[int]:
+        digits = list(str(token))
+        space_separated = " " + " ".join(digits)
+        encoding = self.encode(space_separated)
+        if self.check_tokens(encoding + encoding):
+            return encoding
 
-        for separator in self.probable_separators:
-            if separator != token and self.check_tokens([token, separator, token]):
-                return separator
+        return []
+    
+    def fill_block(self, chunk: List[int], block_size: int) -> List[int]:
+        final_chunk = chunk * (block_size // len(chunk) + 1)
+        return final_chunk[:block_size]
 
-        raise ValueError(f"Could not find separator for token {token}")
+    def get_token_block(self, token: int) -> List[int]:
+        text_chunk = self.get_text_chunk(token)
+        if text_chunk:
+            return text_chunk
+
+        digit_chunk = self.get_digit_chunk(token)
+        if digit_chunk:
+            return digit_chunk
+
+        raise Exception(f"Could not generate block for token {token}")
 
     def get_request_params_prefix(
         self,
@@ -194,9 +207,11 @@ class RequestGenerator:
         prompt = '"""'
         for hash_id in hash_ids:
             if hash_id not in self.past_prompts:
-                separator = self.find_separator(hash_id)
-                prompt_segment = self.tokenizer.decode(
-                    [hash_id, separator] * (block_size // 2)
+                chunk = self.get_token_block(hash_id)
+                logger.info(f"Generated chunk: {self.decode(chunk)} ({len(chunk)}) for hash_id {hash_id}")
+                block = self.fill_block(chunk, block_size)
+                prompt_segment = self.decode(
+                    block
                 )
                 remaining_prompt_tokens -= block_size
                 self.past_prompts[hash_id] = prompt_segment
@@ -209,7 +224,7 @@ class RequestGenerator:
             f"long text of at least {num_output_tokens} tokens."
         )
 
-        final_token_count = len(self.tokenizer.encode(prompt))
+        final_token_count = len(self.encode(prompt))
 
         default_sampling_params = {"max_tokens": num_output_tokens}
         default_sampling_params.update(
