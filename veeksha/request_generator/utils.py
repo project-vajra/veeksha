@@ -1,6 +1,6 @@
 import math
 import random
-from typing import Any, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
@@ -73,7 +73,7 @@ class RequestGenerator:
     def __init__(
         self,
         client_config: ClientConfig,
-        tokenizer: Any,
+        tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         request_length_generator: BaseRequestLengthGenerator,
         corpus_lines: Optional[List[str]] = None,
     ):
