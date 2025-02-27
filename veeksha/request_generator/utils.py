@@ -83,7 +83,7 @@ class RequestGenerator:
         self.corpus_lines = corpus_lines
 
         self.past_prompts: dict[int, str] = {}
-        
+
         rare_unicode_chars = [
             "₳",  # Armenian dram
             "‽",  # Interrobang
@@ -97,13 +97,12 @@ class RequestGenerator:
             "⛱",  # Umbrella
         ]
         self.probable_separators = [
-            self.tokenizer.encode(x)
-            for x in rare_unicode_chars
+            self.tokenizer.encode(x) for x in rare_unicode_chars
         ]
         self.probable_separators = [
             x[0] for x in self.probable_separators if len(x) == 1
         ]
-        
+
         assert len(self.probable_separators) > 0
 
     @property
@@ -157,22 +156,14 @@ class RequestGenerator:
         )
 
         return request_config
-    
+
     def check_tokens(
-        self, 
+        self,
         tokens: List[int],
     ) -> bool:
 
-        return (
-        self.tokenizer.decode(
-            self.tokenizer.encode(
-                    tokens
-            )
-        )
-        == 
-                    tokens
-    )
-    
+        return self.tokenizer.decode(self.tokenizer.encode(tokens)) == tokens
+
     def find_separator(
         self,
         token: int,
@@ -204,8 +195,10 @@ class RequestGenerator:
         for hash_id in hash_ids:
             if hash_id not in self.past_prompts:
                 separator = self.find_separator(hash_id)
-                prompt_segment = self.tokenizer.decode([hash_id, separator] * (block_size // 2))
-                remaining_prompt_tokens -= block_size 
+                prompt_segment = self.tokenizer.decode(
+                    [hash_id, separator] * (block_size // 2)
+                )
+                remaining_prompt_tokens -= block_size
                 self.past_prompts[hash_id] = prompt_segment
             prompt += self.past_prompts[hash_id]
 
