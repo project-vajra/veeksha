@@ -88,7 +88,7 @@ class RequestGenerator:
         return self.tokenizer.encode(text, add_special_tokens=False)
 
     def decode(self, tokens: List[int]) -> str:
-        return self.tokenizer.decode(tokens) 
+        return self.tokenizer.decode(tokens)
 
     @property
     def uses_prefix(self) -> bool:
@@ -142,51 +142,46 @@ class RequestGenerator:
 
         return request_config
 
-    def check_tokens(
+    def is_stable_encoding(
         self,
         tokens: List[int],
     ) -> bool:
         return self.encode(self.decode(tokens)) == tokens
 
-    def get_text_chunk(self, token: int) -> List[int]:
+    def encode_value_as_base_52(self, value: int) -> List[int]:
         base_52 = []
-        while token > 0:
-            mod = token % 52 
+        while value > 0:
+            mod = value % 52
             if mod < 26:
                 base_52.append(chr(ord("a") + mod))
             else:
                 base_52.append(chr(ord("A") + mod - 26))
-            token = token // 52
+            value = value // 52
         text_chunk = " " + "".join(base_52)
         encoding = self.encode(text_chunk)
-        if self.check_tokens(encoding + encoding):
-            return encoding
-        return []
-        
 
-    def get_digit_chunk(self, token: int) -> List[int]:
-        digits = list(str(token))
+        return encoding
+
+    def encode_value_as_digits(self, value: int) -> List[int]:
+        digits = list(str(value))
         space_separated = " " + " ".join(digits)
         encoding = self.encode(space_separated)
-        if self.check_tokens(encoding + encoding):
-            return encoding
+        return encoding
 
-        return []
-    
-    def fill_block(self, chunk: List[int], block_size: int) -> List[int]:
+    def pad_to_block_size(self, chunk: List[int], block_size: int) -> List[int]:
         final_chunk = chunk * (block_size // len(chunk) + 1)
         return final_chunk[:block_size]
 
-    def get_token_block(self, token: int) -> List[int]:
-        text_chunk = self.get_text_chunk(token)
-        if text_chunk:
-            return text_chunk
+    def generate_unique_encoding(self, value: int) -> List[int]:
+        encoding = self.encode_value_as_base_52(value)
+        if self.is_stable_encoding(encoding + encoding):
+            return encoding
 
-        digit_chunk = self.get_digit_chunk(token)
-        if digit_chunk:
-            return digit_chunk
+        encoding = self.encode_value_as_digits(value)
+        if self.is_stable_encoding(encoding + encoding):
+            return encoding
 
-        raise Exception(f"Could not generate block for token {token}")
+        raise Exception(f"Could not generate stable encoding for value {value}")
 
     def get_request_params_prefix(
         self,
@@ -207,12 +202,9 @@ class RequestGenerator:
         prompt = '"""'
         for hash_id in hash_ids:
             if hash_id not in self.past_prompts:
-                chunk = self.get_token_block(hash_id)
-                logger.info(f"Generated chunk: {self.decode(chunk)} ({len(chunk)}) for hash_id {hash_id}")
-                block = self.fill_block(chunk, block_size)
-                prompt_segment = self.decode(
-                    block
-                )
+                chunk = self.generate_unique_encoding(hash_id)
+                block = self.pad_to_block_size(chunk, block_size)
+                prompt_segment = self.decode(block)
                 remaining_prompt_tokens -= block_size
                 self.past_prompts[hash_id] = prompt_segment
             prompt += self.past_prompts[hash_id]
