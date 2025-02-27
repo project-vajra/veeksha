@@ -83,6 +83,28 @@ class RequestGenerator:
         self.corpus_lines = corpus_lines
 
         self.past_prompts: dict[int, str] = {}
+        
+        rare_unicode_chars = [
+            "₳",  # Armenian dram
+            "‽",  # Interrobang
+            "♆",  # Neptune symbol
+            "⚕",  # Staff of Aesculapius
+            "⚘",  # Flower
+            "⚛",  # Atom symbol
+            "⛥",  # Pentagram
+            "⛩",  # Shinto shrine
+            "⛰",  # Mountain
+            "⛱",  # Umbrella
+        ]
+        self.probable_separators = [
+            self.tokenizer.encode(x)
+            for x in rare_unicode_chars
+        ]
+        self.probable_separators = [
+            x[0] for x in self.probable_separators if len(x) == 1
+        ]
+        
+        assert len(self.probable_separators) > 0
 
     @property
     def uses_prefix(self) -> bool:
@@ -135,6 +157,32 @@ class RequestGenerator:
         )
 
         return request_config
+    
+    def check_tokens(
+        self, 
+        tokens: List[int],
+    ) -> bool:
+
+        return (
+        self.tokenizer.decode(
+            self.tokenizer.encode(
+                    tokens
+            )
+        )
+        == 
+                    tokens
+    )
+    
+    def find_separator(
+        self,
+        token: int,
+    ) -> int:
+
+        for separator in self.probable_separators:
+            if separator != token and self.check_tokens([token, separator, token]):
+                return separator
+
+        raise ValueError(f"Could not find separator for token {token}")
 
     def get_request_params_prefix(
         self,
@@ -155,14 +203,9 @@ class RequestGenerator:
         prompt = '"""'
         for hash_id in hash_ids:
             if hash_id not in self.past_prompts:
-                prompt_segment, num_tokens = generate_random_prompt(
-                    tokenizer=self.tokenizer,
-                    num_prompt_tokens=min(block_size, remaining_prompt_tokens),
-                    num_output_tokens=num_output_tokens,
-                    corpus_lines=self.corpus_lines,
-                    add_instruction=False,
-                )
-                remaining_prompt_tokens -= num_tokens
+                separator = self.find_separator(hash_id)
+                prompt_segment = self.tokenizer.decode([hash_id, separator] * (block_size // 2))
+                remaining_prompt_tokens -= block_size 
                 self.past_prompts[hash_id] = prompt_segment
             prompt += self.past_prompts[hash_id]
 
