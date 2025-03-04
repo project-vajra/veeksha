@@ -1,9 +1,12 @@
+import ast
 from typing import Tuple
 
 import numpy as np
 import pandas as pd
 
-from veeksha.config.config import TraceRequestLengthGeneratorConfig
+from veeksha.config.config import (
+    TraceRequestLengthGeneratorConfig,
+)
 from veeksha.logger import init_logger
 from veeksha.request_generator.length_generator.base_generator import (
     BaseRequestLengthGenerator,
@@ -18,6 +21,14 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
 
         trace_file = self.config.trace_file
         self.trace_df = pd.read_csv(trace_file)
+
+        self._has_hash_ids = "hash_ids" in self.trace_df.columns
+
+        if self._has_hash_ids:
+            if not isinstance(self.trace_df["hash_ids"].iloc[0], list):
+                self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
+                    ast.literal_eval
+                )
 
         # scale prefill and decode tokens
         self.trace_df["num_prefill_tokens"] = (
@@ -97,3 +108,30 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
             row["num_prefill_tokens"],
             row["num_decode_tokens"],
         )
+
+    def get_next_request_params(self) -> Tuple[list[int], int, int]:
+        assert self._has_hash_ids
+        if self.next_request_idx >= len(self.trace_df):
+            return [], -1, -1
+
+        row = self.trace_df.iloc[self.next_request_idx]
+        self.next_request_idx += 1
+
+        hash_ids = row["hash_ids"]
+        hash_count = len(hash_ids)
+        num_prefill_tokens = row["num_prefill_tokens"]
+        num_decode_tokens = row["num_decode_tokens"]
+        block_count = (
+            num_prefill_tokens + self.config.block_size - 1
+        ) // self.config.block_size
+
+        assert hash_count >= block_count, f"{hash_count} >= {block_count}"
+
+        return (hash_ids, num_prefill_tokens, num_decode_tokens)
+
+    def has_hash_ids(self) -> bool:
+        return self._has_hash_ids
+
+    def get_block_size(self) -> int:
+        assert self.has_hash_ids()
+        return self.config.block_size

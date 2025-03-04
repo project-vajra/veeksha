@@ -4,7 +4,6 @@ import re
 from abc import ABC
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional
 
 import joblib
 import numpy as np
@@ -113,8 +112,12 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
         default=1, metadata={"help": "Scale factor for decode tokens."}
     )
 
+    block_size: int = field(
+        default=512, metadata={"help": "Number of tokens per block."}
+    )
+
     @classmethod
-    def get_type(cls):
+    def get_type(cls) -> RequestLengthGeneratorType:
         return RequestLengthGeneratorType.TRACE
 
 
@@ -134,7 +137,7 @@ class ZipfRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
     )
 
     @classmethod
-    def get_type(cls):
+    def get_type(cls) -> RequestLengthGeneratorType:
         return RequestLengthGeneratorType.ZIPF
 
 
@@ -148,7 +151,7 @@ class UniformRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
     )
 
     @classmethod
-    def get_type(cls):
+    def get_type(cls) -> RequestLengthGeneratorType:
         return RequestLengthGeneratorType.UNIFORM
 
 
@@ -162,7 +165,7 @@ class FixedRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
     )
 
     @classmethod
-    def get_type(cls):
+    def get_type(cls) -> RequestLengthGeneratorType:
         return RequestLengthGeneratorType.FIXED
 
 
@@ -324,7 +327,7 @@ class DeadlineConfig:
 
 @dataclass
 class PrefillProfilerConfig:
-    prefill_lengths: List[int] = field(
+    prefill_lengths: list[int] = field(
         default_factory=lambda: [],
         metadata={"help": "The lengths to prefill the profiler with."},
     )
