@@ -6,7 +6,6 @@ from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 from veeksha.config.config import ClientConfig
 from veeksha.core.request_config import RequestConfig
-from veeksha.logger import init_logger
 from veeksha.request_generator.length_generator.base_generator import (
     BaseRequestLengthGenerator,
 )
@@ -14,60 +13,12 @@ from veeksha.request_generator.length_generator.trace_generator import (
     TraceRequestLengthGenerator,
 )
 
+from veeksha.logger import init_logger
+
 logger = init_logger(__name__)
 
-
-def generate_random_prompt(
-    tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
-    num_prompt_tokens: int = 1024,
-    num_output_tokens: int = 128,
-    corpus_lines: Union[List[str], None] = None,
-    add_instruction: bool = True,
-) -> Tuple[str, int]:
-    """Generate a random prompt with a given number of tokens.
-
-    Args:
-        num_prompt_tokens: The number of tokens to generate in the prompt.
-        num_output_tokens: The number of tokens to expect in the output.
-
-        The prompt will be generated such that the output
-        will be approximately this many tokens.
-
-    Returns:
-        A random prompt with the given number of tokens.
-    """
-    assert corpus_lines is not None, "corpus_lines must be provided"
-
-    get_token_length = lambda text: len(tokenizer.encode(text))
-
-    instruction = (
-        'INSTRUCTION: Mimic below text enclosed in """ quotes and generate '
-        f"long text of at least {num_output_tokens} tokens.\n\n"
-    )
-
-    remaining_prompt_tokens = num_prompt_tokens - get_token_length(instruction)
-    random.shuffle(corpus_lines)
-    sampling_lines = True
-    prompt = (instruction + '"""') if add_instruction else ""
-    remaining_prompt_tokens -= get_token_length(prompt) * 2
-    while sampling_lines:
-        for line in corpus_lines:
-            line_to_add = line
-            if remaining_prompt_tokens - get_token_length(line_to_add) < 0:
-                # This will cut off a line in the middle of a word, but that's ok since an
-                # llm should be able to handle that.
-                line_to_add = line_to_add[: int(math.ceil(remaining_prompt_tokens))]
-                sampling_lines = False
-                prompt += line_to_add
-                break
-            prompt += line_to_add
-            remaining_prompt_tokens -= get_token_length(line_to_add)
-
-    if add_instruction:
-        prompt += '"""'
-    return (prompt, num_prompt_tokens)
-
-
+# TODO: split this class into two classes, one for normal requests and one for prefix requests,
+# and have them both inherit from a common base class.
 class RequestGenerator:
 
     def __init__(
@@ -105,6 +56,57 @@ class RequestGenerator:
             return self.get_request_params_prefix(request_id=request_id)
         else:
             return self.get_request_params_normal(request_id=request_id)
+    
+    def generate_random_prompt(
+        self,
+        tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+        num_prompt_tokens: int = 1024,
+        num_output_tokens: int = 128,
+        corpus_lines: Union[List[str], None] = None,
+        add_instruction: bool = True,
+    ) -> Tuple[str, int]:
+        """Generate a random prompt with a given number of tokens.
+
+        Args:
+            num_prompt_tokens: The number of tokens to generate in the prompt.
+            num_output_tokens: The number of tokens to expect in the output.
+
+            The prompt will be generated such that the output
+            will be approximately this many tokens.
+
+        Returns:
+            A random prompt with the given number of tokens.
+        """
+        assert corpus_lines is not None, "corpus_lines must be provided"
+
+        get_token_length = lambda text: len(tokenizer.encode(text))
+
+        instruction = (
+            'INSTRUCTION: Mimic below text enclosed in """ quotes and generate '
+            f"long text of at least {num_output_tokens} tokens.\n\n"
+        )
+
+        remaining_prompt_tokens = num_prompt_tokens - get_token_length(instruction)
+        random.shuffle(corpus_lines)
+        sampling_lines = True
+        prompt = (instruction + '"""') if add_instruction else ""
+        remaining_prompt_tokens -= get_token_length(prompt) * 2
+        while sampling_lines:
+            for line in corpus_lines:
+                line_to_add = line
+                if remaining_prompt_tokens - get_token_length(line_to_add) < 0:
+                    # This will cut off a line in the middle of a word, but that's ok since an
+                    # llm should be able to handle that.
+                    line_to_add = line_to_add[: int(math.ceil(remaining_prompt_tokens))]
+                    sampling_lines = False
+                    prompt += line_to_add
+                    break
+                prompt += line_to_add
+                remaining_prompt_tokens -= get_token_length(line_to_add)
+
+        if add_instruction:
+            prompt += '"""'
+        return (prompt, num_prompt_tokens)
 
     def get_request_params_normal(
         self,
@@ -121,7 +123,7 @@ class RequestGenerator:
             )
         num_prompt_tokens = int(num_prompt_tokens)
         num_output_tokens = int(num_output_tokens)
-        prompt = generate_random_prompt(
+        prompt = self.generate_random_prompt(
             tokenizer=self.tokenizer,
             num_prompt_tokens=num_prompt_tokens,
             num_output_tokens=num_output_tokens,

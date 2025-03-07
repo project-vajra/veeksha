@@ -7,6 +7,7 @@ import requests
 
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
 from veeksha.core.request_config import RequestConfig
+from veeksha.core.response import Response
 from veeksha.logger import init_logger
 from veeksha.metrics.request_metrics import RequestMetrics
 
@@ -56,7 +57,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
 
     def send_llm_request(
         self, request_config: RequestConfig
-    ) -> Tuple[RequestMetrics, str]:
+    ) -> Tuple[RequestMetrics, Response]:
         prompt = request_config.prompt
         prompt, prompt_len = prompt
 
@@ -68,6 +69,8 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
             "model": model,
             "messages": message,
             "stream": True,
+            "logprobs": True,   # TODO: later make it configurable
+            "top_logprobs": 20, # 20 is maximum allowed by OpenAI API
         }
         sampling_params = request_config.sampling_params
         body.update(sampling_params or {})
@@ -86,6 +89,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
         error_response_code = None
         tokens_received = 0
         generated_text = ""
+        logprobs = []
         previous_responses = []
         previous_token_count = 0
 
@@ -124,6 +128,8 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
                         raise RuntimeError(data["error"]["message"])
 
                     delta = data["choices"][0]["delta"]
+                    tok_logprob = data["choices"][0]["logprobs"]["content"]
+                    top_logprobs = data["choices"][0]["logprobs"]["top_logprobs"]
                     if delta.get("content", None):
                         (
                             current_tokens_received,
@@ -144,6 +150,10 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
                             )
                         most_recent_received_token_time = time.monotonic()
                         generated_text += delta["content"]
+                        logprobs.append({
+                            "token_logprob": tok_logprob,
+                            "top_logprobs": top_logprobs,
+                        })
         except Exception as e:
             logger.error(f"Warning Or Error: ({error_response_code}) {e}")
 
@@ -156,4 +166,10 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
             error_msg=error_msg,
         )
 
-        return metrics, generated_text
+        response = Response(
+            id=request_config.id,
+            text=generated_text,
+            logprobs=logprobs,
+        )
+
+        return metrics, response

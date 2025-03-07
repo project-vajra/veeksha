@@ -1,0 +1,270 @@
+from collections import defaultdict
+from typing import  Any, Dict, List, Optional, Tuple, Union
+
+from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
+
+from lm_eval.api.instance import Instance
+from lm_eval.evaluator_utils import (
+    get_task_list, get_sample_size, TaskOutput, consolidate_results, consolidate_group_results, prepare_print_tasks,
+    get_subtask_list,
+)
+from lm_eval.tasks import Task, TaskManager, get_task_dict
+
+from veeksha.config.config import LMEvalConfig
+from veeksha.core.response import Response
+from veeksha.logger import init_logger
+from veeksha.types import LMEvalOutputType
+
+logger = init_logger(__name__)
+
+class LMEvalRequestGenerator:
+    def __init__(self,
+                 config: LMEvalConfig,
+                 tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+                 limit: int):
+        self.config = config
+        self.limit = limit
+        self.tokenizer = tokenizer
+
+        self.task_manager = TaskManager()
+        self.task_dict = get_task_dict(self.config.tasks, self.task_manager) # type: ignore
+
+        # some parameters that can be set later or ignored
+        self.gen_kwargs = None
+        self.write_out = False
+        self.log_samples = False
+        self.bootstrap_iters = 100000
+
+        self.task_dict = self._adjust_config(self.task_dict)
+
+        # now generate requests
+        self.requests : Dict[str, List[Instance]] = defaultdict(list)
+        self.eval_tasks: List[TaskOutput] = []
+        self.cloned_requests : List[Instance] = []
+        self.limits : List[Optional[int]] = []
+        self.generate_requests()
+
+        self.req_idx = 0
+
+        self.responses = []
+    
+    def encode(self, text: str) -> List[int]:
+        return self.tokenizer.encode(text, add_special_tokens=False)
+
+    def decode(self, tokens: List[int]) -> str:
+        return self.tokenizer.decode(tokens)
+
+    def _adjust_config(self, task_dict):
+        adjusted_task_dict = {}
+        for task_name, task_obj in task_dict.items():
+            if isinstance(task_obj, dict):
+                adjusted_task_dict = {
+                    **adjusted_task_dict,
+                    **{task_name: self._adjust_config(task_obj)},
+                }
+
+            else:
+                if task_obj.get_config("output_type") == str(LMEvalOutputType.GENERATE_UNTIL):
+                    if self.gen_kwargs is not None:
+                        task_obj.set_config(
+                            key="generation_kwargs", value=self.gen_kwargs, update=True
+                        )
+
+                # override tasks' fewshot values to the provided num_fewshot arg value
+                # except if tasks have it set to 0 manually in their configs--then we should never overwrite that
+                if self.config.num_fewshot is not None:
+                    if (default_num_fewshot := task_obj.get_config("num_fewshot")) == 0:
+                        logger.info(
+                            f"num_fewshot has been set to 0 for {task_name} in its config. Manual configuration will be ignored."
+                        )
+                    else:
+                        logger.warning(
+                            f"Overwriting default num_fewshot of {task_name} from {default_num_fewshot} to {self.config.num_fewshot}"
+                        )
+                        task_obj.set_config(key="num_fewshot", value=self.config.num_fewshot)
+                else:
+                    # if num_fewshot not provided, and the task does not define a default one, default to 0
+                    if (
+                        default_num_fewshot := task_obj.get_config("num_fewshot")
+                    ) is None:
+                        task_obj.set_config(key="num_fewshot", value=0)
+                # fewshot_random_seed set for tasks, even with a default num_fewshot (e.g. in the YAML file)
+                task_obj.set_fewshot_seed(seed=self.config.seed)
+
+                adjusted_task_dict[task_name] = task_obj
+
+        return adjusted_task_dict
+
+    def generate_requests(self):
+        self.eval_tasks = get_task_list(self.task_dict)
+
+        self.limits = []
+        for task_output in self.eval_tasks:
+            task: Task = task_output.task # type: ignore
+
+            limit = get_sample_size(task, self.limit)
+            self.limits.append(limit)
+            task.build_all_requests(limit=limit)
+
+            logger.debug(f"Generated {len(task.instances)} requests for {task_output.task_name}")
+
+            for instance in task.instances:
+                reqtype = instance.request_type
+                self.requests[reqtype].append(instance)
+        
+        for reqtype, reqs in self.requests.items():
+            self.cloned_reqs = []
+            for req in reqs:
+                self.cloned_reqs.extend([req] * req.repeats) # type: ignore
+
+    def get_request(self) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+        if self.req_idx >= len(self.cloned_reqs):
+            return None, None
+        req: Instance = self.cloned_reqs[self.req_idx]
+        self.req_idx += 1
+
+        # just need context to send to the model
+        if req.request_type == str(LMEvalOutputType.GENERATE_UNTIL):
+            context, all_gen_kwargs = req.args  # type: ignore
+            # TODO: preprocess all_gen_kwargs as done in lmeval/models/huggingface.py
+            return context, all_gen_kwargs
+        elif req.request_type == str(LMEvalOutputType.LOGLIKELIHOOD):
+            context, target = req.args  # type: ignore
+            # TODO: check how to ensure that model generated only required number of tokens
+            # also check if total length is within the limit supported by the model
+            return context, None
+        else:
+            raise NotImplementedError(f"Request type {req.request_type} not supported yet.")
+
+    def parse_logprobs(self, req: Instance, response: Response) -> Tuple[float, int]:
+        assert response.logprobs is not None
+        context, target = req.args    # type: ignore
+        # TODO: check max context length and see if this is actually tokenized length
+        # TODO: current implementation surprisingly does not use target, why? Check once!
+        ctxlen = len(self.encode(context))
+        ctxlen = 0 # TODO: Check which one to use
+        token_logprobs = [i["token_logprob"][0]["token"] for i in response.logprobs[ctxlen:-1]]
+        logprobs = sum(i["token_logprob"][0]["logprob"] for i in response.logprobs[ctxlen:-1])
+        top_logprobs = [[j['token'] for j in i["top_logprobs"]] for i in response.logprobs[ctxlen:-1]]
+        is_greedy = True
+        for tok, top in zip(token_logprobs, top_logprobs):
+            if tok != top[0]:
+                is_greedy = False
+                break
+        return logprobs, is_greedy
+    
+    def check_ordering(self, responses: List[Response]) -> bool:
+        cur_idx = 0
+        for resp in responses:
+            if resp.id != cur_idx:
+                return False
+            cur_idx += 1
+        return True
+
+    def get_responses(self, responses: List[Response]) -> None:
+        assert self.check_ordering(responses), "Responses are not in the same order as the requests"
+        self.responses = responses
+
+        # TODO: for some instances, there won't be any responses -> maybe remove those cloned requests?
+        assert len(self.responses) == len(self.cloned_reqs), "Number of responses does not match number of requests"
+
+        # somehow need to add responses to the task instances (but once that is done, we can evaluate)
+        for x, req in zip(self.responses, self.cloned_reqs):
+            if req.request_type == str(LMEvalOutputType.GENERATE_UNTIL):
+                req.resps.append(x.text)
+            elif req.request_type == str(LMEvalOutputType.LOGLIKELIHOOD):
+                req.resps.append(self.parse_logprobs(req, x))
+            else:
+                raise NotImplementedError(f"Request type {req.request_type} not supported")
+
+    def evaluate(self):
+        # assuming that task instances have been updated with responses in correct way
+
+        for task_output, limit in zip(self.eval_tasks, self.limits):
+            task : Task = task_output.task  # type: ignore
+            task.apply_filters()
+
+            # Pre-process task.instances to group by doc_id
+            instances_by_doc_id = defaultdict(list)
+            for instance in task.instances:
+                instances_by_doc_id[instance.doc_id].append(instance)
+            # Sort instances within each group
+            for instances in instances_by_doc_id.values():
+                instances.sort(key=lambda x: x.idx)
+            # iterate over different filters used
+            for filter_key in task.instances[0].filtered_resps.keys():
+                doc_iterator = task.doc_iterator(limit=limit)
+                for doc_id, doc in doc_iterator:
+                    requests = instances_by_doc_id[doc_id]
+                    metrics = task.process_results(
+                        doc, [req.filtered_resps[filter_key] for req in requests]
+                    )
+                    for metric, value in metrics.items():   # type: ignore
+                        task_output.sample_metrics[(metric, filter_key)].append(value)
+            # now calculate aggregate metrics
+            for task_output in self.eval_tasks:
+                task_output.calculate_aggregate_metric(bootstrap_iters=self.bootstrap_iters)
+            (
+                results,
+                samples,
+                configs,
+                versions,
+                num_fewshot,
+                higher_is_better,
+            ) = consolidate_results(self.eval_tasks)
+
+            # Calculate group metrics
+            if bool(results):
+                results, versions, show_group_table, *_ = consolidate_group_results(
+                    results, versions, self.task_dict
+                )
+            results_agg, group_agg = prepare_print_tasks(self.task_dict, results)
+            subtask_list = get_subtask_list(self.task_dict)
+
+            # collect all highers_is_better values for metrics in the group's subtasks
+            _higher_is_better = {}
+            for group, task_list in subtask_list.items():
+                if(
+                    len(task_list) != 0
+                ):  # subtask list will list "task_name": [] for solo tasks
+                    for task in task_list:
+                        for m, h in higher_is_better[task].items():
+                            if m not in _higher_is_better.keys():
+                                _higher_is_better[m] = h
+                            
+                            if (
+                                m in _higher_is_better
+                                and _higher_is_better[m] is not None
+                                and _higher_is_better[m] != h
+                            ):
+                                logger.warning(
+                                    f"Conflicting higher_is_better values for metric {m} in subtasks of group {group}."
+                                )
+                                _higher_is_better[m] = None
+                    higher_is_better[group] = _higher_is_better
+            
+            results_dict = {
+                "results": dict(results_agg.items()),
+                **(
+                    {"groups": dict(group_agg.items())}
+                    if (bool(group_agg) & show_group_table) # type: ignore
+                    else {}
+                ),
+                "group_subtasks": dict(reversed(subtask_list.items())),
+                "configs": dict(sorted(configs.items())),
+                "versions": dict(sorted(versions.items())),
+                "n-shot": dict(sorted(num_fewshot.items())),
+                "higher_is_better": dict(sorted(higher_is_better.items())),
+                "n-samples": {
+                    task_output.task_name: {
+                        "original": len(task_output.task.eval_docs),    # type: ignore
+                        "effective": min(
+                            limit if limit else len(task_output.task.eval_docs),    # type: ignore
+                            len(task_output.task.eval_docs),    # type: ignore
+                        ),
+                    }
+                    for task_output, limit in zip(self.eval_tasks, self.limits)
+                },
+            }
+
+            return results_dict

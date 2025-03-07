@@ -4,6 +4,7 @@ import re
 from abc import ABC
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import List, Optional
 
 import joblib
 import numpy as np
@@ -402,6 +403,22 @@ class PrefillProfilerConfig:
             )
             self.do_predictions()
             self.save_predictions()
+
+
+@dataclass
+class LMEvalConfig:
+    seed: int = field(
+        default=42,
+        metadata={"help": "Seed for the random number generator."},
+    )
+    tasks: list[str] = field(
+        default_factory=lambda: [],
+        metadata={"help": "The tasks to evaluate the language model on."},
+    )
+    num_fewshot: int = field(
+        default=1,
+        metadata={"help": "The number of fewshot examples to use for the tasks."},
+    )
 
 
 @dataclass
