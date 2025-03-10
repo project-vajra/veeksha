@@ -7,9 +7,6 @@ from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 from veeksha.config.config import ClientConfig, SyntheticRequestGeneratorConfig
 from veeksha.core.request_config import RequestConfig
 from veeksha.request_generator.base_generator import BaseRequestGenerator
-from veeksha.request_generator.length_generator.base_generator import (
-    BaseRequestLengthGenerator,
-)
 from veeksha.request_generator.length_generator.generator_registry import (
     RequestLengthGeneratorRegistry,
 )
@@ -42,6 +39,7 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         self.corpus_lines = corpus_lines
 
         self.past_prompts: dict[int, str] = {}
+        self.request_id = 0
 
     def encode(self, text: str) -> List[int]:
         return self.tokenizer.encode(text, add_special_tokens=False)
@@ -56,14 +54,12 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             and self.request_length_generator.has_hash_ids()
         )
 
-    def get_request(
-        self,
-        request_id: Optional[int] = None,
-    ) -> RequestConfig:
+    def get_request(self) -> RequestConfig:
+        self.request_id += 1
         if self.uses_prefix:
-            return self.get_request_params_prefix(request_id=request_id)
+            return self.get_request_params_prefix(request_id=self.request_id-1)
         else:
-            return self.get_request_params_normal(request_id=request_id)
+            return self.get_request_params_normal(request_id=self.request_id-1)
     
     def generate_random_prompt(
         self,

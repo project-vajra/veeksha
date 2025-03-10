@@ -22,15 +22,14 @@ from veeksha.request_generator.interval_generator.base_generator import (
 from veeksha.request_generator.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
 )
-from veeksha.request_generator.length_generator.base_generator import (
-    BaseRequestLengthGenerator,
+from veeksha.request_generator.base_generator import (
+    BaseRequestGenerator,
 )
 from veeksha.request_generator.generator_registry import (
     RequestGeneratorRegistry,
 )
-from veeksha.request_generator.synthetic_generator import (
-    SyntheticRequestGenerator,
-)
+from veeksha.types import RequestGeneratorType
+from veeksha.core.response import Response
 
 logger = init_logger(__name__)
 
@@ -48,22 +47,12 @@ def should_send_new_request(
 def dispatch_requests(
     input_queue: Queue,
     service_metrics: ServiceMetrics,
-    client_config: ClientConfig,
-    tokenizer: Any,
     requests_interval_generator: BaseRequestIntervalGenerator,
-    requests_length_generator: BaseRequestLengthGenerator,
-    corpus_lines: List[str],
+    request_generator: BaseRequestGenerator,
     stop_event: threading.Event,
 ) -> None:
     """Thread function to generate and dispatch requests."""
     num_errored_requests_handled = 0
-
-    request_generator = SyntheticRequestGenerator(
-        client_config=client_config,
-        tokenizer=tokenizer,
-        request_length_generator=requests_length_generator,
-        corpus_lines=corpus_lines.copy(),
-    )
 
     while not stop_event.is_set():
         if should_send_new_request(service_metrics, num_errored_requests_handled):
@@ -75,9 +64,7 @@ def dispatch_requests(
 
             # Create and dispatch request
             service_metrics.register_launched_request()
-            request_config = request_generator.get_request_params(
-                request_id=service_metrics.num_requests,
-            )
+            request_config = request_generator.get_request()
             input_queue.put(request_config)
 
             # Wait for next interval
@@ -102,7 +89,7 @@ def dispatch_requests(
 def process_results(
     output_queue: Queue,
     service_metrics: ServiceMetrics,
-    generated_texts: List[str],
+    generated_responses: List[Response],
     pbar: tqdm,
     stop_event: threading.Event,
 ) -> None:
@@ -110,10 +97,10 @@ def process_results(
     while not stop_event.is_set() or not output_queue.empty():
         try:
             result = output_queue.get(timeout=0.1)
-            request_metrics, generated_text = result
-            if generated_text:
+            request_metrics, generated_response = result
+            if generated_response:
                 service_metrics.add_request_metrics(request_metrics)
-                generated_texts.append(generated_text)
+                generated_responses.append(generated_response)
 
             pbar.update(service_metrics.num_completed_requests - pbar.n)
         except Empty:
@@ -123,23 +110,14 @@ def process_results(
 def run_main_loop(
     benchmark_config: BenchmarkConfig,
     requests_interval_generator: BaseRequestIntervalGenerator,
-    requests_length_generator: BaseRequestLengthGenerator,
+    request_generator: BaseRequestGenerator,
     service_metrics: ServiceMetrics,
-    corpus_lines: List[str],
-    generated_texts: List[str],
+    generated_responses: List[Response],
     pbar: tqdm,
 ):
     """Run the main loop for the benchmark."""
 
     logger.info("Starting the main loop.")
-
-    assert (
-        benchmark_config.client_config.tokenizer is not None
-    ), "Tokenizer is required."
-    tokenizer = get_tokenizer(
-        tokenizer_name=benchmark_config.client_config.tokenizer,
-        trust_remote_code=True,
-    )
 
     # Create queues for communication
     input_queue = Queue()
@@ -162,11 +140,8 @@ def run_main_loop(
         args=(
             input_queue,
             service_metrics,
-            benchmark_config.client_config,
-            tokenizer,
             requests_interval_generator,
-            requests_length_generator,
-            corpus_lines,
+            request_generator,
             stop_event,
         ),
     )
@@ -176,7 +151,7 @@ def run_main_loop(
         args=(
             output_queue,
             service_metrics,
-            generated_texts,
+            generated_responses,
             pbar,
             stop_event,
         ),
@@ -224,32 +199,49 @@ def run_benchmark(
         prefill_profiler_config=benchmark_config.prefill_profiler_config,
     )
 
-    generated_texts = []
+    generated_responses: List[Response] = []
     pbar = tqdm(total=benchmark_config.max_completed_requests)
 
     requests_interval_generator = RequestIntervalGeneratorRegistry.get(
         benchmark_config.request_interval_generator_config.get_type(),
         benchmark_config.request_interval_generator_config,
     )
-    # TODO: update this to use the registry
-    requests_length_generator = RequestGeneratorRegistry.get(
-        benchmark_config.request_generator_config.get_type(),
-        benchmark_config.request_generator_config,
+    
+    assert (
+        benchmark_config.client_config.tokenizer is not None
+    ), "Tokenizer is required."
+
+    tokenizer = get_tokenizer(
+        tokenizer_name=benchmark_config.client_config.tokenizer,
+        trust_remote_code=True,
     )
 
-    corpus_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "data", "corpus.txt")
+    request_generator_params = {}
+
+    if benchmark_config.request_generator_config.get_type() == RequestGeneratorType.SYNTHETIC:
+        corpus_path = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "data", "corpus.txt")
+        )
+        with open(corpus_path, "r") as f:
+            corpus_lines = f.readlines()
+        request_generator_params = {
+            "corpus_lines": corpus_lines,
+        }
+
+    request_generator = RequestGeneratorRegistry.get(
+        benchmark_config.request_generator_config.get_type(),
+        config=benchmark_config.request_generator_config,
+        tokenizer=tokenizer,
+        client_config=benchmark_config.client_config,
+        **request_generator_params,
     )
-    with open(corpus_path, "r") as f:
-        corpus_lines = f.readlines()
 
     run_main_loop(
         benchmark_config=benchmark_config,
         requests_interval_generator=requests_interval_generator,
-        requests_length_generator=requests_length_generator,
+        request_generator=request_generator,
         service_metrics=service_metrics,
-        corpus_lines=corpus_lines,
-        generated_texts=generated_texts,
+        generated_responses=generated_responses,
         pbar=pbar,
     )
 
@@ -264,7 +256,19 @@ def run_benchmark(
     with open(
         os.path.join(service_metrics.output_dir, "generated_texts.txt"), "w"
     ) as f:
-        f.write(("\n" + "-" * 30 + "\n").join(generated_texts))
+        f.write(("\n" + "-" * 30 + "\n").join([i.text for i in generated_responses]))
+    
+    # lm-eval specific
+    if benchmark_config.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
+        request_generator.get_responses(generated_responses)
+        results = request_generator.evaluate()
+        logger.info(f"Results: {results}")
+
+        # write results dictionary to file
+        with open(
+            os.path.join(service_metrics.output_dir, "results.json"), "w"
+        ) as f:
+            f.write(str(results))
 
 
 if __name__ == "__main__":

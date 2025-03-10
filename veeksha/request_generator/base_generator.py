@@ -22,4 +22,4 @@ class BaseRequestGenerator:
         raise NotImplementedError
 
     def get_responses(self, responses: List[Response]) -> None:
-        raise NotImplementedError
+        pass

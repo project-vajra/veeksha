@@ -180,16 +180,11 @@ class LMEvalRequestGenerator:
                 break
         return logprobs, is_greedy
 
-    def check_ordering(self, responses: List[Response]) -> bool:
-        cur_idx = 0
-        for resp in responses:
-            if resp.id != cur_idx:
-                return False
-            cur_idx += 1
-        return True
+    def sort_responses(self, responses: List[Response]) -> List[Response]:
+        return sorted(responses, key=lambda x: x.id)    # type: ignore
 
     def get_responses(self, responses: List[Response]) -> None:
-        assert self.check_ordering(responses), "Responses are not in the same order as the requests"
+        responses = self.sort_responses(responses)
         self.responses = responses
 
         # TODO: for some instances, there won't be any responses -> maybe remove those cloned requests?
@@ -204,9 +199,8 @@ class LMEvalRequestGenerator:
             else:
                 raise NotImplementedError(f"Request type {req.request_type} not supported")
 
-    def evaluate(self):
+    def evaluate(self) -> Dict[str, Any]:
         # assuming that task instances have been updated with responses in correct way
-
         for task_output, limit in zip(self.eval_tasks, self.limits):
             task : Task = task_output.task  # type: ignore
             task.apply_filters()
@@ -228,70 +222,71 @@ class LMEvalRequestGenerator:
                     )
                     for metric, value in metrics.items():   # type: ignore
                         task_output.sample_metrics[(metric, filter_key)].append(value)
-            # now calculate aggregate metrics
-            for task_output in self.eval_tasks:
-                task_output.calculate_aggregate_metric(bootstrap_iters=self.bootstrap_iters)
-            (
-                results,
-                samples,
-                configs,
-                versions,
-                num_fewshot,
-                higher_is_better,
-            ) = consolidate_results(self.eval_tasks)
 
-            # Calculate group metrics
-            if bool(results):
-                results, versions, show_group_table, *_ = consolidate_group_results(
-                    results, versions, self.task_dict
-                )
-            results_agg, group_agg = prepare_print_tasks(self.task_dict, results)
-            subtask_list = get_subtask_list(self.task_dict)
+        # now calculate aggregate metrics
+        for task_output in self.eval_tasks:
+            task_output.calculate_aggregate_metric(bootstrap_iters=self.bootstrap_iters)
+        (
+            results,
+            samples,
+            configs,
+            versions,
+            num_fewshot,
+            higher_is_better,
+        ) = consolidate_results(self.eval_tasks)
 
-            # collect all highers_is_better values for metrics in the group's subtasks
-            _higher_is_better = {}
-            for group, task_list in subtask_list.items():
-                if(
-                    len(task_list) != 0
-                ):  # subtask list will list "task_name": [] for solo tasks
-                    for task in task_list:
-                        for m, h in higher_is_better[task].items():
-                            if m not in _higher_is_better.keys():
-                                _higher_is_better[m] = h
-                            
-                            if (
-                                m in _higher_is_better
-                                and _higher_is_better[m] is not None
-                                and _higher_is_better[m] != h
-                            ):
-                                logger.warning(
-                                    f"Conflicting higher_is_better values for metric {m} in subtasks of group {group}."
-                                )
-                                _higher_is_better[m] = None
-                    higher_is_better[group] = _higher_is_better
+        # Calculate group metrics
+        if bool(results):
+            results, versions, show_group_table, *_ = consolidate_group_results(
+                results, versions, self.task_dict
+            )
+        results_agg, group_agg = prepare_print_tasks(self.task_dict, results)
+        subtask_list = get_subtask_list(self.task_dict)
+
+        # collect all highers_is_better values for metrics in the group's subtasks
+        _higher_is_better = {}
+        for group, task_list in subtask_list.items():
+            if(
+                len(task_list) != 0
+            ):  # subtask list will list "task_name": [] for solo tasks
+                for task in task_list:
+                    for m, h in higher_is_better[task].items():
+                        if m not in _higher_is_better.keys():
+                            _higher_is_better[m] = h
+                        
+                        if (
+                            m in _higher_is_better
+                            and _higher_is_better[m] is not None
+                            and _higher_is_better[m] != h
+                        ):
+                            logger.warning(
+                                f"Conflicting higher_is_better values for metric {m} in subtasks of group {group}."
+                            )
+                            _higher_is_better[m] = None
+                higher_is_better[group] = _higher_is_better
             
-            results_dict = {
-                "results": dict(results_agg.items()),
-                **(
-                    {"groups": dict(group_agg.items())}
-                    if (bool(group_agg) & show_group_table) # type: ignore
-                    else {}
-                ),
-                "group_subtasks": dict(reversed(subtask_list.items())),
-                "configs": dict(sorted(configs.items())),
-                "versions": dict(sorted(versions.items())),
-                "n-shot": dict(sorted(num_fewshot.items())),
-                "higher_is_better": dict(sorted(higher_is_better.items())),
-                "n-samples": {
-                    task_output.task_name: {
-                        "original": len(task_output.task.eval_docs),    # type: ignore
-                        "effective": min(
-                            limit if limit else len(task_output.task.eval_docs),    # type: ignore
-                            len(task_output.task.eval_docs),    # type: ignore
-                        ),
-                    }
-                    for task_output, limit in zip(self.eval_tasks, self.limits)
-                },
-            }
+        results_dict = {
+            "results": dict(results_agg.items()),
+            **(
+                {"groups": dict(group_agg.items())}
+                if (bool(group_agg) & show_group_table) # type: ignore
+                else {}
+            ),
+            "group_subtasks": dict(reversed(subtask_list.items())),
+            "configs": dict(sorted(configs.items())),
+            "versions": dict(sorted(versions.items())),
+            "n-shot": dict(sorted(num_fewshot.items())),
+            "higher_is_better": dict(sorted(higher_is_better.items())),
+            "n-samples": {
+                task_output.task_name: {
+                    "original": len(task_output.task.eval_docs),    # type: ignore
+                    "effective": min(
+                        limit if limit else len(task_output.task.eval_docs),    # type: ignore
+                        len(task_output.task.eval_docs),    # type: ignore
+                    ),
+                }
+                for task_output, limit in zip(self.eval_tasks, self.limits)
+            },
+        }
 
-            return results_dict
+        return results_dict
