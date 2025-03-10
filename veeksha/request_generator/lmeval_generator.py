@@ -139,10 +139,22 @@ class LMEvalRequestGenerator:
         # just need context to send to the model
         if req.request_type == str(LMEvalOutputType.GENERATE_UNTIL):
             context, all_gen_kwargs = req.args  # type: ignore
-            # TODO: preprocess all_gen_kwargs as done in lmeval/models/huggingface.py
+            context_length = len(self.tokenizer.encode(context))
+            max_gen_toks = all_gen_kwargs.get("max_gen_toks", None)
+            if max_gen_toks is not None:
+                max_context_length = self.config.max_tokens - max_gen_toks
+                if context_length > max_context_length:
+                    context = self.tokenizer.decode(
+                        self.tokenizer.encode(context)[-max_context_length:]
+                    )
+                    context_length = len(self.tokenizer.encode(context))
+                    logger.warning
+                    (
+                        f"Context length exceeds max tokens limit. Truncated context to {context_length} tokens."
+                    )
             return RequestConfig(
                 model=self.client_config.model,
-                prompt=(context, len(self.tokenizer.encode(context))),
+                prompt=(context, context_length),
                 sampling_params=all_gen_kwargs,
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
