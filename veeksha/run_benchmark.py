@@ -1,3 +1,4 @@
+import json
 import multiprocessing
 import os
 import platform
@@ -7,31 +8,25 @@ import time
 from multiprocessing import Queue
 from queue import Empty
 from threading import Thread
-from typing import Any, List
-import json
+from typing import List
 
 from tqdm import tqdm  # type: ignore
 
-from veeksha.config.config import BenchmarkConfig, ClientConfig
+from veeksha.config.config import BenchmarkConfig
 from veeksha.core.hf_utils import get_tokenizer
 from veeksha.core.requests_launcher import RequestsLauncher
+from veeksha.core.response import Response
 from veeksha.logger import init_logger
 from veeksha.metrics.service_metrics import ServiceMetrics
+from veeksha.request_generator.base_generator import BaseRequestGenerator
+from veeksha.request_generator.generator_registry import RequestGeneratorRegistry
 from veeksha.request_generator.interval_generator.base_generator import (
     BaseRequestIntervalGenerator,
 )
 from veeksha.request_generator.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
 )
-from veeksha.request_generator.base_generator import (
-    BaseRequestGenerator,
-)
-from veeksha.request_generator.lmeval_generator import LMEvalRequestGenerator
-from veeksha.request_generator.generator_registry import (
-    RequestGeneratorRegistry,
-)
 from veeksha.types import RequestGeneratorType
-from veeksha.core.response import Response
 
 logger = init_logger(__name__)
 
@@ -200,7 +195,7 @@ def run_benchmark(
         benchmark_config.request_interval_generator_config.get_type(),
         benchmark_config.request_interval_generator_config,
     )
-    
+
     assert (
         benchmark_config.client_config.tokenizer is not None
     ), "Tokenizer is required."
@@ -212,7 +207,10 @@ def run_benchmark(
 
     request_generator_params = {}
 
-    if benchmark_config.request_generator_config.get_type() == RequestGeneratorType.SYNTHETIC:
+    if (
+        benchmark_config.request_generator_config.get_type()
+        == RequestGeneratorType.SYNTHETIC
+    ):
         corpus_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "data", "corpus.txt")
         )
@@ -229,13 +227,15 @@ def run_benchmark(
         client_config=benchmark_config.client_config,
         **request_generator_params,
     )
-    
+
     max_requests = (
-        request_generator.num_requests if benchmark_config.request_generator_config.get_type() == RequestGeneratorType.LMEVAL else
-        benchmark_config.max_completed_requests
+        request_generator.num_requests
+        if benchmark_config.request_generator_config.get_type()
+        == RequestGeneratorType.LMEVAL
+        else benchmark_config.max_completed_requests
     )
     pbar = tqdm(total=max_requests)
-    
+
     service_metrics = ServiceMetrics(
         max_requests=max_requests,
         timeout=benchmark_config.timeout,
@@ -265,15 +265,20 @@ def run_benchmark(
         os.path.join(service_metrics.output_dir, "generated_texts.txt"), "w"
     ) as f:
         f.write(("\n" + "-" * 30 + "\n").join([i.text for i in generated_responses]))
-    
+
     # lm-eval specific
-    if benchmark_config.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
+    if (
+        benchmark_config.request_generator_config.get_type()
+        == RequestGeneratorType.LMEVAL
+    ):
         request_generator.get_responses(generated_responses)
         lmeval_results = request_generator.evaluate()
         logger.info(f"Results: {lmeval_results}")
 
         # write results dictionary to file
-        with open(os.path.join(service_metrics.output_dir, "lmeval_results.json"), "w") as f:
+        with open(
+            os.path.join(service_metrics.output_dir, "lmeval_results.json"), "w"
+        ) as f:
             json.dump(lmeval_results, f, indent=4)
 
 

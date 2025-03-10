@@ -7,7 +7,6 @@ from veeksha.request_generator.length_generator.base_generator import (
 
 
 class FixedRequestLengthGenerator(BaseRequestLengthGenerator):
-
     def __init__(self, config: FixedRequestLengthGeneratorConfig):
         self.config = config
 

@@ -159,8 +159,8 @@ def create_flat_dataclass(input_dataclass: Any) -> Any:
         for field in fields(_input_dataclass):
             prefixed_name = f"{prefix}{field.name}"
 
-            if is_optional(field.type): # type: ignore
-                field_type = get_inner_type(field.type) # type: ignore
+            if is_optional(field.type):  # type: ignore
+                field_type = get_inner_type(field.type)  # type: ignore
             else:
                 field_type = field.type
 

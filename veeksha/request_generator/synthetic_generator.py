@@ -6,18 +6,16 @@ from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 from veeksha.config.config import ClientConfig, SyntheticRequestGeneratorConfig
 from veeksha.core.request_config import RequestConfig
+from veeksha.logger import init_logger
 from veeksha.request_generator.base_generator import BaseRequestGenerator
 from veeksha.request_generator.length_generator.generator_registry import (
     RequestLengthGeneratorRegistry,
 )
 
-from veeksha.logger import init_logger
-
 logger = init_logger(__name__)
 
 
 class SyntheticRequestGenerator(BaseRequestGenerator):
-
     def __init__(
         self,
         config: SyntheticRequestGeneratorConfig,

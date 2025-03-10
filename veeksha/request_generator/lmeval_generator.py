@@ -1,14 +1,18 @@
 from collections import defaultdict
-from typing import  Any, Dict, List, Optional, Tuple, Union
-
-from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from lm_eval.api.instance import Instance
 from lm_eval.evaluator_utils import (
-    get_task_list, get_sample_size, TaskOutput, consolidate_results, consolidate_group_results, prepare_print_tasks,
+    TaskOutput,
+    consolidate_group_results,
+    consolidate_results,
+    get_sample_size,
     get_subtask_list,
+    get_task_list,
+    prepare_print_tasks,
 )
 from lm_eval.tasks import Task, TaskManager, get_task_dict
+from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 from veeksha.config.config import ClientConfig, LmevalRequestGeneratorConfig
 from veeksha.core.request_config import RequestConfig
@@ -18,18 +22,21 @@ from veeksha.types import LMEvalOutputType
 
 logger = init_logger(__name__)
 
+
 class LMEvalRequestGenerator:
-    def __init__(self,
-                 config: LmevalRequestGeneratorConfig,
-                 tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
-                 client_config: ClientConfig):
+    def __init__(
+        self,
+        config: LmevalRequestGeneratorConfig,
+        tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+        client_config: ClientConfig,
+    ):
         self.config = config
         self.limit = self.config.limit
         self.tokenizer = tokenizer
         self.client_config = client_config
 
         self.task_manager = TaskManager()
-        self.task_dict = get_task_dict(self.config.tasks, self.task_manager) # type: ignore
+        self.task_dict = get_task_dict(self.config.tasks, self.task_manager)  # type: ignore
 
         # some parameters that can be set later or ignored
         self.gen_kwargs = None
@@ -40,16 +47,16 @@ class LMEvalRequestGenerator:
         self.task_dict = self._adjust_config(self.task_dict)
 
         # now generate requests
-        self.requests : Dict[str, List[Instance]] = defaultdict(list)
+        self.requests: Dict[str, List[Instance]] = defaultdict(list)
         self.eval_tasks: List[TaskOutput] = []
-        self.cloned_requests : List[Instance] = []
-        self.limits : List[Optional[int]] = []
+        self.cloned_requests: List[Instance] = []
+        self.limits: List[Optional[int]] = []
         self.generate_requests()
 
         self.req_idx = 0
 
         self.responses = []
-    
+
     @property
     def num_requests(self):
         return len(self.cloned_requests)
@@ -64,7 +71,9 @@ class LMEvalRequestGenerator:
                 }
 
             else:
-                if task_obj.get_config("output_type") == str(LMEvalOutputType.GENERATE_UNTIL):
+                if task_obj.get_config("output_type") == str(
+                    LMEvalOutputType.GENERATE_UNTIL
+                ):
                     if self.gen_kwargs is not None:
                         task_obj.set_config(
                             key="generation_kwargs", value=self.gen_kwargs, update=True
@@ -81,7 +90,9 @@ class LMEvalRequestGenerator:
                         logger.warning(
                             f"Overwriting default num_fewshot of {task_name} from {default_num_fewshot} to {self.config.num_fewshot}"
                         )
-                        task_obj.set_config(key="num_fewshot", value=self.config.num_fewshot)
+                        task_obj.set_config(
+                            key="num_fewshot", value=self.config.num_fewshot
+                        )
                 else:
                     # if num_fewshot not provided, and the task does not define a default one, default to 0
                     if (
@@ -100,26 +111,28 @@ class LMEvalRequestGenerator:
 
         self.limits = []
         for task_output in self.eval_tasks:
-            task: Task = task_output.task # type: ignore
+            task: Task = task_output.task  # type: ignore
 
             limit = get_sample_size(task, self.limit)
             self.limits.append(limit)
             task.build_all_requests(limit=limit)
 
-            logger.debug(f"Generated {len(task.instances)} requests for {task_output.task_name}")
+            logger.debug(
+                f"Generated {len(task.instances)} requests for {task_output.task_name}"
+            )
 
             for instance in task.instances:
                 reqtype = instance.request_type
                 self.requests[reqtype].append(instance)
-        
+
         for reqtype, reqs in self.requests.items():
             for req in reqs:
-                self.cloned_requests.extend([req] * req.repeats) # type: ignore
+                self.cloned_requests.extend([req] * req.repeats)  # type: ignore
 
     def get_request(self) -> RequestConfig:
         if self.req_idx >= len(self.cloned_requests):
             # TODO: check if this is the right way to handle this
-            return None # type: ignore
+            return None  # type: ignore
         req: Instance = self.cloned_requests[self.req_idx]
         self.req_idx += 1
 
@@ -133,7 +146,7 @@ class LMEvalRequestGenerator:
                 sampling_params=all_gen_kwargs,
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
-                id=self.req_idx-1,
+                id=self.req_idx - 1,
             )
         elif req.request_type == str(LMEvalOutputType.LOGLIKELIHOOD):
             context, target = req.args  # type: ignore
@@ -144,16 +157,18 @@ class LMEvalRequestGenerator:
                 prompt=(context, len(self.tokenizer.encode(context))),
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
-                id=self.req_idx-1,
+                id=self.req_idx - 1,
             )
         else:
-            raise NotImplementedError(f"Request type {req.request_type} not supported yet.")
+            raise NotImplementedError(
+                f"Request type {req.request_type} not supported yet."
+            )
 
     def parse_logprobs(self, req: Instance, response: Response) -> Tuple[float, int]:
         assert response.logprobs is not None
-        context, target = req.args    # type: ignore
+        context, target = req.args  # type: ignore
         target_tokens = self.tokenizer.tokenize(target)
-        logprobs = float('-inf')
+        logprobs = float("-inf")
         is_greedy = False
         for i, tok in enumerate(target_tokens):
             if i >= len(response.logprobs):
@@ -162,15 +177,15 @@ class LMEvalRequestGenerator:
             j = 0
             # check if the token is in the top logprobs
             while j < len(response.logprobs[i]):
-                if response.logprobs[i]['top_logprobs'][j]['token'] == tok:
+                if response.logprobs[i]["top_logprobs"][j]["token"] == tok:
                     break
-                j = j+1
+                j = j + 1
             # if token is found, add the logprob else break
             if j < len(response.logprobs[i]):
-                if logprobs == float('-inf'):
+                if logprobs == float("-inf"):
                     logprobs = 0
                     is_greedy = True
-                if j>0:
+                if j > 0:
                     is_greedy = False
                 logprobs += response.logprobs[i]["top_logprobs"][j]["logprob"]
             else:
@@ -179,13 +194,15 @@ class LMEvalRequestGenerator:
         return logprobs, is_greedy
 
     def sort_responses(self, responses: List[Response]) -> List[Response]:
-        return sorted(responses, key=lambda x: x.id)    # type: ignore
+        return sorted(responses, key=lambda x: x.id)  # type: ignore
 
     def get_responses(self, responses: List[Response]) -> None:
         responses = self.sort_responses(responses)
         self.responses = responses
-        
-        assert len(self.responses) == len(self.cloned_requests), "Number of responses does not match number of requests"
+
+        assert len(self.responses) == len(
+            self.cloned_requests
+        ), "Number of responses does not match number of requests"
 
         # somehow need to add responses to the task instances (but once that is done, we can evaluate)
         for x, req in zip(self.responses, self.cloned_requests):
@@ -194,12 +211,14 @@ class LMEvalRequestGenerator:
             elif req.request_type == str(LMEvalOutputType.LOGLIKELIHOOD):
                 req.resps.append(self.parse_logprobs(req, x))
             else:
-                raise NotImplementedError(f"Request type {req.request_type} not supported")
+                raise NotImplementedError(
+                    f"Request type {req.request_type} not supported"
+                )
 
     def evaluate(self) -> Dict[str, Any]:
         # assuming that task instances have been updated with responses in correct way
         for task_output, limit in zip(self.eval_tasks, self.limits):
-            task : Task = task_output.task  # type: ignore
+            task: Task = task_output.task  # type: ignore
             task.apply_filters()
 
             # Pre-process task.instances to group by doc_id
@@ -217,7 +236,7 @@ class LMEvalRequestGenerator:
                     metrics = task.process_results(
                         doc, [req.filtered_resps[filter_key] for req in requests]
                     )
-                    for metric, value in metrics.items():   # type: ignore
+                    for metric, value in metrics.items():  # type: ignore
                         task_output.sample_metrics[(metric, filter_key)].append(value)
 
         # now calculate aggregate metrics
@@ -243,14 +262,14 @@ class LMEvalRequestGenerator:
         # collect all highers_is_better values for metrics in the group's subtasks
         _higher_is_better = {}
         for group, task_list in subtask_list.items():
-            if(
+            if (
                 len(task_list) != 0
             ):  # subtask list will list "task_name": [] for solo tasks
                 for task in task_list:
                     for m, h in higher_is_better[task].items():
                         if m not in _higher_is_better.keys():
                             _higher_is_better[m] = h
-                        
+
                         if (
                             m in _higher_is_better
                             and _higher_is_better[m] is not None
@@ -261,12 +280,12 @@ class LMEvalRequestGenerator:
                             )
                             _higher_is_better[m] = None
                 higher_is_better[group] = _higher_is_better
-            
+
         results_dict = {
             "results": dict(results_agg.items()),
             **(
                 {"groups": dict(group_agg.items())}
-                if (bool(group_agg) & show_group_table) # type: ignore
+                if (bool(group_agg) & show_group_table)  # type: ignore
                 else {}
             ),
             "group_subtasks": dict(reversed(subtask_list.items())),
@@ -276,10 +295,10 @@ class LMEvalRequestGenerator:
             "higher_is_better": dict(sorted(higher_is_better.items())),
             "n-samples": {
                 task_output.task_name: {
-                    "original": len(task_output.task.eval_docs),    # type: ignore
+                    "original": len(task_output.task.eval_docs),  # type: ignore
                     "effective": min(
-                        limit if limit else len(task_output.task.eval_docs),    # type: ignore
-                        len(task_output.task.eval_docs),    # type: ignore
+                        limit if limit else len(task_output.task.eval_docs),  # type: ignore
+                        len(task_output.task.eval_docs),  # type: ignore
                     ),
                 }
                 for task_output, limit in zip(self.eval_tasks, self.limits)

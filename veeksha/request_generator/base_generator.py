@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple, Union
+from typing import List, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
@@ -11,10 +11,11 @@ logger = init_logger(__name__)
 
 
 class BaseRequestGenerator:
-
-    def __init__(self,
-                 config: BaseRequestGeneratorConfig,
-                 tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast]):
+    def __init__(
+        self,
+        config: BaseRequestGeneratorConfig,
+        tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+    ):
         self.config = config
         self.tokenizer = tokenizer
 

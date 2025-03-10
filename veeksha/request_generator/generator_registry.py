@@ -1,9 +1,9 @@
-from veeksha.types.base_registry import BaseRegistry
 from veeksha.types import RequestGeneratorType
+from veeksha.types.base_registry import BaseRegistry
 
-from .synthetic_generator import SyntheticRequestGenerator
 from .lmeval_generator import LMEvalRequestGenerator
 from .prefix_generator import PrefixRequestGenerator
+from .synthetic_generator import SyntheticRequestGenerator
 
 
 class RequestGeneratorRegistry(BaseRegistry):
@@ -15,9 +15,5 @@ class RequestGeneratorRegistry(BaseRegistry):
 RequestGeneratorRegistry.register(
     RequestGeneratorType.SYNTHETIC, SyntheticRequestGenerator
 )
-RequestGeneratorRegistry.register(
-    RequestGeneratorType.PREFIX, PrefixRequestGenerator
-)
-RequestGeneratorRegistry.register(
-    RequestGeneratorType.LMEVAL, LMEvalRequestGenerator
-)
+RequestGeneratorRegistry.register(RequestGeneratorType.PREFIX, PrefixRequestGenerator)
+RequestGeneratorRegistry.register(RequestGeneratorType.LMEVAL, LMEvalRequestGenerator)

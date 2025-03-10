@@ -69,8 +69,8 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
             "model": model,
             "messages": message,
             "stream": True,
-            "logprobs": True,   # TODO: later make it configurable
-            "top_logprobs": 20, # 20 is maximum allowed by OpenAI API
+            "logprobs": True,  # TODO: later make it configurable
+            "top_logprobs": 20,  # 20 is maximum allowed by OpenAI API
         }
         sampling_params = request_config.sampling_params
         body.update(sampling_params or {})

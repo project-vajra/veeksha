@@ -4,17 +4,16 @@ from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 from veeksha.config.config import ClientConfig, SyntheticRequestGeneratorConfig
 from veeksha.core.request_config import RequestConfig
-from veeksha.request_generator.synthetic_generator import SyntheticRequestGenerator
+from veeksha.logger import init_logger
 from veeksha.request_generator.length_generator.trace_generator import (
     TraceRequestLengthGenerator,
 )
-
-from veeksha.logger import init_logger
+from veeksha.request_generator.synthetic_generator import SyntheticRequestGenerator
 
 logger = init_logger(__name__)
 
-class PrefixRequestGenerator(SyntheticRequestGenerator):
 
+class PrefixRequestGenerator(SyntheticRequestGenerator):
     def __init__(
         self,
         config: SyntheticRequestGeneratorConfig,
@@ -27,9 +26,9 @@ class PrefixRequestGenerator(SyntheticRequestGenerator):
             isinstance(self.request_length_generator, TraceRequestLengthGenerator)
             and self.request_length_generator.has_hash_ids()
         ), "PrefixRequestGenerator requires a TraceRequestLengthGenerator with hash IDs"
-        
+
         self.past_prompts: dict[int, str] = {}
-    
+
     def is_stable_encoding(
         self,
         tokens: List[int],

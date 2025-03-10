@@ -4,7 +4,7 @@ import re
 from abc import ABC
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 import joblib
 import numpy as np
@@ -180,12 +180,11 @@ class BaseRequestGeneratorConfig(BasePolyConfig):
     )
 
     def __post_init__(self):
-        self.length_generator_config: BaseRequestLengthGeneratorConfig = None # type: ignore
+        self.length_generator_config: BaseRequestLengthGeneratorConfig = None  # type: ignore
 
 
 @dataclass
 class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
-
     @classmethod
     def get_type(cls):
         return RequestGeneratorType.SYNTHETIC
@@ -193,7 +192,6 @@ class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
 
 @dataclass
 class PrefixRequestGeneratorConfig(BaseRequestGeneratorConfig):
-
     @classmethod
     def get_type(cls):
         return RequestGeneratorType.PREFIX
@@ -475,9 +473,7 @@ class BenchmarkConfig(ABC):
     )
     request_generator_config: BaseRequestGeneratorConfig = field(
         default_factory=SyntheticRequestGeneratorConfig,
-        metadata={
-            "help": "The request generator configuration for the benchmark."
-        },
+        metadata={"help": "The request generator configuration for the benchmark."},
     )
 
     def __post_init__(self):
@@ -501,8 +497,12 @@ class BenchmarkConfig(ABC):
             self.prefill_profiler_config.fill_predictions_array()
 
         # assign the length generator config to the request generator config
-        self.request_generator_config.length_generator_config = self.request_length_generator_config
-        self.request_length_generator_config.max_tokens = self.request_generator_config.max_tokens
+        self.request_generator_config.length_generator_config = (
+            self.request_length_generator_config
+        )
+        self.request_length_generator_config.max_tokens = (
+            self.request_generator_config.max_tokens
+        )
 
         self.write_config_to_file()
 
