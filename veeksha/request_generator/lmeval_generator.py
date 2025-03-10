@@ -131,7 +131,6 @@ class LMEvalRequestGenerator:
 
     def get_request(self) -> RequestConfig:
         if self.req_idx >= len(self.cloned_requests):
-            # TODO: check if this is the right way to handle this
             return None  # type: ignore
         req: Instance = self.cloned_requests[self.req_idx]
         self.req_idx += 1
@@ -162,8 +161,7 @@ class LMEvalRequestGenerator:
             )
         elif req.request_type == str(LMEvalOutputType.LOGLIKELIHOOD):
             context, target = req.args  # type: ignore
-            # TODO: check how to ensure that model generated only required number of tokens
-            # also check if total length is within the limit supported by the model
+            # later: check if total length is within the limit supported by the model
             return RequestConfig(
                 model=self.client_config.model,
                 prompt=(context, len(self.tokenizer.encode(context))),
