@@ -50,12 +50,6 @@ class LMEvalRequestGenerator:
 
         self.responses = []
 
-    def encode(self, text: str) -> List[int]:
-        return self.tokenizer.encode(text, add_special_tokens=False)
-
-    def decode(self, tokens: List[int]) -> str:
-        return self.tokenizer.decode(tokens)
-
     def _adjust_config(self, task_dict):
         adjusted_task_dict = {}
         for task_name, task_obj in task_dict.items():

@@ -3,6 +3,7 @@ from veeksha.types import RequestGeneratorType
 
 from .synthetic_generator import SyntheticRequestGenerator
 from .lmeval_generator import LMEvalRequestGenerator
+from .prefix_generator import PrefixRequestGenerator
 
 
 class RequestGeneratorRegistry(BaseRegistry):
@@ -13,6 +14,9 @@ class RequestGeneratorRegistry(BaseRegistry):
 
 RequestGeneratorRegistry.register(
     RequestGeneratorType.SYNTHETIC, SyntheticRequestGenerator
+)
+RequestGeneratorRegistry.register(
+    RequestGeneratorType.PREFIX, PrefixRequestGenerator
 )
 RequestGeneratorRegistry.register(
     RequestGeneratorType.LMEVAL, LMEvalRequestGenerator

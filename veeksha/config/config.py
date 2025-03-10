@@ -195,6 +195,20 @@ class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
 
 
 @dataclass
+class PrefixRequestGeneratorConfig(SyntheticRequestGeneratorConfig):
+
+    def __post_init__(self):
+        assert isinstance(
+            self.length_generator_config, TraceRequestLengthGeneratorConfig
+        ), "PrefixRequestGeneratorConfig must use TraceRequestLengthGeneratorConfig for length generator."
+        self.length_generator_config.max_tokens = self.max_tokens
+
+    @classmethod
+    def get_type(cls):  # type: ignore
+        return RequestGeneratorType.PREFIX
+
+
+@dataclass
 class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     trace_file: str = field(
         default="data/processed_traces/sydney_enterprise.csv",
