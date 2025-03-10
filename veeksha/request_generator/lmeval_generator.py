@@ -112,14 +112,13 @@ class LMEvalRequestGenerator:
                 self.requests[reqtype].append(instance)
         
         for reqtype, reqs in self.requests.items():
-            self.cloned_reqs = []
             for req in reqs:
-                self.cloned_reqs.extend([req] * req.repeats) # type: ignore
+                self.cloned_requests.extend([req] * req.repeats) # type: ignore
 
     def get_request(self) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
-        if self.req_idx >= len(self.cloned_reqs):
+        if self.req_idx >= len(self.cloned_requests):
             return None, None
-        req: Instance = self.cloned_reqs[self.req_idx]
+        req: Instance = self.cloned_requests[self.req_idx]
         self.req_idx += 1
 
         # just need context to send to the model
@@ -139,8 +138,8 @@ class LMEvalRequestGenerator:
         assert response.logprobs is not None
         context, target = req.args    # type: ignore
         target_tokens = self.tokenizer.tokenize(target)
-        logprobs = 0
-        is_greedy = True
+        logprobs = float('-inf')
+        is_greedy = False
         for i, tok in enumerate(target_tokens):
             if i >= len(response.logprobs):
                 # allowing for partial matches?
@@ -153,6 +152,9 @@ class LMEvalRequestGenerator:
                 j = j+1
             # if token is found, add the logprob else break
             if j < len(response.logprobs[i]):
+                if logprobs == float('-inf'):
+                    logprobs = 0
+                    is_greedy = True
                 if j>0:
                     is_greedy = False
                 logprobs += response.logprobs[i]["top_logprobs"][j]["logprob"]
@@ -160,7 +162,7 @@ class LMEvalRequestGenerator:
                 # allowing for partial matches?
                 break
         return logprobs, is_greedy
-    
+
     def check_ordering(self, responses: List[Response]) -> bool:
         cur_idx = 0
         for resp in responses:
@@ -174,10 +176,10 @@ class LMEvalRequestGenerator:
         self.responses = responses
 
         # TODO: for some instances, there won't be any responses -> maybe remove those cloned requests?
-        assert len(self.responses) == len(self.cloned_reqs), "Number of responses does not match number of requests"
+        assert len(self.responses) == len(self.cloned_requests), "Number of responses does not match number of requests"
 
         # somehow need to add responses to the task instances (but once that is done, we can evaluate)
-        for x, req in zip(self.responses, self.cloned_reqs):
+        for x, req in zip(self.responses, self.cloned_requests):
             if req.request_type == str(LMEvalOutputType.GENERATE_UNTIL):
                 req.resps.append(x.text)
             elif req.request_type == str(LMEvalOutputType.LOGLIKELIHOOD):

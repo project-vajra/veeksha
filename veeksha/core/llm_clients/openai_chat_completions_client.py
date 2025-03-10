@@ -128,8 +128,6 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
                         raise RuntimeError(data["error"]["message"])
 
                     delta = data["choices"][0]["delta"]
-                    tok_logprob = data["choices"][0]["logprobs"]["content"]
-                    top_logprobs = data["choices"][0]["logprobs"]["top_logprobs"]
                     if delta.get("content", None):
                         (
                             current_tokens_received,
@@ -150,10 +148,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
                             )
                         most_recent_received_token_time = time.monotonic()
                         generated_text += delta["content"]
-                        logprobs.append({
-                            "token_logprob": tok_logprob,
-                            "top_logprobs": top_logprobs,
-                        })
+                        logprobs.append(data["choices"][0]["logprobs"]["content"][0])
         except Exception as e:
             logger.error(f"Warning Or Error: ({error_response_code}) {e}")
 
