@@ -4,10 +4,14 @@ from typing import List, Optional, Tuple, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
-from veeksha.config.config import ClientConfig
+from veeksha.config.config import ClientConfig, SyntheticRequestGeneratorConfig
 from veeksha.core.request_config import RequestConfig
+from veeksha.request_generator.base_generator import BaseRequestGenerator
 from veeksha.request_generator.length_generator.base_generator import (
     BaseRequestLengthGenerator,
+)
+from veeksha.request_generator.length_generator.generator_registry import (
+    RequestLengthGeneratorRegistry,
 )
 from veeksha.request_generator.length_generator.trace_generator import (
     TraceRequestLengthGenerator,
@@ -17,20 +21,24 @@ from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
 
-# TODO: split this class into two classes, one for normal requests and one for prefix requests,
-# and have them both inherit from a common base class.
-class SyntheticRequestGenerator:
+
+class SyntheticRequestGenerator(BaseRequestGenerator):
 
     def __init__(
         self,
-        client_config: ClientConfig,
+        config: SyntheticRequestGeneratorConfig,
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
-        request_length_generator: BaseRequestLengthGenerator,
+        client_config: ClientConfig,
         corpus_lines: Optional[List[str]] = None,
     ):
-        self.client_config = client_config
+        self.config = config
         self.tokenizer = tokenizer
-        self.request_length_generator = request_length_generator
+
+        self.client_config = client_config
+        self.request_length_generator = RequestLengthGeneratorRegistry.get(
+            self.config.length_generator_config.get_type(),
+            self.config.length_generator_config,
+        )
         self.corpus_lines = corpus_lines
 
         self.past_prompts: dict[int, str] = {}
@@ -48,7 +56,7 @@ class SyntheticRequestGenerator:
             and self.request_length_generator.has_hash_ids()
         )
 
-    def get_request_params(
+    def get_request(
         self,
         request_id: Optional[int] = None,
     ) -> RequestConfig:

@@ -219,22 +219,6 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
 
 
 @dataclass
-class PrefixRequestGeneratorConfig(SyntheticRequestGeneratorConfig):
-
-    def __post_init__(self):
-        self.length_generator_config.max_tokens = self.max_tokens
-
-        if not isinstance(self.length_generator_config, TraceRequestLengthGeneratorConfig):
-            raise ValueError(
-                "PrefixRequestGeneratorConfig must have TraceRequestLengthGeneratorConfig as length_generator_config."
-            )
-
-    @classmethod
-    def get_type(cls): # type: ignore
-        return RequestGeneratorType.PREFIX
-
-
-@dataclass
 class LMEvalRequestGeneratorConfig(BaseRequestGeneratorConfig):
     tasks: list[str] = field(
         default_factory=lambda: [],

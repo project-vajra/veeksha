@@ -10,7 +10,8 @@ from lm_eval.evaluator_utils import (
 )
 from lm_eval.tasks import Task, TaskManager, get_task_dict
 
-from veeksha.config.config import LMEvalRequestGeneratorConfig
+from veeksha.config.config import ClientConfig, LMEvalRequestGeneratorConfig
+from veeksha.core.request_config import RequestConfig
 from veeksha.core.response import Response
 from veeksha.logger import init_logger
 from veeksha.types import LMEvalOutputType
@@ -20,10 +21,12 @@ logger = init_logger(__name__)
 class LMEvalRequestGenerator:
     def __init__(self,
                  config: LMEvalRequestGeneratorConfig,
-                 tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast]):
+                 tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+                 client_config: ClientConfig):
         self.config = config
         self.limit = self.config.limit
         self.tokenizer = tokenizer
+        self.client_config = client_config
 
         self.task_manager = TaskManager()
         self.task_dict = get_task_dict(self.config.tasks, self.task_manager) # type: ignore
@@ -115,9 +118,10 @@ class LMEvalRequestGenerator:
             for req in reqs:
                 self.cloned_requests.extend([req] * req.repeats) # type: ignore
 
-    def get_request(self) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+    def get_request(self) -> RequestConfig:
         if self.req_idx >= len(self.cloned_requests):
-            return None, None
+            # TODO: check if this is the right way to handle this
+            return None # type: ignore
         req: Instance = self.cloned_requests[self.req_idx]
         self.req_idx += 1
 
@@ -125,12 +129,25 @@ class LMEvalRequestGenerator:
         if req.request_type == str(LMEvalOutputType.GENERATE_UNTIL):
             context, all_gen_kwargs = req.args  # type: ignore
             # TODO: preprocess all_gen_kwargs as done in lmeval/models/huggingface.py
-            return context, all_gen_kwargs
+            return RequestConfig(
+                model=self.client_config.model,
+                prompt=(context, len(self.tokenizer.encode(context))),
+                sampling_params=all_gen_kwargs,
+                llm_api=self.client_config.llm_api,
+                address_append_value=self.client_config.address_append_value,
+                id=self.req_idx-1,
+            )
         elif req.request_type == str(LMEvalOutputType.LOGLIKELIHOOD):
             context, target = req.args  # type: ignore
             # TODO: check how to ensure that model generated only required number of tokens
             # also check if total length is within the limit supported by the model
-            return context, None
+            return RequestConfig(
+                model=self.client_config.model,
+                prompt=(context, len(self.tokenizer.encode(context))),
+                llm_api=self.client_config.llm_api,
+                address_append_value=self.client_config.address_append_value,
+                id=self.req_idx-1,
+            )
         else:
             raise NotImplementedError(f"Request type {req.request_type} not supported yet.")
 
