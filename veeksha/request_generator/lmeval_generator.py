@@ -10,7 +10,7 @@ from lm_eval.evaluator_utils import (
 )
 from lm_eval.tasks import Task, TaskManager, get_task_dict
 
-from veeksha.config.config import LMEvalConfig
+from veeksha.config.config import LMEvalRequestGeneratorConfig
 from veeksha.core.response import Response
 from veeksha.logger import init_logger
 from veeksha.types import LMEvalOutputType
@@ -19,11 +19,10 @@ logger = init_logger(__name__)
 
 class LMEvalRequestGenerator:
     def __init__(self,
-                 config: LMEvalConfig,
-                 tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
-                 limit: int):
+                 config: LMEvalRequestGeneratorConfig,
+                 tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast]):
         self.config = config
-        self.limit = limit
+        self.limit = self.config.limit
         self.tokenizer = tokenizer
 
         self.task_manager = TaskManager()
@@ -47,7 +46,7 @@ class LMEvalRequestGenerator:
         self.req_idx = 0
 
         self.responses = []
-    
+
     def encode(self, text: str) -> List[int]:
         return self.tokenizer.encode(text, add_special_tokens=False)
 
@@ -139,17 +138,26 @@ class LMEvalRequestGenerator:
     def parse_logprobs(self, req: Instance, response: Response) -> Tuple[float, int]:
         assert response.logprobs is not None
         context, target = req.args    # type: ignore
-        # TODO: check max context length and see if this is actually tokenized length
-        # TODO: current implementation surprisingly does not use target, why? Check once!
-        ctxlen = len(self.encode(context))
-        ctxlen = 0 # TODO: Check which one to use
-        token_logprobs = [i["token_logprob"][0]["token"] for i in response.logprobs[ctxlen:-1]]
-        logprobs = sum(i["token_logprob"][0]["logprob"] for i in response.logprobs[ctxlen:-1])
-        top_logprobs = [[j['token'] for j in i["top_logprobs"]] for i in response.logprobs[ctxlen:-1]]
+        target_tokens = self.tokenizer.tokenize(target)
+        logprobs = 0
         is_greedy = True
-        for tok, top in zip(token_logprobs, top_logprobs):
-            if tok != top[0]:
-                is_greedy = False
+        for i, tok in enumerate(target_tokens):
+            if i >= len(response.logprobs):
+                # allowing for partial matches?
+                break
+            j = 0
+            # check if the token is in the top logprobs
+            while j < len(response.logprobs[i]):
+                if response.logprobs[i]['top_logprobs'][j]['token'] == tok:
+                    break
+                j = j+1
+            # if token is found, add the logprob else break
+            if j < len(response.logprobs[i]):
+                if j>0:
+                    is_greedy = False
+                logprobs += response.logprobs[i]["top_logprobs"][j]["logprob"]
+            else:
+                # allowing for partial matches?
                 break
         return logprobs, is_greedy
     

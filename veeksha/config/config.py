@@ -175,6 +175,9 @@ class BaseRequestGeneratorConfig(BasePolyConfig):
     seed: int = field(
         default=42, metadata={"help": "Random seed for the request generator."}
     )
+    max_tokens: int = field(
+        default=8192, metadata={"help": "Maximum number of tokens allowed."}
+    )
 
 
 @dataclass
@@ -182,15 +185,9 @@ class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
     length_generator_config: BaseRequestLengthGeneratorConfig = field(
         default_factory=FixedRequestLengthGeneratorConfig
     )
-    interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
-        default_factory=PoissonRequestIntervalGeneratorConfig
-    )
-    num_requests: int = field(
-        default=64, metadata={"help": "Number of requests to generate."}
-    )
-    duration: float = field(
-        default=100, metadata={"help": "Duration of the synthetic request generation."}
-    )
+
+    def __post_init__(self):
+        self.length_generator_config.max_tokens = self.max_tokens
 
     @classmethod
     def get_type(cls):
@@ -215,13 +212,46 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     time_scale_factor: float = field(
         default=0.04, metadata={"help": "Scale factor for time intervals."}
     )
-    max_tokens: int = field(
-        default=4096, metadata={"help": "Maximum number of tokens allowed."}
-    )
 
     @classmethod
     def get_type(cls):
         return RequestGeneratorType.TRACE
+
+
+@dataclass
+class PrefixRequestGeneratorConfig(SyntheticRequestGeneratorConfig):
+
+    def __post_init__(self):
+        self.length_generator_config.max_tokens = self.max_tokens
+
+        if not isinstance(self.length_generator_config, TraceRequestLengthGeneratorConfig):
+            raise ValueError(
+                "PrefixRequestGeneratorConfig must have TraceRequestLengthGeneratorConfig as length_generator_config."
+            )
+
+    @classmethod
+    def get_type(cls): # type: ignore
+        return RequestGeneratorType.PREFIX
+
+
+@dataclass
+class LMEvalRequestGeneratorConfig(BaseRequestGeneratorConfig):
+    tasks: list[str] = field(
+        default_factory=lambda: [],
+        metadata={"help": "The tasks to evaluate the language model on."},
+    )
+    num_fewshot: int = field(
+        default=1,
+        metadata={"help": "The number of fewshot examples to use for the tasks."},
+    )
+    limit: int = field(
+        default=10,
+        metadata={"help": "The number of examples to evaluate on."},
+    )
+
+    @classmethod
+    def get_type(cls):
+        return RequestGeneratorType.LMEVAL
 
 
 @dataclass
@@ -406,22 +436,6 @@ class PrefillProfilerConfig:
 
 
 @dataclass
-class LMEvalConfig:
-    seed: int = field(
-        default=42,
-        metadata={"help": "Seed for the random number generator."},
-    )
-    tasks: list[str] = field(
-        default_factory=lambda: [],
-        metadata={"help": "The tasks to evaluate the language model on."},
-    )
-    num_fewshot: int = field(
-        default=1,
-        metadata={"help": "The number of fewshot examples to use for the tasks."},
-    )
-
-
-@dataclass
 class BenchmarkConfig(ABC):
     seed: int = field(
         default=42,
@@ -464,10 +478,10 @@ class BenchmarkConfig(ABC):
             "help": "The request interval generator configuration for the benchmark."
         },
     )
-    request_length_generator_config: BaseRequestLengthGeneratorConfig = field(
-        default_factory=TraceRequestLengthGeneratorConfig,
+    request_generator_config: BaseRequestGeneratorConfig = field(
+        default_factory=SyntheticRequestGeneratorConfig,
         metadata={
-            "help": "The request length generator configuration for the benchmark."
+            "help": "The request generator configuration for the benchmark."
         },
     )
 
@@ -476,7 +490,7 @@ class BenchmarkConfig(ABC):
             os.makedirs(self.metrics_config.output_dir)
 
         if not self.metrics_config.should_use_given_dir:
-            benchmark_identifier = f"{self.client_config.model}_{self.request_interval_generator_config.get_type()}_{self.request_length_generator_config.get_type()}"
+            benchmark_identifier = f"{self.client_config.model}_{self.request_interval_generator_config.get_type()}_{self.request_generator_config.get_type()}"
             benchmark_identifier = re.sub(r"[^\w\d-]+", "-", benchmark_identifier)
             benchmark_identifier = re.sub(r"-{2,}", "-", benchmark_identifier)
 
@@ -487,9 +501,13 @@ class BenchmarkConfig(ABC):
         if self.prefill_profiler_config.use_predictions_for_ttft:
             self.prefill_profiler_config.max_prefill_tokens_to_predict = max(
                 self.prefill_profiler_config.max_prefill_tokens_to_predict,
-                self.request_length_generator_config.max_tokens,
+                self.request_generator_config.max_tokens,
             )
             self.prefill_profiler_config.fill_predictions_array()
+
+
+        if isinstance(self.request_generator_config, LMEvalRequestGeneratorConfig):
+            self.request_generator_config.limit = self.max_completed_requests
 
         self.write_config_to_file()
 

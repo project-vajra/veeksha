@@ -25,11 +25,11 @@ from veeksha.request_generator.interval_generator.generator_registry import (
 from veeksha.request_generator.length_generator.base_generator import (
     BaseRequestLengthGenerator,
 )
-from veeksha.request_generator.length_generator.generator_registry import (
-    RequestLengthGeneratorRegistry,
+from veeksha.request_generator.generator_registry import (
+    RequestGeneratorRegistry,
 )
-from veeksha.request_generator.base_generator import (
-    RequestGenerator,
+from veeksha.request_generator.synthetic_generator import (
+    SyntheticRequestGenerator,
 )
 
 logger = init_logger(__name__)
@@ -58,7 +58,7 @@ def dispatch_requests(
     """Thread function to generate and dispatch requests."""
     num_errored_requests_handled = 0
 
-    request_generator = RequestGenerator(
+    request_generator = SyntheticRequestGenerator(
         client_config=client_config,
         tokenizer=tokenizer,
         request_length_generator=requests_length_generator,
@@ -231,9 +231,10 @@ def run_benchmark(
         benchmark_config.request_interval_generator_config.get_type(),
         benchmark_config.request_interval_generator_config,
     )
-    requests_length_generator = RequestLengthGeneratorRegistry.get(
-        benchmark_config.request_length_generator_config.get_type(),
-        benchmark_config.request_length_generator_config,
+    # TODO: update this to use the registry
+    requests_length_generator = RequestGeneratorRegistry.get(
+        benchmark_config.request_generator_config.get_type(),
+        benchmark_config.request_generator_config,
     )
 
     corpus_path = os.path.abspath(
