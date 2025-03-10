@@ -10,7 +10,7 @@ from lm_eval.evaluator_utils import (
 )
 from lm_eval.tasks import Task, TaskManager, get_task_dict
 
-from veeksha.config.config import ClientConfig, LMEvalRequestGeneratorConfig
+from veeksha.config.config import ClientConfig, LmevalRequestGeneratorConfig
 from veeksha.core.request_config import RequestConfig
 from veeksha.core.response import Response
 from veeksha.logger import init_logger
@@ -20,7 +20,7 @@ logger = init_logger(__name__)
 
 class LMEvalRequestGenerator:
     def __init__(self,
-                 config: LMEvalRequestGeneratorConfig,
+                 config: LmevalRequestGeneratorConfig,
                  tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
                  client_config: ClientConfig):
         self.config = config

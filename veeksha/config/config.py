@@ -179,15 +179,12 @@ class BaseRequestGeneratorConfig(BasePolyConfig):
         default=8192, metadata={"help": "Maximum number of tokens allowed."}
     )
 
+    def __post_init__(self):
+        self.length_generator_config: BaseRequestLengthGeneratorConfig = None # type: ignore
+
 
 @dataclass
 class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
-    length_generator_config: BaseRequestLengthGeneratorConfig = field(
-        default_factory=FixedRequestLengthGeneratorConfig
-    )
-
-    def __post_init__(self):
-        self.length_generator_config.max_tokens = self.max_tokens
 
     @classmethod
     def get_type(cls):
@@ -195,16 +192,10 @@ class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
 
 
 @dataclass
-class PrefixRequestGeneratorConfig(SyntheticRequestGeneratorConfig):
-
-    def __post_init__(self):
-        assert isinstance(
-            self.length_generator_config, TraceRequestLengthGeneratorConfig
-        ), "PrefixRequestGeneratorConfig must use TraceRequestLengthGeneratorConfig for length generator."
-        self.length_generator_config.max_tokens = self.max_tokens
+class PrefixRequestGeneratorConfig(BaseRequestGeneratorConfig):
 
     @classmethod
-    def get_type(cls):  # type: ignore
+    def get_type(cls):
         return RequestGeneratorType.PREFIX
 
 
@@ -233,7 +224,7 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
 
 
 @dataclass
-class LMEvalRequestGeneratorConfig(BaseRequestGeneratorConfig):
+class LmevalRequestGeneratorConfig(BaseRequestGeneratorConfig):
     tasks: list[str] = field(
         default_factory=lambda: [],
         metadata={"help": "The tasks to evaluate the language model on."},
@@ -476,6 +467,12 @@ class BenchmarkConfig(ABC):
             "help": "The request interval generator configuration for the benchmark."
         },
     )
+    request_length_generator_config: BaseRequestLengthGeneratorConfig = field(
+        default_factory=TraceRequestLengthGeneratorConfig,
+        metadata={
+            "help": "The request length generator configuration for the benchmark."
+        },
+    )
     request_generator_config: BaseRequestGeneratorConfig = field(
         default_factory=SyntheticRequestGeneratorConfig,
         metadata={
@@ -503,8 +500,11 @@ class BenchmarkConfig(ABC):
             )
             self.prefill_profiler_config.fill_predictions_array()
 
+        # assign the length generator config to the request generator config
+        self.request_generator_config.length_generator_config = self.request_length_generator_config
+        self.request_length_generator_config.max_tokens = self.request_generator_config.max_tokens
 
-        if isinstance(self.request_generator_config, LMEvalRequestGeneratorConfig):
+        if isinstance(self.request_generator_config, LmevalRequestGeneratorConfig):
             self.request_generator_config.limit = self.max_completed_requests
 
         self.write_config_to_file()

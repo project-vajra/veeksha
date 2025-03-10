@@ -2,7 +2,7 @@ from typing import List, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
-from veeksha.config.config import ClientConfig, PrefixRequestGeneratorConfig
+from veeksha.config.config import ClientConfig, SyntheticRequestGeneratorConfig
 from veeksha.core.request_config import RequestConfig
 from veeksha.request_generator.synthetic_generator import SyntheticRequestGenerator
 from veeksha.request_generator.length_generator.trace_generator import (
@@ -17,7 +17,7 @@ class PrefixRequestGenerator(SyntheticRequestGenerator):
 
     def __init__(
         self,
-        config: PrefixRequestGeneratorConfig,
+        config: SyntheticRequestGeneratorConfig,
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         client_config: ClientConfig,
     ):
