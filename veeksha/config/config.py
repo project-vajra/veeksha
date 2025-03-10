@@ -504,9 +504,6 @@ class BenchmarkConfig(ABC):
         self.request_generator_config.length_generator_config = self.request_length_generator_config
         self.request_length_generator_config.max_tokens = self.request_generator_config.max_tokens
 
-        if isinstance(self.request_generator_config, LmevalRequestGeneratorConfig):
-            self.request_generator_config.limit = self.max_completed_requests
-
         self.write_config_to_file()
 
     @classmethod

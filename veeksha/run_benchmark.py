@@ -8,6 +8,7 @@ from multiprocessing import Queue
 from queue import Empty
 from threading import Thread
 from typing import Any, List
+import json
 
 from tqdm import tqdm  # type: ignore
 
@@ -25,6 +26,7 @@ from veeksha.request_generator.interval_generator.generator_registry import (
 from veeksha.request_generator.base_generator import (
     BaseRequestGenerator,
 )
+from veeksha.request_generator.lmeval_generator import LMEvalRequestGenerator
 from veeksha.request_generator.generator_registry import (
     RequestGeneratorRegistry,
 )
@@ -191,16 +193,8 @@ def run_benchmark(
         (e.g. throughput, latencies, etc.)
         The individual metrics for each request.
     """
-    service_metrics = ServiceMetrics(
-        max_requests=benchmark_config.max_completed_requests,
-        timeout=benchmark_config.timeout,
-        deadline_config=benchmark_config.deadline_config,
-        metrics_config=benchmark_config.metrics_config,
-        prefill_profiler_config=benchmark_config.prefill_profiler_config,
-    )
 
     generated_responses: List[Response] = []
-    pbar = tqdm(total=benchmark_config.max_completed_requests)
 
     requests_interval_generator = RequestIntervalGeneratorRegistry.get(
         benchmark_config.request_interval_generator_config.get_type(),
@@ -235,6 +229,20 @@ def run_benchmark(
         client_config=benchmark_config.client_config,
         **request_generator_params,
     )
+    
+    max_requests = (
+        request_generator.num_requests if benchmark_config.request_generator_config.get_type() == RequestGeneratorType.LMEVAL else
+        benchmark_config.max_completed_requests
+    )
+    pbar = tqdm(total=max_requests)
+    
+    service_metrics = ServiceMetrics(
+        max_requests=max_requests,
+        timeout=benchmark_config.timeout,
+        deadline_config=benchmark_config.deadline_config,
+        metrics_config=benchmark_config.metrics_config,
+        prefill_profiler_config=benchmark_config.prefill_profiler_config,
+    )
 
     run_main_loop(
         benchmark_config=benchmark_config,
@@ -261,14 +269,12 @@ def run_benchmark(
     # lm-eval specific
     if benchmark_config.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
         request_generator.get_responses(generated_responses)
-        results = request_generator.evaluate()
-        logger.info(f"Results: {results}")
+        lmeval_results = request_generator.evaluate()
+        logger.info(f"Results: {lmeval_results}")
 
         # write results dictionary to file
-        with open(
-            os.path.join(service_metrics.output_dir, "results.json"), "w"
-        ) as f:
-            f.write(str(results))
+        with open(os.path.join(service_metrics.output_dir, "lmeval_results.json"), "w") as f:
+            json.dump(lmeval_results, f, indent=4)
 
 
 if __name__ == "__main__":

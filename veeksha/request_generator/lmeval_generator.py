@@ -49,6 +49,10 @@ class LMEvalRequestGenerator:
         self.req_idx = 0
 
         self.responses = []
+    
+    @property
+    def num_requests(self):
+        return len(self.cloned_requests)
 
     def _adjust_config(self, task_dict):
         adjusted_task_dict = {}
@@ -180,8 +184,7 @@ class LMEvalRequestGenerator:
     def get_responses(self, responses: List[Response]) -> None:
         responses = self.sort_responses(responses)
         self.responses = responses
-
-        # TODO: for some instances, there won't be any responses -> maybe remove those cloned requests?
+        
         assert len(self.responses) == len(self.cloned_requests), "Number of responses does not match number of requests"
 
         # somehow need to add responses to the task instances (but once that is done, we can evaluate)
