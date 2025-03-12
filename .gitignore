@@ -258,3 +258,4 @@ cap_experiments*
 experiments/
 experiments_*
 results*
+.qodo

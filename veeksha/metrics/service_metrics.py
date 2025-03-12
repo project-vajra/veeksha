@@ -60,6 +60,9 @@ class ServiceMetrics:
 
     def should_stop(self):
         assert self.start_time is not None
+        # never stop due to timeout if timeout is -1
+        if self.timeout == -1:
+            return not (self.num_completed_requests < self.max_requests)
         return not (
             time.monotonic() - self.start_time < self.timeout
             and self.num_completed_requests < self.max_requests

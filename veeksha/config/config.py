@@ -503,6 +503,10 @@ class BenchmarkConfig(ABC):
         self.request_length_generator_config.max_tokens = (
             self.request_generator_config.max_tokens
         )
+        
+        if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
+            # never stop if timeout is -1
+            self.timeout = -1
 
         self.write_config_to_file()
 

@@ -212,7 +212,7 @@ class LMEvalRequestGenerator:
 
         assert len(self.responses) == len(
             self.cloned_requests
-        ), "Number of responses does not match number of requests"
+        ), f"Number of responses {len(self.responses)} does not match number of requests {len(self.cloned_requests)}"
 
         # somehow need to add responses to the task instances (but once that is done, we can evaluate)
         for x, req in zip(self.responses, self.cloned_requests):
