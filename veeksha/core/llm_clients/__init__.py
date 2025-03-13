@@ -1,7 +1,8 @@
 from .base_llm_client import BaseLLMClient
 from .openai_chat_completions_client import OpenAIChatCompletionsClient
+from .openai_completions_client import OpenAICompletionsClient
 
-SUPPORTED_APIS = ["openai"]
+SUPPORTED_APIS = ["openai", "opeani_completion"]
 
 
 def construct_client(
@@ -20,6 +21,8 @@ def construct_client(
     """
     if llm_api == "openai":
         impl = OpenAIChatCompletionsClient
+    elif llm_api == "openai_completion":
+        impl = OpenAICompletionsClient
     else:
         raise ValueError(
             f"llm_api must be one of the supported LLM APIs: {SUPPORTED_APIS}"

@@ -17,8 +17,8 @@ logger = init_logger(__name__)
 MAX_RESPONSES_ALLOWED_TO_STORE = 5
 
 
-class OpenAIChatCompletionsClient(BaseLLMClient):
-    """Client for OpenAI Chat Completions API."""
+class OpenAICompletionsClient(BaseLLMClient):
+    """Client for OpenAI Completions API."""
 
     def __init__(self, model_name: str, tokenizer_name: str) -> None:
         super().__init__(model_name, tokenizer_name)
@@ -58,15 +58,14 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
     def send_llm_request(
         self, request_config: RequestConfig
     ) -> Tuple[RequestMetrics, Response]:
+        # The request_config.prompt is expected to be a tuple: (prompt_text, prompt_length)
         prompt, prompt_len = request_config.prompt
 
-        message = [
-            {"role": "user", "content": prompt},
-        ]
+        # TODO: first test if this works, and then add echo=True
         model = request_config.model
         body = {
             "model": model,
-            "messages": message,
+            "prompt": prompt,
             "stream": True,
             "logprobs": True,  # TODO: later make it configurable
             "top_logprobs": 20,  # 20 is maximum allowed by OpenAI API
@@ -81,7 +80,8 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
             raise ValueError("No host provided.")
         if not address.endswith("/"):
             address = address + "/"
-        address += request_config.address_append_value or "chat/completions"
+        # Change the endpoint from "chat/completions" to "completions"
+        address += request_config.address_append_value or "completions"
 
         inter_token_times = []
         error_msg = None
@@ -107,11 +107,15 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
 
                 for chunk in response.iter_lines(chunk_size=None):
                     chunk = chunk.strip()
-
                     if not chunk:
                         continue
+
+                    # Remove the "data: " prefix if present.
                     stem = "data: "
-                    chunk = chunk[len(stem) :]
+                    if chunk.startswith(stem.encode()):
+                        chunk = chunk[len(stem) :]
+
+                    # End of stream
                     if chunk in [b"[DONE]", "[DONE]"]:
                         continue
 
@@ -123,20 +127,17 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
 
                     if "error" in data:
                         error_msg = data["error"]["message"]
-                        error_response_code = data["error"]["code"]
-                        raise RuntimeError(data["error"]["message"])
+                        error_response_code = data["error"].get("code", None)
+                        raise RuntimeError(error_msg)
 
-                    delta = data["choices"][0]["delta"]
-                    if delta.get("content", None):
-                        (
-                            current_tokens_received,
-                            previous_token_count,
-                        ) = self.get_current_tokens_received(
+                    # For Completions API, get the incremental text from the "text" key.
+                    text_chunk = data["choices"][0].get("text", "")
+                    if text_chunk:
+                        current_tokens_received, previous_token_count = self.get_current_tokens_received(
                             previous_responses=previous_responses,
-                            current_response=delta["content"],
+                            current_response=text_chunk,
                             previous_token_count=previous_token_count,
                         )
-
                         tokens_received += current_tokens_received
                         inter_token_times.append(
                             time.monotonic() - most_recent_received_token_time
@@ -146,8 +147,14 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
                                 [0] * (current_tokens_received - 1)
                             )
                         most_recent_received_token_time = time.monotonic()
-                        generated_text += delta["content"]
-                        logprobs.append(data["choices"][0]["logprobs"]["content"][0])
+                        generated_text += text_chunk
+                        # For completions API, logprobs (if returned) are under the key "token_logprobs"
+                        if "logprobs" in data["choices"][0]:
+                            token_logprobs = data["choices"][0]["logprobs"].get(
+                                "token_logprobs", []
+                            )
+                            if token_logprobs:
+                                logprobs.append(token_logprobs[0])
         except Exception as e:
             logger.error(f"Warning Or Error: ({error_response_code}) {e}")
 
