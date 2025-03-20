@@ -1,7 +1,6 @@
 pydantic
 pytest
 seaborn
-awscli
 typer
 num2words
 transformers
