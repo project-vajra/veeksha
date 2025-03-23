@@ -113,6 +113,17 @@ class LMEvalRequestGenerator:
         for task_output in self.eval_tasks:
             task: Task = task_output.task  # type: ignore
 
+            if self.config.is_logit_based:
+                assert task.OUTPUT_TYPE in [
+                    str(LMEvalOutputType.LOGLIKELIHOOD),
+                    str(LMEvalOutputType.LOGLIKELIHOOD_ROLLING),
+                    str(LMEvalOutputType.MULTIPLE_CHOICE),
+                ], f"Task {task_output.task_name} is not logit-based. Please set is_logit_based to False."
+            else:
+                assert (
+                    task.OUTPUT_TYPE == str(LMEvalOutputType.GENERATE_UNTIL)
+                ), f"Task {task_output.task_name} is not generation-based. Please set is_logit_based to True."
+
             limit = get_sample_size(task, self.limit)
             self.limits.append(limit)
             task.build_all_requests(limit=limit)
@@ -162,9 +173,18 @@ class LMEvalRequestGenerator:
         elif req.request_type == str(LMEvalOutputType.LOGLIKELIHOOD):
             context, target = req.args  # type: ignore
             # later: check if total length is within the limit supported by the model
+            if self.config.num_fewshot > 0:
+                context = context + target
             return RequestConfig(
                 model=self.client_config.model,
                 prompt=(context, len(self.tokenizer.encode(context))),
+                sampling_params={
+                    "stream": False,
+                    "logprobs": True,
+                    "echo": True,
+                    "max_tokens": 1,
+                    "top_logprobs": 20,
+                },
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
                 id=self.req_idx - 1,
@@ -175,33 +195,19 @@ class LMEvalRequestGenerator:
             )
 
     def parse_logprobs(self, req: Instance, response: Response) -> Tuple[float, int]:
+        # adopted from lm_eval/models/openai_completions.py
         assert response.logprobs is not None
-        context, target = req.args  # type: ignore
-        target_tokens = self.tokenizer.tokenize(target)
-        logprobs = float("-inf")
-        is_greedy = False
-        for i, tok in enumerate(target_tokens):
-            if i >= len(response.logprobs):
-                # allowing for partial matches?
+        context, _ = req.args  # type: ignore
+        ctxlen = len(self.tokenizer.encode(context))
+        tokens_logprobs = response.logprobs["token_logprobs"][ctxlen:-1]
+        logprobs = sum(tokens_logprobs)
+        top_logprobs = response.logprobs["top_logprobs"][ctxlen:-1]
+        is_greedy = True
+        for tok, top in zip(tokens_logprobs, top_logprobs):
+            if tok != max(top.values()):
+                is_greedy = False
                 break
-            j = 0
-            # check if the token is in the top logprobs
-            while j < len(response.logprobs[i]):
-                if response.logprobs[i]["top_logprobs"][j]["token"] == tok:
-                    break
-                j = j + 1
-            # if token is found, add the logprob else break
-            if j < len(response.logprobs[i]):
-                if logprobs == float("-inf"):
-                    logprobs = 0
-                    is_greedy = True
-                if j > 0:
-                    is_greedy = False
-                logprobs += response.logprobs[i]["top_logprobs"][j]["logprob"]
-            else:
-                # allowing for partial matches?
-                break
-        return logprobs, is_greedy
+        return (logprobs, is_greedy)
 
     def sort_responses(self, responses: List[Response]) -> List[Response]:
         return sorted(responses, key=lambda x: x.id)  # type: ignore

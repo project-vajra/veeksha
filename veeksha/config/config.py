@@ -235,6 +235,12 @@ class LmevalRequestGeneratorConfig(BaseRequestGeneratorConfig):
         default=10,
         metadata={"help": "The number of examples to evaluate on."},
     )
+    is_logit_based: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether the evaluation is logit based. If True, the task will be evaluated using OpenAI Completions API."
+        },
+    )
 
     @classmethod
     def get_type(cls):
@@ -269,7 +275,7 @@ class ClientConfig:
         },
     )
     llm_api: str = field(
-        default="openai",
+        default="openai_chat",
         metadata={
             "help": f"The name of the llm api to use. Can select from {SUPPORTED_APIS}"
         },
@@ -507,6 +513,14 @@ class BenchmarkConfig(ABC):
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
             # never stop if timeout is -1
             self.timeout = -1
+            assert isinstance(self.request_generator_config, LmevalRequestGeneratorConfig)
+            
+            if self.request_generator_config.is_logit_based:
+                self.client_config.llm_api = "openai_completions"
+                self.client_config.address_append_value = "completions"
+            else:
+                self.client_config.llm_api = "openai_chat"
+                self.client_config.address_append_value = "chat/completions"
 
         self.write_config_to_file()
 

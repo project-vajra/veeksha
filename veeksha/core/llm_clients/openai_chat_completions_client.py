@@ -68,8 +68,6 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
             "model": model,
             "messages": message,
             "stream": True,
-            "logprobs": True,  # TODO: later make it configurable
-            "top_logprobs": 20,  # 20 is maximum allowed by OpenAI API
         }
         sampling_params = request_config.sampling_params
         body.update(sampling_params or {})
@@ -88,7 +86,6 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
         error_response_code = None
         tokens_received = 0
         generated_text = ""
-        logprobs = []
         previous_responses = []
         previous_token_count = 0
 
@@ -147,7 +144,6 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
                             )
                         most_recent_received_token_time = time.monotonic()
                         generated_text += delta["content"]
-                        logprobs.append(data["choices"][0]["logprobs"]["content"][0])
         except Exception as e:
             logger.error(f"Warning Or Error: ({error_response_code}) {e}")
 
@@ -163,7 +159,6 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
         response = Response(
             id=request_config.id,
             text=generated_text,
-            logprobs=logprobs,
         )
 
         return metrics, response

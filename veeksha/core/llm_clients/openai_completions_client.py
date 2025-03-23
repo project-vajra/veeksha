@@ -61,14 +61,11 @@ class OpenAICompletionsClient(BaseLLMClient):
         # The request_config.prompt is expected to be a tuple: (prompt_text, prompt_length)
         prompt, prompt_len = request_config.prompt
 
-        # TODO: first test if this works, and then add echo=True
+        # Completions API should only be used with lm_eval loglikelihood tasks.
         model = request_config.model
         body = {
             "model": model,
             "prompt": prompt,
-            "stream": True,
-            "logprobs": True,  # TODO: later make it configurable
-            "top_logprobs": 20,  # 20 is maximum allowed by OpenAI API
         }
         sampling_params = request_config.sampling_params
         body.update(sampling_params or {})
@@ -88,7 +85,7 @@ class OpenAICompletionsClient(BaseLLMClient):
         error_response_code = None
         tokens_received = 0
         generated_text = ""
-        logprobs = []
+        logprobs = {}
         previous_responses = []
         previous_token_count = 0
 
@@ -97,7 +94,7 @@ class OpenAICompletionsClient(BaseLLMClient):
 
         try:
             with requests.post(
-                address, json=body, timeout=None, headers=headers, stream=True
+                address, json=body, timeout=None, headers=headers, stream=False
             ) as response:
                 if response.status_code != 200:
                     error_response_code = response.status_code
@@ -115,7 +112,6 @@ class OpenAICompletionsClient(BaseLLMClient):
                     if chunk.startswith(stem.encode()):
                         chunk = chunk[len(stem) :]
 
-                    # End of stream
                     if chunk in [b"[DONE]", "[DONE]"]:
                         continue
 
@@ -130,7 +126,6 @@ class OpenAICompletionsClient(BaseLLMClient):
                         error_response_code = data["error"].get("code", None)
                         raise RuntimeError(error_msg)
 
-                    # For Completions API, get the incremental text from the "text" key.
                     text_chunk = data["choices"][0].get("text", "")
                     if text_chunk:
                         current_tokens_received, previous_token_count = self.get_current_tokens_received(
@@ -139,22 +134,13 @@ class OpenAICompletionsClient(BaseLLMClient):
                             previous_token_count=previous_token_count,
                         )
                         tokens_received += current_tokens_received
-                        inter_token_times.append(
+                        inter_token_times.append(           # Just get TTFT
                             time.monotonic() - most_recent_received_token_time
                         )
-                        if current_tokens_received > 1:
-                            inter_token_times.extend(
-                                [0] * (current_tokens_received - 1)
-                            )
                         most_recent_received_token_time = time.monotonic()
                         generated_text += text_chunk
-                        # For completions API, logprobs (if returned) are under the key "token_logprobs"
                         if "logprobs" in data["choices"][0]:
-                            token_logprobs = data["choices"][0]["logprobs"].get(
-                                "token_logprobs", []
-                            )
-                            if token_logprobs:
-                                logprobs.append(token_logprobs[0])
+                            logprobs = data["choices"][0]["logprobs"]
         except Exception as e:
             logger.error(f"Warning Or Error: ({error_response_code}) {e}")
 

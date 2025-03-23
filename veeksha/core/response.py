@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from pydantic import BaseModel
 
@@ -14,7 +14,7 @@ class Response(BaseModel):
 
     id: Optional[int] = None
     text: str
-    logprobs: Optional[List[Dict]] = None
+    logprobs: Optional[Dict] = None
 
     def __str__(self) -> str:
         return f"Response(id={self.id}, text={self.text}, logprobs={self.logprobs})"
