@@ -1,6 +1,4 @@
-import json
 import multiprocessing
-import os
 import platform
 import random
 import threading
@@ -19,7 +17,7 @@ from veeksha.core.response import Response
 from veeksha.logger import init_logger
 from veeksha.metrics.service_metrics import ServiceMetrics
 from veeksha.request_generator.base_generator import BaseRequestGenerator
-from veeksha.request_generator.generator_registry import RequestGeneratorRegistry
+from veeksha.request_generator.request_generator_registry import RequestGeneratorRegistry
 from veeksha.request_generator.interval_generator.base_generator import (
     BaseRequestIntervalGenerator,
 )
@@ -27,6 +25,7 @@ from veeksha.request_generator.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
 )
 from veeksha.types import RequestGeneratorType
+from veeksha.benchmark_data_utils import load_corpus, store_generated_texts, store_lmeval_results
 
 logger = init_logger(__name__)
 
@@ -211,13 +210,8 @@ def run_benchmark(
         benchmark_config.request_generator_config.get_type()
         == RequestGeneratorType.SYNTHETIC
     ):
-        corpus_path = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", "data", "corpus.txt")
-        )
-        with open(corpus_path, "r") as f:
-            corpus_lines = f.readlines()
         request_generator_params = {
-            "corpus_lines": corpus_lines,
+            "corpus_lines": load_corpus(),
         }
 
     request_generator = RequestGeneratorRegistry.get(
@@ -260,11 +254,7 @@ def run_benchmark(
     service_metrics.store_output()
     logger.info(f"Metrics stored to {service_metrics.output_dir}")
 
-    # store the generated texts
-    with open(
-        os.path.join(service_metrics.output_dir, "generated_texts.txt"), "w"
-    ) as f:
-        f.write(("\n" + "-" * 30 + "\n").join([i.text for i in generated_responses]))
+    store_generated_texts(service_metrics.output_dir, generated_responses)
 
     # lm-eval specific
     if (
@@ -275,11 +265,7 @@ def run_benchmark(
         lmeval_results = request_generator.evaluate()
         logger.info(f"Results: {lmeval_results}")
 
-        # write results dictionary to file
-        with open(
-            os.path.join(service_metrics.output_dir, "lmeval_results.json"), "w"
-        ) as f:
-            json.dump(lmeval_results, f, indent=4)
+        store_lmeval_results(service_metrics.output_dir, lmeval_results)
 
 
 if __name__ == "__main__":

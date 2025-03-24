@@ -511,7 +511,7 @@ class BenchmarkConfig(ABC):
         )
         
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
-            # never stop if timeout is -1
+            logger.warning("Removing timeout for LMEval.")
             self.timeout = -1
             assert isinstance(self.request_generator_config, LmevalRequestGeneratorConfig)
             
