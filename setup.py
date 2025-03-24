@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 from typing import List
-# from setuptools_scm import get_version
+from setuptools_scm import get_version
 
 from setuptools import find_packages, setup
 
@@ -62,7 +62,7 @@ def get_requirements() -> List[str]:
 
 setup(
     name="veeksha",
-    version="0.1.0",
+    version=get_version(),
     author="Vajra Team",
     license="Apache 2.0",
     description="A framework for benchmarking LLM Inference Systems",
