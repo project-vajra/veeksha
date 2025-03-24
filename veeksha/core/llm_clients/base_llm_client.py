@@ -3,6 +3,7 @@ from typing import Tuple
 
 from veeksha.core.hf_utils import get_tokenizer
 from veeksha.core.request_config import RequestConfig
+from veeksha.core.response import Response
 from veeksha.metrics.request_metrics import RequestMetrics
 
 
@@ -22,7 +23,7 @@ class BaseLLMClient:
     @abc.abstractmethod
     def send_llm_request(
         self, request_config: RequestConfig
-    ) -> Tuple[RequestMetrics, str]:
+    ) -> Tuple[RequestMetrics, Response]:
         """Make a single completion request to a LLM API
 
         Returns:

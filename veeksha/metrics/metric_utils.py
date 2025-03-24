@@ -128,9 +128,19 @@ def get_throughput_metrics(
     assert len(tpot_times) == len(tbt_times)
     num_requests = len(tpot_times)
     mean_tpot = np.mean(tpot_times)
+
+    if mean_tpot == 0:
+        tpot_based_throughput = float("inf")
+    else:
+        tpot_based_throughput = float(1 / mean_tpot)
+
     tbt_times_flattened = []
     for tbt_time in tbt_times:
         tbt_times_flattened.extend(tbt_time)
+
+    if len(tbt_times_flattened) == 0:
+        return tpot_based_throughput, 0, 0
+
     p99_tbt = np.quantile(tbt_times_flattened, TBT_QUANTILE_FOR_THROUGHPUT)
     tbt_slo = []
     for i in range(num_requests):
@@ -145,7 +155,6 @@ def get_throughput_metrics(
     tbt_slo = np.array(tbt_slo)
     p99_tbt_slo = np.quantile(tbt_slo, TBT_QUANTILE_FOR_THROUGHPUT)
 
-    tpot_based_throughput = float(1 / mean_tpot)
     tbt_based_throughput = float(1 / p99_tbt)
     deadline_based_throughput = float(1 / p99_tbt_slo)
 

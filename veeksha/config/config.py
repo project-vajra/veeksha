@@ -4,6 +4,7 @@ import re
 from abc import ABC
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Optional
 
 import joblib
 import numpy as np
@@ -174,26 +175,26 @@ class BaseRequestGeneratorConfig(BasePolyConfig):
     seed: int = field(
         default=42, metadata={"help": "Random seed for the request generator."}
     )
+    max_tokens: int = field(
+        default=8192, metadata={"help": "Maximum number of tokens allowed."}
+    )
+
+    def __post_init__(self):
+        self.length_generator_config: BaseRequestLengthGeneratorConfig = None  # type: ignore
 
 
 @dataclass
 class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
-    length_generator_config: BaseRequestLengthGeneratorConfig = field(
-        default_factory=FixedRequestLengthGeneratorConfig
-    )
-    interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
-        default_factory=PoissonRequestIntervalGeneratorConfig
-    )
-    num_requests: int = field(
-        default=64, metadata={"help": "Number of requests to generate."}
-    )
-    duration: float = field(
-        default=100, metadata={"help": "Duration of the synthetic request generation."}
-    )
-
     @classmethod
     def get_type(cls):
         return RequestGeneratorType.SYNTHETIC
+
+
+@dataclass
+class PrefixRequestGeneratorConfig(BaseRequestGeneratorConfig):
+    @classmethod
+    def get_type(cls):
+        return RequestGeneratorType.PREFIX
 
 
 @dataclass
@@ -214,13 +215,36 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     time_scale_factor: float = field(
         default=0.04, metadata={"help": "Scale factor for time intervals."}
     )
-    max_tokens: int = field(
-        default=4096, metadata={"help": "Maximum number of tokens allowed."}
-    )
 
     @classmethod
     def get_type(cls):
         return RequestGeneratorType.TRACE
+
+
+@dataclass
+class LmevalRequestGeneratorConfig(BaseRequestGeneratorConfig):
+    tasks: list[str] = field(
+        default_factory=lambda: [],
+        metadata={"help": "The tasks to evaluate the language model on."},
+    )
+    num_fewshot: int = field(
+        default=1,
+        metadata={"help": "The number of fewshot examples to use for the tasks."},
+    )
+    limit: int = field(
+        default=10,
+        metadata={"help": "The number of examples to evaluate on."},
+    )
+    is_logit_based: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether the evaluation is logit based. If True, the task will be evaluated using OpenAI Completions API."
+        },
+    )
+
+    @classmethod
+    def get_type(cls):
+        return RequestGeneratorType.LMEVAL
 
 
 @dataclass
@@ -251,7 +275,7 @@ class ClientConfig:
         },
     )
     llm_api: str = field(
-        default="openai",
+        default="openai_chat",
         metadata={
             "help": f"The name of the llm api to use. Can select from {SUPPORTED_APIS}"
         },
@@ -453,13 +477,17 @@ class BenchmarkConfig(ABC):
             "help": "The request length generator configuration for the benchmark."
         },
     )
+    request_generator_config: BaseRequestGeneratorConfig = field(
+        default_factory=SyntheticRequestGeneratorConfig,
+        metadata={"help": "The request generator configuration for the benchmark."},
+    )
 
     def __post_init__(self):
         if not os.path.exists(self.metrics_config.output_dir):
             os.makedirs(self.metrics_config.output_dir)
 
         if not self.metrics_config.should_use_given_dir:
-            benchmark_identifier = f"{self.client_config.model}_{self.request_interval_generator_config.get_type()}_{self.request_length_generator_config.get_type()}"
+            benchmark_identifier = f"{self.client_config.model}_{self.request_interval_generator_config.get_type()}_{self.request_generator_config.get_type()}"
             benchmark_identifier = re.sub(r"[^\w\d-]+", "-", benchmark_identifier)
             benchmark_identifier = re.sub(r"-{2,}", "-", benchmark_identifier)
 
@@ -470,9 +498,31 @@ class BenchmarkConfig(ABC):
         if self.prefill_profiler_config.use_predictions_for_ttft:
             self.prefill_profiler_config.max_prefill_tokens_to_predict = max(
                 self.prefill_profiler_config.max_prefill_tokens_to_predict,
-                self.request_length_generator_config.max_tokens,
+                self.request_generator_config.max_tokens,
             )
             self.prefill_profiler_config.fill_predictions_array()
+
+        # assign the length generator config to the request generator config
+        self.request_generator_config.length_generator_config = (
+            self.request_length_generator_config
+        )
+        self.request_length_generator_config.max_tokens = (
+            self.request_generator_config.max_tokens
+        )
+
+        if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
+            logger.warning("Removing timeout for LMEval.")
+            self.timeout = -1
+            assert isinstance(
+                self.request_generator_config, LmevalRequestGeneratorConfig
+            )
+
+            if self.request_generator_config.is_logit_based:
+                self.client_config.llm_api = "openai_completions"
+                self.client_config.address_append_value = "completions"
+            else:
+                self.client_config.llm_api = "openai_chat"
+                self.client_config.address_append_value = "chat/completions"
 
         self.write_config_to_file()
 
