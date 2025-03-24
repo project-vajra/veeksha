@@ -509,12 +509,14 @@ class BenchmarkConfig(ABC):
         self.request_length_generator_config.max_tokens = (
             self.request_generator_config.max_tokens
         )
-        
+
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
             logger.warning("Removing timeout for LMEval.")
             self.timeout = -1
-            assert isinstance(self.request_generator_config, LmevalRequestGeneratorConfig)
-            
+            assert isinstance(
+                self.request_generator_config, LmevalRequestGeneratorConfig
+            )
+
             if self.request_generator_config.is_logit_based:
                 self.client_config.llm_api = "openai_completions"
                 self.client_config.address_append_value = "completions"

@@ -120,8 +120,8 @@ class LMEvalRequestGenerator:
                     str(LMEvalOutputType.MULTIPLE_CHOICE),
                 ], f"Task {task_output.task_name} is not logit-based. Please set is_logit_based to False."
             else:
-                assert (
-                    task.OUTPUT_TYPE == str(LMEvalOutputType.GENERATE_UNTIL)
+                assert task.OUTPUT_TYPE == str(
+                    LMEvalOutputType.GENERATE_UNTIL
                 ), f"Task {task_output.task_name} is not generation-based. Please set is_logit_based to True."
 
             limit = get_sample_size(task, self.limit)

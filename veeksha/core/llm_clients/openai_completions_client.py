@@ -128,13 +128,15 @@ class OpenAICompletionsClient(BaseLLMClient):
 
                     text_chunk = data["choices"][0].get("text", "")
                     if text_chunk:
-                        current_tokens_received, previous_token_count = self.get_current_tokens_received(
-                            previous_responses=previous_responses,
-                            current_response=text_chunk,
-                            previous_token_count=previous_token_count,
+                        current_tokens_received, previous_token_count = (
+                            self.get_current_tokens_received(
+                                previous_responses=previous_responses,
+                                current_response=text_chunk,
+                                previous_token_count=previous_token_count,
+                            )
                         )
                         tokens_received += current_tokens_received
-                        inter_token_times.append(           # Just get TTFT
+                        inter_token_times.append(  # Just get TTFT
                             time.monotonic() - most_recent_received_token_time
                         )
                         most_recent_received_token_time = time.monotonic()

@@ -130,7 +130,7 @@ def get_throughput_metrics(
     mean_tpot = np.mean(tpot_times)
 
     if mean_tpot == 0:
-        tpot_based_throughput = float('inf')
+        tpot_based_throughput = float("inf")
     else:
         tpot_based_throughput = float(1 / mean_tpot)
 
