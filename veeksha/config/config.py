@@ -223,7 +223,7 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
 
 @dataclass
 class LmevalRequestGeneratorConfig(BaseRequestGeneratorConfig):
-    tasks: list[str] = field(
+    tasks: list = field(
         default_factory=lambda: [],
         metadata={"help": "The tasks to evaluate the language model on."},
     )
@@ -351,7 +351,7 @@ class DeadlineConfig:
 
 @dataclass
 class PrefillProfilerConfig:
-    prefill_lengths: list[int] = field(
+    prefill_lengths: list = field(
         default_factory=lambda: [],
         metadata={"help": "The lengths to prefill the profiler with."},
     )
