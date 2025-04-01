@@ -30,4 +30,4 @@ client_configs:
     timeout: 1200
     max_num_completed_requests: 1000
     additional_sampling_params: {}
-    llm_api: "openai"
+    llm_api: "openai_chat"
