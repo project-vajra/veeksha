@@ -1,0 +1,16 @@
+python -m vajra.entrypoints.openai.api_server \
+--model_config_model {{ openai_server_model }} \
+--model_config_dtype float16 \
+--request_prioritizer_config_type {{ schedule_policy | upper}}
+--scheduler_config_type {{ scheduler_config }} \
+--parallel_config_tensor_parallel_size {{ tp }} \
+--parallel_config_pipeline_parallel_size {{ pp }} \
+--fixed_chunk_replica_scheduler_config_chunk_size {{ fixed_chunk_size }} \
+--dynamic_chunk_replica_scheduler_config_min_chunk_size_param {{ min_chunk_size }} \
+--dynamic_chunk_replica_scheduler_config_max_chunk_size_param {{ max_chunk_size }} \
+--space_sharing_replica_scheduler_config_max_chunk_size_param {{ max_chunk_size }} \
+--space_sharing_replica_scheduler_config_min_chunk_size_param {{ min_chunk_size }} \
+--chat_template "{{ chat_template }}" \
+--port {{ port }} \
+--host 127.0.0.1 \
+--log_level error

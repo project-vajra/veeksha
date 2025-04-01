@@ -9,14 +9,37 @@ def _get_hash(key):
 
 
 @dataclass
+class ParallelConfig:
+    tensor_parallel_size: int
+    pipeline_parallel_size: int
+
+    def get_key(self):
+        return f"{self.tensor_parallel_size}_{self.pipeline_parallel_size}"
+
+    def get_human_readable_name(self):
+        return f"Tensor parallel size: {self.tensor_parallel_size}, Pipeline parallel size: {self.pipeline_parallel_size}"
+
+    def to_config_dict(self):
+        return {
+            "tensor_parallel_size": self.tensor_parallel_size,
+            "pipeline_parallel_size": self.pipeline_parallel_size,
+        }
+
+
+@dataclass
 class ServerConfig:
     openai_server_engine: Optional[str] = None
     openai_api_url: Optional[str] = None
     openai_api_key: Optional[str] = None
+    fixed_chunk_size: Optional[int] = None
+    min_chunk_size: Optional[int] = None
+    max_chunk_size: Optional[int] = None
+    schedule_policy: Optional[str] = None
+    scheduler_config: Optional[str] = None
 
     def get_key(self):
         return (
-            f"{self.openai_server_engine}_{self.openai_api_url}_{self.openai_api_key}"
+            f"{self.openai_server_engine}{self.openai_api_url}{self.openai_api_key}"
         )
 
     def get_human_readable_name(self):
@@ -27,6 +50,11 @@ class ServerConfig:
             "openai_server_engine": self.openai_server_engine,
             "openai_api_url": self.openai_api_url,
             "openai_api_key": self.openai_api_key,
+            "fixed_chunk_size": self.fixed_chunk_size,
+            "min_chunk_size": self.min_chunk_size,
+            "max_chunk_size": self.max_chunk_size,
+            "schedule_policy": self.schedule_policy,
+            "scheduler_config": self.scheduler_config,
         }
 
 

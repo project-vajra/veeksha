@@ -1,0 +1,15 @@
+python -m vllm.entrypoints.openai.api_server \
+--model {{ openai_server_model }} \
+--dtype auto \
+--api-key {{ openai_api_key }} \
+-tp {{ tp }} \
+-pp {{ pp }} \
+--scheduling-policy {{ schedule_policy | upper }} \
+--chat-template "{{ chat_template }}" \
+--max-num-batched-tokens {{ fixed_chunk_size }} \
+--port {{ port }} \
+--enable-chunked-prefill true \
+--max-num-seqs 256 \
+--uvicorn-log-level error \
+--disable-log-stats \
+--disable-log-requests

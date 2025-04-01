@@ -114,6 +114,7 @@ class MetricStore:
                 "using_predictions_for_ttft": self.use_predictions_for_ttft,
                 "target_deadline_miss_rate": self.target_deadline_miss_rate,
             },
+            # TODO experiment config
         )
         logger.info("wandb initialized")
 

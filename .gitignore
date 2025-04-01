@@ -259,3 +259,4 @@ experiments/
 experiments_*
 results*
 .qodo
+benchmarking/experiment_configs
