@@ -242,7 +242,13 @@ def transform_config_for_saving(config_data):
                 config_copy[section_key] = section_data
 
         # Generate a unique ID based on the config content
-        config_str = json.dumps(config_copy, sort_keys=True)
+        config_copy_for_hash = json.loads(json.dumps(config_copy))
+        # Remove output_dir from benchmark_config to avoid hash changes when only the output directory changes
+        if "benchmark_config" in config_copy_for_hash and isinstance(config_copy_for_hash["benchmark_config"], dict):
+            if "output_dir" in config_copy_for_hash["benchmark_config"]:
+                del config_copy_for_hash["benchmark_config"]["output_dir"]
+        
+        config_str = json.dumps(config_copy_for_hash, sort_keys=True)
         hash_obj = hashlib.md5(config_str.encode())
         config_id = hash_obj.hexdigest()
 
@@ -324,7 +330,13 @@ def transform_config_for_saving(config_data):
                     )
 
         # Generate a unique ID based on the config content
-        config_str = json.dumps(config_copy, sort_keys=True)
+        config_copy_for_hash = json.loads(json.dumps(config_copy))
+        # Remove output_dir from benchmark_config to avoid hash changes when only the output directory changes
+        if "benchmark_config" in config_copy_for_hash and isinstance(config_copy_for_hash["benchmark_config"], dict):
+            if "output_dir" in config_copy_for_hash["benchmark_config"]:
+                del config_copy_for_hash["benchmark_config"]["output_dir"]
+                
+        config_str = json.dumps(config_copy_for_hash, sort_keys=True)
         hash_obj = hashlib.md5(config_str.encode())
         config_id = hash_obj.hexdigest()
 
@@ -600,20 +612,26 @@ def save_config(config_data, filename, encoding="utf-8", experiment_name=""):
         if saved_filepaths:
             dir_path = saved_filepaths[0].parent
             clear_screen()
-            print("=" * 80)
-            print(f"CONFIG FILES SAVED SUCCESSFULLY")
-            print("=" * 80)
-            print(f"\nDirectory: {dir_path}\n")
-            print(f"Number of config files: {len(saved_filepaths)}")
-
-            # Show cache status summary if available
+            # check cache status
+            cached_count = 0
             if cache_loaded:
                 new_count = sum(1 for status in cache_status if status is False)
                 cached_count = sum(1 for status in cache_status if status is True)
-                if cached_count > 0:
-                    print(
-                        f"\nCache status: {new_count} new, {cached_count} already run"
-                    )
+            print("=" * 80)
+
+            if cached_count > 0:        
+                print(f"CONFIG FILES SAVED WITH PARTIAL OR TOTAL CACHE HITS")
+            else:
+                print(f"CONFIG FILES SAVED")
+
+            print("=" * 80)
+            print(f"Number of config files: {len(saved_filepaths)}")
+
+            # Show cache status summary if available
+            if cached_count > 0:
+                print(
+                    f"\nCache status: {new_count} new, {cached_count} already run"
+                )
 
             # Display the CLI command to run the experiments
             relative_dir_path = os.path.relpath(dir_path)
@@ -1465,42 +1483,6 @@ def main():
                 success, saved_filepaths = save_config(
                     current_config, final_filename, experiment_name=custom_name
                 )
-                if success:
-                    if isinstance(saved_filepaths, list):
-                        if len(saved_filepaths) == 1:
-                            show_message(f"Config saved to '{saved_filepaths[0]}'")
-                            # For single config file, also show the command to run it
-                            relative_path = os.path.relpath(saved_filepaths[0])
-                            show_message(
-                                f"Run experiment with: python -m veeksha.server_benchmark --config {relative_path}"
-                            )
-                        else:
-                            dir_path = saved_filepaths[0].parent
-                            clear_screen()
-                            print("=" * 80)
-                            print(f"CONFIG FILES SAVED SUCCESSFULLY")
-                            print("=" * 80)
-                            print(f"\nDirectory: {dir_path}\n")
-                            print(f"Number of config files: {len(saved_filepaths)}")
-
-                            # Display the CLI command to run the experiments
-                            relative_dir_path = os.path.relpath(dir_path)
-                            print("\nRun experiments with this command:")
-                            print("-" * 60)
-                            print(
-                                f"python -m veeksha.server_benchmark --config-dir {relative_dir_path}"
-                            )
-                            print("-" * 60)
-
-                            print("\nPress any key to continue...")
-                            getch()
-                    else:
-                        show_message(f"Config saved to '{saved_filepaths}'")
-                        # For single config file, also show the command to run it
-                        relative_path = os.path.relpath(saved_filepaths)
-                        show_message(
-                            f"Run experiment with: python -m veeksha.server_benchmark --config {relative_path}"
-                        )
             else:
                 show_message("Save cancelled (error generating filename).")
 
