@@ -1,34 +1,44 @@
 """
-    This file contains the wrapper for the benchmarking.
-    It first launches OPEN AI server for vajra, and then runs -m veeksha.run_benchmark
+This file contains the wrapper for the benchmarking.
+It first launches OPEN AI server for vajra, and then runs -m veeksha.run_benchmark
 """
 
+import argparse
+import json
 import os
 import re
 import signal
 import socket
 import subprocess
 import time
-import yaml
-import json
 from typing import Dict, List, Optional, Tuple
-import argparse
-from pathlib import Path
 
 import ray
+import yaml
 from jinja2 import Environment, FileSystemLoader
 from ray.util import get_node_ip_address
 
-from veeksha.capacity_search.config.config import BenchmarkConfig, JobConfig, RequestGeneratorConfig, ClientConfig, ServerConfig, ModelConfig, ParallelConfig
+from veeksha.capacity_search.config.config import (
+    BenchmarkConfig,
+    ClientConfig,
+    JobConfig,
+    ModelConfig,
+    ParallelConfig,
+    RequestGeneratorConfig,
+    ServerConfig,
+)
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
 
 # Define the path for the experiment cache file
-EXPERIMENT_CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "experiment_cache.json")
+EXPERIMENT_CACHE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "experiment_cache.json"
+)
 
 ResourceMapping = List[Tuple[str, int]]  # List of (node_ip, gpu_id)
 ReplicaResourceMapping = Dict[str, ResourceMapping]
+
 
 # Code from rayutils.py - Etalon
 def get_ip() -> str:
@@ -179,6 +189,7 @@ class RayParallelRunner:
 
         return ray.get(promises)
 
+
 # benchmark_wrapper.py
 def extract_ip(string):
     return re.findall(r"[0-9]+(?:\.[0-9]+){3}", string)[0]
@@ -224,7 +235,7 @@ class OpenAIServerWrapper:
         drafter_rope_scaling_type=None,
         drafter_rope_scaling_factor=None,
         max_model_len=32768,
-        chat_template=None
+        chat_template=None,
     ) -> str:
         template_dir_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "engine_templates")
@@ -232,7 +243,7 @@ class OpenAIServerWrapper:
         env = Environment(loader=FileSystemLoader(template_dir_path))
         template = None
         cuda_devices = None
-        
+
         if openai_server_engine == "vajra":
             template = env.get_template("vajra_template.jinja")
         elif openai_server_engine == "vllm":
@@ -247,14 +258,12 @@ class OpenAIServerWrapper:
             f'{{"type":"{rope_scaling_type}", "factor": {rope_scaling_factor}}}'
         )
 
-        drafter_rope_scaling = (
-            f'{{"type":"{drafter_rope_scaling_type}", "factor": {drafter_rope_scaling_factor}}}'
-        )
+        drafter_rope_scaling = f'{{"type":"{drafter_rope_scaling_type}", "factor": {drafter_rope_scaling_factor}}}'
 
         data = {
             "model": {
                 "identifier": openai_server_model,
-                "chat_template": chat_template
+                "chat_template": chat_template,
             },
             "server": {
                 "openai_api_key": openai_api_key,
@@ -262,12 +271,9 @@ class OpenAIServerWrapper:
                 "min_chunk_size": min_chunk_size,
                 "max_chunk_size": max_chunk_size,
                 "schedule_policy": schedule_policy,
-                "scheduler_config": scheduler_config
+                "scheduler_config": scheduler_config,
             },
-            "parallel_spec": {
-                "tp_dimension": tp,
-                "pp_dimension": pp
-            },
+            "parallel_spec": {"tp_dimension": tp, "pp_dimension": pp},
             "port": self.port,
             "rope_scaling": rope_scaling,
             "rope_scaling_type": rope_scaling_type,
@@ -312,7 +318,7 @@ class OpenAIServerWrapper:
                 openai_server_engine=openai_server_engine,
                 openai_server_model=openai_server_model,
                 openai_api_key=openai_api_key,
-                tp=tp, 
+                tp=tp,
                 pp=pp,
                 rope_scaling_type=("linear"),
                 rope_scaling_factor=4.0,
@@ -333,7 +339,7 @@ class OpenAIServerWrapper:
             self.process = subprocess.Popen(
                 openai_server_command, shell=True, preexec_fn=os.setsid
             )
-            
+
         elif openai_server_engine == "default" or openai_server_engine is None:
             # just use the actual OPEN AI server
             pass
@@ -359,7 +365,9 @@ def setup_api_environment(
     # checked by printing, and it doesn't change
     if openai_server_engine in ["vllm", "sglang", "vajra", "default"]:
         if openai_server_engine in ["vllm"]:
-            assert openai_api_key is not None, "OpenAI API key is required for VLLM engine"
+            assert (
+                openai_api_key is not None
+            ), "OpenAI API key is required for VLLM engine"
         assert openai_port is not None, "OpenAI port is required"
     os.environ["OPENAI_API_KEY"] = openai_api_key
     os.environ["OPENAI_API_BASE"] = f"http://localhost:{openai_port}/v1"
@@ -368,66 +376,89 @@ def setup_api_environment(
 def is_default_engine(engine) -> bool:
     return engine == "default" or engine is None
 
+
 def get_default_config(engine_name: str) -> dict:
     """
     Fetch the default configuration for a specified server engine.
-    
+
     Args:
         engine_name (str): Name of the server engine (e.g., 'vajra', 'vllm', 'sglang')
-    
+
     Returns:
         dict: Default configuration for the specified engine
     """
     config_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         "config_editor/default_engine_configs",
-        f"{engine_name}_config.yml"
+        f"{engine_name}_config.yml",
     )
-    
+
     try:
         with open(config_path, "r") as f:
             default_config = yaml.safe_load(f)
         return default_config
     except FileNotFoundError:
-        raise FileNotFoundError(f"Default configuration file for engine '{engine_name}' not found at {config_path}")
+        raise FileNotFoundError(
+            f"Default configuration file for engine '{engine_name}' not found at {config_path}"
+        )
     except yaml.YAMLError as e:
-        raise ValueError(f"Error parsing default configuration file for engine '{engine_name}': {e}")
+        raise ValueError(
+            f"Error parsing default configuration file for engine '{engine_name}': {e}"
+        )
+
 
 def run_from_config(config_path: str):
     """
     Reads a YAML configuration file containing a single test combination,
     generates JobConfig, BenchmarkConfig, and ParallelConfig objects, and runs the benchmark.
-    
+
     Args:
         config_path (str): Path to the configuration YAML file.
     """
     # Load YAML config
     with open(config_path, "r") as file:
         config = yaml.safe_load(file)
-    
+
     # Check if this experiment is already in the cache
     if "metadata" in config and "config_id" in config["metadata"]:
         config_id = config["metadata"]["config_id"]
         if is_experiment_in_cache(config_id):
-            logger.info(f"Experiment with config_id {config_id} already completed, skipping")
+            logger.info(
+                f"Experiment with config_id {config_id} already completed, skipping"
+            )
             return
         logger.info(f"Running experiment with config_id {config_id}")
     else:
-        logger.warning(f"Config file {config_path} does not have a config_id, cannot use cache")
+        logger.warning(
+            f"Config file {config_path} does not have a config_id, cannot use cache"
+        )
 
     # Fetch the default engine configuration so that we don't have missing keys
     default_config = get_default_config(config["server"]["openai_server_engine"])
 
     # Extract items from config with fallback to defaults
     model = config.get("model", default_config.get("model", {}))
-    request_generator = config.get("request_generator_config", default_config.get("request_generator_config", {}))
-    request_config = config.get("request_config", default_config.get("request_config", {}))
+    request_generator = config.get(
+        "request_generator_config", default_config.get("request_generator_config", {})
+    )
+    request_config = config.get(
+        "request_config", default_config.get("request_config", {})
+    )
     server = config.get("server", default_config.get("server", {}))
-    benchmark_conf = config.get("benchmark_config", default_config.get("benchmark_config", {}))
+    benchmark_conf = config.get(
+        "benchmark_config", default_config.get("benchmark_config", {})
+    )
     parallel_spec = config.get("parallel_spec", default_config.get("parallel_spec", {}))
 
     # Log which sections are using provided vs default values
-    for section in ["model", "request_generator_config", "request_config", "server", "benchmark_config", "parallel_spec"]:
+    for section in [
+        "model",
+        "request_generator_config",
+        "request_config",
+        "server",
+        "benchmark_config",
+        "parallel_spec",
+    ]:
         if section in config:
             logger.info(f"Using provided section for {section}")
         elif section in default_config:
@@ -438,12 +469,12 @@ def run_from_config(config_path: str):
         tensor_parallel_size=parallel_spec.get("tp_dimension", None),
         pipeline_parallel_size=parallel_spec.get("pp_dimension", None),
     )
-    
+
     model_config = ModelConfig(
         name=model.get("name", None),
         identifier=model.get("identifier", None),
     )
-    
+
     chat_template = model.get("chat_template", "")
 
     # Build request generator config using the extracted request_generator dictionary
@@ -451,21 +482,42 @@ def run_from_config(config_path: str):
     logger.info(f"Final request generator config: {request_generator}")
 
     # Build client config using the extracted request_config dictionary
-    client_fields = ["num_clients", "num_concurrent_requests_per_client", "timeout", 
-                     "max_num_completed_requests", "additional_sampling_params", "llm_api"]
-    
-    client_config_dict = {field: request_config.get(field) for field in client_fields if field in request_config}
+    client_fields = [
+        "num_clients",
+        "num_concurrent_requests_per_client",
+        "timeout",
+        "max_num_completed_requests",
+        "additional_sampling_params",
+        "llm_api",
+    ]
+
+    client_config_dict = {
+        field: request_config.get(field)
+        for field in client_fields
+        if field in request_config
+    }
     client_config = ClientConfig(**client_config_dict)
     logger.info(f"Final client config: {client_config_dict}")
 
-    openai_port = server.get("openai_api_port", 8000)  # Default to 8000 if not specified
+    openai_port = server.get(
+        "openai_api_port", 8000
+    )  # Default to 8000 if not specified
 
     # Build server config using the extracted server dictionary
-    server_fields = ["openai_server_engine", "openai_api_url", "openai_api_key", 
-                     "fixed_chunk_size", "min_chunk_size", "max_chunk_size", 
-                     "schedule_policy", "scheduler_config"]
-    
-    server_config_dict = {field: server.get(field) for field in server_fields if field in server}
+    server_fields = [
+        "openai_server_engine",
+        "openai_api_url",
+        "openai_api_key",
+        "fixed_chunk_size",
+        "min_chunk_size",
+        "max_chunk_size",
+        "schedule_policy",
+        "scheduler_config",
+    ]
+
+    server_config_dict = {
+        field: server.get(field) for field in server_fields if field in server
+    }
     server_config = ServerConfig(**server_config_dict)
     logger.info(f"Final server config: {server_config_dict}")
 
@@ -478,14 +530,20 @@ def run_from_config(config_path: str):
 
     # Build benchmark config using the extracted benchmark_conf dictionary
     benchmark_fields = ["output_dir", "qps", "should_use_given_dir"]
-    
-    benchmark_config_dict = {field: benchmark_conf.get(field) for field in benchmark_fields if field in benchmark_conf}
+
+    benchmark_config_dict = {
+        field: benchmark_conf.get(field)
+        for field in benchmark_fields
+        if field in benchmark_conf
+    }
     benchmark_config = BenchmarkConfig(**benchmark_config_dict)
     logger.info(f"Final benchmark config: {benchmark_config_dict}")
-    
+
     # Creating the ResourceManager actor to get GPU resources
     resource_manager = ResourceManager.remote()
-    num_gpus = parallel_config.tensor_parallel_size * parallel_config.pipeline_parallel_size
+    num_gpus = (
+        parallel_config.tensor_parallel_size * parallel_config.pipeline_parallel_size
+    )
 
     # Retry until resource is available
     replica_resource_mapping = {}
@@ -498,11 +556,19 @@ def run_from_config(config_path: str):
             time.sleep(5)
 
     # Run the benchmark
-    success = run(job_config, benchmark_config, replica_resource_mapping, openai_port, parallel_config, chat_template)
-    
+    success = run(
+        job_config,
+        benchmark_config,
+        replica_resource_mapping,
+        openai_port,
+        parallel_config,
+        chat_template,
+    )
+
     # If the experiment ran successfully and has a config_id, add it to the cache
     if success and "metadata" in config and "config_id" in config["metadata"]:
         add_experiment_to_cache(config["metadata"]["config_id"])
+
 
 def run(
     job_config: JobConfig,
@@ -514,7 +580,7 @@ def run(
 ):
     """
     Main function
-    
+
     Returns:
         bool: True if the benchmark completed successfully, False otherwise
     """
@@ -536,7 +602,10 @@ def run(
         num_gpus=num_gpus, resources=resources
     ).remote(replica_resource_mapping=replica_resource_mapping, port=openai_port)
 
-    print(f"\n\nOPEN AI SERVER {job_config.server_config.openai_server_engine} PORT: {openai_port}\n\n", flush=True)
+    print(
+        f"\n\nOPEN AI SERVER {job_config.server_config.openai_server_engine} PORT: {openai_port}\n\n",
+        flush=True,
+    )
 
     try:
         # Launch the OPEN AI server
@@ -564,7 +633,9 @@ def run(
 
         # Wait for the server to start. For 70B model, it takes around 2 minutes to start
         sleep_time = (
-            0 if is_default_engine(job_config.server_config.openai_server_engine) else 60
+            0
+            if is_default_engine(job_config.server_config.openai_server_engine)
+            else 60
         )
         time.sleep(sleep_time)
 
@@ -581,18 +652,19 @@ def run(
 
         # Run the benchmark
         benchmark_command = f"python -m veeksha.run_benchmark {job_config.to_args()} {benchmark_config.to_args()}"
-        
+
         print(benchmark_command)
-        
-        logger.info(f"Running benchmark with command: {benchmark_command}")
+
         benchmark_process = subprocess.Popen(benchmark_command, shell=True)
         benchmark_process.wait()
-        
+
         # Check if the benchmark process completed successfully
         if benchmark_process.returncode != 0:
-            logger.error(f"Benchmark process exited with non-zero return code: {benchmark_process.returncode}")
+            logger.error(
+                f"Benchmark process exited with non-zero return code: {benchmark_process.returncode}"
+            )
             return False
-            
+
         return True
     except Exception as e:
         logger.error(f"Error during benchmark execution: {str(e)}")
@@ -603,16 +675,31 @@ def run(
             ray.get(openai_server_wrapper.stop_openai_server.remote())
         except Exception as e:
             logger.error(f"Error stopping OPEN AI server: {str(e)}")
-        
+
         ray.shutdown()
 
 
 def server_benchmark_entrypoint():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, help="Path to a single experiment config YAML")
-    parser.add_argument("--configs", type=str, nargs='+', help="Paths to multiple experiment config YAMLs to run sequentially")
-    parser.add_argument("--config-dir", type=str, help="Path to directory containing experiment config YAMLs to run sequentially")
-    parser.add_argument("--clear-cache", action="store_true", help="Clear the experiment cache before running")
+    parser.add_argument(
+        "--config", type=str, help="Path to a single experiment config YAML"
+    )
+    parser.add_argument(
+        "--configs",
+        type=str,
+        nargs="+",
+        help="Paths to multiple experiment config YAMLs to run sequentially",
+    )
+    parser.add_argument(
+        "--config-dir",
+        type=str,
+        help="Path to directory containing experiment config YAMLs to run sequentially",
+    )
+    parser.add_argument(
+        "--clear-cache",
+        action="store_true",
+        help="Clear the experiment cache before running",
+    )
     args = parser.parse_args()
 
     # Clear the cache if requested
@@ -624,12 +711,17 @@ def server_benchmark_entrypoint():
             logger.info("No experiment cache to clear")
 
     # Validate arguments
-    if sum(arg is not None for arg in [args.config, args.configs, args.config_dir]) != 1:
-        parser.error("Exactly one of --config, --configs, or --config-dir must be specified")
+    if (
+        sum(arg is not None for arg in [args.config, args.configs, args.config_dir])
+        != 1
+    ):
+        parser.error(
+            "Exactly one of --config, --configs, or --config-dir must be specified"
+        )
 
     # Collect all config paths to run
     config_paths = []
-    
+
     if args.config:
         config_paths = [args.config]
     elif args.configs:
@@ -639,8 +731,11 @@ def server_benchmark_entrypoint():
         if not os.path.isdir(config_dir):
             parser.error(f"Config directory {config_dir} does not exist")
         # Get all YAML files in the directory
-        config_paths = [os.path.join(config_dir, f) for f in os.listdir(config_dir) 
-                       if f.endswith('.yml') or f.endswith('.yaml')]
+        config_paths = [
+            os.path.join(config_dir, f)
+            for f in os.listdir(config_dir)
+            if f.endswith(".yml") or f.endswith(".yaml")
+        ]
         if not config_paths:
             parser.error(f"No YAML files found in {config_dir}")
         # Sort for deterministic ordering
@@ -648,44 +743,56 @@ def server_benchmark_entrypoint():
 
     # Load the experiment cache
     cache = load_experiment_cache()
-    logger.info(f"Loaded experiment cache with {len(cache['completed_experiments'])} completed experiments")
+    logger.info(
+        f"Loaded experiment cache with {len(cache['completed_experiments'])} completed experiments"
+    )
 
     # Run all configurations sequentially
-    logger.info(f"Preparing to run {len(config_paths)} benchmark configurations sequentially")
-    
+    logger.info(
+        f"Preparing to run {len(config_paths)} benchmark configurations sequentially"
+    )
+
     completed_count = 0
     skipped_count = 0
     failed_count = 0
-    
+
     for i, config_path in enumerate(config_paths):
         logger.info(f"Processing benchmark {i+1}/{len(config_paths)}: {config_path}")
-        
+
         # Check if this experiment is in the cache before loading the full config
         try:
             with open(config_path, "r") as file:
                 config = yaml.safe_load(file)
-                
+
             if "metadata" in config and "config_id" in config["metadata"]:
                 config_id = config["metadata"]["config_id"]
                 if is_experiment_in_cache(config_id):
-                    logger.info(f"Experiment with config_id {config_id} already completed, skipping")
+                    logger.info(
+                        f"Experiment with config_id {config_id} already completed, skipping"
+                    )
                     skipped_count += 1
                     continue
         except Exception as e:
             logger.error(f"Error checking cache for {config_path}: {str(e)}")
             # Continue with normal execution if we can't check the cache
-        
+
         try:
             run_from_config(config_path)
-            logger.info(f"Successfully completed benchmark {i+1}/{len(config_paths)}: {config_path}")
+            logger.info(
+                f"Successfully completed benchmark {i+1}/{len(config_paths)}: {config_path}"
+            )
             completed_count += 1
         except Exception as e:
-            logger.error(f"Error running benchmark {i+1}/{len(config_paths)}: {config_path}")
+            logger.error(
+                f"Error running benchmark {i+1}/{len(config_paths)}: {config_path}"
+            )
             logger.error(f"Error details: {str(e)}")
             logger.error("Continuing with next benchmark...")
             failed_count += 1
-    
-    logger.info(f"Benchmark summary: {completed_count} completed, {skipped_count} skipped (cached), {failed_count} failed")
+
+    logger.info(
+        f"Benchmark summary: {completed_count} completed, {skipped_count} skipped (cached), {failed_count} failed"
+    )
     logger.info(f"All {len(config_paths)} benchmarks processed")
 
 
@@ -693,50 +800,55 @@ def server_benchmark_entrypoint():
 def load_experiment_cache():
     """
     Load the experiment cache from disk.
-    
+
     Returns:
         dict: A dictionary of completed experiment config_ids
     """
     if not os.path.exists(EXPERIMENT_CACHE_PATH):
         return {"completed_experiments": []}
-    
+
     try:
-        with open(EXPERIMENT_CACHE_PATH, 'r') as f:
+        with open(EXPERIMENT_CACHE_PATH, "r") as f:
             return json.load(f)
     except (json.JSONDecodeError, FileNotFoundError):
-        logger.warning(f"Could not load experiment cache from {EXPERIMENT_CACHE_PATH}, creating new cache")
+        logger.warning(
+            f"Could not load experiment cache from {EXPERIMENT_CACHE_PATH}, creating new cache"
+        )
         return {"completed_experiments": []}
+
 
 def save_experiment_cache(cache):
     """
     Save the experiment cache to disk.
-    
+
     Args:
         cache (dict): The cache dictionary to save
     """
     # Create directory if it doesn't exist
     os.makedirs(os.path.dirname(EXPERIMENT_CACHE_PATH), exist_ok=True)
-    
-    with open(EXPERIMENT_CACHE_PATH, 'w') as f:
+
+    with open(EXPERIMENT_CACHE_PATH, "w") as f:
         json.dump(cache, f, indent=2)
+
 
 def is_experiment_in_cache(config_id):
     """
     Check if an experiment with the given config_id is in the cache.
-    
+
     Args:
         config_id (str): The config_id to check
-        
+
     Returns:
         bool: True if the experiment is in the cache, False otherwise
     """
     cache = load_experiment_cache()
     return config_id in cache["completed_experiments"]
 
+
 def add_experiment_to_cache(config_id):
     """
     Add an experiment with the given config_id to the cache.
-    
+
     Args:
         config_id (str): The config_id to add
     """

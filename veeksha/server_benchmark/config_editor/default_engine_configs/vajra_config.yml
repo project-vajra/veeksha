@@ -1,7 +1,7 @@
 server:
   openai_server_engine: vajra
-  openai_api_url: "http://localhost:8000/v1"
-  openai_api_port: 8000
+  openai_api_url: "http://localhost:8001/v1"
+  openai_api_port: 8001
   openai_api_key: token-abc123
   fixed_chunk_size: 512
   min_chunk_size: 1

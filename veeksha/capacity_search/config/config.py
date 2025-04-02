@@ -38,9 +38,7 @@ class ServerConfig:
     scheduler_config: Optional[str] = None
 
     def get_key(self):
-        return (
-            f"{self.openai_server_engine}{self.openai_api_url}{self.openai_api_key}"
-        )
+        return f"{self.openai_server_engine}{self.openai_api_url}{self.openai_api_key}"
 
     def get_human_readable_name(self):
         return f"Server engine: {self.openai_server_engine}, URL: {self.openai_api_url}"
