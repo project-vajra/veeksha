@@ -3,6 +3,34 @@ import os
 import sys
 from pathlib import Path
 import re
+import json
+import hashlib
+import time
+from typing import List, Dict, Any, Tuple, Optional
+
+# Import cache functions from server_benchmark
+try:
+    from veeksha.server_benchmark.server_benchmark import (
+        load_experiment_cache, is_experiment_in_cache, EXPERIMENT_CACHE_PATH
+    )
+    CACHE_AVAILABLE = True
+except ImportError:
+    CACHE_AVAILABLE = False
+    # Fallback implementations if import fails
+    EXPERIMENT_CACHE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "experiment_cache.json")
+    
+    def load_experiment_cache():
+        if not os.path.exists(EXPERIMENT_CACHE_PATH):
+            return {"completed_experiments": []}
+        try:
+            with open(EXPERIMENT_CACHE_PATH, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            return {"completed_experiments": []}
+    
+    def is_experiment_in_cache(config_id):
+        cache = load_experiment_cache()
+        return config_id in cache["completed_experiments"]
 
 # For single keypress detection
 try:
@@ -143,7 +171,30 @@ def transform_config_for_saving(config_data):
     
     # If no multi-valued fields, just return the original config
     if not multi_value_fields:
-        return [config_data]
+        # Add a unique config ID for caching
+        import hashlib
+        import json
+        import time
+        
+        # Create a deep copy of the config to avoid modifying the original
+        config_copy = {}
+        for section_key, section_data in config_data.items():
+            if isinstance(section_data, dict):
+                config_copy[section_key] = section_data.copy()
+            else:
+                config_copy[section_key] = section_data
+        
+        # Generate a unique ID based on the config content
+        config_str = json.dumps(config_copy, sort_keys=True)
+        hash_obj = hashlib.md5(config_str.encode())
+        config_id = hash_obj.hexdigest()
+        
+        # Add the config ID to the config
+        if 'metadata' not in config_copy:
+            config_copy['metadata'] = {}
+        config_copy['metadata']['config_id'] = config_id
+        
+        return [config_copy]
     
     # Generate all possible combinations
     combinations = [{}]
@@ -177,6 +228,11 @@ def transform_config_for_saving(config_data):
     # We need to merge each combination with the original config
     result_configs = []
     
+    # Import modules for generating unique IDs
+    import hashlib
+    import json
+    import time
+    
     for combo in combinations:
         # Start with a deep copy of the original config
         config_copy = {}
@@ -206,6 +262,16 @@ def transform_config_for_saving(config_data):
             for section_key in ['server', 'model', 'parallel_spec']:
                 if section_key in config_copy and isinstance(config_copy[section_key], dict):
                     config_copy[section_key] = filter_params_for_engine(section_key, config_copy[section_key], engine)
+        
+        # Generate a unique ID based on the config content
+        config_str = json.dumps(config_copy, sort_keys=True)
+        hash_obj = hashlib.md5(config_str.encode())
+        config_id = hash_obj.hexdigest()
+        
+        # Add the config ID to the config
+        if 'metadata' not in config_copy:
+            config_copy['metadata'] = {}
+        config_copy['metadata']['config_id'] = config_id
         
         result_configs.append(config_copy)
     
@@ -263,14 +329,15 @@ def save_config(config_data, filename, encoding='utf-8', experiment_name=""):
     is_valid, warnings = validate_config_compatibility(config_data)
     if not is_valid:
         clear_screen()
-        print("--- Configuration Warnings ---")
-        print("The following incompatibilities were detected in your configuration:")
+        print("--- Config warnings ---")
+        print("The following incompatibilities were detected in the spec:")
         for warning in warnings:
             print(f"  - {warning}")
-        print("\nThese incompatibilities may cause experiments to fail or produce unexpected results.")
-        print("Do you want to continue saving this configuration?")
-        choice = get_single_key("Save anyway? (y/N): ", ['y', 'n'])
-        if choice != 'y':
+        print("\nThere won't be generated configs for the incompatible params.")
+        choice = get_single_key("Save anyway? (Y/n): ", ['y', 'n', '\n', '\r'])
+        if choice == '\n' or choice == '\r' or choice == 'y':
+            pass
+        else:
             show_message("Save cancelled due to configuration incompatibilities.")
             return False, None
 
@@ -304,127 +371,167 @@ def save_config(config_data, filename, encoding='utf-8', experiment_name=""):
             if is_multi_value(config_data['server']['openai_server_engine']):
                 engine_part = "multi-engine"
             else:
-                engine_part = sanitize_for_filename(str(config_data['server']['openai_server_engine']))
+                engine_part = config_data['server']['openai_server_engine']
         
-        if 'model' in config_data and 'name' in config_data['model']:
-            model_part = sanitize_for_filename(str(config_data['model']['name']))
+        if 'model' in config_data and 'identifier' in config_data['model']:
+            if is_multi_value(config_data['model']['identifier']):
+                model_part = "multi-model"
+            else:
+                model_part = config_data['model']['identifier']
+                # Extract just the model name without path
+                if '/' in model_part:
+                    model_part = model_part.split('/')[-1]
         
         if 'parallel_spec' in config_data:
             if 'tp_dimension' in config_data['parallel_spec']:
-                if is_multi_value(config_data['parallel_spec']['tp_dimension']):
-                    tp_part = "multi-tp"
-                else:
-                    tp_part = str(config_data['parallel_spec']['tp_dimension'])
+                tp = config_data['parallel_spec']['tp_dimension']
+                # Only add tp if it's not the default value of 1
+                if tp != 1:
+                    tp_part = str(tp)
             else:
                 tp_part = "1"  # Default
                 
             if 'pp_dimension' in config_data['parallel_spec']:
-                if is_multi_value(config_data['parallel_spec']['pp_dimension']):
-                    pp_part = "multi-pp"
-                else:
-                    pp_part = str(config_data['parallel_spec']['pp_dimension'])
+                pp = config_data['parallel_spec']['pp_dimension']
+                # Only add pp if it's not the default value of 1
+                if pp != 1:
+                    pp_part = str(pp)
             else:
                 pp_part = "1"  # Default
         
-        # Get trace information
-        if 'request_generator_config' in config_data and 'trace_request_length_generator_trace_file' in config_data['request_generator_config']:
-            trace_path = config_data['request_generator_config']['trace_request_length_generator_trace_file']
-            if trace_path:
-                try:
-                    trace_stem = Path(trace_path).stem
-                    derived_trace_name = trace_stem.split('_')[0] if '_' in trace_stem else trace_stem
-                    trace_part = sanitize_for_filename(derived_trace_name)
-                except:
-                    trace_part = "trace"
-        
-        # Get QPS information
+        if 'request_generator_config' in config_data and 'generator_type' in config_data['request_generator_config']:
+            trace_part = config_data['request_generator_config']['generator_type']
+            
         if 'benchmark_config' in config_data and 'qps' in config_data['benchmark_config']:
-            qps_val = config_data['benchmark_config']['qps']
-            if qps_val is not None:
-                qps_part = f"qps{sanitize_for_filename(str(qps_val))}"
+            qps_value = config_data['benchmark_config']['qps']
+            if isinstance(qps_value, (int, float)):
+                qps_part = f"qps{qps_value}"
         
-        # Construct a clean base name
+        # Construct a clean folder name
         parts = []
         if engine_part: parts.append(engine_part)
         if model_part: parts.append(model_part)
-        if tp_part: parts.append(tp_part)
-        if pp_part: parts.append(pp_part)
+        if tp_part and tp_part != "1": parts.append(f"tp{tp_part}")
+        if pp_part and pp_part != "1": parts.append(f"pp{pp_part}")
         if trace_part: parts.append(trace_part)
         if qps_part: parts.append(qps_part)
         
-        clean_base_name = "config_" + "_".join(parts)
-    
-    # Create a folder name combining timestamp and clean base filename
-    # Use experiment_name if provided, otherwise use the auto-generated name
+        if parts:
+            clean_base_name = "_".join(parts)
+        
+    # Add experiment name if provided
     if experiment_name:
         folder_name = f"{timestamp}_{experiment_name}"
     else:
         folder_name = f"{timestamp}_{clean_base_name}"
-    folder_path = OUTPUT_DIR / folder_name
     
-    # Create the folder
-    folder_path.mkdir(parents=True, exist_ok=True)
+    # Sanitize the folder name
+    folder_name = sanitize_for_filename(folder_name)
     
-    # If we have multiple configurations, we need to save each one with a unique name
+    # Create the experiment directory
+    experiment_dir = os.path.dirname(os.path.abspath(filename))
+    folder_path = os.path.join(experiment_dir, folder_name)
+    os.makedirs(folder_path, exist_ok=True)
+    
+    # Load the experiment cache to check which configs have been run
+    cache_loaded = False
+    completed_experiments = []
+    if CACHE_AVAILABLE:
+        try:
+            cache = load_experiment_cache()
+            completed_experiments = cache.get("completed_experiments", [])
+            cache_loaded = True
+        except Exception as e:
+            show_message(f"Warning: Could not load experiment cache: {e}")
+    
+    # Save each transformed config to a separate file
     saved_filepaths = []
     
-    # For individual config files, use a simple naming scheme
-    simple_base_name = "config"
-    
-    # Update the benchmark_config.output_dir field in each configuration if experiment_name is provided
-    if experiment_name:
-        for config in transformed_configs:
-            if 'benchmark_config' in config and isinstance(config['benchmark_config'], dict):
-                config['benchmark_config']['output_dir'] = f"results/{experiment_name}"
-    
-    # If there's only one config, save it with the original filename
-    if len(transformed_configs) == 1:
-        # Use a simple filename without MULTI_VALUES markers
-        simple_filename = f"{simple_base_name}.yml"
-        filepath = folder_path / simple_filename
+    for i, config in enumerate(transformed_configs):
+        # Generate a suffix for this specific config
+        suffix = generate_config_suffix(config)
+        
+        # For single configs, use the original filename
+        if len(transformed_configs) == 1:
+            config_filename = os.path.basename(filename)
+        else:
+            # For multiple configs, use a naming scheme based on the engine and other parameters
+            if suffix:
+                config_filename = f"config_{suffix}.yml"
+            else:
+                config_filename = f"config_{i+1}.yml"
+        
+        # Full path to the config file
+        config_filepath = os.path.join(folder_path, config_filename)
+        
         try:
-            with open(filepath, 'w', encoding=encoding) as f:
-                yaml.dump(
-                    transformed_configs[0],
-                    f,
-                    Dumper=ForceLiteralDumper,
-                    default_flow_style=False,
-                    sort_keys=False,
-                    allow_unicode=True,
-                    width=1000
-                )
-            saved_filepaths.append(filepath)
+            with open(config_filepath, 'w', encoding=encoding) as file:
+                yaml.dump(config, file, Dumper=ForceLiteralDumper, default_flow_style=False, sort_keys=False)
+            
+            saved_filepaths.append(Path(config_filepath))
         except Exception as e:
-            show_message(f"Error saving config file '{filepath}': {e}")
-            return False, None
-    else:
-        # For multiple configs, generate unique filenames for each
-        for i, config in enumerate(transformed_configs):
-            # Generate a suffix based on the config's unique properties
-            suffix = generate_config_suffix(config)
-            
-            # Create a unique filename
-            unique_filename = f"{simple_base_name}_{suffix}.yml"
-            filepath = folder_path / unique_filename
-            
-            try:
-                with open(filepath, 'w', encoding=encoding) as f:
-                    yaml.dump(
-                        config,
-                        f,
-                        Dumper=ForceLiteralDumper,
-                        default_flow_style=False,
-                        sort_keys=False,
-                        allow_unicode=True,
-                        width=1000
-                    )
-                saved_filepaths.append(filepath)
-            except Exception as e:
-                show_message(f"Error saving config file '{filepath}': {e}")
-                # Continue with other configs even if one fails
+            show_message(f"Error saving config to '{config_filepath}': {e}")
+            # Continue with other configs even if one fails
     
     if saved_filepaths:
-        print(f"\nConfig files saved in directory: {folder_path}")
+        # Check which configs have been run already
+        cache_status = []
+        for filepath in saved_filepaths:
+            try:
+                with open(filepath, 'r') as f:
+                    config = yaml.safe_load(f)
+                
+                if "metadata" in config and "config_id" in config["metadata"]:
+                    config_id = config["metadata"]["config_id"]
+                    if cache_loaded and is_experiment_in_cache(config_id):
+                        cache_status.append(True)  # Already run
+                    else:
+                        cache_status.append(False)  # Not run yet
+                else:
+                    cache_status.append(None)  # No config_id
+            except Exception:
+                cache_status.append(None)  # Error reading file
+        
+        # Display the saved configs with cache status
+        show_message(f"Generated {len(saved_filepaths)} config files:")
+        for i, (filepath, is_cached) in enumerate(zip(saved_filepaths, cache_status), 1):
+            cache_indicator = ""
+            if is_cached is True:
+                cache_indicator = " [ALREADY RUN]"
+            elif is_cached is False:
+                cache_indicator = " [NEW]"
+            show_message(f"  {i}. {filepath}{cache_indicator}")
+        
+        # Extract and display the directory path
+        if saved_filepaths:
+            dir_path = saved_filepaths[0].parent
+            clear_screen()
+            print("=" * 80)
+            print(f"CONFIG FILES SAVED SUCCESSFULLY")
+            print("=" * 80)
+            print(f"\nDirectory: {dir_path}\n")
+            print(f"Number of config files: {len(saved_filepaths)}")
+            
+            # Show cache status summary if available
+            if cache_loaded:
+                new_count = sum(1 for status in cache_status if status is False)
+                cached_count = sum(1 for status in cache_status if status is True)
+                if cached_count > 0:
+                    print(f"\nCache status: {new_count} new, {cached_count} already run")
+            
+            # Display the CLI command to run the experiments
+            relative_dir_path = os.path.relpath(dir_path)
+            print("\nRun experiments with this command:")
+            print("-" * 60)
+            if len(saved_filepaths) == 1:
+                relative_path = os.path.relpath(saved_filepaths[0])
+                print(f"python -m veeksha.server_benchmark --config {relative_path}")
+            else:
+                print(f"python -m veeksha.server_benchmark --config-dir {relative_dir_path}")
+            print("-" * 60)
+            
+            print("\nPress any key to continue...")
+            getch()
         return True, saved_filepaths
     return False, None
 
@@ -560,7 +667,7 @@ def validate_config_compatibility(config_data):
                 for engine in engines:
                     if engine in ENGINE_PARAM_COMPATIBILITY and section_key in ENGINE_PARAM_COMPATIBILITY[engine]:
                         if param_key not in ENGINE_PARAM_COMPATIBILITY[engine][section_key]:
-                            warnings.append(f"Warning: Parameter '{section_key}.{param_key}' is not supported by engine '{engine}'")
+                            warnings.append(f"Parameter '{section_key}.{param_key}' is not supported by engine '{engine}'")
     
     return len(warnings) == 0, warnings
 
@@ -699,7 +806,8 @@ def display_section_menu(section_name, section_data, options_data):
                 value_display = "(long template...)"
             else:
                 value_str = repr(value); max_len = 70
-                value_display = value_str[:max_len-3] + '...' if len(value_str) > max_len else value_str
+                display_val = value_str[:max_len-3] + '...' if len(value_str) > max_len else value_str
+                value_display = display_val
             is_key_editable = is_editable(section_name, key, options_data)
             marker = "*" if is_key_editable else " "
             if is_key_editable: editable_keys_found = True
@@ -832,7 +940,8 @@ def edit_multi_value_field(section_key, item_key, section_data, current_value, a
             option_choice = get_single_key("Select option number, [T]ype custom, or [B]ack: ", option_allowed_chars)
             if option_choice == 'b':
                 continue
-            elif option_choice == 't':
+            
+            if option_choice == 't':
                 # Allow user to type a custom value
                 clear_screen()
                 print(f"--- Type Custom Value for {section_key}.{item_key} ---")
@@ -1003,7 +1112,7 @@ def get_single_key(prompt="", allowed_chars=None):
             print(char)  # Echo the character
             return char
 
-# --- File Operations ---
+# --- File operations ---
 
 def list_and_select_config(action_verb="load"):
     """Lists config files and prompts user for selection."""
@@ -1029,7 +1138,7 @@ def list_and_select_config(action_verb="load"):
             except ValueError: show_message("Invalid input.")
         else: show_message("Invalid choice.")
 
-# --- Main Execution Loop ---
+# --- Main execution loop ---
 def main():
     global CONFIG_OPTIONS, MODEL_MAPPING
     print("Loading initial configurations...")
@@ -1094,24 +1203,32 @@ def main():
                     if isinstance(saved_filepaths, list):
                         if len(saved_filepaths) == 1:
                             show_message(f"Config saved to '{saved_filepaths[0]}'")
+                            # For single config file, also show the command to run it
+                            relative_path = os.path.relpath(saved_filepaths[0])
+                            show_message(f"Run experiment with: python -m veeksha.server_benchmark --config {relative_path}")
                         else:
-                            show_message(f"Generated {len(saved_filepaths)} config files:")
-                            for i, filepath in enumerate(saved_filepaths, 1):
-                                show_message(f"  {i}. {filepath}")
+                            dir_path = saved_filepaths[0].parent
+                            clear_screen()
+                            print("=" * 80)
+                            print(f"CONFIG FILES SAVED SUCCESSFULLY")
+                            print("=" * 80)
+                            print(f"\nDirectory: {dir_path}\n")
+                            print(f"Number of config files: {len(saved_filepaths)}")
                             
-                            # Extract and display the directory path
-                            if saved_filepaths:
-                                dir_path = saved_filepaths[0].parent
-                                clear_screen()
-                                print("=" * 80)
-                                print(f"CONFIG FILES SAVED SUCCESSFULLY")
-                                print("=" * 80)
-                                print(f"\nDirectory: {dir_path}\n")
-                                print(f"Number of config files: {len(saved_filepaths)}")
-                                print("\nPress any key to continue...")
-                                getch()
+                            # Display the CLI command to run the experiments
+                            relative_dir_path = os.path.relpath(dir_path)
+                            print("\nRun experiments with this command:")
+                            print("-" * 60)
+                            print(f"python -m veeksha.server_benchmark --config-dir {relative_dir_path}")
+                            print("-" * 60)
+                            
+                            print("\nPress any key to continue...")
+                            getch()
                     else:
                         show_message(f"Config saved to '{saved_filepaths}'")
+                        # For single config file, also show the command to run it
+                        relative_path = os.path.relpath(saved_filepaths)
+                        show_message(f"Run experiment with: python -m veeksha.server_benchmark --config {relative_path}")
             else:
                 show_message("Save cancelled (error generating filename).")
 
@@ -1139,8 +1256,18 @@ def main():
     print("\nExiting config editor.")
 
 def config_editor_entrypoint():
-    # Check for essential files before starting
-    if not Path(DEFAULT_CONFIG_PATH).is_file(): print(f"FATAL: Default config '{DEFAULT_CONFIG_PATH}' not found."); sys.exit(1)
-    if not Path(OPTIONS_CONFIG_PATH).is_file(): print(f"FATAL: Options config '{OPTIONS_CONFIG_PATH}' not found."); sys.exit(1)
-    if not Path(MODEL_MAPPING_PATH).is_file(): print(f"FATAL: Model mapping '{MODEL_MAPPING_PATH}' not found."); sys.exit(1)
-    main()
+    """Entry point for the config editor when run as a module."""
+    try:
+        # Check if experiment cache is available
+        if CACHE_AVAILABLE:
+            cache = load_experiment_cache()
+            cache_count = len(cache.get("completed_experiments", []))
+            print(f"Experiment cache loaded: {cache_count} completed experiments")
+        
+        main()
+    except KeyboardInterrupt:
+        print("\nConfig editor exited.")
+    except Exception as e:
+        print(f"Error in config editor: {e}")
+        import traceback
+        traceback.print_exc()
