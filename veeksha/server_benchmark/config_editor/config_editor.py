@@ -250,7 +250,7 @@ def has_valid_parallel_dimensions(config_data, engine):
     
     return True
 
-def save_config(config_data, filename, encoding='utf-8'):
+def save_config(config_data, filename, encoding='utf-8', experiment_name=""):
     """Saves configuration data to YAML file(s) using the custom dumper."""
     if not filename:
         show_message("Error: Filename cannot be empty.")
@@ -355,7 +355,11 @@ def save_config(config_data, filename, encoding='utf-8'):
         clean_base_name = "config_" + "_".join(parts)
     
     # Create a folder name combining timestamp and clean base filename
-    folder_name = f"{timestamp}_{clean_base_name}"
+    # Use experiment_name if provided, otherwise use the auto-generated name
+    if experiment_name:
+        folder_name = f"{timestamp}_{experiment_name}"
+    else:
+        folder_name = f"{timestamp}_{clean_base_name}"
     folder_path = OUTPUT_DIR / folder_name
     
     # Create the folder
@@ -366,6 +370,12 @@ def save_config(config_data, filename, encoding='utf-8'):
     
     # For individual config files, use a simple naming scheme
     simple_base_name = "config"
+    
+    # Update the benchmark_config.output_dir field in each configuration if experiment_name is provided
+    if experiment_name:
+        for config in transformed_configs:
+            if 'benchmark_config' in config and isinstance(config['benchmark_config'], dict):
+                config['benchmark_config']['output_dir'] = f"results/{experiment_name}"
     
     # If there's only one config, save it with the original filename
     if len(transformed_configs) == 1:
@@ -414,6 +424,7 @@ def save_config(config_data, filename, encoding='utf-8'):
                 # Continue with other configs even if one fails
     
     if saved_filepaths:
+        print(f"\nConfig files saved in directory: {folder_path}")
         return True, saved_filepaths
     return False, None
 
@@ -566,7 +577,7 @@ def get_experiment_name():
     """Prompts user for a custom experiment name."""
     clear_screen()
     print("--- Experiment saving ---")
-    print("Please provide a name (leave blank to use auto-generated name):")
+    print("Please provide a name (leave blank to use auto-generated name). Setting a custom name will also change the output directory for this set of experiments:")
     name = input("> ").strip()
     return sanitize_for_filename(name) if name else ""
 
@@ -809,17 +820,56 @@ def edit_multi_value_field(section_key, item_key, section_data, current_value, a
             print("Select an option to add:")
             for i, option in enumerate(available_options):
                 print(f"  [{i+1}] {repr(option)}")
+            
+            # Add option to type a custom value
+            print("  [T] Type custom value")
             print("  [B] Back")
             print("-" * 20)
             
             # Define allowed characters for option selection
-            option_allowed_chars = ['b'] + [str(i+1) for i in range(min(9, len(available_options)))]
+            option_allowed_chars = ['b', 't'] + [str(i+1) for i in range(min(9, len(available_options)))]
             
-            option_choice = get_single_key("Select option number or [B]ack: ", option_allowed_chars)
+            option_choice = get_single_key("Select option number, [T]ype custom, or [B]ack: ", option_allowed_chars)
             if option_choice == 'b':
                 continue
-            
-            if option_choice.isdigit():
+            elif option_choice == 't':
+                # Allow user to type a custom value
+                clear_screen()
+                print(f"--- Type Custom Value for {section_key}.{item_key} ---")
+                print("Enter a custom value (or leave blank to cancel):")
+                custom_input = input("> ").strip()
+                
+                if not custom_input:
+                    continue
+                
+                # Try to convert the input to an appropriate type
+                try:
+                    # First check if it's a boolean
+                    if custom_input.lower() in ['true', 'false']:
+                        new_value = custom_input.lower() == 'true'
+                    # Then check if it's an integer
+                    elif custom_input.isdigit() or (custom_input.startswith('-') and custom_input[1:].isdigit()):
+                        new_value = int(custom_input)
+                    # Then check if it's a float
+                    elif '.' in custom_input:
+                        try:
+                            new_value = float(custom_input)
+                        except ValueError:
+                            new_value = custom_input
+                    else:
+                        new_value = custom_input
+                    
+                    updated_value = add_value_to_multi(current_value, new_value)
+                    section_data[item_key] = updated_value
+                    
+                    # Special handling for model name
+                    if section_key == 'model' and item_key == 'name' and not is_multi_value(updated_value):
+                        apply_model_mapping(section_data, new_value, current_mapping)
+                    
+                    show_message(f"Added custom value: {repr(new_value)}")
+                except ValueError as e:
+                    show_message(f"Invalid input: {e}")
+            elif option_choice.isdigit():
                 selected_index = int(option_choice) - 1
                 if 0 <= selected_index < len(available_options):
                     new_value = available_options[selected_index]
@@ -1039,7 +1089,7 @@ def main():
                 show_message(f"Using suggested config filename: {final_filename}")
 
             if final_filename:
-                success, saved_filepaths = save_config(current_config, final_filename)
+                success, saved_filepaths = save_config(current_config, final_filename, experiment_name=custom_name)
                 if success:
                     if isinstance(saved_filepaths, list):
                         if len(saved_filepaths) == 1:
@@ -1048,6 +1098,18 @@ def main():
                             show_message(f"Generated {len(saved_filepaths)} config files:")
                             for i, filepath in enumerate(saved_filepaths, 1):
                                 show_message(f"  {i}. {filepath}")
+                            
+                            # Extract and display the directory path
+                            if saved_filepaths:
+                                dir_path = saved_filepaths[0].parent
+                                clear_screen()
+                                print("=" * 80)
+                                print(f"CONFIG FILES SAVED SUCCESSFULLY")
+                                print("=" * 80)
+                                print(f"\nDirectory: {dir_path}\n")
+                                print(f"Number of config files: {len(saved_filepaths)}")
+                                print("\nPress any key to continue...")
+                                getch()
                     else:
                         show_message(f"Config saved to '{saved_filepaths}'")
             else:
