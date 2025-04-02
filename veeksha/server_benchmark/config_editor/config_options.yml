@@ -7,7 +7,6 @@ server:
     - vajra
     - vllm
     - sglang
-    - mlc_llm
   fixed_chunk_size:
     - 512
     - 1024

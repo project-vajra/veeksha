@@ -1,5 +1,5 @@
 python -m sglang.launch_server \
---model-path {{ openai_server_model }} \
+--model-path {{ model.identifier }} \
 --dtype auto \
 --port {{ port }} \
---tensor-parallel-size {{ tp }}
+--tensor-parallel-size {{ parallel_spec.tp_dimension }}

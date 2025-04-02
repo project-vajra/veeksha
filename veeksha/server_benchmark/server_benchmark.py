@@ -236,7 +236,7 @@ class OpenAIServerWrapper:
             ), "OpenAI API key is required for vLLM engine"
             template = env.get_template("vllm_template.jinja")
         elif openai_server_engine == "sglang":
-            template = env.get_template("sglang.jinja")
+            template = env.get_template("sglang_template.jinja")
 
         rope_scaling = (
             f'{{"type":"{rope_scaling_type}", "factor": {rope_scaling_factor}}}'
@@ -247,19 +247,26 @@ class OpenAIServerWrapper:
         )
 
         data = {
-            "openai_server_model": openai_server_model,
-            "openai_api_key": openai_api_key,
-            "tp": tp,
-            "pp": pp,
+            "model": {
+                "identifier": openai_server_model,
+                "chat_template": chat_template
+            },
+            "server": {
+                "openai_api_key": openai_api_key,
+                "fixed_chunk_size": fixed_chunk_size,
+                "min_chunk_size": min_chunk_size,
+                "max_chunk_size": max_chunk_size,
+                "schedule_policy": schedule_policy,
+                "scheduler_config": scheduler_config
+            },
+            "parallel_spec": {
+                "tp_dimension": tp,
+                "pp_dimension": pp
+            },
             "port": self.port,
             "rope_scaling": rope_scaling,
             "rope_scaling_type": rope_scaling_type,
             "rope_scaling_factor": rope_scaling_factor,
-            "fixed_chunk_size":fixed_chunk_size,
-            "min_chunk_size":min_chunk_size,
-            "max_chunk_size":max_chunk_size,
-            "schedule_policy": schedule_policy,
-            "scheduler_config": scheduler_config,
             "cuda_devices": cuda_devices,
             "drafter": drafter,
             "drafter_tokens": drafter_tokens,
@@ -300,7 +307,7 @@ class OpenAIServerWrapper:
                 openai_server_engine=openai_server_engine,
                 openai_server_model=openai_server_model,
                 openai_api_key=openai_api_key,
-                tp=tp,
+                tp=tp, 
                 pp=pp,
                 rope_scaling_type=("linear"),
                 rope_scaling_factor=4.0,
