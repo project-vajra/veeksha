@@ -11,7 +11,7 @@ import signal
 import socket
 import subprocess
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional
 
 import ray
 import yaml
@@ -35,6 +35,52 @@ logger = init_logger(__name__)
 EXPERIMENT_CACHE_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "experiment_cache.json"
 )
+
+# Define the path for the current experiment config file
+CURRENT_EXPERIMENT_CONFIG_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "current_experiment_config.json"
+)
+
+def get_experiment_config() -> Optional[Dict[str, Any]]:
+    """
+    Get the global experiment configuration.
+    
+    Returns:
+        Optional[Dict[str, Any]]: The current experiment configuration or None if not set
+    """
+    
+    # If not available in memory, try to load from file
+    if os.path.exists(CURRENT_EXPERIMENT_CONFIG_PATH):
+        try:
+            with open(CURRENT_EXPERIMENT_CONFIG_PATH, "r") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"Error loading experiment config from file: {e}")
+    
+    return None
+
+def set_experiment_config(config: Optional[Dict[str, Any]]) -> None:
+    """
+    Set the global experiment configuration.
+    
+    Args:
+        config (Optional[Dict[str, Any]]): The experiment configuration to set globally
+    """
+    # Also save to file for cross-process access
+    if config is not None:
+        try:
+            with open(CURRENT_EXPERIMENT_CONFIG_PATH, "w") as f:
+                json.dump(config, f)
+            logger.info(f"Saved experiment config to {CURRENT_EXPERIMENT_CONFIG_PATH}")
+        except IOError as e:
+            logger.error(f"Error saving experiment config to file: {e}")
+    else:
+        # If config is None, remove the file if it exists
+        if os.path.exists(CURRENT_EXPERIMENT_CONFIG_PATH):
+            try:
+                os.remove(CURRENT_EXPERIMENT_CONFIG_PATH)
+            except IOError as e:
+                logger.error(f"Error removing experiment config file: {e}")
 
 ResourceMapping = List[Tuple[str, int]]  # List of (node_ip, gpu_id)
 ReplicaResourceMapping = Dict[str, ResourceMapping]
@@ -554,6 +600,9 @@ def run_from_config(config_path: str):
         if not replica_resource_mapping:
             print("Waiting for GPU resources to be free...", flush=True)
             time.sleep(5)
+
+    # Set the global experiment configuration
+    set_experiment_config(config)
 
     # Run the benchmark
     success = run(
