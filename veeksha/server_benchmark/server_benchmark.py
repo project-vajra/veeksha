@@ -11,7 +11,7 @@ import signal
 import socket
 import subprocess
 import time
-from typing import Dict, Optional
+from typing import Any, Dict, Optional, Tuple, List
 
 import ray
 import yaml
@@ -512,8 +512,8 @@ def run_from_config(config_path: str):
 
     # Create configuration objects
     parallel_config = ParallelConfig(
-        tensor_parallel_size=parallel_spec.get("tp_dimension", None),
-        pipeline_parallel_size=parallel_spec.get("pp_dimension", None),
+        tensor_parallel_size=parallel_spec.get("tp_dimension", 1),
+        pipeline_parallel_size=parallel_spec.get("pp_dimension", 1),
     )
 
     model_config = ModelConfig(
@@ -617,6 +617,13 @@ def run_from_config(config_path: str):
     # If the experiment ran successfully and has a config_id, add it to the cache
     if success and "metadata" in config and "config_id" in config["metadata"]:
         add_experiment_to_cache(config["metadata"]["config_id"])
+    
+    # Clean up the current experiment config file
+    if os.path.exists(CURRENT_EXPERIMENT_CONFIG_PATH):
+        try:
+            os.remove(CURRENT_EXPERIMENT_CONFIG_PATH)
+        except IOError as e:
+            logger.error(f"Error deleting current experiment config file: {e}")
 
 
 def run(
@@ -695,8 +702,8 @@ def run(
                 f"Waiting for OPEN AI server to start. Port {openai_port} is not in use"
             )
             time.sleep(60)
-            if count > 5:
-                raise RuntimeError("OPEN AI server did not start after 6 mins")
+            if count > 1:
+                raise RuntimeError("OPEN AI server did not start after 2 minutes.")
             count += 1
 
         # Run the benchmark
@@ -806,7 +813,8 @@ def server_benchmark_entrypoint():
     failed_count = 0
 
     for i, config_path in enumerate(config_paths):
-        logger.info(f"Processing benchmark {i+1}/{len(config_paths)}: {config_path}")
+        logger.info(f"\n\n")
+        logger.info(f"---------- Processing benchmark {i+1}/{len(config_paths)}: {config_path} ----------")
 
         # Check if this experiment is in the cache before loading the full config
         try:
@@ -843,6 +851,13 @@ def server_benchmark_entrypoint():
         f"Benchmark summary: {completed_count} completed, {skipped_count} skipped (cached), {failed_count} failed"
     )
     logger.info(f"All {len(config_paths)} benchmarks processed")
+    
+    # Clean up the current experiment config file at the end of all experiments
+    if os.path.exists(CURRENT_EXPERIMENT_CONFIG_PATH):
+        try:
+            os.remove(CURRENT_EXPERIMENT_CONFIG_PATH)
+        except IOError as e:
+            logger.error(f"Error deleting current experiment config file: {e}")
 
 
 # Cache management functions

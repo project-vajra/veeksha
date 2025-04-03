@@ -105,5 +105,5 @@ benchmark_config:
     - 25.5
     - 50.0
   should_use_given_dir:
-    - true  # Parsed as boolean True
-    - false # Parsed as boolean False
+    - true
+    - false

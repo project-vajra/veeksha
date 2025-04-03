@@ -4,7 +4,6 @@ python -m vllm.entrypoints.openai.api_server \
 --api-key {{ server.openai_api_key }} \
 -tp {{ parallel_spec.tp_dimension }} \
 -pp {{ parallel_spec.pp_dimension }} \
---scheduling-policy {{ server.schedule_policy | upper }} \
 --chat-template "{{ model.chat_template }}" \
 --max-num-batched-tokens {{ server.fixed_chunk_size }} \
 --port {{ port }} \

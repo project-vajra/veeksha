@@ -542,40 +542,61 @@ def save_config(config_data, filename, encoding="utf-8", experiment_name=""):
         except Exception as e:
             show_message(f"Warning: Could not load experiment cache: {e}")
 
-    # Save each transformed config to a separate file
-    saved_filepaths = []
-
-    for i, config in enumerate(transformed_configs):
-        # Generate a suffix for this specific config
-        suffix = generate_config_suffix(config)
-
-        # For single configs, use the original filename
-        if len(transformed_configs) == 1:
-            config_filename = os.path.basename(filename)
+    # Group configurations by engine
+    configs_by_engine = {}
+    for config in transformed_configs:
+        if "server" in config and "openai_server_engine" in config["server"]:
+            engine = config["server"]["openai_server_engine"]
+            if engine not in configs_by_engine:
+                configs_by_engine[engine] = []
+            configs_by_engine[engine].append(config)
         else:
-            # For multiple configs, use a naming scheme based on the engine and other parameters
-            if suffix:
-                config_filename = f"config_{suffix}.yml"
+            # Handle configs without engine specified (unlikely)
+            if "unknown" not in configs_by_engine:
+                configs_by_engine["unknown"] = []
+            configs_by_engine["unknown"].append(config)
+
+    # Save each engine's configs in its own subdirectory
+    saved_filepaths = []
+    engines_with_configs = []
+
+    for engine, configs in configs_by_engine.items():
+        # Create engine-specific subdirectory
+        engine_folder_path = os.path.join(folder_path, sanitize_for_filename(engine))
+        os.makedirs(engine_folder_path, exist_ok=True)
+        engines_with_configs.append(engine)
+        
+        for i, config in enumerate(configs):
+            # Generate a suffix for this specific config
+            suffix = generate_config_suffix(config)
+
+            # For single configs in an engine, use a simpler naming scheme
+            if len(configs) == 1:
+                config_filename = f"{engine}.yml"
             else:
-                config_filename = f"config_{i+1}.yml"
+                # For multiple configs, use a naming scheme based on the engine and other parameters
+                if suffix:
+                    config_filename = f"config_{suffix}.yml"
+                else:
+                    config_filename = f"config_{i+1}.yml"
 
-        # Full path to the config file
-        config_filepath = os.path.join(folder_path, config_filename)
+            # Full path to the config file
+            config_filepath = os.path.join(engine_folder_path, config_filename)
 
-        try:
-            with open(config_filepath, "w", encoding=encoding) as file:
-                yaml.dump(
-                    config,
-                    file,
-                    Dumper=ForceLiteralDumper,
-                    default_flow_style=False,
-                    sort_keys=False,
-                )
+            try:
+                with open(config_filepath, "w", encoding=encoding) as file:
+                    yaml.dump(
+                        config,
+                        file,
+                        Dumper=ForceLiteralDumper,
+                        default_flow_style=False,
+                        sort_keys=False,
+                    )
 
-            saved_filepaths.append(Path(config_filepath))
-        except Exception as e:
-            show_message(f"Error saving config to '{config_filepath}': {e}")
-            # Continue with other configs even if one fails
+                saved_filepaths.append(Path(config_filepath))
+            except Exception as e:
+                show_message(f"Error saving config to '{config_filepath}': {e}")
+                # Continue with other configs even if one fails
 
     if saved_filepaths:
         # Check which configs have been run already
@@ -610,7 +631,7 @@ def save_config(config_data, filename, encoding="utf-8", experiment_name=""):
 
         # Extract and display the directory path
         if saved_filepaths:
-            dir_path = saved_filepaths[0].parent
+            main_dir_path = saved_filepaths[0].parent.parent
             clear_screen()
             # check cache status
             cached_count = 0
@@ -626,6 +647,7 @@ def save_config(config_data, filename, encoding="utf-8", experiment_name=""):
 
             print("=" * 80)
             print(f"Number of config files: {len(saved_filepaths)}")
+            print(f"Configs organized by engine: {', '.join(engines_with_configs)}")
 
             # Show cache status summary if available
             if cached_count > 0:
@@ -633,17 +655,26 @@ def save_config(config_data, filename, encoding="utf-8", experiment_name=""):
                     f"\nCache status: {new_count} new, {cached_count} already run"
                 )
 
-            # Display the CLI command to run the experiments
-            relative_dir_path = os.path.relpath(dir_path)
-            print("\nRun experiments with this command:")
+            # Display the CLI commands to run the experiments
+            relative_main_dir = os.path.relpath(main_dir_path)
+            print("\nRun experiments with these commands (one environment per engine):")
             print("-" * 60)
-            if len(saved_filepaths) == 1:
-                relative_path = os.path.relpath(saved_filepaths[0])
-                print(f"python -m veeksha.server_benchmark --config {relative_path}")
-            else:
-                print(
-                    f"python -m veeksha.server_benchmark --config-dir {relative_dir_path}"
-                )
+            
+            # Display command for each engine directory
+            for engine in engines_with_configs:
+                engine_dir = os.path.join(relative_main_dir, sanitize_for_filename(engine))
+                engine_configs = [p for p in saved_filepaths if sanitize_for_filename(engine) in str(p)]
+                if len(engine_configs) == 1:
+                    # For a single config, show the direct config command
+                    relative_path = os.path.relpath(engine_configs[0])
+                    print(f"# For {engine} engine:")
+                    print(f"python -m veeksha.server_benchmark --config {relative_path}")
+                else:
+                    # For multiple configs, show the config-dir command
+                    print(f"# For {engine} engine:")
+                    print(f"python -m veeksha.server_benchmark --config-dir {engine_dir}")
+                print()
+                
             print("-" * 60)
 
             print("\nPress any key to continue...")

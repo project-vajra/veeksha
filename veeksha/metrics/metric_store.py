@@ -1,6 +1,6 @@
 import json
 import os
-from typing import DefaultDict, Optional
+from typing import DefaultDict, Optional, Dict
 
 import pandas as pd
 import plotly_express as px
