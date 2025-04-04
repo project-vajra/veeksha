@@ -62,6 +62,8 @@ request_generator_config:
     - uniform
   trace_request_length_generator_trace_file:
     - data/processed_traces/sharegpt_8k_stats_llama2_tokenizer_filtered_v2.csv
+    - decode # special trace: auto generated from decode_experiment_spec.yml
+    - prefill # special trace: auto generated from prefill_experiment_spec.yml
 
 request_config:
   num_clients:

@@ -23,7 +23,6 @@ request_generator_config:
   request_interval_generator_provider: "poisson"
   request_length_generator_provider: "trace"
   trace_request_length_generator_trace_file: "data/processed_traces/sharegpt_8k_stats_llama2_tokenizer_filtered_v2.csv"
-  trace_file_name: "arxiv"
 
 request_config:
   num_clients: 2

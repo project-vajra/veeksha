@@ -1,0 +1,5 @@
+batch_size: 64
+profiling_iterations: 100
+num_requests: {{ batch_size }}
+prefill_tokens: 4096
+decode_tokens: {{ batch_size + profiling_iterations }}

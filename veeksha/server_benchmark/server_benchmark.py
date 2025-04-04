@@ -28,6 +28,7 @@ from veeksha.capacity_search.config.config import (
     ServerConfig,
 )
 from veeksha.logger import init_logger
+from veeksha.server_benchmark.config_editor.utils import generate_trace_csv
 
 logger = init_logger(__name__)
 
@@ -495,6 +496,23 @@ def run_from_config(config_path: str):
         "benchmark_config", default_config.get("benchmark_config", {})
     )
     parallel_spec = config.get("parallel_spec", default_config.get("parallel_spec", {}))
+
+    # Check if we need to generate a trace file
+    if "request_generator_config" in config and "trace_request_length_generator_trace_file" in config["request_generator_config"]:
+        trace_file_path = config["request_generator_config"]["trace_request_length_generator_trace_file"]
+        
+        # Check if the trace file is set to "prefill" or "decode"
+        if trace_file_path == "prefill" or trace_file_path == "decode":
+            logger.info(f"Generating {trace_file_path} trace file...")
+            
+            # Generate the trace file using the function from utils.py
+            generated_trace_path = generate_trace_csv(trace_file_path)
+            
+            # Update the config with the generated trace file path
+            config["request_generator_config"]["trace_request_length_generator_trace_file"] = generated_trace_path
+            request_generator["trace_request_length_generator_trace_file"] = generated_trace_path
+            
+            logger.info(f"Generated trace file at: {generated_trace_path}")
 
     # Log which sections are using provided vs default values
     for section in [

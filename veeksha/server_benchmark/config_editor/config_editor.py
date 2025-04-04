@@ -260,32 +260,43 @@ def transform_config_for_saving(config_data):
         return [config_copy]
 
     # Generate all possible combinations
+    # Start with a single empty combination
     combinations = [{}]
-
-    # For each section with multi-valued fields
+    
+    # Process each section with multi-valued fields
     for section_key, fields in multi_value_fields.items():
+        # For each section, we'll create new combinations
         new_combinations = []
-
+        
         # For each existing partial combination
         for combo in combinations:
-            # For each multi-valued field in this section
+            # Create temporary lists to store field values for this section
+            section_combinations = [{}]
+            
+            # Process each multi-valued field in this section
             for field_key, values in fields.items():
-                # For each value of this field
-                for value in values:
-                    # Create a new combination by adding this value
-                    new_combo = combo.copy()
-                    if section_key not in new_combo:
-                        new_combo[section_key] = {}
-                    if field_key not in new_combo[section_key]:
-                        new_combo[section_key][field_key] = value
-                    else:
-                        # If this section/field is already in the combination, update it
-                        new_combo[section_key][field_key] = value
-                    new_combinations.append(new_combo)
-
-        # If we added any new combinations, update our list
-        if new_combinations:
-            combinations = new_combinations
+                temp_combinations = []
+                
+                # For each existing partial section combination
+                for sec_combo in section_combinations:
+                    # For each value of this field
+                    for value in values:
+                        # Create a new section combination with this value
+                        new_sec_combo = sec_combo.copy()
+                        new_sec_combo[field_key] = value
+                        temp_combinations.append(new_sec_combo)
+                
+                # Update section_combinations with the new combinations
+                section_combinations = temp_combinations
+            
+            # Now combine each section combination with the existing partial combination
+            for sec_combo in section_combinations:
+                new_full_combo = combo.copy()
+                new_full_combo[section_key] = sec_combo
+                new_combinations.append(new_full_combo)
+        
+        # Update the combinations list with the new combinations
+        combinations = new_combinations
 
     # Now we have all possible combinations of multi-valued fields
     # We need to merge each combination with the original config
@@ -660,6 +671,12 @@ def save_config(config_data, filename, encoding="utf-8", experiment_name=""):
             print("\nRun experiments with these commands (one environment per engine):")
             print("-" * 60)
             
+            # Collect commands to save to a file
+            command_lines = []
+            command_lines.append("# Experiment run commands")
+            command_lines.append("# Generated on: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            command_lines.append("")
+            
             # Display command for each engine directory
             for engine in engines_with_configs:
                 engine_dir = os.path.join(relative_main_dir, sanitize_for_filename(engine))
@@ -668,14 +685,34 @@ def save_config(config_data, filename, encoding="utf-8", experiment_name=""):
                     # For a single config, show the direct config command
                     relative_path = os.path.relpath(engine_configs[0])
                     print(f"# For {engine} engine:")
-                    print(f"python -m veeksha.server_benchmark --config {relative_path}")
+                    command = f"python -m veeksha.server_benchmark --config {relative_path}"
+                    print(command)
+                    
+                    # Add to command lines
+                    command_lines.append(f"# For {engine} engine:")
+                    command_lines.append(command)
                 else:
                     # For multiple configs, show the config-dir command
                     print(f"# For {engine} engine:")
-                    print(f"python -m veeksha.server_benchmark --config-dir {engine_dir}")
+                    command = f"python -m veeksha.server_benchmark --config-dir {engine_dir}"
+                    print(command)
+                    
+                    # Add to command lines
+                    command_lines.append(f"# For {engine} engine:")
+                    command_lines.append(command)
                 print()
+                command_lines.append("")
                 
             print("-" * 60)
+            
+            # Save commands to a file in the experiment directory
+            commands_filepath = os.path.join(folder_path, "run_commands.txt")
+            try:
+                with open(commands_filepath, "w", encoding="utf-8") as f:
+                    f.write("\n".join(command_lines))
+                print(f"\nRun commands saved to: {commands_filepath}")
+            except Exception as e:
+                print(f"Error saving commands to file: {e}")
 
             print("\nPress any key to continue...")
             getch()
@@ -713,6 +750,32 @@ def generate_config_suffix(config):
             # Only add pp if it's not the default value of 1
             if pp != 1:
                 parts.append(f"pp{sanitize_for_filename(str(pp))}")
+    
+    # Add trace file information if present
+    if "request_generator_config" in config:
+        req_gen_config = config["request_generator_config"]
+        if "request_length_generator_provider" in req_gen_config and req_gen_config["request_length_generator_provider"] == "trace":
+            if "trace_request_length_generator_trace_file" in req_gen_config:
+                trace_file = req_gen_config["trace_request_length_generator_trace_file"]
+                if trace_file:
+                    # Extract just the base name without path and extension
+                    if isinstance(trace_file, str):
+                        try:
+                            # For special trace names like 'decode' or 'prefill'
+                            if trace_file in ["decode", "prefill"]:
+                                trace_part = trace_file
+                            else:
+                                # For regular trace files with paths
+                                trace_part = Path(trace_file).stem
+                                # If it's a complex path, get just the last part
+                                if "_" in trace_part:
+                                    trace_part = trace_part.split("_")[0]
+                            if trace_part:
+                                parts.append(f"trace_{sanitize_for_filename(trace_part)}")
+                        except Exception:
+                            # Fallback if path handling fails
+                            trace_name = sanitize_for_filename(str(trace_file))
+                            parts.append(f"trace_{trace_name[:10]}")  # Limit length
 
     # If we couldn't generate any meaningful parts, use a random suffix
     if not parts:
