@@ -103,7 +103,7 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             num_output_tokens=num_output_tokens,
             corpus_lines=self.corpus_lines,
         )
-        default_sampling_params = {"max_tokens": num_output_tokens}
+        default_sampling_params = {"max_tokens": num_output_tokens, "ignore_eos": True}
         default_sampling_params.update(
             self.client_config.additional_sampling_params_dict
         )

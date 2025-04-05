@@ -34,8 +34,8 @@ class ServerConfig:
     fixed_chunk_size: Optional[int] = None
     min_chunk_size: Optional[int] = None
     max_chunk_size: Optional[int] = None
-    schedule_policy: Optional[str] = None
-    scheduler_config: Optional[str] = None
+    request_prioratizer_type: Optional[str] = None
+    scheduler_type: Optional[str] = None
 
     def get_key(self):
         return f"{self.openai_server_engine}{self.openai_api_url}{self.openai_api_key}"
@@ -51,8 +51,8 @@ class ServerConfig:
             "fixed_chunk_size": self.fixed_chunk_size,
             "min_chunk_size": self.min_chunk_size,
             "max_chunk_size": self.max_chunk_size,
-            "schedule_policy": self.schedule_policy,
-            "scheduler_config": self.scheduler_config,
+            "request_prioratizer_type": self.request_prioratizer_type,
+            "scheduler_type": self.scheduler_type,
         }
 
 
@@ -80,7 +80,6 @@ class ModelConfig:
 
 @dataclass
 class RequestGeneratorConfig:
-    start_qps: float
     request_interval_generator_provider: str
     request_length_generator_provider: str
     request_generator_max_tokens: Optional[int] = None
@@ -102,13 +101,13 @@ class RequestGeneratorConfig:
     trace_file_name: Optional[str] = None
 
     def get_key(self):
-        key = f"{self.request_interval_generator_provider}_{self.request_length_generator_provider}_{self.start_qps}"
+        key = f"{self.request_interval_generator_provider}_{self.request_length_generator_provider}"
         if self.request_interval_generator_provider == "gamma":
             key += f"_{self.gamma_request_interval_generator_cv}"
         return key
 
     def get_human_readable_name(self):
-        return f"Start QPS: {self.start_qps}, Request interval generator: {self.request_interval_generator_provider}, Request length generator: {self.request_length_generator_provider}"
+        return f"Request interval generator: {self.request_interval_generator_provider}, Request length generator: {self.request_length_generator_provider}"
 
     def to_config_dict(self):
         config_dict = {
@@ -236,13 +235,13 @@ class JobConfig:
         request_generator_config: RequestGeneratorConfig,
         client_config: ClientConfig,
         server_config: ServerConfig,
+        start_qps: float = 1,
     ):
         self.model_config = model_config
         self.request_generator_config = request_generator_config
         self.client_config = client_config
         self.server_config = server_config
-
-        self.start_qps = self.request_generator_config.start_qps
+        self.start_qps = start_qps
 
     def get_key(self):
         config_keys = [

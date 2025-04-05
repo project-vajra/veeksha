@@ -1,6 +1,8 @@
 import multiprocessing
+import os
 import platform
 import random
+import shutil
 import threading
 import time
 from multiprocessing import Queue
@@ -83,9 +85,9 @@ def dispatch_requests(
             while not stop_event.is_set():
                 if time.monotonic() - request_start_time >= next_request_interval:
                     break
-                time.sleep(0.01)
+                time.sleep(next_request_interval)
         else:
-            time.sleep(0.01)
+            time.sleep(0.005)
 
 
 def process_results(
@@ -280,4 +282,14 @@ if __name__ == "__main__":
 
     benchmark_config: BenchmarkConfig = BenchmarkConfig.create_from_cli_args()
     random.seed(benchmark_config.seed)
+
+    # setup output directory
+    # delete output directory if exists
+    if os.path.exists(benchmark_config.metrics_config.output_dir):
+        shutil.rmtree(benchmark_config.metrics_config.output_dir)
+    
+    os.makedirs(benchmark_config.metrics_config.output_dir, exist_ok=True)
+
     run_benchmark(benchmark_config=benchmark_config)
+
+

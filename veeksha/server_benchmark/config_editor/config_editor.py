@@ -6,6 +6,8 @@ from pathlib import Path
 
 import yaml
 
+from veeksha.server_benchmark.utils import get_config_hash
+
 # Import cache functions from server_benchmark
 try:
     from veeksha.server_benchmark.server_benchmark import (
@@ -32,9 +34,9 @@ except ImportError:
         except (json.JSONDecodeError, FileNotFoundError):
             return {"completed_experiments": []}
 
-    def is_experiment_in_cache(config_id):
+    def is_experiment_in_cache(config_hash):
         cache = load_experiment_cache()
-        return config_id in cache["completed_experiments"]
+        return config_hash in cache["completed_experiments"]
 
 
 # For single keypress detection
@@ -94,8 +96,8 @@ ENGINE_PARAM_COMPATIBILITY = {
         "server": [
             "openai_server_engine",
             "openai_api_url",
-            "schedule_policy",
-            "scheduler_config",
+            "request_prioratizer_type",
+            "scheduler_type",
             "fixed_chunk_size",
             "min_chunk_size",
             "max_chunk_size",
@@ -109,7 +111,7 @@ ENGINE_PARAM_COMPATIBILITY = {
         "server": [
             "openai_server_engine",
             "openai_api_url",
-            "schedule_policy",
+            "request_prioratizer_type",
             "fixed_chunk_size",
             "openai_api_key",
             "openai_api_port",
@@ -241,22 +243,6 @@ def transform_config_for_saving(config_data):
             else:
                 config_copy[section_key] = section_data
 
-        # Generate a unique ID based on the config content
-        config_copy_for_hash = json.loads(json.dumps(config_copy))
-        # Remove output_dir from benchmark_config to avoid hash changes when only the output directory changes
-        if "benchmark_config" in config_copy_for_hash and isinstance(config_copy_for_hash["benchmark_config"], dict):
-            if "output_dir" in config_copy_for_hash["benchmark_config"]:
-                del config_copy_for_hash["benchmark_config"]["output_dir"]
-        
-        config_str = json.dumps(config_copy_for_hash, sort_keys=True)
-        hash_obj = hashlib.md5(config_str.encode())
-        config_id = hash_obj.hexdigest()
-
-        # Add the config ID to the config
-        if "metadata" not in config_copy:
-            config_copy["metadata"] = {}
-        config_copy["metadata"]["config_id"] = config_id
-
         return [config_copy]
 
     # Generate all possible combinations
@@ -339,22 +325,6 @@ def transform_config_for_saving(config_data):
                     config_copy[section_key] = filter_params_for_engine(
                         section_key, config_copy[section_key], engine
                     )
-
-        # Generate a unique ID based on the config content
-        config_copy_for_hash = json.loads(json.dumps(config_copy))
-        # Remove output_dir from benchmark_config to avoid hash changes when only the output directory changes
-        if "benchmark_config" in config_copy_for_hash and isinstance(config_copy_for_hash["benchmark_config"], dict):
-            if "output_dir" in config_copy_for_hash["benchmark_config"]:
-                del config_copy_for_hash["benchmark_config"]["output_dir"]
-                
-        config_str = json.dumps(config_copy_for_hash, sort_keys=True)
-        hash_obj = hashlib.md5(config_str.encode())
-        config_id = hash_obj.hexdigest()
-
-        # Add the config ID to the config
-        if "metadata" not in config_copy:
-            config_copy["metadata"] = {}
-        config_copy["metadata"]["config_id"] = config_id
 
         result_configs.append(config_copy)
 
@@ -617,14 +587,11 @@ def save_config(config_data, filename, encoding="utf-8", experiment_name=""):
                 with open(filepath, "r") as f:
                     config = yaml.safe_load(f)
 
-                if "metadata" in config and "config_id" in config["metadata"]:
-                    config_id = config["metadata"]["config_id"]
-                    if cache_loaded and is_experiment_in_cache(config_id):
-                        cache_status.append(True)  # Already run
-                    else:
-                        cache_status.append(False)  # Not run yet
+                config_hash = get_config_hash(config)
+                if cache_loaded and is_experiment_in_cache(config_hash):
+                    cache_status.append(True)  # Already run
                 else:
-                    cache_status.append(None)  # No config_id
+                    cache_status.append(False)  # Not run yet
             except Exception:
                 cache_status.append(None)  # Error reading file
 

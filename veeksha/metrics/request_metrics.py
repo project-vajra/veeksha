@@ -63,12 +63,12 @@ class RequestMetrics:
         """
         if not self.inter_token_times or self.num_output_tokens == 0:
             return []
-            
+
         arrival_times = []
-        cumulative_time = self.request_dispatched_at + self.inter_token_times[0]
-        
-        for t in self.inter_token_times[1:]:
+        cumulative_time = self.request_dispatched_at
+
+        for t in self.inter_token_times:
             cumulative_time += t
             arrival_times.append(cumulative_time)
-                
+
         return arrival_times

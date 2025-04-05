@@ -6,8 +6,8 @@ server:
   fixed_chunk_size: 512
   min_chunk_size: 1
   max_chunk_size: 512
-  schedule_policy: fcfs
-  scheduler_config: FIXED_CHUNK
+  request_prioratizer_type: fcfs
+  scheduler_type: FIXED_CHUNK
 
 model:
   name: llama-3-8b

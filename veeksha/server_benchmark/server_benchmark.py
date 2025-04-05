@@ -11,8 +11,11 @@ import signal
 import socket
 import subprocess
 import time
+import traceback
+from enum import Enum
 from typing import Any, Dict, Optional, Tuple, List
 
+import numpy as np
 import ray
 import yaml
 from jinja2 import Environment, FileSystemLoader
@@ -28,7 +31,8 @@ from veeksha.capacity_search.config.config import (
     ServerConfig,
 )
 from veeksha.logger import init_logger
-from veeksha.server_benchmark.config_editor.utils import generate_trace_csv
+from veeksha.server_benchmark.utils import get_config_hash
+
 
 logger = init_logger(__name__)
 
@@ -41,6 +45,15 @@ EXPERIMENT_CACHE_PATH = os.path.join(
 CURRENT_EXPERIMENT_CONFIG_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "current_experiment_config.json"
 )
+
+MICROBENCHMARK_PROFILE_ITERATIONS = 100
+
+
+class BenchmarkType(Enum):
+    PREFILL_MICROBENCHMARK = "prefill_microbenchmark"
+    DECODE_MICROBENCHMARK = "decode_microbenchmark"
+    MIXED_WORKLOAD = "mixed_workload"
+
 
 def get_experiment_config() -> Optional[Dict[str, Any]]:
     """
@@ -275,8 +288,8 @@ class OpenAIServerWrapper:
         fixed_chunk_size=512,
         min_chunk_size=1,
         max_chunk_size=512,
-        schedule_policy=None,
-        scheduler_config="FIXED_CHUNK",
+        request_prioratizer_type=None,
+        scheduler_type="FIXED_CHUNK",
         drafter=None,
         drafter_tokens=10,
         drafter_rope_scaling_type=None,
@@ -317,8 +330,8 @@ class OpenAIServerWrapper:
                 "fixed_chunk_size": fixed_chunk_size,
                 "min_chunk_size": min_chunk_size,
                 "max_chunk_size": max_chunk_size,
-                "schedule_policy": schedule_policy,
-                "scheduler_config": scheduler_config,
+                "request_prioratizer_type": request_prioratizer_type,
+                "scheduler_type": scheduler_type,
             },
             "parallel_spec": {"tp_dimension": tp, "pp_dimension": pp},
             "port": self.port,
@@ -349,8 +362,8 @@ class OpenAIServerWrapper:
         fixed_chunk_size=512,
         min_chunk_size=1,
         max_chunk_size=512,
-        schedule_policy="fcfs",
-        scheduler_config="FIXED_CHUNK",
+        request_prioratizer_type="fcfs",
+        scheduler_type="FIXED_CHUNK",
         drafter=None,
         drafter_tokens=10,
         chat_template=None,
@@ -372,8 +385,8 @@ class OpenAIServerWrapper:
                 fixed_chunk_size=fixed_chunk_size,
                 min_chunk_size=min_chunk_size,
                 max_chunk_size=max_chunk_size,
-                schedule_policy=schedule_policy,
-                scheduler_config=scheduler_config,
+                request_prioratizer_type=request_prioratizer_type,
+                scheduler_type=scheduler_type,
                 drafter=drafter,
                 drafter_tokens=drafter_tokens,
                 drafter_rope_scaling_type=("linear"),
@@ -467,18 +480,70 @@ def run_from_config(config_path: str):
         config = yaml.safe_load(file)
 
     # Check if this experiment is already in the cache
-    if "metadata" in config and "config_id" in config["metadata"]:
-        config_id = config["metadata"]["config_id"]
-        if is_experiment_in_cache(config_id):
-            logger.info(
-                f"Experiment with config_id {config_id} already completed, skipping"
-            )
-            return
-        logger.info(f"Running experiment with config_id {config_id}")
-    else:
-        logger.warning(
-            f"Config file {config_path} does not have a config_id, cannot use cache"
+    config_hash = get_config_hash(config)
+    if is_experiment_in_cache(config_hash):
+        logger.info(
+            f"Experiment with config_hash {config_hash} already completed, skipping"
         )
+        return
+
+    logger.info(f"Running experiment with config_hash {config_hash}")
+
+    benchmark_type = BenchmarkType.MIXED_WORKLOAD
+
+    if config["benchmark_config"]["benchmark_type"] == "decode":
+        assert "decode_benchmark_config" in config
+        config["request_generator_config"] = {}
+        config["request_generator_config"]["request_interval_generator_provider"] = "static"
+        config["request_generator_config"]["request_length_generator_provider"] = "fixed"
+        num_prefill_tokens = config["decode_benchmark_config"]["context_length"]
+        num_decode_tokens = config["decode_benchmark_config"]["batch_size"] + MICROBENCHMARK_PROFILE_ITERATIONS
+        config["request_generator_config"]["fixed_request_generator_prefill_tokens"] = num_prefill_tokens
+        config["request_generator_config"]["fixed_request_generator_decode_tokens"] = num_decode_tokens
+        config["request_generator_config"]["request_generator_max_tokens"] = num_prefill_tokens + num_decode_tokens
+        config["server"]["fixed_chunk_size"] = 2 * num_prefill_tokens
+        config["server"]["scheduler_type"] = "FIXED_CHUNK"
+        config["server"]["request_prioratizer_type"] = "fcfs"
+        benchmark_type = BenchmarkType.DECODE_MICROBENCHMARK
+    elif config["benchmark_config"]["benchmark_type"] == "prefill":
+        assert "prefill_benchmark_config" in config
+        config["request_generator_config"] = {}
+        config["request_generator_config"]["request_interval_generator_provider"] = "static"
+        config["request_generator_config"]["request_length_generator_provider"] = "fixed"
+        num_prefill_tokens = config["prefill_benchmark_config"]["context_length"]
+        num_decode_tokens = 1
+        config["request_generator_config"]["fixed_request_generator_prefill_tokens"] = num_prefill_tokens
+        config["request_generator_config"]["fixed_request_generator_decode_tokens"] = num_decode_tokens
+        config["request_generator_config"]["request_generator_max_tokens"] = num_prefill_tokens + num_decode_tokens
+        config["server"]["fixed_chunk_size"] = 2 * num_prefill_tokens
+        config["server"]["scheduler_type"] = "FIXED_CHUNK"
+        config["server"]["request_prioratizer_type"] = "fcfs"
+        config["request_config"]["num_clients"] = 1
+        config["request_config"]["num_concurrent_requests_per_client"] = 1
+        benchmark_type = BenchmarkType.PREFILL_MICROBENCHMARK
+
+    assert "request_generator_config" in config
+
+    # set the qps value for benchmark config based on request generator config
+    request_generator_config = config["request_generator_config"]
+    if request_generator_config["request_interval_generator_provider"] == "static":
+        config["benchmark_config"]["qps"] = 0
+    elif request_generator_config["request_interval_generator_provider"] == "gamma":
+        config["benchmark_config"]["qps"] = request_generator_config["gamma_request_interval_generator_qps"]
+    elif request_generator_config["request_interval_generator_provider"] == "poisson":
+        config["benchmark_config"]["qps"] = request_generator_config["poisson_request_interval_generator_qps"]
+    else:
+        raise ValueError(f"Unknown request interval generator provider: {request_generator_config['request_interval_generator_provider']}")
+
+    assert "scheduler_type" in config["server"]
+
+    if config["server"]["scheduler_type"] == "FIXED_CHUNK":
+        assert "fixed_chunk_size" in config["server"]
+        config["server"]["min_chunk_size"] = config["server"]["fixed_chunk_size"]
+        config["server"]["max_chunk_size"] = config["server"]["fixed_chunk_size"]
+    else:
+        raise ValueError(f"Unknown scheduler type: {config['server']['scheduler_type']}")
+
 
     # Fetch the default engine configuration so that we don't have missing keys
     default_config = get_default_config(config["server"]["openai_server_engine"])
@@ -496,23 +561,6 @@ def run_from_config(config_path: str):
         "benchmark_config", default_config.get("benchmark_config", {})
     )
     parallel_spec = config.get("parallel_spec", default_config.get("parallel_spec", {}))
-
-    # Check if we need to generate a trace file
-    if "request_generator_config" in config and "trace_request_length_generator_trace_file" in config["request_generator_config"]:
-        trace_file_path = config["request_generator_config"]["trace_request_length_generator_trace_file"]
-        
-        # Check if the trace file is set to "prefill" or "decode"
-        if trace_file_path == "prefill" or trace_file_path == "decode":
-            logger.info(f"Generating {trace_file_path} trace file...")
-            
-            # Generate the trace file using the function from utils.py
-            generated_trace_path = generate_trace_csv(trace_file_path)
-            
-            # Update the config with the generated trace file path
-            config["request_generator_config"]["trace_request_length_generator_trace_file"] = generated_trace_path
-            request_generator["trace_request_length_generator_trace_file"] = generated_trace_path
-            
-            logger.info(f"Generated trace file at: {generated_trace_path}")
 
     # Log which sections are using provided vs default values
     for section in [
@@ -542,6 +590,7 @@ def run_from_config(config_path: str):
     chat_template = model.get("chat_template", "")
 
     # Build request generator config using the extracted request_generator dictionary
+    print(request_generator)
     request_generator_config = RequestGeneratorConfig(**request_generator)
     logger.info(f"Final request generator config: {request_generator}")
 
@@ -575,8 +624,8 @@ def run_from_config(config_path: str):
         "fixed_chunk_size",
         "min_chunk_size",
         "max_chunk_size",
-        "schedule_policy",
-        "scheduler_config",
+        "request_prioratizer_type",
+        "scheduler_type",
     ]
 
     server_config_dict = {
@@ -630,12 +679,13 @@ def run_from_config(config_path: str):
         openai_port,
         parallel_config,
         chat_template,
+        benchmark_type,
     )
 
-    # If the experiment ran successfully and has a config_id, add it to the cache
-    if success and "metadata" in config and "config_id" in config["metadata"]:
-        add_experiment_to_cache(config["metadata"]["config_id"])
-    
+    # If the experiment ran successfully and has a config_hash, add it to the cache
+    if success and config_hash:
+        add_experiment_to_cache(config_hash)
+
     # Clean up the current experiment config file
     if os.path.exists(CURRENT_EXPERIMENT_CONFIG_PATH):
         try:
@@ -651,6 +701,7 @@ def run(
     openai_port: int,
     parallel_config: ParallelConfig,
     chat_template: str,
+    benchmark_type: BenchmarkType,
 ):
     """
     Main function
@@ -693,8 +744,8 @@ def run(
                 fixed_chunk_size=job_config.server_config.fixed_chunk_size,
                 min_chunk_size=job_config.server_config.min_chunk_size,
                 max_chunk_size=job_config.server_config.max_chunk_size,
-                schedule_policy=job_config.server_config.schedule_policy,
-                scheduler_config=job_config.server_config.scheduler_config,
+                request_prioratizer_type=job_config.server_config.request_prioratizer_type,
+                scheduler_type=job_config.server_config.scheduler_type,
                 chat_template=chat_template,
             )
         )
@@ -740,59 +791,12 @@ def run(
             return False
 
         # compute tbt for decode tokens decoded with batch_size
-        try:
-            # Get the output directory from benchmark_config
-            output_dir = benchmark_config.output_dir
-            metrics_file = os.path.join(output_dir, "request_level_metrics.json")
-            
-            if os.path.exists(metrics_file):
-                logger.info(f"Computing filtered tbt values for {metrics_file}")
-                
-                # Read the metrics file
-                with open(metrics_file, 'r') as f:
-                    metrics_data = json.load(f)
-                
-                # Filter the tbt values
-                filtered_data = filter_tbt_values_in_common_window(metrics_data)
-                
-                # Add some statistics
-                total_original_tokens = sum(len(tbt) for tbt in metrics_data["tbt"])
-                total_filtered_tokens = sum(len(tbt) for tbt in filtered_data["filtered_tbt"])
-                
-                filtered_data["stats"] = {
-                    "total_original_tokens": total_original_tokens,
-                    "total_filtered_tokens": total_filtered_tokens,
-                    "percentage_tokens_retained": (total_filtered_tokens / total_original_tokens * 100) if total_original_tokens > 0 else 0,
-                }
-                
-                # Write the filtered data to file
-                filtered_output_file = os.path.join(output_dir, "filtered_tbt_values.json")
-                with open(filtered_output_file, 'w') as f:
-                    json.dump(filtered_data, f, indent=2)
-                
-                logger.info(f"Filtered tbt values written to {filtered_output_file}")
-                logger.info(f"Window: {filtered_data['window_start']:.4f}s to {filtered_data['window_end']:.4f}s (duration: {filtered_data['window_duration']:.4f}s)")
-                logger.info(f"Retained {total_filtered_tokens}/{total_original_tokens} tokens ({filtered_data['stats']['percentage_tokens_retained']:.2f}%)")
-                
-                # Log information about request ordering
-                if "request_order" in filtered_data and filtered_data["request_order"]:
-                    logger.info(f"Requests ordered by first token arrival time (earliest first): {filtered_data['request_order']}")
-                    
-                    # Log the first few requests with their arrival times
-                    if "first_token_times" in filtered_data and filtered_data["first_token_times"]:
-                        first_tokens_info = []
-                        for req_idx in filtered_data["request_order"][:5]:  # Show first 5 requests
-                            if str(req_idx) in filtered_data["first_token_times"] or req_idx in filtered_data["first_token_times"]:
-                                time_val = filtered_data["first_token_times"].get(str(req_idx), filtered_data["first_token_times"].get(req_idx))
-                                first_tokens_info.append(f"Request {req_idx}: {time_val:.4f}s")
-                        
-                        if first_tokens_info:
-                            logger.info(f"First token arrival times (first 5 requests): {', '.join(first_tokens_info)}")
-            else:
-                logger.warning(f"Metrics file not found: {metrics_file}")
-        except Exception as e:
-            logger.error(f"Error computing filtered tbt values: {str(e)}")
-            # Don't fail the overall process if filtering fails
+        if benchmark_type == BenchmarkType.DECODE_MICROBENCHMARK:
+            try:
+                log_decode_batch_stats(benchmark_config.output_dir)
+            except Exception as e:
+                traceback.print_exc()
+                return False
 
         return True
     except Exception as e:
@@ -889,23 +893,6 @@ def server_benchmark_entrypoint():
         logger.info(f"\n\n")
         logger.info(f"---------- Processing benchmark {i+1}/{len(config_paths)}: {config_path} ----------")
 
-        # Check if this experiment is in the cache before loading the full config
-        try:
-            with open(config_path, "r") as file:
-                config = yaml.safe_load(file)
-
-            if "metadata" in config and "config_id" in config["metadata"]:
-                config_id = config["metadata"]["config_id"]
-                if is_experiment_in_cache(config_id):
-                    logger.info(
-                        f"Experiment with config_id {config_id} already completed, skipping"
-                    )
-                    skipped_count += 1
-                    continue
-        except Exception as e:
-            logger.error(f"Error checking cache for {config_path}: {str(e)}")
-            # Continue with normal execution if we can't check the cache
-
         try:
             run_from_config(config_path)
             logger.info(
@@ -916,7 +903,7 @@ def server_benchmark_entrypoint():
             logger.error(
                 f"Error running benchmark {i+1}/{len(config_paths)}: {config_path}"
             )
-            logger.error(f"Error details: {str(e)}")
+            traceback.print_exc()
             logger.error("Continuing with next benchmark...")
             failed_count += 1
 
@@ -939,7 +926,7 @@ def load_experiment_cache():
     Load the experiment cache from disk.
 
     Returns:
-        dict: A dictionary of completed experiment config_ids
+        dict: A dictionary of completed experiment config_hashs
     """
     if not os.path.exists(EXPERIMENT_CACHE_PATH):
         return {"completed_experiments": []}
@@ -968,44 +955,51 @@ def save_experiment_cache(cache):
         json.dump(cache, f, indent=2)
 
 
-def is_experiment_in_cache(config_id):
+def is_experiment_in_cache(config_hash):
     """
-    Check if an experiment with the given config_id is in the cache.
+    Check if an experiment with the given config_hash is in the cache.
 
     Args:
-        config_id (str): The config_id to check
+        config_hash (str): The config_hash to check
 
     Returns:
         bool: True if the experiment is in the cache, False otherwise
     """
     cache = load_experiment_cache()
-    return config_id in cache["completed_experiments"]
+    return config_hash in cache["completed_experiments"]
 
 
-def add_experiment_to_cache(config_id):
+def add_experiment_to_cache(config_hash):
     """
-    Add an experiment with the given config_id to the cache.
+    Add an experiment with the given config_hash to the cache.
 
     Args:
-        config_id (str): The config_id to add
+        config_hash (str): The config_hash to add
     """
     cache = load_experiment_cache()
-    if config_id not in cache["completed_experiments"]:
-        cache["completed_experiments"].append(config_id)
+    if config_hash not in cache["completed_experiments"]:
+        cache["completed_experiments"].append(config_hash)
         save_experiment_cache(cache)
-        logger.info(f"Added experiment with config_id {config_id} to cache")
+        logger.info(f"Added experiment with config_hash {config_hash} to cache")
 
 
-def filter_tbt_values_in_common_window(metrics_data: Dict[str, Any]):
+def log_decode_batch_stats(output_dir: str):
     """
-    Filter tbt values to only include tokens that arrived within a common time window.
+    Log decode batch statistics.
     
     Args:
-        metrics_data: Dictionary containing benchmark metrics data
-        
+        output_dir: Directory to save the filtered tbt values
     Returns:
-        Dictionary with filtered tbt values and window information
+        None
     """
+    metrics_file = os.path.join(output_dir, "request_level_metrics.json")
+
+    assert os.path.exists(metrics_file)
+    
+    # Read the metrics file
+    with open(metrics_file, 'r') as f:
+        metrics_data = json.load(f)
+
     token_arrival_times = metrics_data["token_arrival_times"]
     tbt_values = metrics_data["tbt"]
     
@@ -1017,69 +1011,34 @@ def filter_tbt_values_in_common_window(metrics_data: Dict[str, Any]):
     # (the time when the first request completes)
     earliest_last_token_time = min(arr[-1] for arr in token_arrival_times)
     
-    # Check if we have a valid window
-    if latest_first_token_time >= earliest_last_token_time:
-        # No overlapping window - all tokens have already completed by the time the latest first token appears
-        return {
-            "original_tbt": tbt_values,
-            "filtered_tbt": [[] for _ in tbt_values],
-            "filtered_token_indices": [[] for _ in tbt_values],
-            "window_start": latest_first_token_time,
-            "window_end": earliest_last_token_time,
-            "window_duration": earliest_last_token_time - latest_first_token_time,
-            "error": "No overlapping generation window found. The earliest request finished before the latest request started."
-        }
-    
+    assert latest_first_token_time <= earliest_last_token_time, "No overlapping generation window found. The earliest request finished before the latest request started."
+
+    logger.info(f"Analyzing decode batch runtime in window: [{latest_first_token_time}, {earliest_last_token_time}]")
+
     # Create filtered tbt values
     filtered_tbt_values = []
-    filtered_token_indices = []
     
-    for i, (arrivals, tbts) in enumerate(zip(token_arrival_times, tbt_values)):
-        # Skip empty lists
-        if not arrivals or not tbts:
-            filtered_tbt_values.append([])
-            filtered_token_indices.append([])
-            continue
-            
-        # Find indices of tokens that fall within the window
-        filtered_indices = []
-        filtered_tbts = []
-        
-        for j, arrival_time in enumerate(arrivals):
-            # We need j-1 for tbt index since tbt[0] corresponds to the time between token 0 and 1
-            # Also, we need to check j > 0 because the first token doesn't have a tbt value
-            if latest_first_token_time <= arrival_time <= earliest_last_token_time and j > 0 and j-1 < len(tbts):
-                filtered_indices.append(j)
-                filtered_tbts.append(tbts[j-1])
-        
-        filtered_tbt_values.append(filtered_tbts)
-        filtered_token_indices.append(filtered_indices)
-    
-    # Create a list of request indices sorted by their first token arrival time
-    request_order = []
-    for i, arrivals in enumerate(token_arrival_times):
-        if arrivals:  # Skip empty lists
-            request_order.append((i, arrivals[0]))  # (request_index, first_token_time)
-    
-    # Sort by first token arrival time (ascending)
-    request_order.sort(key=lambda x: x[1])
-    
-    # Extract just the request indices in sorted order
-    sorted_request_indices = [item[0] for item in request_order]
-    
-    # Create a mapping of first token arrival times for each request
-    first_token_times = {}
-    for i, arrivals in enumerate(token_arrival_times):
-        if arrivals:
-            first_token_times[i] = arrivals[0]
-    
-    return {
-        "original_tbt": tbt_values,
-        "filtered_tbt": filtered_tbt_values,
-        "filtered_token_indices": filtered_token_indices,
-        "window_start": latest_first_token_time,
-        "window_end": earliest_last_token_time,
-        "window_duration": earliest_last_token_time - latest_first_token_time,
-        "request_order": sorted_request_indices,
-        "first_token_times": first_token_times
+    for arrival_times, tbts in zip(token_arrival_times, tbt_values):
+        assert arrival_times 
+        assert tbts
+        # first arrival time corrosponds to prefill latency
+        assert len(arrival_times) - 1 == len(tbts), f"{len(arrival_times) - 2} != {len(tbts)}"
+
+        for arrival_time, tbt in zip(arrival_times[1:], tbts):
+            if latest_first_token_time <= arrival_time <= earliest_last_token_time:
+                filtered_tbt_values.append(tbt)
+
+    # compute stats
+    tbt_stats = {
+        "mean": np.mean(filtered_tbt_values),
+        "std": np.std(filtered_tbt_values),
+        "min": np.min(filtered_tbt_values),
+        "max": np.max(filtered_tbt_values),
     }
+
+    logger.info(f"Decode TBT stats: {tbt_stats}")
+
+    # Write the filtered tbt values to file
+    decode_tbt_stats_file = os.path.join(output_dir, "decode_tbt_stats.json")
+    with open(decode_tbt_stats_file, 'w') as f:
+        json.dump(tbt_stats, f, indent=2)

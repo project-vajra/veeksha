@@ -19,12 +19,12 @@ server:
     - 512
     - 1024
     - 2048
-  schedule_policy:
+  request_prioratizer_type:
     - fcfs
     - priority
     - edf
     - lrs
-  scheduler_config:
+  scheduler_type:
     - FIXED_CHUNK
     - DYNAMIC_CHUNK
     - SPACE_SHARING
