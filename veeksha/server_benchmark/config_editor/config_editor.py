@@ -723,7 +723,7 @@ def save_config(config_data, filename, encoding="utf-8", experiment_name=""):
 def generate_config_suffix(config):
     """
     Generates a suffix for a config filename based on its unique properties.
-    Only includes values that are actually set in the config file.
+    Includes all parameters that are being iterated over to ensure unique filenames.
 
     Args:
         config: The configuration data dictionary
@@ -738,49 +738,94 @@ def generate_config_suffix(config):
         engine = config["server"]["openai_server_engine"]
         parts.append(sanitize_for_filename(engine))
 
-    # Add parallel dimensions only if they're actually set
-    if "parallel_spec" in config:
-        if "tp_dimension" in config["parallel_spec"]:
-            tp = config["parallel_spec"]["tp_dimension"]
-            # Only add tp if it's not the default value of 1
-            if tp != 1:
+    # Process each section to include all relevant parameters
+    for section_key, section_data in config.items():
+        if not isinstance(section_data, dict):
+            continue
+            
+        # Handle parallel dimensions
+        if section_key == "parallel_spec":
+            if "tp_dimension" in section_data:
+                tp = section_data["tp_dimension"]
+                # Always include tp in the filename
                 parts.append(f"tp{sanitize_for_filename(str(tp))}")
-        if "pp_dimension" in config["parallel_spec"]:
-            pp = config["parallel_spec"]["pp_dimension"]
-            # Only add pp if it's not the default value of 1
-            if pp != 1:
+            if "pp_dimension" in section_data:
+                pp = section_data["pp_dimension"]
+                # Always include pp in the filename
                 parts.append(f"pp{sanitize_for_filename(str(pp))}")
-    
-    # Add trace file information if present
-    if "request_generator_config" in config:
-        req_gen_config = config["request_generator_config"]
-        if "request_length_generator_provider" in req_gen_config and req_gen_config["request_length_generator_provider"] == "trace":
-            if "trace_request_length_generator_trace_file" in req_gen_config:
-                trace_file = req_gen_config["trace_request_length_generator_trace_file"]
-                if trace_file:
-                    # Extract just the base name without path and extension
-                    if isinstance(trace_file, str):
-                        try:
-                            # For special trace names like 'decode' or 'prefill'
-                            if trace_file in ["decode", "prefill"]:
-                                trace_part = trace_file
-                            else:
-                                # For regular trace files with paths
-                                trace_part = Path(trace_file).stem
-                                # If it's a complex path, get just the last part
-                                if "_" in trace_part:
-                                    trace_part = trace_part.split("_")[0]
-                            if trace_part:
-                                parts.append(f"trace_{sanitize_for_filename(trace_part)}")
-                        except Exception:
-                            # Fallback if path handling fails
-                            trace_name = sanitize_for_filename(str(trace_file))
-                            parts.append(f"trace_{trace_name[:10]}")  # Limit length
+        
+        # Handle request generator config parameters
+        elif section_key == "request_generator_config":
+            # Add trace file information if present
+            if "request_length_generator_provider" in section_data and section_data["request_length_generator_provider"] == "trace":
+                if "trace_request_length_generator_trace_file" in section_data:
+                    trace_file = section_data["trace_request_length_generator_trace_file"]
+                    if trace_file:
+                        # Extract just the base name without path and extension
+                        if isinstance(trace_file, str):
+                            try:
+                                # For special trace names like 'decode' or 'prefill'
+                                if trace_file in ["decode", "prefill"]:
+                                    trace_part = trace_file
+                                else:
+                                    # For regular trace files with paths
+                                    trace_part = Path(trace_file).stem
+                                    # If it's a complex path, get just the last part
+                                    if "_" in trace_part:
+                                        trace_part = trace_part.split("_")[0]
+                                if trace_part:
+                                    parts.append(f"trace_{sanitize_for_filename(trace_part)}")
+                            except Exception:
+                                # Fallback if path handling fails
+                                trace_name = sanitize_for_filename(str(trace_file))
+                                parts.append(f"trace_{trace_name[:10]}")  # Limit length
+            
+            # Add QPS if present and not default
+            if "start_qps" in section_data:
+                qps = section_data["start_qps"]
+                if qps != 1:  # Only add if not the default value of 1
+                    parts.append(f"qps{sanitize_for_filename(str(qps))}")
+                    
+            # Add request interval generator if present and not default
+            if "request_interval_generator_provider" in section_data:
+                provider = section_data["request_interval_generator_provider"]
+                if provider != "poisson":  # Only add if not the default
+                    parts.append(f"provider_{sanitize_for_filename(provider)}")
+        
+        # Handle benchmark config parameters
+        elif section_key == "benchmark_config":
+            # Add QPS if present
+            if "qps" in section_data:
+                qps = section_data["qps"]
+                if isinstance(qps, (int, float)):
+                    parts.append(f"qps{sanitize_for_filename(str(qps))}")
+        
+        # Handle model parameters
+        elif section_key == "model":
+            # Add model name if present (but keep it short)
+            if "name" in section_data:
+                model_name = section_data["name"]
+                # Only add if it's short enough to be useful in a filename
+                if len(model_name) < 15:
+                    parts.append(f"model_{sanitize_for_filename(model_name)}")
+        
+        # Handle request config parameters
+        elif section_key == "request_config":
+            # Add num_clients if present and not default
+            if "num_clients" in section_data:
+                num_clients = section_data["num_clients"]
+                if num_clients != 1:  # Only add if not the default
+                    parts.append(f"clients_{sanitize_for_filename(str(num_clients))}")
+                    
+            # Add max_num_completed_requests if present and not default
+            if "max_num_completed_requests" in section_data:
+                max_reqs = section_data["max_num_completed_requests"]
+                if max_reqs != 100:  # Only add if not the default
+                    parts.append(f"maxreq_{sanitize_for_filename(str(max_reqs))}")
 
     # If we couldn't generate any meaningful parts, use a random suffix
     if not parts:
         import random
-
         return f"config_{random.randint(1000, 9999)}"
 
     return "_".join(parts)

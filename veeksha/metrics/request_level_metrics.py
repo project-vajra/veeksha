@@ -42,6 +42,7 @@ class RequestLevelMetrics:
         self.output_throughput: List[float] = []
         self.deadline_miss_rate: List[float] = []
         self.min_tbt_deadline_to_meet: List[float] = []
+        self.token_arrival_times: List[List[float]] = []
 
     def put(self, request_metrics: RequestMetrics):
         self.request_dispatched_at.append(request_metrics.request_dispatched_at)
@@ -56,6 +57,7 @@ class RequestLevelMetrics:
             request_metrics.normalized_end_to_end_latency
         )
         self.output_throughput.append(request_metrics.output_throughput)
+        self.token_arrival_times.append(request_metrics.token_arrival_times)
 
         ttft_deadline = self.ttft_deadline
 
@@ -93,6 +95,7 @@ class RequestLevelMetrics:
             "output_throughput": self.output_throughput,
             "deadline_miss_rate": self.deadline_miss_rate,
             "min_tbt_deadline_to_meet": self.min_tbt_deadline_to_meet,
+            "token_arrival_times": self.token_arrival_times,
         }
 
     def save(self, output_dir: str):

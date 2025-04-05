@@ -739,6 +739,61 @@ def run(
             )
             return False
 
+        # compute tbt for decode tokens decoded with batch_size
+        try:
+            # Get the output directory from benchmark_config
+            output_dir = benchmark_config.output_dir
+            metrics_file = os.path.join(output_dir, "request_level_metrics.json")
+            
+            if os.path.exists(metrics_file):
+                logger.info(f"Computing filtered tbt values for {metrics_file}")
+                
+                # Read the metrics file
+                with open(metrics_file, 'r') as f:
+                    metrics_data = json.load(f)
+                
+                # Filter the tbt values
+                filtered_data = filter_tbt_values_in_common_window(metrics_data)
+                
+                # Add some statistics
+                total_original_tokens = sum(len(tbt) for tbt in metrics_data["tbt"])
+                total_filtered_tokens = sum(len(tbt) for tbt in filtered_data["filtered_tbt"])
+                
+                filtered_data["stats"] = {
+                    "total_original_tokens": total_original_tokens,
+                    "total_filtered_tokens": total_filtered_tokens,
+                    "percentage_tokens_retained": (total_filtered_tokens / total_original_tokens * 100) if total_original_tokens > 0 else 0,
+                }
+                
+                # Write the filtered data to file
+                filtered_output_file = os.path.join(output_dir, "filtered_tbt_values.json")
+                with open(filtered_output_file, 'w') as f:
+                    json.dump(filtered_data, f, indent=2)
+                
+                logger.info(f"Filtered tbt values written to {filtered_output_file}")
+                logger.info(f"Window: {filtered_data['window_start']:.4f}s to {filtered_data['window_end']:.4f}s (duration: {filtered_data['window_duration']:.4f}s)")
+                logger.info(f"Retained {total_filtered_tokens}/{total_original_tokens} tokens ({filtered_data['stats']['percentage_tokens_retained']:.2f}%)")
+                
+                # Log information about request ordering
+                if "request_order" in filtered_data and filtered_data["request_order"]:
+                    logger.info(f"Requests ordered by first token arrival time (earliest first): {filtered_data['request_order']}")
+                    
+                    # Log the first few requests with their arrival times
+                    if "first_token_times" in filtered_data and filtered_data["first_token_times"]:
+                        first_tokens_info = []
+                        for req_idx in filtered_data["request_order"][:5]:  # Show first 5 requests
+                            if str(req_idx) in filtered_data["first_token_times"] or req_idx in filtered_data["first_token_times"]:
+                                time_val = filtered_data["first_token_times"].get(str(req_idx), filtered_data["first_token_times"].get(req_idx))
+                                first_tokens_info.append(f"Request {req_idx}: {time_val:.4f}s")
+                        
+                        if first_tokens_info:
+                            logger.info(f"First token arrival times (first 5 requests): {', '.join(first_tokens_info)}")
+            else:
+                logger.warning(f"Metrics file not found: {metrics_file}")
+        except Exception as e:
+            logger.error(f"Error computing filtered tbt values: {str(e)}")
+            # Don't fail the overall process if filtering fails
+
         return True
     except Exception as e:
         logger.error(f"Error during benchmark execution: {str(e)}")
@@ -939,3 +994,92 @@ def add_experiment_to_cache(config_id):
         cache["completed_experiments"].append(config_id)
         save_experiment_cache(cache)
         logger.info(f"Added experiment with config_id {config_id} to cache")
+
+
+def filter_tbt_values_in_common_window(metrics_data: Dict[str, Any]):
+    """
+    Filter tbt values to only include tokens that arrived within a common time window.
+    
+    Args:
+        metrics_data: Dictionary containing benchmark metrics data
+        
+    Returns:
+        Dictionary with filtered tbt values and window information
+    """
+    token_arrival_times = metrics_data["token_arrival_times"]
+    tbt_values = metrics_data["tbt"]
+    
+    # Find the latest first token time across all requests 
+    # (the time when all requests have started generating tokens)
+    latest_first_token_time = max(arr[0] for arr in token_arrival_times)
+    
+    # Find the earliest last token time across all requests
+    # (the time when the first request completes)
+    earliest_last_token_time = min(arr[-1] for arr in token_arrival_times)
+    
+    # Check if we have a valid window
+    if latest_first_token_time >= earliest_last_token_time:
+        # No overlapping window - all tokens have already completed by the time the latest first token appears
+        return {
+            "original_tbt": tbt_values,
+            "filtered_tbt": [[] for _ in tbt_values],
+            "filtered_token_indices": [[] for _ in tbt_values],
+            "window_start": latest_first_token_time,
+            "window_end": earliest_last_token_time,
+            "window_duration": earliest_last_token_time - latest_first_token_time,
+            "error": "No overlapping generation window found. The earliest request finished before the latest request started."
+        }
+    
+    # Create filtered tbt values
+    filtered_tbt_values = []
+    filtered_token_indices = []
+    
+    for i, (arrivals, tbts) in enumerate(zip(token_arrival_times, tbt_values)):
+        # Skip empty lists
+        if not arrivals or not tbts:
+            filtered_tbt_values.append([])
+            filtered_token_indices.append([])
+            continue
+            
+        # Find indices of tokens that fall within the window
+        filtered_indices = []
+        filtered_tbts = []
+        
+        for j, arrival_time in enumerate(arrivals):
+            # We need j-1 for tbt index since tbt[0] corresponds to the time between token 0 and 1
+            # Also, we need to check j > 0 because the first token doesn't have a tbt value
+            if latest_first_token_time <= arrival_time <= earliest_last_token_time and j > 0 and j-1 < len(tbts):
+                filtered_indices.append(j)
+                filtered_tbts.append(tbts[j-1])
+        
+        filtered_tbt_values.append(filtered_tbts)
+        filtered_token_indices.append(filtered_indices)
+    
+    # Create a list of request indices sorted by their first token arrival time
+    request_order = []
+    for i, arrivals in enumerate(token_arrival_times):
+        if arrivals:  # Skip empty lists
+            request_order.append((i, arrivals[0]))  # (request_index, first_token_time)
+    
+    # Sort by first token arrival time (ascending)
+    request_order.sort(key=lambda x: x[1])
+    
+    # Extract just the request indices in sorted order
+    sorted_request_indices = [item[0] for item in request_order]
+    
+    # Create a mapping of first token arrival times for each request
+    first_token_times = {}
+    for i, arrivals in enumerate(token_arrival_times):
+        if arrivals:
+            first_token_times[i] = arrivals[0]
+    
+    return {
+        "original_tbt": tbt_values,
+        "filtered_tbt": filtered_tbt_values,
+        "filtered_token_indices": filtered_token_indices,
+        "window_start": latest_first_token_time,
+        "window_end": earliest_last_token_time,
+        "window_duration": earliest_last_token_time - latest_first_token_time,
+        "request_order": sorted_request_indices,
+        "first_token_times": first_token_times
+    }

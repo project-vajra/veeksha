@@ -127,7 +127,7 @@ def generate_trace_csv(spec_type, output_path=None):
                 'batch_size': batch_size,
                 'profiling_iterations': profiling_iterations,
                 'num_requests': batch_size,
-                'prefill_tokens': batch_size,
+                'prefill_tokens': spec.get('prefill_tokens', batch_size),
                 'decode_tokens': batch_size + profiling_iterations
             }
             
