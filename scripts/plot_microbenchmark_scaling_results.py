@@ -18,7 +18,7 @@ STATS_FILENAME_PATTERNS = {
 DIR_PATTERN = re.compile(r"^(prefill|decode)_([a-zA-Z0-9._-]+)_tp(\d+)_pp(\d+)$") # Allow '.', '_', '-'
 
 # --- Fixed Engine Order ---
-FIXED_ENGINE_ORDER = ["vajra", "vllm", "sglang"]
+FIXED_ENGINE_ORDER = ["vajra", "vllm", "sglang", "trtllm"]
 
 # --- Helper Functions ---
 
@@ -46,7 +46,7 @@ def find_and_parse_results(base_dir: str) -> dict:
     Traverses the base directory, finds result directories, parses stats files.
 
     Returns:
-        A nested dictionary: results[tp_pp_key][profile_type][engine][benchmark_key] = median_latency
+        A nested dictionary: results[tp_pp_key][profile_type][engine][benchmark_key] = mean_latency
         Example: results['tp1_pp1']['prefill']['sglang']['512'] = 0.064
     """
     results = defaultdict(lambda: defaultdict(lambda: defaultdict(dict))) # tp_pp -> profile -> engine -> bench_key -> latency
@@ -119,11 +119,11 @@ def find_and_parse_results(base_dir: str) -> dict:
                  continue
 
             for benchmark_key, benchmark_stats in stats_data.items():
-                if isinstance(benchmark_stats, dict) and "median" in benchmark_stats:
-                    median_latency = benchmark_stats["median"]
-                    results[tp_pp_key][profile_type][engine_clean][benchmark_key] = median_latency
+                if isinstance(benchmark_stats, dict) and "mean" in benchmark_stats:
+                    mean_latency = benchmark_stats["mean"]
+                    results[tp_pp_key][profile_type][engine_clean][benchmark_key] = mean_latency
                 else:
-                    print(f"  Warning: Missing 'median' value for key '{benchmark_key}' in {stats_filepath}")
+                    print(f"  Warning: Missing 'mean' value for key '{benchmark_key}' in {stats_filepath}")
 
             # print(f"  Successfully parsed: {item_name} (Engine: {engine_clean})")
 
@@ -213,7 +213,7 @@ def plot_grouped_comparison(tp_pp_key: str, profile_type: str, engine_data: Dict
                 ax.text(bar.get_x() + bar.get_width() / 2., current_latency, multiplier_text,
                         ha='center', va='bottom', fontsize=8)
 
-    ax.set_ylabel('Median Latency (seconds)')
+    ax.set_ylabel('Mean Latency (seconds)')
     ax.set_xticks(index)
     ax.set_xticklabels(all_benchmark_keys, rotation=30, ha='right')
     ax.set_title(f'{profile_type.capitalize()} Latency Comparison ({reference_engine}=1.0x) - {tp_pp_key}')
@@ -225,7 +225,7 @@ def plot_grouped_comparison(tp_pp_key: str, profile_type: str, engine_data: Dict
     all_positive_latencies = [l for key in all_benchmark_keys for eng in present_engines if (l := engine_data[eng].get(key, 0)) > 0]
     if all_positive_latencies and (max(all_positive_latencies) / min(all_positive_latencies) > 50):
         ax.set_yscale('log')
-        ax.set_ylabel('Median Latency (seconds, log scale)')
+        ax.set_ylabel('Mean Latency (seconds, log scale)')
         # print(f"  Using log scale for y-axis in grouped {profile_type} {tp_pp_key} plot.")
         current_ylim_log = ax.get_ylim()
         ax.set_ylim(current_ylim_log[0], current_ylim_log[1] * 1.5)
@@ -287,7 +287,7 @@ def plot_scaling(
 
     x_label = f"{'Tensor' if scaling_type == 'TP' else 'Pipeline'} Parallelism ({scaling_type})"
     ax.set_xlabel(x_label)
-    ax.set_ylabel('Median Latency (seconds)')
+    ax.set_ylabel('Mean Latency (seconds)')
     ax.set_title(f'{profile_type.capitalize()} Latency vs {scaling_type} Scaling (Benchmark: {benchmark_key})')
     ax.legend(title="Engine")
     ax.grid(axis='both', linestyle='--', alpha=0.7) # Grid on both axes
@@ -303,7 +303,7 @@ def plot_scaling(
          min_lat, max_lat = min(all_positive_latencies), max(all_positive_latencies)
          if max_lat / min_lat > 30: # Threshold for log scale on Y
              ax.set_yscale('log')
-             ax.set_ylabel('Median Latency (seconds, log scale)')
+             ax.set_ylabel('Mean Latency (seconds, log scale)')
              print(f"  Using log scale for y-axis in scaling plot: {scaling_type} - {profile_type} - {benchmark_key}")
 
     # Optional: Log scale for X-axis (TP/PP) if values are powers of 2 like

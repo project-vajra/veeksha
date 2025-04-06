@@ -262,4 +262,6 @@ results*
 benchmarking/experiment_configs
 data/generated_traces
 benchmark_plots
-engine_microbenchmark_logs/
+engine_microbenchmark_logs*
+benchmark_plots*
+

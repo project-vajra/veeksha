@@ -5,10 +5,12 @@ import random
 import shutil
 import threading
 import time
+import hashlib
+import json
 from multiprocessing import Queue
 from queue import Empty
 from threading import Thread
-from typing import List
+from typing import List, Dict, Any
 
 from tqdm import tqdm  # type: ignore
 
@@ -182,6 +184,12 @@ def run_main_loop(
     logger.info("Main loop completed.")
 
 
+# Generate a hash of the benchmark configuration to use for caching
+def get_config_hash(config: BenchmarkConfig) -> str:
+    config_str = json.dumps(config.to_dict(), sort_keys=True)
+    return hashlib.md5(config_str.encode()).hexdigest()
+
+
 def run_benchmark(
     benchmark_config: BenchmarkConfig,
 ):
@@ -195,7 +203,17 @@ def run_benchmark(
         (e.g. throughput, latencies, etc.)
         The individual metrics for each request.
     """
-
+    
+    # Check if this benchmark has already been run
+    config_hash = get_config_hash(benchmark_config)
+    output_dir = benchmark_config.metrics_config.output_dir
+    cache_marker_file = os.path.join(output_dir, f".completed_{config_hash}")
+    
+    # If the cache marker file exists, skip this benchmark run
+    if os.path.exists(cache_marker_file):
+        logger.info(f"Skipping benchmark as it was already completed (hash: {config_hash})")
+        return
+        
     generated_responses: List[Response] = []
 
     requests_interval_generator = RequestIntervalGeneratorRegistry.get(
@@ -274,6 +292,12 @@ def run_benchmark(
         logger.info(f"Results: {lmeval_results}")
 
         store_lmeval_results(service_metrics.output_dir, lmeval_results)
+    
+    # Create a marker file to indicate this benchmark run was completed successfully
+    with open(cache_marker_file, "w") as f:
+        f.write(f"Completed: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"Config hash: {config_hash}\n")
+    logger.info(f"Created cache marker file: {cache_marker_file}")
 
 
 if __name__ == "__main__":
@@ -291,5 +315,3 @@ if __name__ == "__main__":
     os.makedirs(benchmark_config.metrics_config.output_dir, exist_ok=True)
 
     run_benchmark(benchmark_config=benchmark_config)
-
-

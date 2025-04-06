@@ -5,6 +5,7 @@ import signal
 import shlex
 import argparse
 import itertools
+import yaml
 import requests # Added for server readiness check
 from requests.exceptions import ConnectionError, Timeout
 from typing import List, Tuple, Dict, Optional, Any
@@ -13,7 +14,6 @@ from typing import List, Tuple, Dict, Optional, Any
 
 # Model paths/IDs
 DEFAULT_MODEL_ID = "meta-llama/Meta-Llama-3-8B-Instruct"
-DEFAULT_CHAT_TEMPLATE = None # Make chat template optional by default
 
 # Server Config
 DEFAULT_SERVER_PORT = 8000
@@ -64,11 +64,23 @@ def run_command(
         If popen=False: None
     """
     if env_name:
+        # Add conda env lib path to LD_LIBRARY_PATH for libraries like libpython3.X.so
+        env_vars = os.environ.copy()
+        if env_name:
+            # Get conda env lib path
+            conda_prefix = f"/home/azrsadmin/miniforge3/envs/{env_name}"
+            lib_path = os.path.join(conda_prefix, "lib")
+            if os.path.isdir(lib_path):
+                existing_ld_path = env_vars.get("LD_LIBRARY_PATH", "")
+                env_vars["LD_LIBRARY_PATH"] = f"{lib_path}:{existing_ld_path}" if existing_ld_path else lib_path
+                print(f"  Setting LD_LIBRARY_PATH={env_vars['LD_LIBRARY_PATH']}", flush=True)
+        
         full_cmd = ["conda", "run", "--no-capture-output", "-n", env_name] + cmd_list
         # Note: --no-capture-output with conda run might be needed depending on version
         # to ensure stdout/stderr are correctly piped when redirecting in Popen
     else:
         full_cmd = cmd_list
+        env_vars = None  # Use default environment
 
     cmd_str = ' '.join(shlex.quote(str(part)) for part in full_cmd)
     print(f"\nExecuting in env '{env_name or 'base'}': {cmd_str}", flush=True)
@@ -90,7 +102,8 @@ def run_command(
                 full_cmd,
                 preexec_fn=os.setsid,
                 stdout=stdout_f,
-                stderr=stderr_f
+                stderr=stderr_f,
+                env=env_vars
             )
             # Return process and file handles so they can be closed later
             return process, stdout_f, stderr_f
@@ -100,7 +113,8 @@ def run_command(
                 full_cmd,
                 check=False, # Check manually after logging
                 text=True,
-                capture_output=True # Capture for logging/streaming
+                capture_output=True, # Capture for logging/streaming
+                env=env_vars
             )
 
             # Write captured output to logs
@@ -234,14 +248,14 @@ def get_server_command(
     pp: int,
     port: int,
     chunk_size: int,
-    chat_template: Optional[str] = None,
+    model_run_dir: str,
     **kwargs: Any
 ) -> List[str]:
     """Builds the server start command for the specified engine."""
     # Consolidate args for easier access
     args = {
         "model": model_id, "tp": tp, "pp": pp, "port": port,
-        "chunk_size": chunk_size, "chat_template": chat_template, **kwargs
+        "chunk_size": chunk_size, **kwargs
     }
 
     if engine == "sglang":
@@ -269,8 +283,6 @@ def get_server_command(
             "--disable-log-stats",
             "--disable-log-requests",
         ]
-        if args.get("chat_template"):
-             cmd.extend(["--chat-template", args["chat_template"]])
     elif engine == "vajra":
          cmd = [
             "python", "-m", "vajra.entrypoints.openai.api_server",
@@ -286,8 +298,21 @@ def get_server_command(
             "--host", "127.0.0.1",
             "--log_level", "error",
         ]
-         if args.get("chat_template"):
-             cmd.extend(["--chat_template", args["chat_template"]])
+    elif engine == "trtllm":
+        # config_yml_path = os.path.join(model_run_dir, "config.yml")
+        # extra_llm_api_options = {"max_num_tokens": args["chunk_size"], "enable_chunked_prefill": "true"}
+        # # write extra_llm_api_options to config.yml
+        # with open(config_yml_path, "w") as f:
+        #     yaml.dump(extra_llm_api_options, f)
+
+        cmd = [
+            "trtllm-serve",
+            "--port", str(args["port"]),
+            "--tp_size", str(args["tp"]),
+            "--pp_size", str(args["pp"]),
+            "--max_num_tokens", str(args["chunk_size"]),
+            args["model"],
+        ]
     else:
         raise ValueError(f"Unsupported engine: {engine}")
 
@@ -342,14 +367,13 @@ def main():
     parser = argparse.ArgumentParser(description="Run LLM Engine Benchmarks (SGLang, vLLM, Vajra) with Logging and Readiness Checks")
 
     # Engine and Parallelism
-    parser.add_argument("--engines", nargs='+', required=True, choices=['sglang', 'vllm', 'vajra'], help="List of engines.")
+    parser.add_argument("--engines", nargs='+', required=True, choices=['sglang', 'vllm', 'vajra', 'trtllm'], help="List of engines.")
     parser.add_argument("--tp-dims", nargs='+', type=int, required=True, help="List of Tensor Parallel dimensions.")
     parser.add_argument("--pp-dims", nargs='+', type=int, required=True, help="List of Pipeline Parallel dimensions.")
     parser.add_argument("--max-gpus", type=int, default=8, help="Skip runs where TP*PP > max_gpus.")
 
     # Model and Paths
     parser.add_argument("--model-id", type=str, default=DEFAULT_MODEL_ID, help="Model identifier.")
-    parser.add_argument("--chat-template", type=str, default=DEFAULT_CHAT_TEMPLATE, help="Optional: Path to chat template.")
     parser.add_argument("--base-output-dir", type=str, default=DEFAULT_BASE_OUTPUT_DIR, help="Base directory for results.")
 
     # Server Config
@@ -399,12 +423,16 @@ def main():
                 server_log_dir = os.path.join(run_base_dir, "server_logs")
                 server_stdout_log, server_stderr_log = setup_logging(server_log_dir, "server")
 
+                # Clean up any previous LLM workspace directories
+                print(f"--- Cleaning up temporary LLM workspace directories ---", flush=True)
+                subprocess.run("rm -rf /tmp/*-llm-workspace", shell=True)
+
                 # 2. Construct and Start Server Command
                 print(f"--- Launching {engine} Server (TP={tp}, PP={pp}) ---", flush=True)
                 server_cmd_list = get_server_command(
                     engine=engine, model_id=args.model_id, tp=tp, pp=pp,
                     port=current_port, chunk_size=args.chunk_size,
-                    chat_template=args.chat_template,
+                    model_run_dir=run_base_dir,
                     # Pass other engine-specific defaults/args if needed
                     vajra_dtype=DEFAULT_VAJRA_DTYPE,
                     vajra_prioritizer=DEFAULT_VAJRA_PRIORITIZER,
