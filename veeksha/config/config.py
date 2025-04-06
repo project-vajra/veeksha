@@ -354,9 +354,25 @@ class DeadlineConfig:
 
 
 @dataclass
+class DecodeProfilerConfig:
+    context_lengths: list[int] = field(
+        default_factory=lambda: [2**i for i in range(8, 15)],
+        metadata={"help": "The lengths to decode the profiler with."},
+    )
+    engine_chunk_size: int = field(
+        default=512,
+        metadata={"help": "The chunk size the engine is running with."},
+    )
+    batch_sizes: list[int] = field(
+        default_factory=lambda: [2**i for i in range(4, 8)],
+        metadata={"help": "The batch sizes to decode the profiler with."},
+    )
+
+
+@dataclass
 class PrefillProfilerConfig:
     prefill_lengths: list[int] = field(
-        default_factory=lambda: [],
+        default_factory=lambda: [2**i for i in range(8, 15)],
         metadata={"help": "The lengths to prefill the profiler with."},
     )
     cache_predictions: bool = field(
@@ -472,6 +488,10 @@ class BenchmarkConfig(ABC):
     prefill_profiler_config: PrefillProfilerConfig = field(
         default_factory=PrefillProfilerConfig,
         metadata={"help": "The prefill profiler configuration for the benchmark."},
+    )
+    decode_profiler_config: DecodeProfilerConfig = field(
+        default_factory=DecodeProfilerConfig,
+        metadata={"help": "The decode profiler configuration for the benchmark."},
     )
     request_interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
         default_factory=TraceRequestIntervalGeneratorConfig,

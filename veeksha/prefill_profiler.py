@@ -35,8 +35,6 @@ PREFILL_NUM_CONCURRENT_REQUESTS_PER_CLIENT = 1
 PREFILL_MAX_NUM_COMPLETED_REQUESTS = 10
 # Decode tokens when running the prefill profiler
 PREFILL_PROFILER_DECODE_TOKENS = 1
-# Prefill lengths profile over, all powers of 2 between 256 and 128K
-PREFILL_VALUES = [2**i for i in range(8, 15)]
 # Model to train on the prefill values and prefill times
 PREFILL_MODEL = "RandomForestRegressor"
 # Random Forest Regressor parameters
@@ -50,12 +48,7 @@ PREFILL_RANDOM_FOREST_PARAMS = {
 class PrefillProfiler:
     def __init__(self, config: BenchmarkConfig) -> None:
         self.config = config
-        self.prefill_values = PREFILL_VALUES
-        if (
-            type(self.config.prefill_profiler_config.prefill_lengths) is list
-            and len(self.config.prefill_profiler_config.prefill_lengths) > 0
-        ):
-            self.prefill_values = self.config.prefill_profiler_config.prefill_lengths
+        self.prefill_values = self.config.prefill_profiler_config.prefill_lengths
         self.prefill_times: Dict[int, List[int]] = {}
         self.model = RandomForestRegressor(
             n_estimators=PREFILL_RANDOM_FOREST_PARAMS["n_estimators"],
