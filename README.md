@@ -97,8 +97,10 @@ Launch any open source system and setup API keys and URL as shown for [vLLM](#ru
 python -m veeksha.prefill_profiler \
 --client_config_model "meta-llama/Meta-Llama-3-8B-Instruct" \
 --timeout 600 \
---metrics_config_output_dir "prefill_experiments/prefill_profiler_vllm_llama-3-8b" \
---metrics_config_should_use_given_dir true
+--no-prefill_profiler_config_should_train_predictor \
+--metrics_config_output_dir "engine_microbenchmark_logs/prefill_varja_llama-3-8b-tp1" \
+--prefill_profiler_config_prefill_lengths 512 1024 2048 4086 8192 \
+--metrics_config_should_use_given_dir
 ```
 
 To modify range of prompt tokens for which prefill times get profiled, use the flag ``--prefill-lengths`` as follows:

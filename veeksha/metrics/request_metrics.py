@@ -54,7 +54,7 @@ class RequestMetrics:
         if self.end_to_end_latency == 0:
             return 0
 
-        return self.num_output_tokens / self.end_to_end_latency
+        return self.num_output_tokens / self.end_to_end_latency    
 
     @cached_property
     def token_arrival_times(self):
