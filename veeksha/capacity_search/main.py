@@ -31,7 +31,7 @@ def get_parser():
     parser.add_argument(
         "--config-path",
         type=str,
-        default="./veeksha/capacity_search/config/default_config.yml",
+        default="./veeksha/capacity_search/config/default.yml",
     )
     parser.add_argument("--slo-type", type=str, default="deadline")
     parser.add_argument("--tbt-slo", type=float, default=0.03)
