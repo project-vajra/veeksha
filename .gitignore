@@ -245,7 +245,6 @@ result_outputs/
 __pycache__
 **/__pycache__/
 
-engine_microbenchmark_logs/
 env/
 benchmark_results/
 benchmark_test_dir/
@@ -262,4 +261,5 @@ results*
 .qodo
 benchmarking/experiment_configs
 data/generated_traces
-
+benchmark_plots
+engine_microbenchmark_logs/

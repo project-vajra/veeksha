@@ -82,7 +82,7 @@ class DecodeProfiler:
     def run(self):
         for batch_size, context_length in product(self.batch_sizes, self.context_lengths):
             prefill_tokens = context_length
-            num_iterations_per_prefill = np.clip(
+            num_iterations_per_prefill = np.ceil(
                 context_length / self.config.decode_profiler_config.engine_chunk_size
             ).astype(int)
 
@@ -119,6 +119,7 @@ class DecodeProfiler:
         tbt_stats = {
             f"{context_length}_{batch_size}": {
                 "mean": np.mean(times),
+                "median": np.median(times),
                 "std": np.std(times),
                 "min": np.min(times),
                 "max": np.max(times),

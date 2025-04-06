@@ -32,7 +32,7 @@ PREFILL_NUM_CLIENTS = 1
 # Number of concurrent requests per client for prefill profiling
 PREFILL_NUM_CONCURRENT_REQUESTS_PER_CLIENT = 1
 # Number of completed requests to wait for before stopping the prefill profiling for a prompt length
-PREFILL_MAX_NUM_COMPLETED_REQUESTS = 10
+PREFILL_MAX_NUM_COMPLETED_REQUESTS = 20
 # Decode tokens when running the prefill profiler
 PREFILL_PROFILER_DECODE_TOKENS = 1
 # Model to train on the prefill values and prefill times
@@ -234,6 +234,7 @@ class PrefillProfiler:
         tbt_stats = {
             prefill_value: {
                 "mean": np.mean(self.prefill_times[prefill_value]),
+                "median": np.median(self.prefill_times[prefill_value]),
                 "std": np.std(self.prefill_times[prefill_value]),
                 "min": np.min(self.prefill_times[prefill_value]),
                 "max": np.max(self.prefill_times[prefill_value]),
