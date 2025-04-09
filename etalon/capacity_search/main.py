@@ -71,7 +71,7 @@ def get_args():
         "--fixed-qps-values",
         type=float,
         nargs="+",
-        default=[0.25, 0.75, 1.25],
+        default=[0.75],
         help="Fixed QPS values to search for",
     )
 
