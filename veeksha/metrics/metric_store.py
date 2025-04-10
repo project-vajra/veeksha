@@ -105,37 +105,26 @@ class MetricStore:
         # used by server_benchmark when launched from a config file
         experiment_config = get_experiment_config()
 
-        if not experiment_config:
-            wandb.init(
-                project=self.wandb_project,
-                group=self.wandb_group,
-                name=self.wandb_run_name,
-                config={
-                    "timeout": self.timeout,
-                    "max_requests": self.max_requests,
-                    "ttft_deadline": self.ttft_deadline,
-                    "tbt_deadline": self.tbt_deadline,
-                    "ttft_slack": self.ttft_slack,
-                    "using_predictions_for_ttft": self.use_predictions_for_ttft,
-                    "target_deadline_miss_rate": self.target_deadline_miss_rate,
-                },
-            )
-        else:
-            wandb.init(
-                project=self.wandb_project,
-                group=self.wandb_group,
-                name=self.wandb_run_name,
-                config={
-                    "timeout": self.timeout,
-                    "max_requests": self.max_requests,
-                    "ttft_deadline": self.ttft_deadline,
-                    "tbt_deadline": self.tbt_deadline,
-                    "ttft_slack": self.ttft_slack,
-                    "using_predictions_for_ttft": self.use_predictions_for_ttft,
-                    "target_deadline_miss_rate": self.target_deadline_miss_rate,
-                    "experiment_config": experiment_config,
-                },
-            )
+        extra_wandb_args = {}
+
+        if experiment_config:
+            extra_wandb_args["experiment_config"] = experiment_config
+
+        wandb.init(
+            project=self.wandb_project,
+            group=self.wandb_group,
+            name=self.wandb_run_name,
+            config={
+                "timeout": self.timeout,
+                "max_requests": self.max_requests,
+                "ttft_deadline": self.ttft_deadline,
+                "tbt_deadline": self.tbt_deadline,
+                "ttft_slack": self.ttft_slack,
+                "using_predictions_for_ttft": self.use_predictions_for_ttft,
+                "target_deadline_miss_rate": self.target_deadline_miss_rate,
+                **extra_wandb_args,
+            },
+        )
 
         logger.info("wandb initialized")
 
