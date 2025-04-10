@@ -6,7 +6,7 @@ runner:
   max_gpus: 8
   cleanup_tmp: true
   # Default conda env prefix if needed for benchmark envs too
-  env_prefix: ""
+  env_prefix: "env-"
 
 model:
   id: "meta-llama/Meta-Llama-3-8B-Instruct"
@@ -17,7 +17,7 @@ model:
 
 server:
   host: "127.0.0.1"
-  start_port: 8000
+  start_port: 8001
   readiness_timeout: 300
   defaults:
     chunk_size: 512
@@ -29,20 +29,21 @@ benchmark:
   # List of benchmark configurations to run for each server instance
   run:
     - type: veeksha_prefill # Matches a key in benchmark_definitions
-      enabled: true
+      enabled: false
       # Optional: Override default parameters for this specific run instance
       overrides: {}
     - type: veeksha_decode
-      enabled: truetrue
+      enabled: false
       overrides: {}
     - type: veeksha_mixed_batching
-      enabled: true
+      enabled: false
       overrides: {}
     - type: veeksha_capacity_search
-      enabled: false
+      enabled: true
       overrides:
         # Example: Run more iterations for this specific test run
         max_iterations: 15
+        config_path: "../veeksha/capacity_search/config/Meta-Llama-3-8B-Instruct.yml"
         # Example: Point to a different internal config for this run
         # config_path: "/path/to/special_capacity_config.yml"
 
@@ -128,7 +129,7 @@ benchmark_definitions:
       max_iterations: 10
       # Template for the benchmark's *internal* config file path.
       # Available placeholders: {model_family}, {model_id}, {config_dir} (dir of main config)
-      config_path_template: "./veeksha/capacity_search/config/{model_family}.yml"
+      config_path_template: "../veeksha/capacity_search/config/{model_family}.yml"
       # You might need to create these internal config files (e.g., llama_8b.yml)
       # which themselves contain the API endpoint details (needs separate handling
       # or maybe veeksha capacity search can take API endpoint via CLI?)
@@ -148,7 +149,7 @@ benchmark_definitions:
       ttft_slo: "--ttft-slo {value}"
       ttft_percentile: "--ttft-percentile {value}"
       max_iterations: "--max-iterations {value}"
-      api_base: "--client_config_api_url {value}"
+      # api_base: "--client_config_api_url {value}"
       config_path: "--config-path {value}" # Runner calculates this path
 
 
@@ -156,7 +157,7 @@ benchmark_definitions:
 engines:
   sglang:
     environment:
-      conda_env_name: "{env_prefix}sglang"
+      conda_env_path: "/scratch/chus/repos/envs/{env_prefix}sglang"
     server:
       command_base: ["python", "-m", "sglang.launch_server"]
       defaults: { log_level: "error" }
@@ -269,6 +270,6 @@ engines:
 # --- Run Matrix (Unchanged) ---
 run_matrix:
   # engines: ["sglang", "vllm", "vajra", "vajra_with_overlap", "trtllm"]
-  engines: ["vajra", "vajra_with_overlap", "sglang", "vllm"]
-  tp_dims: [1, 2, 4, 8]
+  engines: ["sglang"]
+  tp_dims: [1]
   pp_dims: [1]
