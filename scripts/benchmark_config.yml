@@ -1,6 +1,6 @@
 # config.yaml (Version 3 - Pluggable Engines & Benchmarks)
 runner:
-  base_output_dir: "engine_microbenchmark_logs_v4"
+  base_output_dir: "engine_microbenchmark_logs_v6"
   conda_base_env: null # Optional: e.g., /home/user/miniforge3
   stream_logs: false
   max_gpus: 8
@@ -29,11 +29,11 @@ benchmark:
   # List of benchmark configurations to run for each server instance
   run:
     - type: veeksha_prefill # Matches a key in benchmark_definitions
-      enabled: false
+      enabled: true
       # Optional: Override default parameters for this specific run instance
       overrides: {}
     - type: veeksha_decode
-      enabled: false
+      enabled: truetrue
       overrides: {}
     - type: veeksha_mixed_batching
       enabled: true

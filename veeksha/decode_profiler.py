@@ -134,11 +134,11 @@ class DecodeProfiler:
         # log all the decode times with their length
         tbt_stats = {
             f"{context_length}_{batch_size}": {
-                "mean": np.mean(times),
-                "median": np.median(times),
-                "std": np.std(times),
-                "min": np.min(times),
-                "max": np.max(times),
+                "mean": float(np.mean(times)),
+                "median": float(np.median(times)),
+                "std": float(np.std(times)),
+                "min": float(np.min(times)),
+                "max": float(np.max(times)),
             } for (context_length, batch_size), times in self.decode_times.items()}
 
         print(f"Decode runtime stats: {tbt_stats}")

@@ -233,11 +233,11 @@ class PrefillProfiler:
         # log all the prefill times with their length
         tbt_stats = {
             prefill_value: {
-                "mean": np.mean(self.prefill_times[prefill_value]),
-                "median": np.median(self.prefill_times[prefill_value]),
-                "std": np.std(self.prefill_times[prefill_value]),
-                "min": np.min(self.prefill_times[prefill_value]),
-                "max": np.max(self.prefill_times[prefill_value]),
+                "mean": float(np.mean(self.prefill_times[prefill_value])),
+                "median": float(np.median(self.prefill_times[prefill_value])),
+                "std": float(np.std(self.prefill_times[prefill_value])),
+                "min": float(np.min(self.prefill_times[prefill_value])),
+                "max": float(np.max(self.prefill_times[prefill_value])),
             } for prefill_value in self.prefill_values}
 
         print(f"Prefill runtime stats: {tbt_stats}")
