@@ -23,6 +23,7 @@ except ImportError:
 STATS_FILENAME_MAP = {
     "veeksha_prefill": "prefill_stats.json",
     "veeksha_decode": "decode_stats.json",
+    "veeksha_mixed_batching": "decode_stats.json",
 }
 BENCHMARK_SUBDIR_PREFIX = "benchmark_"
 TOP_DIR_PATTERN = re.compile(r"^([a-zA-Z0-9._-]+)_tp(\d+)_pp(\d+)$") # Captures full name part

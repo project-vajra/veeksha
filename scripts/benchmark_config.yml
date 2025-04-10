@@ -1,6 +1,6 @@
 # config.yaml (Version 3 - Pluggable Engines & Benchmarks)
 runner:
-  base_output_dir: "engine_microbenchmark_logs_plug_v3"
+  base_output_dir: "engine_microbenchmark_logs_v4"
   conda_base_env: null # Optional: e.g., /home/user/miniforge3
   stream_logs: false
   max_gpus: 8
@@ -102,6 +102,7 @@ benchmark_definitions:
     defaults:
       context_lengths: [512]
       batch_sizes: [1, 8, 16, 32, 64, 128]
+      enable_mixed_batching: ""
     args_mapping:
       # --- Runner-provided params ---
       model_id: "--client_config_model={value}"
@@ -112,7 +113,7 @@ benchmark_definitions:
       # --- Benchmark-specific params ---
       context_lengths: "--decode_profiler_config_context_lengths {value...}"
       batch_sizes: "--decode_profiler_config_batch_sizes {value...}"
-      enable_mixed_batching: "--decode_profiler_config_enable_mixed_batching"
+      enable_mixed_batching: "--decode_profiler_config_enable_mixed_batching {value}"
 
   veeksha_capacity_search:
     description: "Veeksha Capacity Search"
@@ -166,6 +167,10 @@ engines:
         dtype: "--dtype {value}"
         log_level: "--log-level {value}"
         chunk_size: "--chunked-prefill-size {value}"
+      error_patterns:
+        - "CUDA out of memory"
+        - "NCCL error"
+        - "socket.error: [Errno 98] Address already in use"
     constraints: { max_pp: 1 }
 
   vllm:
@@ -190,6 +195,10 @@ engines:
         enable_chunked_prefill: "--enable-chunked-prefill"
         disable_log_stats: "--disable-log-stats"
         disable_log_requests: "--disable-log-requests"
+      error_patterns:
+        - "CUDA out of memory"
+        - "NCCL error"
+        - "socket.error: [Errno 98] Address already in use"
     constraints: {}
 
   vajra:
@@ -212,6 +221,10 @@ engines:
         log_level: "--log_level {value}"
         host: "--host {value}"
         chunk_size: "--fixed_chunk_replica_scheduler_config_chunk_size {value}" # Assumes FIXED_CHUNK
+      error_patterns:
+        - "CUDA out of memory"
+        - "NCCL error"
+        - "socket.error: [Errno 98] Address already in use"
     constraints: {}
   
   vajra_with_overlap:

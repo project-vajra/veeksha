@@ -107,10 +107,11 @@ class DecodeProfiler:
                 decode_tokens=decode_tokens,
                 max_tokens=prefill_tokens + decode_tokens
             )
-            self.config.max_completed_requests = batch_size
+            num_requests = batch_size
             if self.config.decode_profiler_config.enable_mixed_batching:
-                self.config.max_completed_requests += DECODE_PROFILING_ITERATIONS / num_iterations_per_prefill
-            self.config.client_config.num_clients = np.ceil(batch_size / DECODE_NUM_CONCURRENT_REQUESTS_PER_CLIENT).astype(int)
+                num_requests += np.ceil(DECODE_PROFILING_ITERATIONS / num_iterations_per_prefill).astype(int)
+            self.config.max_completed_requests = num_requests
+            self.config.client_config.num_clients = np.ceil(num_requests / DECODE_NUM_CONCURRENT_REQUESTS_PER_CLIENT).astype(int)
 
             run_dir = os.path.join(
                 self.base_dir,
