@@ -5,9 +5,7 @@ typer
 num2words
 transformers
 tqdm
-boto3
 ddsketch
-google-cloud-aiplatform
 wandb
 kaleido
 plotly-express
@@ -15,3 +13,4 @@ scikit-learn
 pandas
 jinja2
 lm_eval
+ray

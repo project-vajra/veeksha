@@ -1,0 +1,5 @@
+python -m sglang.launch_server \
+--model-path {{ model.identifier }} \
+--dtype auto \
+--port {{ port }} \
+--tensor-parallel-size {{ parallel_spec.tp_dimension }}

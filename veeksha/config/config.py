@@ -4,7 +4,7 @@ import re
 from abc import ABC
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 import joblib
 import numpy as np
@@ -175,9 +175,6 @@ class BaseRequestGeneratorConfig(BasePolyConfig):
     seed: int = field(
         default=42, metadata={"help": "Random seed for the request generator."}
     )
-    max_tokens: int = field(
-        default=8192, metadata={"help": "Maximum number of tokens allowed."}
-    )
 
     def __post_init__(self):
         self.length_generator_config: BaseRequestLengthGeneratorConfig = None  # type: ignore
@@ -185,6 +182,13 @@ class BaseRequestGeneratorConfig(BasePolyConfig):
 
 @dataclass
 class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
+    length_generator_config: BaseRequestLengthGeneratorConfig = field(
+        default_factory=TraceRequestLengthGeneratorConfig,
+        metadata={
+            "help": "The request length generator configuration for the benchmark."
+        },
+    )
+
     @classmethod
     def get_type(cls):
         return RequestGeneratorType.SYNTHETIC
@@ -223,7 +227,7 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
 
 @dataclass
 class LmevalRequestGeneratorConfig(BaseRequestGeneratorConfig):
-    tasks: list = field(
+    tasks: list[str] = field(
         default_factory=lambda: [],
         metadata={"help": "The tasks to evaluate the language model on."},
     )
@@ -350,9 +354,25 @@ class DeadlineConfig:
 
 
 @dataclass
+class DecodeProfilerConfig:
+    context_lengths: list[int] = field(
+        default_factory=lambda: [2**i for i in range(8, 15)],
+        metadata={"help": "The lengths to decode the profiler with."},
+    )
+    engine_chunk_size: int = field(
+        default=512,
+        metadata={"help": "The chunk size the engine is running with."},
+    )
+    batch_sizes: list[int] = field(
+        default_factory=lambda: [2**i for i in range(4, 8)],
+        metadata={"help": "The batch sizes to decode the profiler with."},
+    )
+
+
+@dataclass
 class PrefillProfilerConfig:
-    prefill_lengths: list = field(
-        default_factory=lambda: [],
+    prefill_lengths: list[int] = field(
+        default_factory=lambda: [2**i for i in range(8, 15)],
         metadata={"help": "The lengths to prefill the profiler with."},
     )
     cache_predictions: bool = field(
@@ -372,6 +392,10 @@ class PrefillProfilerConfig:
     predictor_dir: str = field(
         default="",
         metadata={"help": "The path to directory of prefill predictor."},
+    )
+    should_train_predictor: bool = field(
+        default=False,
+        metadata={"help": "Whether to train the prefill predictor."},
     )
 
     def do_predictions(self, start_token_count=1):
@@ -465,16 +489,14 @@ class BenchmarkConfig(ABC):
         default_factory=PrefillProfilerConfig,
         metadata={"help": "The prefill profiler configuration for the benchmark."},
     )
+    decode_profiler_config: DecodeProfilerConfig = field(
+        default_factory=DecodeProfilerConfig,
+        metadata={"help": "The decode profiler configuration for the benchmark."},
+    )
     request_interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
         default_factory=TraceRequestIntervalGeneratorConfig,
         metadata={
             "help": "The request interval generator configuration for the benchmark."
-        },
-    )
-    request_length_generator_config: BaseRequestLengthGeneratorConfig = field(
-        default_factory=TraceRequestLengthGeneratorConfig,
-        metadata={
-            "help": "The request length generator configuration for the benchmark."
         },
     )
     request_generator_config: BaseRequestGeneratorConfig = field(
@@ -498,17 +520,9 @@ class BenchmarkConfig(ABC):
         if self.prefill_profiler_config.use_predictions_for_ttft:
             self.prefill_profiler_config.max_prefill_tokens_to_predict = max(
                 self.prefill_profiler_config.max_prefill_tokens_to_predict,
-                self.request_generator_config.max_tokens,
+                self.request_generator_config.length_generator_config.max_tokens
             )
             self.prefill_profiler_config.fill_predictions_array()
-
-        # assign the length generator config to the request generator config
-        self.request_generator_config.length_generator_config = (
-            self.request_length_generator_config
-        )
-        self.request_length_generator_config.max_tokens = (
-            self.request_generator_config.max_tokens
-        )
 
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
             logger.warning("Removing timeout for LMEval.")

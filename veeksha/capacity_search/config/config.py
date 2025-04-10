@@ -9,15 +9,36 @@ def _get_hash(key):
 
 
 @dataclass
+class ParallelConfig:
+    tensor_parallel_size: int
+    pipeline_parallel_size: int
+
+    def get_key(self):
+        return f"{self.tensor_parallel_size}_{self.pipeline_parallel_size}"
+
+    def get_human_readable_name(self):
+        return f"Tensor parallel size: {self.tensor_parallel_size}, Pipeline parallel size: {self.pipeline_parallel_size}"
+
+    def to_config_dict(self):
+        return {
+            "tensor_parallel_size": self.tensor_parallel_size,
+            "pipeline_parallel_size": self.pipeline_parallel_size,
+        }
+
+
+@dataclass
 class ServerConfig:
     openai_server_engine: Optional[str] = None
     openai_api_url: Optional[str] = None
     openai_api_key: Optional[str] = None
+    fixed_chunk_size: Optional[int] = None
+    min_chunk_size: Optional[int] = None
+    max_chunk_size: Optional[int] = None
+    request_prioratizer_type: Optional[str] = None
+    scheduler_type: Optional[str] = None
 
     def get_key(self):
-        return (
-            f"{self.openai_server_engine}_{self.openai_api_url}_{self.openai_api_key}"
-        )
+        return f"{self.openai_server_engine}{self.openai_api_url}{self.openai_api_key}"
 
     def get_human_readable_name(self):
         return f"Server engine: {self.openai_server_engine}, URL: {self.openai_api_url}"
@@ -27,6 +48,11 @@ class ServerConfig:
             "openai_server_engine": self.openai_server_engine,
             "openai_api_url": self.openai_api_url,
             "openai_api_key": self.openai_api_key,
+            "fixed_chunk_size": self.fixed_chunk_size,
+            "min_chunk_size": self.min_chunk_size,
+            "max_chunk_size": self.max_chunk_size,
+            "request_prioratizer_type": self.request_prioratizer_type,
+            "scheduler_type": self.scheduler_type,
         }
 
 
@@ -215,8 +241,7 @@ class JobConfig:
         self.request_generator_config = request_generator_config
         self.client_config = client_config
         self.server_config = server_config
-
-        self.start_qps = self.request_generator_config.start_qps
+        self.start_qps = request_generator_config.start_qps
 
     def get_key(self):
         config_keys = [

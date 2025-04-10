@@ -97,8 +97,6 @@ def create_from_cli_args(cls) -> Any:
         field_type = field.type
         help_text = cls.metadata_mapping[field.name].get("help", None)
 
-        assert isinstance(field.type, type)
-
         if is_list(field.type):
             assert is_composed_of_primitives(field.type)
             field_type = get_args(field.type)[0]

@@ -1,0 +1,111 @@
+# config_options.yml
+# Defines editable keys and their allowed values.
+# Structure: top_level_section: { editable_key: [option1, option2, ...] }
+
+server:
+  openai_server_engine:
+    - vajra
+    - vllm
+    - sglang
+  fixed_chunk_size:
+    - 512
+    - 1024
+    - 2048
+  min_chunk_size:
+    - 1
+    - 2
+    - 4
+  max_chunk_size:
+    - 512
+    - 1024
+    - 2048
+  request_prioratizer_type:
+    - fcfs
+    - priority
+    - edf
+    - lrs
+  scheduler_type:
+    - FIXED_CHUNK
+    - DYNAMIC_CHUNK
+    - SPACE_SHARING
+
+model:
+  name: # Changing this will trigger updates based on model_mapping.yml
+    - llama-3-8b
+
+parallel_spec:
+  tp_dimension:
+    - 1
+    - 2
+    - 4
+    - 8
+  pp_dimension:
+    - 1
+    - 2
+    - 4
+    - 8
+
+request_generator_config:
+  start_qps:
+    - 1
+    - 5
+    - 10
+    - 20
+    - 50
+  request_interval_generator_provider:
+    - poisson
+    - static
+    - gamma
+  request_length_generator_provider:
+    - trace
+    - static
+    - uniform
+  trace_request_length_generator_trace_file:
+    - data/processed_traces/sharegpt_8k_stats_llama2_tokenizer_filtered_v2.csv
+    - decode # special trace: auto generated from decode_experiment_spec.yml
+    - prefill # special trace: auto generated from prefill_experiment_spec.yml
+
+request_config:
+  num_clients:
+    - 1
+    - 2
+    - 4
+    - 8
+    - 16
+    - 32
+  num_concurrent_requests_per_client:
+    - 1
+    - 2
+    - 4
+    - 8
+    - 16
+  timeout:
+    - 600
+    - 1200
+    - 1800
+    - 2400
+  max_num_completed_requests:
+    - 100
+    - 250
+    - 500
+    - 1000
+  llm_api:
+    - openai_chat
+    - openai_completion
+    - anthropic
+  request_generator_max_tokens:
+    - 1024
+    - 2048
+    - 4096
+    - 8192
+
+benchmark_config:
+  qps:
+    - 1.0
+    - 5.0
+    - 10.0
+    - 25.5
+    - 50.0
+  should_use_given_dir:
+    - true
+    - false

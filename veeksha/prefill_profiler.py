@@ -16,6 +16,7 @@ from veeksha.config.config import (
     BenchmarkConfig,
     FixedRequestLengthGeneratorConfig,
     StaticRequestIntervalGeneratorConfig,
+    SyntheticRequestGeneratorConfig
 )
 from veeksha.constants.prefill_constants import *
 from veeksha.logger import init_logger
@@ -31,11 +32,9 @@ PREFILL_NUM_CLIENTS = 1
 # Number of concurrent requests per client for prefill profiling
 PREFILL_NUM_CONCURRENT_REQUESTS_PER_CLIENT = 1
 # Number of completed requests to wait for before stopping the prefill profiling for a prompt length
-PREFILL_MAX_NUM_COMPLETED_REQUESTS = 1
+PREFILL_MAX_NUM_COMPLETED_REQUESTS = 20
 # Decode tokens when running the prefill profiler
-PREFILL_PROFILER_DECODE_TOKENS = 16
-# Prefill lengths profile over, all powers of 2 between 256 and 128K
-PREFILL_VALUES = [2**i for i in range(8, 15)]
+PREFILL_PROFILER_DECODE_TOKENS = 1
 # Model to train on the prefill values and prefill times
 PREFILL_MODEL = "RandomForestRegressor"
 # Random Forest Regressor parameters
@@ -45,16 +44,12 @@ PREFILL_RANDOM_FOREST_PARAMS = {
 }
 
 
+
 class PrefillProfiler:
     def __init__(self, config: BenchmarkConfig) -> None:
         self.config = config
-        self.prefill_values = PREFILL_VALUES
-        if (
-            type(self.config.prefill_profiler_config.prefill_lengths) is list
-            and len(self.config.prefill_profiler_config.prefill_lengths) > 0
-        ):
-            self.prefill_values = self.config.prefill_profiler_config.prefill_lengths
-        self.prefill_times = []
+        self.prefill_values = self.config.prefill_profiler_config.prefill_lengths
+        self.prefill_times: Dict[int, List[int]] = {}
         self.model = RandomForestRegressor(
             n_estimators=PREFILL_RANDOM_FOREST_PARAMS["n_estimators"],
             random_state=PREFILL_RANDOM_FOREST_PARAMS["random_state"],
@@ -67,78 +62,18 @@ class PrefillProfiler:
             raise NotImplementedError(f"Model {PREFILL_MODEL} is not implemented")
 
         # update the config with some fixed constants
-        self.config.request_interval_generator_config = (
-            StaticRequestIntervalGeneratorConfig()
-        )
+        self.config.request_generator_config = SyntheticRequestGeneratorConfig()
+        self.config.request_interval_generator_config = StaticRequestIntervalGeneratorConfig()
         self.config.metrics_config.should_write_metrics = False
         self.config.client_config.num_clients = PREFILL_NUM_CLIENTS
         self.config.client_config.num_concurrent_requests_per_client = (
             PREFILL_NUM_CONCURRENT_REQUESTS_PER_CLIENT
         )
         self.config.max_completed_requests = PREFILL_MAX_NUM_COMPLETED_REQUESTS
-        self.config.request_length_generator_config = FixedRequestLengthGeneratorConfig(
-            decode_tokens=PREFILL_PROFILER_DECODE_TOKENS
-        )
         self.base_dir = self.config.metrics_config.output_dir
 
-    def _get_result_file(self, run_dir: str) -> str | None:
-        files = glob.glob(os.path.join(run_dir, f"request_level_metrics.json"))
-        if len(files) == 0:
-            return None
-
-        return files[0]
-
-    def run(self):
-        assert isinstance(
-            self.config.request_length_generator_config,
-            FixedRequestLengthGeneratorConfig,
-        ), "Request length generator must be FixedRequestLengthGeneratorConfig"
-        for prefill_value in self.prefill_values:
-            self.config.request_length_generator_config.prefill_tokens = prefill_value
-            run_dir = os.path.join(
-                self.base_dir,
-                f"{self.config.client_config.model}_{prefill_value}",
-            )
-            if os.path.isdir(run_dir):
-                logger.info(
-                    f"Skipping profiling for prefill value = {prefill_value}..."
-                )
-            else:
-                self.config.metrics_config.wandb_run_name = (
-                    f"prefill_p{prefill_value}_{self.config.client_config.model}"
-                )
-                self.config.metrics_config.output_dir = run_dir
-                os.makedirs(run_dir, exist_ok=True)
-                logger.info(f"Running profiling for prefill value = {prefill_value}...")
-                run_benchmark(self.config)
-                logger.info(f"Run benchmark done")
-                if wandb.run:
-                    wandb.finish()
-
-            logger.info(f"Profiling for prefill value = {prefill_value} done")
-            logger.info(f"Analyzing the results for prefill value = {prefill_value}...")
-            json_file = self._get_result_file(run_dir)
-            if json_file is not None:
-                with open(json_file, "r") as f:
-                    data = json.load(f)
-                    ttft = data["ttft"]
-                    logger.info(
-                        f"""
-                        Prefill value: {prefill_value}, Request level ttfts: {ttft}
-                        Mean ttft: {sum(ttft) / len(ttft)}
-                        Std ttft: {sum((x - sum(ttft) / len(ttft)) ** 2 for x in ttft) / len(ttft)}
-                        Max ttft: {max(ttft)}
-                        Min ttft: {min(ttft)}
-                        """
-                    )
-                    self.prefill_times.append(min(ttft))
-            else:
-                logger.error(
-                    f"Could not find the result file {json_file} for {run_dir}"
-                )
-                exit()
-            logger.info(f"Going to the next prefill value")
-
+    def train_prefill_predictor_model(self):
+        # TODO(Amey/Anmol): Prefill times is now a dictionary of lists
         transformed_prefill_values = self.transformer.fit_transform(
             np.array(self.prefill_values).reshape(-1, 1)
         )
@@ -263,6 +198,58 @@ class PrefillProfiler:
             )
 
 
+    def run(self):
+        for prefill_value in self.prefill_values:
+            self.config.request_generator_config.length_generator_config = FixedRequestLengthGeneratorConfig(
+                decode_tokens=1,
+                prefill_tokens=prefill_value,
+                max_tokens=prefill_value + 1,
+            )
+
+            run_dir = os.path.join(
+                self.base_dir,
+                f"{self.config.client_config.model}_{prefill_value}",
+            )
+
+            self.config.metrics_config.wandb_run_name = (
+                f"prefill_p{prefill_value}_{self.config.client_config.model}"
+            )
+            self.config.metrics_config.output_dir = run_dir
+            os.makedirs(run_dir, exist_ok=True)
+            logger.info(f"Running profiling for prefill value = {prefill_value}...")
+            run_benchmark(self.config)
+            logger.info(f"Run benchmark done")
+            if wandb.run:
+                wandb.finish()
+
+            json_file = os.path.join(run_dir, f"request_level_metrics.json")
+
+            assert os.path.exists(json_file), f"Could not find the result file for {run_dir}"
+
+            with open(json_file, "r") as f:
+                data = json.load(f)
+                self.prefill_times[prefill_value] = data["ttft"]
+
+        # log all the prefill times with their length
+        tbt_stats = {
+            prefill_value: {
+                "mean": np.mean(self.prefill_times[prefill_value]),
+                "median": np.median(self.prefill_times[prefill_value]),
+                "std": np.std(self.prefill_times[prefill_value]),
+                "min": np.min(self.prefill_times[prefill_value]),
+                "max": np.max(self.prefill_times[prefill_value]),
+            } for prefill_value in self.prefill_values}
+
+        print(f"Prefill runtime stats: {tbt_stats}")
+
+        prefill_stats_file = os.path.join(self.base_dir, "prefill_stats.json")
+        with open(prefill_stats_file, "w") as f:
+            json.dump(tbt_stats, f)
+
+        if self.config.prefill_profiler_config.should_train_predictor:
+            self.train_prefill_predictor_model()
+
+
 if __name__ == "__main__":
     if platform.system() == "Darwin":
         multiprocessing.set_start_method("fork", force=True)
@@ -270,3 +257,4 @@ if __name__ == "__main__":
     config: BenchmarkConfig = BenchmarkConfig.create_from_cli_args()
     prefill_profiler = PrefillProfiler(config)
     prefill_profiler.run()
+
