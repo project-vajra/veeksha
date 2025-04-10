@@ -182,7 +182,7 @@ class BaseRequestGeneratorConfig(BasePolyConfig):
 
 @dataclass
 class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
-    length_generator_config: BaseRequestLengthGeneratorConfig = field(
+    request_length_generator_config: BaseRequestLengthGeneratorConfig = field(
         default_factory=TraceRequestLengthGeneratorConfig,
         metadata={
             "help": "The request length generator configuration for the benchmark."
@@ -285,7 +285,7 @@ class ClientConfig:
         },
     )
     api_url: str = field(
-        default="http://localhost:8000/v1",
+        default="http://localhost:8001/v1",
         metadata={"help": "The API URL for the LLM API."},
     )
     address_append_value: str = field(

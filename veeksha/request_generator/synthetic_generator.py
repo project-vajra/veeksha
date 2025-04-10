@@ -28,8 +28,8 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
 
         self.client_config = client_config
         self.request_length_generator = RequestLengthGeneratorRegistry.get(
-            self.config.length_generator_config.get_type(),
-            self.config.length_generator_config,
+            self.config.request_length_generator_config.get_type(),
+            self.config.request_length_generator_config,
         )
         self.corpus_lines = corpus_lines
 
