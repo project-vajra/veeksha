@@ -33,10 +33,10 @@ benchmark:
       # Optional: Override default parameters for this specific run instance
       overrides: {}
     - type: veeksha_decode
-      enabled: true
+      enabled: false
       overrides: {}
     - type: veeksha_mixed_batching
-      enabled: false
+      enabled: true
       overrides: {}
     - type: veeksha_capacity_search
       enabled: false
@@ -72,7 +72,7 @@ benchmark_definitions:
       output_dir: "--metrics_config_output_dir={value}"
       # Example of a boolean flag that should always be present for this type
       use_output_dir_flag: "--metrics_config_should_use_given_dir"
-
+      api_base: "--client_config_api_url {value}"
       # --- Benchmark-specific params (from defaults or overrides) ---
       lengths: "--prefill_profiler_config_prefill_lengths {value...}" # Note {value...} for list expansion
       should_train_predictor: "--no-prefill_profiler_config_should_train_predictor" # Boolean flag (False case)
@@ -90,7 +90,7 @@ benchmark_definitions:
       timeout: "--timeout={value}"
       output_dir: "--metrics_config_output_dir={value}"
       use_output_dir_flag: "--metrics_config_should_use_given_dir"
-
+      api_base: "--client_config_api_url {value}"
       # --- Benchmark-specific params ---
       context_lengths: "--decode_profiler_config_context_lengths {value...}"
       batch_sizes: "--decode_profiler_config_batch_sizes {value...}"
@@ -109,11 +109,11 @@ benchmark_definitions:
       timeout: "--timeout={value}"
       output_dir: "--metrics_config_output_dir={value}"
       use_output_dir_flag: "--metrics_config_should_use_given_dir"
-
+      api_base: "--client_config_api_url {value}"
       # --- Benchmark-specific params ---
       context_lengths: "--decode_profiler_config_context_lengths {value...}"
       batch_sizes: "--decode_profiler_config_batch_sizes {value...}"
-      enable_mixed_batching: "--decode_profiler_config_enable_mixed_batching {value}"
+      enable_mixed_batching: "--decode_profiler_config_enable_mixed_batching"
 
   veeksha_capacity_search:
     description: "Veeksha Capacity Search"
@@ -148,7 +148,7 @@ benchmark_definitions:
       ttft_slo: "--ttft-slo {value}"
       ttft_percentile: "--ttft-percentile {value}"
       max_iterations: "--max-iterations {value}"
-      # The resolved path to the internal config file
+      api_base: "--client_config_api_url {value}"
       config_path: "--config-path {value}" # Runner calculates this path
 
 

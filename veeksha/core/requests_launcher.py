@@ -45,6 +45,7 @@ class RequestsLauncher:
             model_name=self.client_config.model,
             tokenizer_name=self.client_config.tokenizer,
             llm_api=self.client_config.llm_api,
+            api_url=self.client_config.api_url,
         )
         self.start_threads(client_id=client_id)
 
@@ -64,6 +65,8 @@ class RequestsLauncher:
             if request_config is None:
                 break
             result = self.llm_clients[client_id].send_llm_request(request_config)
+            if not result:
+                continue
             self.output_queue.put(result)
 
     def complete_tasks(self) -> None:

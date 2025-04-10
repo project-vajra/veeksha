@@ -20,14 +20,8 @@ MAX_RESPONSES_ALLOWED_TO_STORE = 5
 class OpenAIChatCompletionsClient(BaseLLMClient):
     """Client for OpenAI Chat Completions API."""
 
-    def __init__(self, model_name: str, tokenizer_name: str) -> None:
-        super().__init__(model_name, tokenizer_name)
-        self.address = os.environ.get("OPENAI_API_BASE")
-        if not self.address:
-            self.address = "http://localhost:8000/v1"
-            logger.warning(
-                "Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost."
-            )
+    def __init__(self, model_name: str, tokenizer_name: str, api_url: str) -> None:
+        super().__init__(model_name, tokenizer_name, api_url)
         self.key = os.environ.get("OPENAI_API_KEY")
         if not self.key:
             self.key = ""
@@ -73,7 +67,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
         body.update(sampling_params or {})
 
         headers = {"Authorization": f"Bearer {self.key}"}
-        address = self.address
+        address = self.api_url
 
         if not address:
             raise ValueError("No host provided.")
@@ -146,6 +140,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
                         generated_text += delta["content"]
         except Exception as e:
             logger.error(f"Warning Or Error: ({error_response_code}) {e}")
+            return
 
         metrics = RequestMetrics(
             request_dispatched_at=request_dispatched_at,

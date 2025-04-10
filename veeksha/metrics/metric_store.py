@@ -17,7 +17,7 @@ from veeksha.metrics.metric_utils import (
 )
 from veeksha.metrics.request_level_metrics import RequestLevelMetrics
 from veeksha.metrics.request_metrics import RequestMetrics
-from veeksha.server_benchmark.server_benchmark import get_experiment_config
+
 
 logger = init_logger(__name__)
 
@@ -102,14 +102,6 @@ class MetricStore:
             logger.warn("wandb not initialized")
             return
 
-        # used by server_benchmark when launched from a config file
-        experiment_config = get_experiment_config()
-
-        extra_wandb_args = {}
-
-        if experiment_config:
-            extra_wandb_args["experiment_config"] = experiment_config
-
         wandb.init(
             project=self.wandb_project,
             group=self.wandb_group,
@@ -122,7 +114,6 @@ class MetricStore:
                 "ttft_slack": self.ttft_slack,
                 "using_predictions_for_ttft": self.use_predictions_for_ttft,
                 "target_deadline_miss_rate": self.target_deadline_miss_rate,
-                **extra_wandb_args,
             },
         )
 

@@ -284,6 +284,10 @@ class ClientConfig:
             "help": f"The name of the llm api to use. Can select from {SUPPORTED_APIS}"
         },
     )
+    api_url: str = field(
+        default="http://localhost:8000/v1",
+        metadata={"help": "The API URL for the LLM API."},
+    )
     address_append_value: str = field(
         default="chat/completions",
         metadata={"help": "The address append value for OpenAI API."},

@@ -9,6 +9,7 @@ def construct_client(
     model_name: str,
     tokenizer_name: str,
     llm_api: str,
+    api_url: str,
 ) -> BaseLLMClient:
     """Construct LLMClients that will be used to make requests to the LLM API.
 
@@ -28,4 +29,4 @@ def construct_client(
             f"llm_api must be one of the supported LLM APIs: {SUPPORTED_APIS}"
         )
 
-    return impl(model_name, tokenizer_name)
+    return impl(model_name, tokenizer_name, api_url)
