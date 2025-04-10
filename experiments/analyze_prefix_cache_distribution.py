@@ -96,6 +96,7 @@ def fit_beta_mom(data, prior_alpha, prior_beta, prior_strength, epsilon=1e-6):
     beta = (1 - mean) * common_factor
     return max(epsilon, alpha), max(epsilon, beta)
 
+
 def parse_arguments():
     """Parses command-line arguments."""
     parser = argparse.ArgumentParser(description="Analyze prefix caching performance and learn match distributions.")
@@ -112,6 +113,8 @@ def parse_arguments():
                         help="Bandwidth for Kernel Density Estimation (default: 0.05)")
     parser.add_argument("--prob-thresholds", type=float, nargs='+', default=[50.0, 80.0, 90.0],
                         help="List of percentage thresholds for P(match >= X%%) calculation (default: 50 80 90)")
+    parser.add_argument("--max-plots", type=int, default=100,
+                        help="Maximum number of session plots to generate (plots top N sessions by observation count) (default: 100)")
     parser.add_argument("--epsilon", type=float, default=1e-6,
                         help="Small value to prevent division by zero or log(0) errors (default: 1e-6)")
     return parser.parse_args()
@@ -128,7 +131,8 @@ def main():
     HISTOGRAM_BINS = args.hist_bins
     PRIOR_STRENGTH = args.prior_strength
     KDE_BANDWIDTH = args.kde_bandwidth
-    PROB_THRESHOLDS = sorted(args.prob_thresholds) # Ensure sorted
+    PROB_THRESHOLDS = sorted(args.prob_thresholds)
+    MAX_PLOTS = args.max_plots
     EPSILON = args.epsilon
 
     # --- Create output subdirectory based on trace name ---
@@ -141,6 +145,7 @@ def main():
     print(f"Trace File: {TRACE_FILE}")
     print(f"Output Directory: {output_subdir}")
     print(f"Min Match Percentage: {MIN_MATCH_PERCENT}%")
+    print(f"Max Plots: {MAX_PLOTS}")
 
     trace_data = load_trace(TRACE_FILE)
 
@@ -148,12 +153,10 @@ def main():
         print("No trace data loaded. Exiting.", file=sys.stderr)
         sys.exit(1)
 
-    sessions = {}
-    next_session_id = 0
-    all_match_percentages = [] # To calculate global prior
-
+    # --- Phase 1: Processing Trace for Global Prior ---
     print("--- Phase 1: Processing Trace for Global Prior ---")
-    # (Phase 1 logic remains the same as previous version)
+    # (Phase 1 logic remains the same)
+    all_match_percentages = []
     temp_sessions = {}
     temp_next_session_id = 0
     for i, request in enumerate(trace_data):
@@ -181,13 +184,15 @@ def main():
     with open(report_path, 'w') as report_f: # Start writing report
         report_f.write(f"Analysis Report for Trace: {TRACE_FILE}\n")
         report_f.write(f"Minimum Match Percentage Criterion: {MIN_MATCH_PERCENT}%\n")
+        report_f.write(f"Maximum Plots Generated: {MAX_PLOTS}\n")
         report_f.write("-" * 30 + "\n\n")
         report_f.write("--- Global Prior Calculation ---\n")
 
-        # (Global Prior calculation logic remains the same as previous version)
+        # (Global Prior calculation logic remains the same)
         global_hist_counts = np.zeros(HISTOGRAM_BINS)
+        bin_edges_global = np.linspace(0, 100, HISTOGRAM_BINS + 1) # Store edges
         if all_match_percentages:
-            hist, bin_edges = np.histogram([p * 100 for p in all_match_percentages], bins=HISTOGRAM_BINS, range=(0, 100))
+            hist, _ = np.histogram([p * 100 for p in all_match_percentages], bins=bin_edges_global)
             total_obs = len(all_match_percentages)
             global_hist_counts = (hist / total_obs) * PRIOR_STRENGTH if total_obs > 0 else np.zeros(HISTOGRAM_BINS)
             report_f.write(f"Global Histogram Prior (scaled to {PRIOR_STRENGTH:.1f} obs):\n{np.round(global_hist_counts, 3)}\n")
@@ -223,7 +228,7 @@ def main():
 
         # --- Phase 2: Process Trace Again, Learning Distributions ---
         print("\n--- Phase 2: Processing Trace and Learning Distributions ---")
-        # (Phase 2 logic for matching and updating distributions remains the same as previous version)
+        # (Phase 2 logic for matching and updating distributions remains the same)
         sessions = {}
         next_session_id = 0
         for i, request in enumerate(trace_data):
@@ -259,14 +264,32 @@ def main():
                 session_state['beta']['alpha'] = current_alpha; session_state['beta']['beta'] = current_beta
         print(f"Phase 2 Processing complete. Created {next_session_id} sessions.")
 
+        # --- Select Sessions to Plot ---
+        session_obs_counts = []
+        for sid, sdata in sessions.items():
+            n_obs = len(sdata.get('match_percentages_0_1', []))
+            session_obs_counts.append((sid, n_obs))
+
+        # Sort sessions by number of observations (descending)
+        session_obs_counts.sort(key=lambda item: item[1], reverse=True)
+
+        # Select the IDs of the sessions to plot, up to MAX_PLOTS
+        sessions_to_plot_ids = {item[0] for item in session_obs_counts[:MAX_PLOTS]}
+        print(f"Total sessions: {len(sessions)}. Plotting distributions for top {len(sessions_to_plot_ids)} sessions (max {MAX_PLOTS}) based on observation count.")
+        report_f.write("--- Evaluation Results per Session ---\n")
+        if len(sessions) > MAX_PLOTS:
+             report_f.write(f"--- NOTE: Plot images generated only for the top {len(sessions_to_plot_ids)} sessions (out of {len(sessions)}) based on observation count ---\n\n")
+
 
         # --- Evaluation and Reporting ---
-        print("\n--- Evaluation Results ---")
-        report_f.write("--- Evaluation Results per Session ---\n")
+        print("\n--- Generating Reports and Plots (up to limit) ---")
 
-        x_eval = np.linspace(0, 1, 200).reshape(-1, 1) # X-axis for plots (0-1 scale)
+        x_eval = np.linspace(0, 1, 200) # X-axis for plots (0-1 scale)
+        x_eval_plot = x_eval.reshape(-1, 1) # For sklearn KDE input
+        plots_generated = 0
 
         for session_id, session_data in sessions.items():
+            # --- Start Report Section for Session (Always) ---
             report_f.write(f"\n--- Session {session_id} ---\n")
             match_percs = session_data['match_percentages_0_1']
             n_obs = len(match_percs)
@@ -276,133 +299,194 @@ def main():
                 report_f.write("  No match observations recorded for this session (only creation event). Distributions reflect prior.\n")
 
             state = session_data['dist_state']
-            fig, ax = plt.subplots(1, 1, figsize=(10, 7)) # Slightly taller figure
-            ax.set_title(f'Session {session_id} - Learned Match % Distributions ({n_obs} obs)')
-            ax.set_xlabel("Match Percentage / 100")
-            ax.set_ylabel("Probability Density / Normalized Frequency", color='black') # Label for primary axis
-            ax.set_xlim(0, 1)
-            ax.tick_params(axis='y', labelcolor='black') # Ensure primary y-ticks are black
 
-            # --- Create a secondary Y-axis for the Survival Function ---
-            ax2 = ax.twinx()
-            ax2.set_ylabel("Probability (P >= x)", color='blue') # Label for secondary axis
-            ax2.set_ylim(0, 1.05) # Probability ranges from 0 to 1
-            ax2.tick_params(axis='y', labelcolor='blue') # Match label color
+            # --- Generate Plot ONLY for selected sessions ---
+            should_plot = session_id in sessions_to_plot_ids
+            if should_plot:
+                plots_generated += 1
+                if plots_generated % 20 == 0: # Progress update
+                     print(f"  Generating plot {plots_generated}/{len(sessions_to_plot_ids)}...")
 
-            plot_path = os.path.join(output_subdir, f'session_{session_id}_distribution.png')
+                fig, ax = plt.subplots(1, 1, figsize=(12, 7))
+                ax.set_title(f'Session {session_id} - Learned Match % Distributions ({n_obs} obs)')
+                ax.set_xlabel("Match Percentage / 100")
+                ax.set_ylabel("Probability Density / Normalized Frequency", color='black')
+                ax.set_xlim(0, 1)
+                ax.tick_params(axis='y', labelcolor='black')
 
-            # Store plot elements for unified legend
-            lines, labels = [], []
+                ax2 = ax.twinx()
+                ax2.set_ylabel("Survival Probability (P >= x)", color='black')
+                ax2.set_ylim(0, 1.05)
+                ax2.tick_params(axis='y', labelcolor='black')
 
-            # 1. Histogram
+                plot_path = os.path.join(output_subdir, f'session_{session_id}_distribution.png')
+                lines, labels = [], []
+                lines2, labels2 = [], []
+            # --- End Plot Setup ---
+
+
+            # --- Histogram Calculation (Always) ---
             report_f.write("\n  Histogram:\n")
             hist_counts = np.array(state['hist']['counts'])
             hist_total = state['hist']['total']
             report_f.write(f"    Total effective count (prior + obs): {hist_total:.1f}\n")
             bin_width_perc = 100.0 / HISTOGRAM_BINS
+            bin_width_01 = 1.0 / HISTOGRAM_BINS
+            bin_edges_01 = np.linspace(0, 1, HISTOGRAM_BINS + 1)
             hist_probs = hist_counts / hist_total if hist_total > EPSILON else np.zeros_like(hist_counts)
-            bin_centers_0_1 = np.linspace(1/(2*HISTOGRAM_BINS), 1 - 1/(2*HISTOGRAM_BINS), HISTOGRAM_BINS)
-            # Plot histogram density on primary axis (ax)
-            bar_container = ax.bar(bin_centers_0_1, hist_probs / (1.0 / HISTOGRAM_BINS), width=1.0/HISTOGRAM_BINS * 0.9, alpha=0.5, label=f'Histogram (N={hist_total:.0f})', color='tab:grey')
-            lines.append(bar_container.patches[0]) # Add one patch for the legend
-            labels.append(f'Histogram (N={hist_total:.0f})')
-            for i, prob in enumerate(hist_probs):
-                report_f.write(f"    P({i*bin_width_perc:.0f}% - {(i+1)*bin_width_perc:.0f}%) = {prob:.3f}\n")
+            bin_centers_01 = bin_edges_01[:-1] + bin_width_01 / 2
+            try:
+                sf_hist = np.cumsum(hist_probs[::-1])[::-1] # Cumulative sum from right
+                sf_hist_plot = np.concatenate(([1.0], sf_hist))
+            except Exception as e:
+                sf_hist_plot = None
+                report_f.write(f"    Error calculating Histogram SF: {e}\n")
 
-            # 2. KDE
+            # Plot Histogram if should_plot
+            if should_plot:
+                bar_container = ax.bar(bin_centers_01, hist_probs / bin_width_01, width=bin_width_01 * 0.9, alpha=0.4, label=f'Hist Density (N={hist_total:.0f})', color='tab:grey')
+                lines.append(bar_container.patches[0])
+                labels.append(f'Hist Density (N={hist_total:.0f})')
+                if sf_hist_plot is not None:
+                    line, = ax2.step(bin_edges_01, sf_hist_plot, where='post', label='Hist Survival (P>=x)', color='red', linestyle=':')
+                    lines2.append(line); labels2.append('Hist Survival (P>=x)')
+                else:
+                    line, = ax2.plot([],[], ':', label='Hist Survival - Error', color='red')
+                    lines2.append(line); labels2.append('Hist Survival - Error')
+            # Report probabilities (Always)
+            for i, prob in enumerate(hist_probs):
+                 report_f.write(f"    P({i*bin_width_perc:.0f}% - {(i+1)*bin_width_perc:.0f}%) = {prob:.3f}\n")
+            #--- End Histogram ---
+
+
+            # --- KDE Calculation (Always) ---
             report_f.write("\n  KDE:\n")
             kde_data = np.array(state['kde_data']).reshape(-1, 1)
+            pdf_kde = None
+            sf_kde_approx = None
+            kde_error = None
+            kde_status_label = ""
+
             if kde_data.shape[0] >= 1:
                 try:
                     is_zero_variance = kde_data.shape[0] > 1 and np.var(kde_data) < EPSILON
                     if is_zero_variance:
-                        report_f.write(f"    Skipping KDE plot: Data variance near zero ({np.var(kde_data):.2e})\n")
-                        # Add dummy line for legend consistency
-                        line, = ax.plot([], [], '--', label=f'KDE (N={n_obs}) - Zero Var', color='orange')
-                        lines.append(line); labels.append(f'KDE (N={n_obs}) - Zero Var')
+                        report_f.write(f"    Skipping KDE calculations: Data variance near zero ({np.var(kde_data):.2e})\n")
+                        kde_status_label = f'KDE (N={n_obs}) - Zero Var'
                     else:
                         kde = KernelDensity(kernel='gaussian', bandwidth=KDE_BANDWIDTH).fit(kde_data)
-                        log_dens = kde.score_samples(x_eval)
-                        # Plot KDE PDF on primary axis (ax)
-                        line, = ax.plot(x_eval.flatten(), np.exp(log_dens), '--', label=f'KDE (N={n_obs}, bw={KDE_BANDWIDTH:.3f})', color='orange')
-                        lines.append(line); labels.append(f'KDE (N={n_obs}, bw={KDE_BANDWIDTH:.3f})')
+                        log_dens = kde.score_samples(x_eval_plot)
+                        pdf_kde = np.exp(log_dens)
                         mid_prob_density = np.exp(kde.score_samples([[0.5]]))[0]
                         report_f.write(f"    Example Density at 50% ~ {mid_prob_density:.3f}\n")
+                        # Calculate SF
+                        dx = x_eval[1] - x_eval[0]
+                        cdf_kde_approx = np.cumsum(pdf_kde) * dx
+                        cdf_kde_approx = np.clip(cdf_kde_approx, 0, 1)
+                        sf_kde_approx = 1.0 - cdf_kde_approx
+                        kde_status_label = f'KDE (N={n_obs}, bw={KDE_BANDWIDTH:.3f})'
+
                 except Exception as e:
+                     kde_error = e
                      report_f.write(f"    Error fitting/evaluating KDE - {e}\n")
-                     line, = ax.plot([], [], '--', label=f'KDE (N={n_obs}) - Error', color='orange')
-                     lines.append(line); labels.append(f'KDE (N={n_obs}) - Error')
+                     kde_status_label = f'KDE (N={n_obs}) - Error'
             else:
                 report_f.write("    Not enough data points for KDE.\n")
-                line, = ax.plot([], [], '--', label=f'KDE (N={n_obs}) - No Data', color='orange')
-                lines.append(line); labels.append(f'KDE (N={n_obs}) - No Data')
+                kde_status_label = f'KDE (N={n_obs}) - No Data'
 
-            # 3. Beta Distribution (PDF and SF)
+            # Plot KDE if should_plot
+            if should_plot:
+                if pdf_kde is not None:
+                     line, = ax.plot(x_eval, pdf_kde, '--', label=f'KDE Density', color='orange') # Shorter label
+                     lines.append(line); labels.append(f'KDE Density')
+                else:
+                     line, = ax.plot([], [], '--', label=f'KDE Density - N/A', color='orange') # Indicate not plotted
+                     lines.append(line); labels.append(f'KDE Density - N/A')
+
+                if sf_kde_approx is not None:
+                     line2, = ax2.plot(x_eval, sf_kde_approx, '--', label='KDE Survival (Approx)', color='magenta')
+                     lines2.append(line2); labels2.append('KDE Survival (Approx)')
+                else:
+                     line2, = ax2.plot([],[], '--', label='KDE Survival - N/A', color='magenta')
+                     lines2.append(line2); labels2.append('KDE Survival - N/A')
+            # --- End KDE ---
+
+
+            # --- Beta Calculation (Always) ---
             report_f.write("\n  Beta Distribution:\n")
             beta_alpha = state['beta']['alpha']
             beta_beta = state['beta']['beta']
             report_f.write(f"    Parameters: alpha={beta_alpha:.3f}, beta={beta_beta:.3f}\n")
+            beta_pdf = None
+            beta_sf = None
+            beta_error = None
+            beta_status_label = ""
+
             try:
                 beta_dist = sp_stats.beta(beta_alpha, beta_beta)
-                # Calculate PDF and SF
-                beta_pdf = beta_dist.pdf(x_eval.flatten())
-                beta_sf = beta_dist.sf(x_eval.flatten()) # Survival Function P(X >= x)
-
-                # Plot Beta PDF on primary axis (ax)
-                line_pdf, = ax.plot(x_eval.flatten(), beta_pdf, '-', label=f'Beta PDF (α={beta_alpha:.2f}, β={beta_beta:.2f})', color='green')
-                lines.append(line_pdf); labels.append(f'Beta PDF (α={beta_alpha:.2f}, β={beta_beta:.2f})')
-
-                # Plot Beta SF on secondary axis (ax2)
-                line_sf, = ax2.plot(x_eval.flatten(), beta_sf, '-.', label=f'Beta Survival (P>=x)', color='blue') # Use ax2 for plotting SF
-                # Need to handle legend separately for secondary axis
-
+                beta_pdf = beta_dist.pdf(x_eval)
+                beta_sf = beta_dist.sf(x_eval)
+                beta_status_label = f'Beta (α={beta_alpha:.2f}, β={beta_beta:.2f})'
                 report_f.write(f"    Mean = {beta_dist.mean():.3f}, Median = {beta_dist.median():.3f}, Std Dev = {beta_dist.std():.3f}\n")
-
-                # Report specific threshold probabilities (calculated from SF)
-                report_f.write("    Survival Probabilities (P(match >= X%)):\n")
+                report_f.write("    Survival Probabilities (P(match >= X%)) from Beta:\n")
                 for threshold_perc in PROB_THRESHOLDS:
                     threshold_0_1 = threshold_perc / 100.0
-                    # Recalculate here just for reporting clarity, it's already in beta_sf
                     prob_ge_thresh = beta_dist.sf(threshold_0_1)
                     report_f.write(f"      P(match >= {threshold_perc:.0f}%) = {prob_ge_thresh:.4f}\n")
-                    # Add vertical line marker on primary axis (ax) for reference
-                    ax.axvline(x=threshold_0_1, color='grey', linestyle=':', linewidth=1.0, alpha=0.8)
-                    # Place text relative to primary axis ylim
+            except Exception as e:
+                 beta_error = e
+                 report_f.write(f"    Error evaluating Beta PDF/CDF/SF - {e}\n")
+                 beta_status_label = f'Beta - Error'
+
+            # Plot Beta if should_plot
+            if should_plot:
+                if beta_pdf is not None:
+                     line_pdf, = ax.plot(x_eval, beta_pdf, '-', label=f'Beta PDF', color='green') # Shorter label
+                     lines.append(line_pdf); labels.append(f'Beta PDF')
+                else:
+                     line_pdf, = ax.plot([], [], '-', label=f'Beta PDF - N/A', color='green')
+                     lines.append(line_pdf); labels.append(f'Beta PDF - N/A')
+
+                if beta_sf is not None:
+                     line_sf, = ax2.plot(x_eval, beta_sf, '-.', label=f'Beta Survival (P>=x)', color='blue')
+                     lines2.append(line_sf); labels2.append(f'Beta Survival (P>=x)')
+                else:
+                     line_sf, = ax2.plot([],[], '-.', label='Beta Survival - N/A', color='blue')
+                     lines2.append(line_sf); labels2.append('Beta Survival - N/A')
+
+                # Add vertical lines and observations only if plotting
+                for threshold_perc in PROB_THRESHOLDS:
+                    threshold_0_1 = threshold_perc / 100.0
+                    ax.axvline(x=threshold_0_1, color='grey', linestyle=':', linewidth=1.0, alpha=0.6)
                     ax.text(threshold_0_1 + 0.01, ax.get_ylim()[1]*0.85, f'{threshold_perc:.0f}%', color='grey', fontsize=8, ha='left')
 
-            except Exception as e:
-                 report_f.write(f"    Error evaluating Beta PDF/CDF/SF - {e}\n")
-                 line, = ax.plot([], [], '-', label=f'Beta PDF - Error', color='green')
-                 lines.append(line); labels.append(f'Beta PDF - Error')
-                 # Also add a dummy for SF legend if error occurred
-                 line2, = ax2.plot([],[], '-.', label='Beta Survival - Error', color='blue')
+                if n_obs > 0:
+                    y_jitter = np.random.rand(n_obs) * ax.get_ylim()[1] * 0.02
+                    line, = ax.plot(match_percs, y_jitter, 'x', color='black', markersize=3, alpha=0.7, label='Observations')
+                    lines.append(line); labels.append('Observations')
+
+                # Final Plot Adjustments only if plotting
+                ax.grid(True, which='major', linestyle=':', linewidth=0.5, axis='x')
+                ax.grid(True, which='major', linestyle=':', linewidth=0.5, axis='y', color='grey', alpha=0.7)
+                ax2.grid(True, which='major', linestyle=':', linewidth=0.5, axis='y', color='grey', alpha=0.7)
+                ax.set_ylim(bottom=0)
+                ax2.set_ylim(0, 1.05)
+                ax.legend(lines + lines2, labels + labels2, loc='best', fontsize=8)
+                fig.tight_layout()
+                plt.savefig(plot_path)
+                plt.close(fig)
+                report_f.write(f"  Plot saved to: {plot_path}\n")
+            else:
+                # If not plotting, add a note
+                report_f.write("  Plot skipped (not in top sessions by observation count).\n")
+            # --- End Beta ---
 
 
-            # Add empirical points on primary axis (ax)
-            if n_obs > 0:
-                # Calculate jitter based on primary axis scale
-                y_jitter = np.random.rand(n_obs) * ax.get_ylim()[1] * 0.02
-                line, = ax.plot(match_percs, y_jitter, 'x', color='red', markersize=4, alpha=0.6, label='Observations')
-                lines.append(line); labels.append('Observations')
+            report_f.write("-" * 30 + "\n") # End session report section
 
-
-            # --- Final Plot Adjustments ---
-            ax.grid(True, linestyle=':')
-            ax.set_ylim(bottom=0) # Ensure primary y-axis starts at 0
-
-            # Combine legends from both axes
-            lines2, labels2 = ax2.get_legend_handles_labels()
-            ax.legend(lines + lines2, labels + labels2, loc='best') # Use combined handles/labels
-
-            fig.tight_layout() # Adjust layout to prevent labels overlapping
-            plt.savefig(plot_path)
-            plt.close(fig) # Close the figure to free memory
-            report_f.write(f"  Plot saved to: {plot_path}\n")
-            report_f.write("-" * 30 + "\n")
-
-    print(f"\n--- Analysis Finished ---")
-    print(f"Report saved to: {report_path}")
-    print(f"Plots saved in directory: {output_subdir}")
+        print(f"\n--- Analysis Finished ---")
+        print(f"Report saved to: {report_path}")
+        print(f"Plots saved in directory: {output_subdir} (Generated {plots_generated} plots)")
 
 if __name__ == "__main__":
     main()
