@@ -33,10 +33,10 @@ benchmark:
       # Optional: Override default parameters for this specific run instance
       overrides: {}
     - type: veeksha_decode
-      enabled: false
+      enabled: true
       overrides: {}
     - type: veeksha_mixed_batching
-      enabled: true
+      enabled: false
       overrides: {}
     - type: veeksha_capacity_search
       enabled: false
