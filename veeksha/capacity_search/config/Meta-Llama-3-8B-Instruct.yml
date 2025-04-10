@@ -12,8 +12,8 @@ request_generator_configs:
     request_interval_generator_provider: "poisson"
     request_length_generator_provider: "trace"
     request_generator_max_tokens: 8192
-    trace_request_length_generator_trace_file: "data/processed_traces/sharegpt_8k_filtered_stats_llama2_tokenizer.csv"
-    trace_file_name: "sharegpt"
+    trace_request_length_generator_trace_file: "data/processed_traces/toolagent_trace.jsonl"
+    trace_file_name: "toolagent"
 
 client_configs:
   - num_clients: 2

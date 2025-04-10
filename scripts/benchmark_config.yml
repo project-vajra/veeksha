@@ -1,6 +1,6 @@
 # config.yaml (Version 3 - Pluggable Engines & Benchmarks)
 runner:
-  base_output_dir: "engine_microbenchmark_logs_v6"
+  base_output_dir: "engine_microbenchmark_logs_v7"
   conda_base_env: null # Optional: e.g., /home/user/miniforge3
   stream_logs: false
   max_gpus: 8
@@ -250,6 +250,30 @@ engines:
         host: "--host {value}"
         chunk_size: "--fixed_chunk_replica_scheduler_config_chunk_size {value}" # Assumes FIXED_CHUNK
         num_microbatches: "--parallel_config_num_microbatches {value}"
+    constraints: {}
+
+  vajra_without_comm:
+    environment: { conda_env_name: "{env_prefix}vajra" }
+    server:
+      command_base: ["python", "-m", "vajra.entrypoints.openai.api_server"]
+      defaults:
+        dtype: "float16"
+        prioritizer: "FCFS"
+        scheduler: "FIXED_CHUNK"
+        log_level: "error"
+        skip_communication: true
+      args_mapping:
+        model_id: "--model_config_model {value}"
+        port: "--port {value}"
+        tp: "--parallel_config_tensor_parallel_size {value}"
+        pp: "--parallel_config_pipeline_parallel_size {value}"
+        dtype: "--model_config_dtype {value}"
+        prioritizer: "--request_prioritizer_config_type {value}" # Handled in script (upper)
+        scheduler: "--scheduler_config_type {value}"
+        log_level: "--log_level {value}"
+        host: "--host {value}"
+        chunk_size: "--fixed_chunk_replica_scheduler_config_chunk_size {value}" # Assumes FIXED_CHUNK
+        skip_communication: "--parallel_config_skip_communication {value}"
     constraints: {}
 
   trtllm:
