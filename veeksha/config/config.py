@@ -196,6 +196,13 @@ class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
 
 @dataclass
 class PrefixRequestGeneratorConfig(BaseRequestGeneratorConfig):
+    length_generator_config: BaseRequestLengthGeneratorConfig = field(
+        default_factory=TraceRequestLengthGeneratorConfig,
+        metadata={
+            "help": "The request length generator configuration for the benchmark."
+        },
+    )
+
     @classmethod
     def get_type(cls):
         return RequestGeneratorType.PREFIX
