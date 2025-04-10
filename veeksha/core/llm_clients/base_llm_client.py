@@ -10,12 +10,13 @@ from veeksha.metrics.request_metrics import RequestMetrics
 class BaseLLMClient:
     """A client for making requests to a LLM API e.g Anyscale Endpoints."""
 
-    def __init__(self, model_name: str, tokenizer_name: str) -> None:
+    def __init__(self, model_name: str, tokenizer_name: str, api_url: str) -> None:
         self.model_name = model_name
         self.tokenizer = get_tokenizer(
             tokenizer_name,
             trust_remote_code=True,
         )
+        self.api_url = api_url
 
     def get_token_length(self, text: str) -> int:
         return len(self.tokenizer.encode(text))

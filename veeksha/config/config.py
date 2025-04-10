@@ -284,6 +284,10 @@ class ClientConfig:
             "help": f"The name of the llm api to use. Can select from {SUPPORTED_APIS}"
         },
     )
+    api_url: str = field(
+        default="http://localhost:8000/v1",
+        metadata={"help": "The API URL for the LLM API."},
+    )
     address_append_value: str = field(
         default="chat/completions",
         metadata={"help": "The address append value for OpenAI API."},
@@ -366,6 +370,10 @@ class DecodeProfilerConfig:
     batch_sizes: list[int] = field(
         default_factory=lambda: [2**i for i in range(4, 8)],
         metadata={"help": "The batch sizes to decode the profiler with."},
+    )
+    enable_mixed_batching: bool = field(
+        default=False,
+        metadata={"help": "Whether to enable mixed batching."},
     )
 
 

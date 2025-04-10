@@ -17,7 +17,7 @@ from veeksha.metrics.metric_utils import (
 )
 from veeksha.metrics.request_level_metrics import RequestLevelMetrics
 from veeksha.metrics.request_metrics import RequestMetrics
-from veeksha.server_benchmark.server_benchmark import get_experiment_config
+
 
 logger = init_logger(__name__)
 
@@ -102,40 +102,20 @@ class MetricStore:
             logger.warn("wandb not initialized")
             return
 
-        # used by server_benchmark when launched from a config file
-        experiment_config = get_experiment_config()
-
-        if not experiment_config:
-            wandb.init(
-                project=self.wandb_project,
-                group=self.wandb_group,
-                name=self.wandb_run_name,
-                config={
-                    "timeout": self.timeout,
-                    "max_requests": self.max_requests,
-                    "ttft_deadline": self.ttft_deadline,
-                    "tbt_deadline": self.tbt_deadline,
-                    "ttft_slack": self.ttft_slack,
-                    "using_predictions_for_ttft": self.use_predictions_for_ttft,
-                    "target_deadline_miss_rate": self.target_deadline_miss_rate,
-                },
-            )
-        else:
-            wandb.init(
-                project=self.wandb_project,
-                group=self.wandb_group,
-                name=self.wandb_run_name,
-                config={
-                    "timeout": self.timeout,
-                    "max_requests": self.max_requests,
-                    "ttft_deadline": self.ttft_deadline,
-                    "tbt_deadline": self.tbt_deadline,
-                    "ttft_slack": self.ttft_slack,
-                    "using_predictions_for_ttft": self.use_predictions_for_ttft,
-                    "target_deadline_miss_rate": self.target_deadline_miss_rate,
-                    "experiment_config": experiment_config,
-                },
-            )
+        wandb.init(
+            project=self.wandb_project,
+            group=self.wandb_group,
+            name=self.wandb_run_name,
+            config={
+                "timeout": self.timeout,
+                "max_requests": self.max_requests,
+                "ttft_deadline": self.ttft_deadline,
+                "tbt_deadline": self.tbt_deadline,
+                "ttft_slack": self.ttft_slack,
+                "using_predictions_for_ttft": self.use_predictions_for_ttft,
+                "target_deadline_miss_rate": self.target_deadline_miss_rate,
+            },
+        )
 
         logger.info("wandb initialized")
 
