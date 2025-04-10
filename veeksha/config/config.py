@@ -367,6 +367,10 @@ class DecodeProfilerConfig:
         default_factory=lambda: [2**i for i in range(4, 8)],
         metadata={"help": "The batch sizes to decode the profiler with."},
     )
+    enable_mixed_batching: bool = field(
+        default=False,
+        metadata={"help": "Whether to enable mixed batching."},
+    )
 
 
 @dataclass
