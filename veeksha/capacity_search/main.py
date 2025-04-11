@@ -49,6 +49,11 @@ def get_parser():
         action=argparse.BooleanOptionalAction,
         default=True,
     )
+    parser.add_argument(
+        "--cache-telemetry-path",
+        type=str,
+        help="Path to the cache telemetry file.",
+    )
     parser.add_argument("--max-iterations", type=int, default=20)
     parser.add_argument(
         "--time-limit", type=int, default=20, help="Time limit in minutes"
