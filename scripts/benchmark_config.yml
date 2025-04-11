@@ -160,7 +160,7 @@ engines:
       conda_env_path: "/scratch/chus/repos/envs/{env_prefix}sglang"
     server:
       command_base: ["python", "-m", "sglang.launch_server"]
-      defaults: { log_level: "error" }
+      defaults: { log_level: "error" , enable_cache_telemetry: "", cache_telemetry_output_dir: "../veeksha"}
       args_mapping:
         model_id: "--model-path {value}"
         port: "--port {value}"
@@ -168,6 +168,9 @@ engines:
         dtype: "--dtype {value}"
         log_level: "--log-level {value}"
         chunk_size: "--chunked-prefill-size {value}"
+        enable_cache_telemetry: "--enable-cache-telemetry"
+        cache_telemetry_output_dir: "--cache-telemetry-output-dir {value}"
+
       error_patterns:
         - "CUDA out of memory"
         - "NCCL error"

@@ -20,6 +20,7 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
         trace_file = self.config.trace_file
         if trace_file.endswith(".jsonl"):
             self.trace_df = pd.read_json(trace_file, lines=True)
+            self.trace_df.rename(columns={"input_length": "num_prefill_tokens", "output_length": "num_decode_tokens"}, inplace=True)
         elif trace_file.endswith(".csv"):
             self.trace_df = pd.read_csv(trace_file)
         else:
@@ -32,7 +33,7 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
                 self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
                     ast.literal_eval
                 )
-
+    
         # scale prefill and decode tokens
         self.trace_df["num_prefill_tokens"] = (
             self.trace_df["num_prefill_tokens"] * self.config.prefill_scale_factor
