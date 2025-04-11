@@ -19,6 +19,6 @@ client_configs:
   - num_clients: 10
     num_concurrent_requests_per_client: 5
     timeout: 1200
-    max_num_completed_requests: 20000
+    max_num_completed_requests: 10
     additional_sampling_params: {}
     llm_api: "openai_chat"
