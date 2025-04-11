@@ -213,13 +213,14 @@ class CapacitySearch:
                 cached_request_level_metrics_file, benchmark_config
             )
 
+        print("Starting cap search benchmark")
         self._run_benchmark(benchmark_config)
+        print("Ended cap search benchmark")
 
         # get output_cache data and tag with current qps. Rename so that it's not overwritten by next run
-        # get directory 2 levels up from the current file
-        current_file_path = os.path.abspath(__file__)
-        two_levels_up = os.path.dirname(os.path.dirname(os.path.dirname(current_file_path)))
-        output_cache_file = os.path.join(two_levels_up, "sgl_cache_telemetry_output/cache_telemetry.json")
+        cache_output_path = self.args.cache_telemetry_path
+        two_levels_up = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        output_cache_file = os.path.join(two_levels_up, cache_output_path)
         if os.path.exists(output_cache_file):
             with open(output_cache_file, "r") as f:
                 output_cache = json.load(f)
@@ -229,7 +230,7 @@ class CapacitySearch:
             
             # tag with current qps and save
             output_cache["qps"] = qps
-            output_cache_file = os.path.join(two_levels_up, f"sgl_cache_telemetry_output/cache_telemetry_{qps}.json")
+            output_cache_file = os.path.join(two_levels_up, f"{cache_output_path}_{qps}.json")
             with open(output_cache_file, "w") as f:
                 json.dump(output_cache, f)
 

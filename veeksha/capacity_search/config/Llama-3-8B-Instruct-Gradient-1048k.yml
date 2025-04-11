@@ -1,19 +1,19 @@
 servers:
   - openai_server_engine: sglang
-    openai_api_url: "http://localhost:8000/v1"
+    openai_api_url: "http://127.0.0.1:8001/v1"
     openai_api_key: token-abc123
 
 models:
-  - name: llama-3-8b-instruct
-    identifier: meta-llama/Meta-Llama-3-8B-Instruct
+  - name: gradient-ai-llama-3-8b-instruct
+    identifier: gradientai/Llama-3-8B-Instruct-Gradient-1048k
 
 request_generator_configs:
   - start_qps: 5
     request_interval_generator_provider: "poisson"
     request_length_generator_provider: "trace"
     request_generator_max_tokens: 8192
-    trace_request_length_generator_trace_file: "data/processed_traces/sharegpt_8k_filtered_stats_llama2_tokenizer.csv"
-    trace_file_name: "sharegpt"
+    trace_request_length_generator_trace_file: "data/processed_traces/conversation_trace.jsonl"
+    trace_file_name: "conversation"
 
 client_configs:
   - num_clients: 10

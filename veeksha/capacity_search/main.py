@@ -72,6 +72,12 @@ def get_parser():
         action=argparse.BooleanOptionalAction,
         default=False,
     )
+    parser.add_argument(
+        "--cache-telemetry-path",
+        type=str,
+        default="sgl_cache_telemetry_output/cache_telemetry.json",
+        help="Path to the cache telemetry file, relative to the project root",
+    )
 
     return parser
 

@@ -1,0 +1,307 @@
+# config.yaml (Version 3 - Pluggable Engines & Benchmarks)
+runner:
+  base_output_dir: "engine_microbenchmark_logs_v7"
+  conda_base_env: null # Optional: e.g., /home/user/miniforge3
+  stream_logs: false
+  max_gpus: 8
+  cleanup_tmp: true
+  # Default conda env prefix if needed for benchmark envs too
+  env_prefix: "env-"
+
+model:
+  id: "meta-llama/Meta-Llama-3-8B-Instruct"
+  # Attempt to derive a family name for use in config paths etc.
+  # Can be overridden if derivation is wrong. '{model_id}' is available.
+  family_template: "{model_id_basename}" # Tries to get 'Meta-Llama-3-8B-Instruct'
+  # family_template: "llama_8b" # Manual override example
+
+server:
+  host: "127.0.0.1"
+  start_port: 8000
+  readiness_timeout: 300
+  defaults:
+    chunk_size: 512
+    dtype: "auto"
+    log_level: "info"
+
+# --- Benchmark Execution Control ---
+benchmark:
+  # List of benchmark configurations to run for each server instance
+  run:
+    - type: veeksha_prefill # Matches a key in benchmark_definitions
+      enabled: false
+      # Optional: Override default parameters for this specific run instance
+      overrides: {}
+    - type: veeksha_decode
+      enabled: false
+      overrides: {}
+    - type: veeksha_mixed_batching
+      enabled: false
+      overrides: {}
+    - type: veeksha_capacity_search
+      enabled: true
+      overrides:
+        # Example: Run more iterations for this specific test run
+        max_iterations: 5
+        config_path: "../veeksha/capacity_search/config/Meta-Llama-3-8B-Instruct.yml"
+        # Example: Point to a different internal config for this run
+        # config_path: "/path/to/special_capacity_config.yml"
+
+  # Global defaults for benchmark parameters (can be overridden per definition or per run)
+  defaults:
+    timeout: 600 # Default timeout for benchmarks that support it
+    # Add other globally relevant benchmark defaults here
+
+
+# --- Benchmark Definitions ---
+benchmark_definitions:
+  veeksha_prefill:
+    description: "Veeksha Prefill Profiler"
+    # Default conda env for this benchmark (null = inherit from server/runner)
+    environment: null
+    command_base: ["python", "-m", "veeksha.prefill_profiler"]
+    # Default parameters specific to this benchmark type
+    defaults:
+      lengths: [512, 1024, 2048, 4086]
+      should_train_predictor: false
+    # How to map conceptual parameters to command line args
+    args_mapping:
+      # --- Runner-provided params ---
+      model_id: "--client_config_model={value}"
+      timeout: "--timeout={value}" # From benchmark.defaults.timeout
+      # Specific output dir for this benchmark instance, calculated by runner
+      output_dir: "--metrics_config_output_dir={value}"
+      # Example of a boolean flag that should always be present for this type
+      use_output_dir_flag: "--metrics_config_should_use_given_dir"
+      api_base: "--client_config_api_url {value}"
+      # --- Benchmark-specific params (from defaults or overrides) ---
+      lengths: "--prefill_profiler_config_prefill_lengths {value...}" # Note {value...} for list expansion
+      should_train_predictor: "--no-prefill_profiler_config_should_train_predictor" # Boolean flag (False case)
+
+  veeksha_decode:
+    description: "Veeksha Decode Profiler"
+    environment: null
+    command_base: ["python", "-m", "veeksha.decode_profiler"]
+    defaults:
+      context_lengths: [512]
+      batch_sizes: [1, 8, 16, 32, 64, 128]
+    args_mapping:
+      # --- Runner-provided params ---
+      model_id: "--client_config_model={value}"
+      timeout: "--timeout={value}"
+      output_dir: "--metrics_config_output_dir={value}"
+      use_output_dir_flag: "--metrics_config_should_use_given_dir"
+      api_base: "--client_config_api_url {value}"
+      # --- Benchmark-specific params ---
+      context_lengths: "--decode_profiler_config_context_lengths {value...}"
+      batch_sizes: "--decode_profiler_config_batch_sizes {value...}"
+
+  veeksha_mixed_batching:
+    description: "Veeksha Mixed Batching Profiler"
+    environment: null
+    command_base: ["python", "-m", "veeksha.decode_profiler"]
+    defaults:
+      context_lengths: [512]
+      batch_sizes: [1, 8, 16, 32, 64, 128]
+      enable_mixed_batching: ""
+    args_mapping:
+      # --- Runner-provided params ---
+      model_id: "--client_config_model={value}"
+      timeout: "--timeout={value}"
+      output_dir: "--metrics_config_output_dir={value}"
+      use_output_dir_flag: "--metrics_config_should_use_given_dir"
+      api_base: "--client_config_api_url {value}"
+      # --- Benchmark-specific params ---
+      context_lengths: "--decode_profiler_config_context_lengths {value...}"
+      batch_sizes: "--decode_profiler_config_batch_sizes {value...}"
+      enable_mixed_batching: "--decode_profiler_config_enable_mixed_batching"
+
+  veeksha_capacity_search:
+    description: "Veeksha Capacity Search"
+    environment: null # Assumes veeksha is installed in the same env
+    command_base: ["python", "-m", "veeksha.capacity_search.main"]
+    defaults:
+      slo_type: "tbt_ttft"
+      tbt_slo: 0.05
+      tbt_percentile: 0.9
+      ttft_slo: 5
+      ttft_percentile: 0.9
+      max_iterations: 5
+      cache-telemetry-path: "../veeksha/sgl-cache-conversation-tp1-radix/cache_telemetry_sgl_radix.json"
+      # Template for the benchmark's *internal* config file path.
+      # Available placeholders: {model_family}, {model_id}, {config_dir} (dir of main config)
+      config_path_template: "../veeksha/capacity_search/config/{model_family}.yml"
+      # You might need to create these internal config files (e.g., llama_8b.yml)
+      # which themselves contain the API endpoint details (needs separate handling
+      # or maybe veeksha capacity search can take API endpoint via CLI?)
+      # ----> IF capacity_search CAN take API endpoint via CLI, add mappings:
+      # api_base: "--api-endpoint {value}" # Hypothetical CLI arg
+      # model_id: "--model-name {value}" # Hypothetical CLI arg
+
+    args_mapping:
+      # --- Runner-provided params ---
+      # Maps runner's calculated output dir to capacity_search's flag
+      output_dir: "--output-dir {value}"
+
+      # --- Benchmark-specific params (from defaults or overrides) ---
+      slo_type: "--slo-type {value}"
+      tbt_slo: "--tbt-slo {value}"
+      tbt_percentile: "--tbt-percentile {value}"
+      ttft_slo: "--ttft-slo {value}"
+      ttft_percentile: "--ttft-percentile {value}"
+      max_iterations: "--max-iterations {value}"
+      # api_base: "--client_config_api_url {value}"
+      config_path: "--config-path {value}" # Runner calculates this path
+      cache-telemetry-path: "--cache-telemetry-path {value}"
+
+
+# --- Engine Definitions (Unchanged from Version 2) ---
+engines:
+  sglang:
+    environment:
+      conda_env_path: "/scratch/chus/repos/envs/{env_prefix}sglang"
+    server:
+      command_base: ["python", "-m", "sglang.launch_server"]
+      defaults: { log_level: "error" , enable_cache_telemetry: "", cache_telemetry_output_dir: "../veeksha/sgl-cache-conversation-tp1-radix", json_model_override_args: "{\"rope_scaling\": {\"type\": \"linear\", \"factor\": 16.0}, \"rope_theta\": 8000000}", context_length: 128000}
+      args_mapping:
+        model_id: "--model-path {value}"
+        port: "--port {value}"
+        tp: "--tensor-parallel-size {value}"
+        dtype: "--dtype {value}"
+        log_level: "--log-level {value}"
+        chunk_size: "--chunked-prefill-size {value}"
+        enable_cache_telemetry: "--enable-cache-telemetry"
+        cache_telemetry_output_dir: "--cache-telemetry-output-dir {value}"
+        json_model_override_args: "--json-model-override-args {value}"
+        context_length: "--context-length {value}"
+        
+
+      error_patterns:
+        - "CUDA out of memory"
+        - "NCCL error"
+        - "socket.error: [Errno 98] Address already in use"
+    constraints: { max_pp: 1 }
+
+  vllm:
+    environment: { conda_env_name: "{env_prefix}vllm" }
+    server:
+      command_base: ["python", "-m", "vllm.entrypoints.openai.api_server"]
+      defaults:
+        max_num_seqs: 256
+        uvicorn_log_level: "error"
+        enable_chunked_prefill: true
+        disable_log_stats: true
+        disable_log_requests: true
+      args_mapping:
+        model_id: "--model {value}"
+        port: "--port {value}"
+        tp: "--tensor-parallel-size {value}"
+        pp: "--pipeline-parallel-size {value}"
+        dtype: "--dtype {value}"
+        max_num_seqs: "--max-num-seqs {value}"
+        uvicorn_log_level: "--uvicorn-log-level {value}"
+        chunk_size: "--max-num-batched-tokens {value}"
+        enable_chunked_prefill: "--enable-chunked-prefill"
+        disable_log_stats: "--disable-log-stats"
+        disable_log_requests: "--disable-log-requests"
+      error_patterns:
+        - "CUDA out of memory"
+        - "NCCL error"
+        - "socket.error: [Errno 98] Address already in use"
+    constraints: {}
+
+  vajra:
+    environment: { conda_env_name: "{env_prefix}vajra" }
+    server:
+      command_base: ["python", "-m", "vajra.entrypoints.openai.api_server"]
+      defaults:
+        dtype: "float16"
+        prioritizer: "FCFS"
+        scheduler: "FIXED_CHUNK"
+        log_level: "error"
+      args_mapping:
+        model_id: "--model_config_model {value}"
+        port: "--port {value}"
+        tp: "--parallel_config_tensor_parallel_size {value}"
+        pp: "--parallel_config_pipeline_parallel_size {value}"
+        dtype: "--model_config_dtype {value}"
+        prioritizer: "--request_prioritizer_config_type {value}" # Handled in script (upper)
+        scheduler: "--scheduler_config_type {value}"
+        log_level: "--log_level {value}"
+        host: "--host {value}"
+        chunk_size: "--fixed_chunk_replica_scheduler_config_chunk_size {value}" # Assumes FIXED_CHUNK
+      error_patterns:
+        - "CUDA out of memory"
+        - "NCCL error"
+        - "socket.error: [Errno 98] Address already in use"
+    constraints: {}
+  
+  vajra_with_overlap:
+    environment: { conda_env_name: "{env_prefix}vajra" }
+    server:
+      command_base: ["python", "-m", "vajra.entrypoints.openai.api_server"]
+      defaults:
+        dtype: "float16"
+        prioritizer: "FCFS"
+        scheduler: "FIXED_CHUNK"
+        log_level: "error"
+        num_microbatches: 2
+      args_mapping:
+        model_id: "--model_config_model {value}"
+        port: "--port {value}"
+        tp: "--parallel_config_tensor_parallel_size {value}"
+        pp: "--parallel_config_pipeline_parallel_size {value}"
+        dtype: "--model_config_dtype {value}"
+        prioritizer: "--request_prioritizer_config_type {value}" # Handled in script (upper)
+        scheduler: "--scheduler_config_type {value}"
+        log_level: "--log_level {value}"
+        host: "--host {value}"
+        chunk_size: "--fixed_chunk_replica_scheduler_config_chunk_size {value}" # Assumes FIXED_CHUNK
+        num_microbatches: "--parallel_config_num_microbatches {value}"
+    constraints: {}
+
+  vajra_without_comm:
+    environment: { conda_env_name: "{env_prefix}vajra" }
+    server:
+      command_base: ["python", "-m", "vajra.entrypoints.openai.api_server"]
+      defaults:
+        dtype: "float16"
+        prioritizer: "FCFS"
+        scheduler: "FIXED_CHUNK"
+        log_level: "error"
+        skip_communication: true
+      args_mapping:
+        model_id: "--model_config_model {value}"
+        port: "--port {value}"
+        tp: "--parallel_config_tensor_parallel_size {value}"
+        pp: "--parallel_config_pipeline_parallel_size {value}"
+        dtype: "--model_config_dtype {value}"
+        prioritizer: "--request_prioritizer_config_type {value}" # Handled in script (upper)
+        scheduler: "--scheduler_config_type {value}"
+        log_level: "--log_level {value}"
+        host: "--host {value}"
+        chunk_size: "--fixed_chunk_replica_scheduler_config_chunk_size {value}" # Assumes FIXED_CHUNK
+        skip_communication: "--parallel_config_skip_communication {value}"
+    constraints: {}
+
+  trtllm:
+    environment: { conda_env_name: "{env_prefix}trtllm" }
+    server:
+      command_base: ["trtllm-serve"]
+      defaults: {}
+      args_mapping:
+        port: "--port {value}"
+        host: "--host {value}"
+        tp: "--tp_size {value}"
+        pp: "--pp_size {value}"
+        chunk_size: "--max_num_tokens {value}"
+      server_model_arg_is_positional: true
+    constraints: {}
+
+
+# --- Run Matrix (Unchanged) ---
+run_matrix:
+  # engines: ["sglang", "vllm", "vajra", "vajra_with_overlap", "trtllm"]
+  engines: ["sglang"]
+  tp_dims: [1]
+  pp_dims: [1]

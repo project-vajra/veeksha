@@ -42,7 +42,7 @@ benchmark:
       enabled: true
       overrides:
         # Example: Run more iterations for this specific test run
-        max_iterations: 15
+        max_iterations: 5
         config_path: "../veeksha/capacity_search/config/Meta-Llama-3-8B-Instruct.yml"
         # Example: Point to a different internal config for this run
         # config_path: "/path/to/special_capacity_config.yml"
@@ -122,11 +122,12 @@ benchmark_definitions:
     command_base: ["python", "-m", "veeksha.capacity_search.main"]
     defaults:
       slo_type: "tbt_ttft"
-      tbt_slo: 0.03
+      tbt_slo: 0.05
       tbt_percentile: 0.9
-      ttft_slo: 0.3
+      ttft_slo: 5
       ttft_percentile: 0.9
-      max_iterations: 10
+      max_iterations: 5
+      cache-telemetry-path: "../veeksha/sgl-cache-conversation-tp1-radix/cache_telemetry_sgl_radix.json"
       # Template for the benchmark's *internal* config file path.
       # Available placeholders: {model_family}, {model_id}, {config_dir} (dir of main config)
       config_path_template: "../veeksha/capacity_search/config/{model_family}.yml"
@@ -151,6 +152,7 @@ benchmark_definitions:
       max_iterations: "--max-iterations {value}"
       # api_base: "--client_config_api_url {value}"
       config_path: "--config-path {value}" # Runner calculates this path
+      cache-telemetry-path: "--cache-telemetry-path {value}"
 
 
 # --- Engine Definitions (Unchanged from Version 2) ---
@@ -160,7 +162,7 @@ engines:
       conda_env_path: "/scratch/chus/repos/envs/{env_prefix}sglang"
     server:
       command_base: ["python", "-m", "sglang.launch_server"]
-      defaults: { log_level: "error" , enable_cache_telemetry: "", cache_telemetry_output_dir: "../veeksha"}
+      defaults: { log_level: "error" , enable_cache_telemetry: "", cache_telemetry_output_dir: "../veeksha/sgl-cache-conversation-tp1-radix"}
       args_mapping:
         model_id: "--model-path {value}"
         port: "--port {value}"
@@ -297,6 +299,6 @@ engines:
 # --- Run Matrix (Unchanged) ---
 run_matrix:
   # engines: ["sglang", "vllm", "vajra", "vajra_with_overlap", "trtllm"]
-  engines: ["sglang"]
+  engines: ["vllm"]
   tp_dims: [1]
   pp_dims: [1]
