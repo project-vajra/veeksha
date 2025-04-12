@@ -18,7 +18,13 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
         self.config = config
 
         trace_file = self.config.trace_file
-        self.trace_df = pd.read_csv(trace_file)
+        if trace_file.endswith(".jsonl"):
+            self.trace_df = pd.read_json(trace_file, lines=True)
+            self.trace_df.rename(columns={"input_length": "num_prefill_tokens", "output_length": "num_decode_tokens"}, inplace=True)
+        elif trace_file.endswith(".csv"):
+            self.trace_df = pd.read_csv(trace_file)
+        else:
+            raise ValueError(f"Unsupported trace file format: {trace_file}")
 
         self._has_hash_ids = "hash_ids" in self.trace_df.columns
 

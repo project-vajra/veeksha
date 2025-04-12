@@ -57,6 +57,7 @@ class RequestGeneratorConfig:
     start_qps: float
     request_interval_generator_provider: str
     request_length_generator_provider: str
+    request_generator_type: str
     request_generator_max_tokens: Optional[int] = None
     gamma_request_interval_generator_cv: Optional[float] = None
     trace_request_interval_generator_trace_file: Optional[str] = None
@@ -89,6 +90,7 @@ class RequestGeneratorConfig:
             "request_interval_generator_config_type": self.request_interval_generator_provider,
             "request_length_generator_config_type": self.request_length_generator_provider,
             "seed": self.seed,
+            "request_generator_config_type": self.request_generator_type,
         }
         if self.request_interval_generator_provider == "gamma":
             config_dict["gamma_request_interval_generator_config_cv"] = (

@@ -97,7 +97,7 @@ class PrefixRequestGenerator(SyntheticRequestGenerator):
 
         final_token_count = len(self.encode(prompt))
 
-        default_sampling_params = {"max_tokens": num_output_tokens}
+        default_sampling_params = {"max_tokens": num_output_tokens, "ignore_eos": True}
         default_sampling_params.update(
             self.client_config.additional_sampling_params_dict
         )
@@ -110,6 +110,9 @@ class PrefixRequestGenerator(SyntheticRequestGenerator):
             address_append_value=self.client_config.address_append_value,
             id=self.request_id,
         )
+
+        # log the generated request
+        logger.info(f"Generated request (prefix) {self.request_id}: {prompt}")
 
         self.request_id += 1
 
