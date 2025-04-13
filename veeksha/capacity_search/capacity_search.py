@@ -1,7 +1,11 @@
 import argparse
 import glob
 import json
+import subprocess
 import os
+import signal
+import requests
+import time
 from typing import Optional, Tuple
 
 import numpy as np
@@ -242,6 +246,33 @@ class CapacitySearch:
 
         return self._is_under_sla(request_level_metrics_file, benchmark_config)
 
+    def is_server_up(self, host="localhost", port=8000, max_retries=10, retry_interval=3):
+        """Check if the SGLang server is up and responding."""
+        url = f"http://{host}:{port}/v1/completions"
+        
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, timeout=5)
+                if response.status_code == 200:
+                    print(f"Server is up after {attempt+1} attempts!")
+                    return True
+                else:
+                    print(f"Server responded with status code {response.status_code}, retrying...")
+            except (requests.ConnectionError, requests.Timeout) as e:
+                print(f"Attempt {attempt+1}/{max_retries}: Server not ready yet ({str(e)})")
+            
+            if attempt < max_retries - 1:  # Don't sleep after the last attempt
+                time.sleep(retry_interval)
+        
+        print(f"Server failed to come up after {max_retries} attempts")
+        return False
+
+    def is_port_in_use(self, port, host='localhost'):
+        """Check if a port is already in use."""
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            return s.connect_ex((host, port)) == 0
+
     def search(self):
         """
         Perform binary search to find the maximum QPS under the SLO
@@ -267,6 +298,68 @@ class CapacitySearch:
 
         for _ in range(self.args.max_iterations):
             logger.info(f"Searching between {left} and {right}")
+
+            # Check if port is already in use
+            port = 8000
+            if self.is_port_in_use(port):
+                print(f"Port {port} is already in use. Trying to kill any process using it...")
+                try:
+                    # Try to find and kill process using the port
+                    subprocess.run(["fuser", "-k", f"{port}/tcp"], check=False)
+                    time.sleep(2)
+                    if self.is_port_in_use(port):
+                        print(f"Failed to free port {port}. Trying a different port.")
+                        port = port + 1
+                except Exception as e:
+                    print(f"Error trying to free port: {e}")
+                    port = port + 1
+
+            # Define the command and arguments as a list
+            cmd = [
+                "python", "-m", "sglang.launch_server",
+                "--model-path", "meta-llama/Meta-Llama-3-8B-Instruct",  
+                "--dtype", "auto",
+                "--port", str(port),  
+                "--tensor-parallel-size", "1",
+                "--enable-cache-telemetry",
+                "--cache-telemetry-output-dir", "../veeksha/sgl-cache-conversation-tp1-radix-conv",
+                "--reset-cache-telemetry-on-new-file",
+                "--context-length", "128000",
+                "--max-running-requests", "256",
+                "--chunked-prefill-size", "512",
+                "--page-size", "16",
+                "--json-model-override-args", json.dumps({"rope_scaling": {"type": "linear", "factor": 16.0}, "rope_theta": 8000000})
+            ]
+
+            print(f"Starting server on port {port}...")
+            try:
+                import os
+                # Redirect output to console instead of capturing it
+                server_process = subprocess.Popen(
+                    cmd,
+                    # Don't capture stdout/stderr, let them go to the console
+                    stdout=None,  # Use None to inherit parent's stdout
+                    stderr=None,  # Use None to inherit parent's stderr
+                    text=True,
+                    preexec_fn=os.setsid  
+                )
+                
+                # Check if process started successfully
+                if server_process.poll() is not None:
+                    print(f"Server process failed to start (exit code: {server_process.returncode})")
+                    continue
+                    
+                pid = server_process.pid
+                print("Server process started with PID:", pid)
+
+            except Exception as e:
+                print(f"Error starting server process: {e}")
+                continue
+
+            # wait for server to start
+            print("Waiting for server to start...")
+            time.sleep(35)
+
             # stopping condition - we have reached the minimum granularity
             if abs(left - right) < self.args.min_search_granularity * qps / 100:
                 break
@@ -305,6 +398,22 @@ class CapacitySearch:
             else:
                 right = qps
                 min_qps_over_sla = min(min_qps_over_sla, qps)
+
+            try:
+                # Kill the entire process group (server and any child processes it spawned)
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+                
+                # Give it a moment to shut down gracefully
+                time.sleep(3)
+                
+                # If it's still running, force kill
+                if server_process.poll() is None:
+                    os.killpg(os.getpgid(pid), signal.SIGKILL)
+                    time.sleep(1)
+                
+                print(f"Server terminated with exit code: {server_process.returncode}")
+            except Exception as e:
+                print(f"Error killing server: {e}") 
 
         if not found_valid_qps:
             logger.info(

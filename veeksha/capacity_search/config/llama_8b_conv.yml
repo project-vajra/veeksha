@@ -13,13 +13,13 @@ request_generator_configs:
     request_length_generator_provider: "trace"
     request_generator_type: "prefix"
     request_generator_max_tokens: 128000
-    trace_request_length_generator_trace_file: "data/processed_traces/test.jsonl"
+    trace_request_length_generator_trace_file: "data/processed_traces/conversation_trace.jsonl"
     trace_file_name: "conversation"
 
 client_configs:
   - num_clients: 15
     num_concurrent_requests_per_client: 10
     timeout: 1200
-    max_num_completed_requests: 10
+    max_num_completed_requests: 20
     additional_sampling_params: {}
     llm_api: "openai_chat"

@@ -98,7 +98,7 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
         )
 
         # randomly shuffle the df based on the seed
-        self.trace_df = self.trace_df.sample(frac=1, random_state=self.config.seed)
+        # self.trace_df = self.trace_df.sample(frac=1, random_state=self.config.seed)
         self.next_request_idx = 0
 
     def get_next_num_tokens(self) -> Tuple[float, float]:
@@ -131,7 +131,7 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
 
         assert hash_count >= block_count, f"{hash_count} >= {block_count}"
 
-        return (hash_ids, num_prefill_tokens, num_decode_tokens)
+        return (hash_ids, int(num_prefill_tokens), int(num_decode_tokens))
 
     def has_hash_ids(self) -> bool:
         return self._has_hash_ids

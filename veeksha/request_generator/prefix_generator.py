@@ -79,21 +79,27 @@ class PrefixRequestGenerator(SyntheticRequestGenerator):
         block_size = self.request_length_generator.get_block_size()
 
         prompt = '"""'
+        # print(f"Hash IDs: {hash_ids}")
         for hash_id in hash_ids:
             if hash_id not in self.past_prompts:
                 chunk = self.generate_unique_encoding(hash_id)
                 block = self.pad_to_block_size(chunk, block_size)
+                # print(f"Block for hash_id {hash_id}: {block}")
+                # print(f"Block len for hash_id {hash_id}: {len(block)}")
                 prompt_segment = self.decode(block)
+                # print(f"Prompt segment for hash_id {hash_id}: {prompt_segment}")
                 remaining_prompt_tokens -= block_size
                 self.past_prompts[hash_id] = prompt_segment
             prompt += self.past_prompts[hash_id]
 
         prompt += '"""'
 
-        prompt += (
-            '\n\nINSTRUCTION: Mimic above text enclosed in """ quotes and generate '
-            f"long text of at least {num_output_tokens} tokens."
-        )
+        # prompt += (
+        #     '\n\nINSTRUCTION: Mimic above text enclosed in """ quotes and generate '
+        #     f"long text of at least {num_output_tokens} tokens."
+        # )
+
+        # print(prompt)
 
         final_token_count = len(self.encode(prompt))
 
@@ -110,9 +116,6 @@ class PrefixRequestGenerator(SyntheticRequestGenerator):
             address_append_value=self.client_config.address_append_value,
             id=self.request_id,
         )
-
-        # log the generated request
-        logger.info(f"Generated request (prefix) {self.request_id}: {prompt}")
 
         self.request_id += 1
 
