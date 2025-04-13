@@ -370,7 +370,7 @@ class CapacitySearch:
 
             # wait for server to start
             print("Waiting for server to start...")
-            time.sleep(35)
+            time.sleep(120)
 
             # stopping condition - we have reached the minimum granularity
             if abs(left - right) < self.args.min_search_granularity * qps / 100:
