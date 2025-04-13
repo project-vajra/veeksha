@@ -6,6 +6,7 @@ import os
 import signal
 import requests
 import time
+import yaml
 from typing import Optional, Tuple
 
 import numpy as np
@@ -233,7 +234,9 @@ class CapacitySearch:
             
             # tag with current qps and save
             output_cache["qps"] = qps
-            new_output_cache_file = os.path.join(two_levels_up, f"{cache_output_path}_{qps}.json")
+            cache_path_parts = os.path.splitext(cache_output_path)
+            modified_cache_path = f"{cache_path_parts[0]}_qps_{qps}{cache_path_parts[1]}"
+            new_output_cache_file = os.path.join(two_levels_up, modified_cache_path)
             
             with open(new_output_cache_file, "w") as f:
                 json.dump(output_cache, f)
@@ -299,8 +302,32 @@ class CapacitySearch:
         for _ in range(self.args.max_iterations):
             logger.info(f"Searching between {left} and {right}")
 
-            # Check if port is already in use
-            port = 8000
+            # Define the command and arguments as a list
+            if self.args.server_launch_file is not None:
+                # Load server configuration from YAML file
+                with open(self.args.server_launch_file, 'r') as f:
+                    server_config = yaml.safe_load(f)
+                
+                # Construct command from YAML configuration
+                cmd = ["python", "-m", server_config["module"]]
+                
+                # Add all configuration parameters from YAML
+                for key, value in server_config.items():
+                    print(f"Key: {key}, Value: {value}")
+                    if key == "module":
+                        continue
+                    if key == "json_model_override_args":
+                        cmd.extend(["--json-model-override-args", json.dumps(value)])
+                    else:
+                        param_key = key.replace("_", "-")
+                        if isinstance(value, bool) and value:
+                            cmd.append(f"--{param_key}")
+                        elif not isinstance(value, bool):
+                            cmd.extend([f"--{param_key}", str(value)])
+                port = server_config["port"]
+            else:
+                raise ValueError("Server launch file not specified")
+
             if self.is_port_in_use(port):
                 print(f"Port {port} is already in use. Trying to kill any process using it...")
                 try:
@@ -314,24 +341,9 @@ class CapacitySearch:
                     print(f"Error trying to free port: {e}")
                     port = port + 1
 
-            # Define the command and arguments as a list
-            cmd = [
-                "python", "-m", "sglang.launch_server",
-                "--model-path", "meta-llama/Meta-Llama-3-8B-Instruct",  
-                "--dtype", "auto",
-                "--port", str(port),  
-                "--tensor-parallel-size", "1",
-                "--enable-cache-telemetry",
-                "--cache-telemetry-output-dir", "../veeksha/sgl-cache-conversation-tp1-radix-conv",
-                "--reset-cache-telemetry-on-new-file",
-                "--context-length", "128000",
-                "--max-running-requests", "256",
-                "--chunked-prefill-size", "512",
-                "--page-size", "16",
-                "--json-model-override-args", json.dumps({"rope_scaling": {"type": "linear", "factor": 16.0}, "rope_theta": 8000000})
-            ]
-
+            print(f"Command: {cmd}")
             print(f"Starting server on port {port}...")
+
             try:
                 import os
                 # Redirect output to console instead of capturing it
@@ -413,7 +425,11 @@ class CapacitySearch:
                 
                 print(f"Server terminated with exit code: {server_process.returncode}")
             except Exception as e:
-                print(f"Error killing server: {e}") 
+                print(f"Error killing server: {e}")
+
+        # create and save cache visualizations
+        if self.args.cache_telemetry_path is not None:
+            visualize_cache_telemetry(self.args.cache_telemetry_path)
 
         if not found_valid_qps:
             logger.info(
@@ -441,3 +457,54 @@ class CapacitySearch:
             "max_qps_under_sla": max_qps_under_sla,
             "deadline_miss_rate_at_max_qps": deadline_miss_rate_at_max_qps,
         }
+
+
+def visualize_cache_telemetry(cache_telemetry_path):
+    """
+    Visualize cache telemetry data by calling the visualization script.
+    
+    Args:
+        cache_telemetry_path: Path to the cache telemetry data (file or directory pattern)
+    """
+    import os
+    import subprocess
+    from pathlib import Path
+    
+    output_dir = f"./visualizations_{Path(cache_telemetry_path).parent.name}"
+    
+    # Ensure the output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Get the absolute path of the visualization script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    visualization_script = os.path.join(script_dir, "visualize_cache_telemetry.py")
+    
+
+    # Use the parent directory of the cache telemetry path for the pattern
+    if os.path.isfile(cache_telemetry_path) or cache_telemetry_path.endswith('.json'):
+        # If it's a file, use its directory
+        pattern = os.path.join(os.path.dirname(cache_telemetry_path), "*.json")
+    else:
+        # If it's already a directory, use it directly
+        pattern = os.path.join(cache_telemetry_path, "*.json")
+    
+    # Build the command
+    cmd = ["python", visualization_script, "--pattern", pattern, "--output", output_dir]
+    
+    print(f"Running visualization command: {' '.join(cmd)}")
+    
+    # Execute the visualization script
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        print(result.stdout)
+        if result.stderr:
+            print(f"Warnings/Errors: {result.stderr}")
+        print(f"Cache telemetry visualizations created in {output_dir}")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error visualizing cache telemetry: {e}")
+        if e.stdout:
+            print(f"Output: {e.stdout}")
+        if e.stderr:
+            print(f"Error details: {e.stderr}")
+        return False

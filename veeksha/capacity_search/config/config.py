@@ -217,7 +217,6 @@ class JobConfig:
         self.request_generator_config = request_generator_config
         self.client_config = client_config
         self.server_config = server_config
-
         self.start_qps = self.request_generator_config.start_qps
 
     def get_key(self):

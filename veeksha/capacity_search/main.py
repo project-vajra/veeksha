@@ -50,6 +50,12 @@ def get_parser():
         default=True,
     )
     parser.add_argument(
+        "--server-launch-file",
+        type=str,
+        help="Path to server launch command file",
+        default=None,
+    )
+    parser.add_argument(
         "--cache-telemetry-path",
         type=str,
         help="Path to the cache telemetry file.",
