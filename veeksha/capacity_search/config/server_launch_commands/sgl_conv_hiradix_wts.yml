@@ -13,4 +13,3 @@ max_running_requests: 256
 chunked_prefill_size: 512
 page_size: 16
 json_model_override_args: {'rope_scaling': {'type': 'linear', 'factor': 16.0}, 'rope_theta': 8000000}
-mem_fraction_static: 0.5
