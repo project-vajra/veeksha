@@ -32,7 +32,7 @@ PREFILL_NUM_CLIENTS = 1
 # Number of concurrent requests per client for prefill profiling
 PREFILL_NUM_CONCURRENT_REQUESTS_PER_CLIENT = 1
 # Number of completed requests to wait for before stopping the prefill profiling for a prompt length
-PREFILL_MAX_NUM_COMPLETED_REQUESTS = 20
+PREFILL_MAX_NUM_COMPLETED_REQUESTS = 1
 # Decode tokens when running the prefill profiler
 PREFILL_PROFILER_DECODE_TOKENS = 1
 # Model to train on the prefill values and prefill times
@@ -200,7 +200,7 @@ class PrefillProfiler:
 
     def run(self):
         for prefill_value in self.prefill_values:
-            self.config.request_generator_config.length_generator_config = FixedRequestLengthGeneratorConfig(
+            self.config.length_generator_config = FixedRequestLengthGeneratorConfig(
                 decode_tokens=1,
                 prefill_tokens=prefill_value,
                 max_tokens=prefill_value + 1,

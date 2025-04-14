@@ -176,19 +176,9 @@ class BaseRequestGeneratorConfig(BasePolyConfig):
         default=42, metadata={"help": "Random seed for the request generator."}
     )
 
-    def __post_init__(self):
-        self.length_generator_config: BaseRequestLengthGeneratorConfig = None  # type: ignore
-
 
 @dataclass
 class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
-    length_generator_config: BaseRequestLengthGeneratorConfig = field(
-        default_factory=TraceRequestLengthGeneratorConfig,
-        metadata={
-            "help": "The request length generator configuration for the benchmark."
-        },
-    )
-
     @classmethod
     def get_type(cls):
         return RequestGeneratorType.SYNTHETIC
@@ -196,13 +186,6 @@ class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
 
 @dataclass
 class PrefixRequestGeneratorConfig(BaseRequestGeneratorConfig):
-    length_generator_config: BaseRequestLengthGeneratorConfig = field(
-        default_factory=TraceRequestLengthGeneratorConfig,
-        metadata={
-            "help": "The request length generator configuration for the benchmark."
-        },
-    )
-
     @classmethod
     def get_type(cls):
         return RequestGeneratorType.PREFIX
@@ -518,6 +501,12 @@ class BenchmarkConfig(ABC):
         default_factory=SyntheticRequestGeneratorConfig,
         metadata={"help": "The request generator configuration for the benchmark."},
     )
+    length_generator_config: BaseRequestLengthGeneratorConfig = field(
+        default_factory=TraceRequestLengthGeneratorConfig,
+        metadata={
+            "help": "The request length generator configuration for the benchmark."
+        },
+    )
 
     def __post_init__(self):
         if not os.path.exists(self.metrics_config.output_dir):
@@ -538,6 +527,8 @@ class BenchmarkConfig(ABC):
                 self.request_generator_config.length_generator_config.max_tokens
             )
             self.prefill_profiler_config.fill_predictions_array()
+
+        print(self.request_generator_config)
 
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
             logger.warning("Removing timeout for LMEval.")

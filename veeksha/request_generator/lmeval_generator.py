@@ -19,6 +19,9 @@ from veeksha.core.request_config import RequestConfig
 from veeksha.core.response import Response
 from veeksha.logger import init_logger
 from veeksha.types import LMEvalOutputType
+from veeksha.request_generator.length_generator.base_generator import (
+    BaseRequestLengthGenerator,
+)
 
 logger = init_logger(__name__)
 
@@ -27,6 +30,7 @@ class LMEvalRequestGenerator:
     def __init__(
         self,
         config: LmevalRequestGeneratorConfig,
+        request_length_generator: BaseRequestLengthGenerator,
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         client_config: ClientConfig,
     ):

@@ -8,8 +8,8 @@ from veeksha.config.config import ClientConfig, SyntheticRequestGeneratorConfig
 from veeksha.core.request_config import RequestConfig
 from veeksha.logger import init_logger
 from veeksha.request_generator.base_generator import BaseRequestGenerator
-from veeksha.request_generator.length_generator.generator_registry import (
-    RequestLengthGeneratorRegistry,
+from veeksha.request_generator.length_generator.base_generator import (
+    BaseRequestLengthGenerator,
 )
 
 logger = init_logger(__name__)
@@ -19,18 +19,16 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
     def __init__(
         self,
         config: SyntheticRequestGeneratorConfig,
+        request_length_generator: BaseRequestLengthGenerator,
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         client_config: ClientConfig,
         corpus_lines: Optional[List[str]] = None,
     ):
         self.config = config
+        self.request_length_generator = request_length_generator
         self.tokenizer = tokenizer
 
         self.client_config = client_config
-        self.request_length_generator = RequestLengthGeneratorRegistry.get(
-            self.config.length_generator_config.get_type(),
-            self.config.length_generator_config,
-        )
         self.corpus_lines = corpus_lines
 
         self.request_id = 0

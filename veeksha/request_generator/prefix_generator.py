@@ -5,6 +5,9 @@ from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 from veeksha.config.config import ClientConfig, SyntheticRequestGeneratorConfig
 from veeksha.core.request_config import RequestConfig
 from veeksha.logger import init_logger
+from veeksha.request_generator.length_generator.base_generator import (
+    BaseRequestLengthGenerator,
+)
 from veeksha.request_generator.length_generator.trace_generator import (
     TraceRequestLengthGenerator,
 )
@@ -17,10 +20,11 @@ class PrefixRequestGenerator(SyntheticRequestGenerator):
     def __init__(
         self,
         config: SyntheticRequestGeneratorConfig,
+        request_length_generator: BaseRequestLengthGenerator,
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         client_config: ClientConfig,
     ):
-        super().__init__(config, tokenizer, client_config)
+        super().__init__(config, request_length_generator, tokenizer, client_config)
 
         assert (
             isinstance(self.request_length_generator, TraceRequestLengthGenerator)

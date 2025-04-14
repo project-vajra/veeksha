@@ -32,6 +32,7 @@ from veeksha.request_generator.interval_generator.base_generator import (
 from veeksha.request_generator.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
 )
+from veeksha.request_generator.length_generator.generator_registry import RequestLengthGeneratorRegistry
 from veeksha.request_generator.request_generator_registry import (
     RequestGeneratorRegistry,
 )
@@ -240,8 +241,14 @@ def run_benchmark(
             "corpus_lines": load_corpus(),
         }
 
+    request_length_generator = RequestLengthGeneratorRegistry.get(
+        benchmark_config.length_generator_config.get_type(),
+        benchmark_config.length_generator_config,
+    )
+
     request_generator = RequestGeneratorRegistry.get(
         benchmark_config.request_generator_config.get_type(),
+        request_length_generator=request_length_generator,
         config=benchmark_config.request_generator_config,
         tokenizer=tokenizer,
         client_config=benchmark_config.client_config,

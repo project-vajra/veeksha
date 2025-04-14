@@ -102,7 +102,7 @@ class DecodeProfiler:
             decode_tokens = batch_size * num_iterations_per_prefill + DECODE_PROFILING_ITERATIONS
             decode_tokens *= 2
 
-            self.config.request_generator_config.length_generator_config = FixedRequestLengthGeneratorConfig(
+            self.config.length_generator_config = FixedRequestLengthGeneratorConfig(
                 prefill_tokens=prefill_tokens,
                 decode_tokens=decode_tokens,
                 max_tokens=prefill_tokens + decode_tokens
