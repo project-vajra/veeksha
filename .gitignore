@@ -259,3 +259,6 @@ experiments/
 experiments_*
 results*
 .qodo
+
+/visualizations*
+/cap_experiments_out

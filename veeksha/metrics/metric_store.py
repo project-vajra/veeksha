@@ -193,18 +193,31 @@ class MetricStore:
         }
 
     def store_output(self, output_dir: str):
+        print(f"[DEBUG] Starting store_output to {output_dir}")
         perf_csv_path = os.path.join(output_dir, "perf_metrics.csv")
         summary_stats_path = os.path.join(output_dir, "error_stats.json")
+        print(f"[DEBUG] Created paths: {perf_csv_path}, {summary_stats_path}")
 
         # store request level metrics
+        print(f"[DEBUG] About to save request_level_metrics")
         self.request_level_metrics.save(output_dir)
+        print(f"[DEBUG] Saved request_level_metrics successfully")
 
         # store metric objects
+        print(f"[DEBUG] Starting to store {len(self.summaries)} metric objects")
+        counter = 0
         for metric_name, metric_summary in self.summaries.items():
+            print(f"[DEBUG] Processing metric: {metric_name} ({counter}/{len(self.summaries)})")
+            print(f"[DEBUG] Saving dataframe for {metric_name}")
             metric_summary._save_df(metric_summary._to_df(), output_dir, metric_name)
+            print(f"[DEBUG] Plotting CDF for {metric_name}")
             metric_summary.plot_cdf(output_dir, metric_name, metric_name)
+            print(f"[DEBUG] Completed processing {metric_name}")
+            counter += 1
+        print(f"[DEBUG] Finished processing all metric objects")
 
         # store service level deadline stats
+        print(f"[DEBUG] Saving service level metrics")
         with open(f"{output_dir}/service_level_metrics.json", "w") as f:
             json.dump(
                 {
@@ -219,22 +232,38 @@ class MetricStore:
                 },
                 f,
             )
+        print(f"[DEBUG] Saved service level metrics")
 
         # store performance metrics
+        print(f"[DEBUG] Creating performance metrics CSV")
         perf_header = self.summaries["num_prompt_tokens"].get_csv_header()
+        print(f"[DEBUG] Got CSV header: {perf_header[:50]}...")
         perf_rows = [perf_header]
+        print(f"[DEBUG] Collecting {len(self.summaries)} CDF sketch rows")
         for cdf_sketch in self.summaries.values():
-            perf_rows.append(cdf_sketch.to_csv_row())
+            print(f"[DEBUG] Getting CSV row for sketch")
+            row = cdf_sketch.to_csv_row()
+            print(f"[DEBUG] Got row: {row[:50]}...")
+            perf_rows.append(row)
+        print(f"[DEBUG] Writing performance CSV with {len(perf_rows)} rows")
 
         with open(perf_csv_path, "w") as f:
             f.write("\n".join(perf_rows))
+        print(f"[DEBUG] Wrote performance CSV")
 
         # store summary stats
+        print(f"[DEBUG] Getting summary for error stats")
+        summary = self.get_summary()
+        print(f"[DEBUG] Got summary, writing to {summary_stats_path}")
         with open(summary_stats_path, "w") as f:
-            json.dump(self.get_summary(), f)
+            json.dump(summary, f)
+        print(f"[DEBUG] Wrote summary stats")
 
         # store additional outputs
+        print(f"[DEBUG] Starting store_additional_outputs")
         self.store_additional_outputs(output_dir)
+        print(f"[DEBUG] Completed store_additional_outputs")
+        print(f"[DEBUG] All outputs stored successfully")
 
     def store_additional_outputs(self, output_dir: str):
         self.store_deadline_miss_rate_for_target_tbt(output_dir)

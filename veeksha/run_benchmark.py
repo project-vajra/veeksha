@@ -3,6 +3,7 @@ import platform
 import random
 import threading
 import time
+import os
 from multiprocessing import Queue
 from queue import Empty
 from threading import Thread
@@ -119,7 +120,7 @@ def run_main_loop(
 ):
     """Run the main loop for the benchmark."""
 
-    logger.info("Starting the main loop.")
+    print("Starting the main loop.")
 
     # Create queues for communication
     input_queue = Queue()
@@ -166,18 +167,28 @@ def run_main_loop(
     with service_metrics:
         while not service_metrics.should_stop():
             time.sleep(0.1)
-        logger.info("Stopping the main loop.")
+        print("Stopping the main loop.")
 
     # Signal threads to stop and wait for completion
+    print("Setting stop event to terminate threads")
     stop_event.set()
+    
+    print("Waiting for dispatcher thread to complete...")
     dispatcher_thread.join()
+    print("Dispatcher thread terminated")
+    
+    print("Waiting for processor thread to complete...")
     processor_thread.join()
+    print("Processor thread terminated")
 
     # Terminate all clients
+    print("Terminating all client connections")
     req_launcher.kill_clients()
+    print("All clients terminated")
 
     pbar.close()
-    logger.info("Main loop completed.")
+    print("Benchmark run completed. All resources cleaned up.")
+    print("Main loop completed.")
 
 
 def run_benchmark(
@@ -253,12 +264,12 @@ def run_benchmark(
         pbar=pbar,
     )
 
-    logger.info(
+    print(
         f"Results for token benchmark for {benchmark_config.client_config.model} queried with the {benchmark_config.client_config.llm_api} api. {service_metrics}"
     )
 
     service_metrics.store_output()
-    logger.info(f"Metrics stored to {service_metrics.output_dir}")
+    print(f"Metrics stored to {service_metrics.output_dir}")
 
     store_generated_texts(service_metrics.output_dir, generated_responses)
 
@@ -269,7 +280,7 @@ def run_benchmark(
     ):
         request_generator.get_responses(generated_responses)
         lmeval_results = request_generator.evaluate()
-        logger.info(f"Results: {lmeval_results}")
+        print(f"Results: {lmeval_results}")
 
         store_lmeval_results(service_metrics.output_dir, lmeval_results)
 
@@ -281,3 +292,4 @@ if __name__ == "__main__":
     benchmark_config: BenchmarkConfig = BenchmarkConfig.create_from_cli_args()
     random.seed(benchmark_config.seed)
     run_benchmark(benchmark_config=benchmark_config)
+    os._exit(0)

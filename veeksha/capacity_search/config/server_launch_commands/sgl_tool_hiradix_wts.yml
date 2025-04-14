@@ -5,7 +5,7 @@ model_path: "meta-llama/Meta-Llama-3-8B-Instruct"
 dtype: "auto"
 tensor_parallel_size: 1
 enable_cache_telemetry: true
-cache_telemetry_output_dir: "../veeksha/sgl-cache-tp1-hiradix-tool"
+cache_telemetry_output_dir: "../veeksha/sgl-cache-tp1-hiradix-tool-wts"
 enable_hierarchical_cache: true
 reset_cache_telemetry_on_new_file: true
 context_length: 128000

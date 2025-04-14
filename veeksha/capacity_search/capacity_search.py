@@ -150,7 +150,7 @@ class CapacitySearch:
         else:
             raise ValueError(f"Invalid SLO type: {self.args.slo_type}")
 
-        logger.info(
+        print(
             f"{benchmark_config.to_human_readable_name()}"
             f" - TBT P{self.args.tbt_percentile * 100} Tokens: {tbt}"
             f" - TTFT P{self.args.ttft_percentile * 100} Tokens: {ttft}"
@@ -213,7 +213,7 @@ class CapacitySearch:
         cached_request_level_metrics_file = self._get_request_level_metrics(run_dir)
 
         if cached_request_level_metrics_file is not None:
-            logger.info(f"Cached results found for {qps}")
+            print(f"Cached results found for {qps}")
             return self._is_under_sla(
                 cached_request_level_metrics_file, benchmark_config
             )
@@ -281,7 +281,7 @@ class CapacitySearch:
         Perform binary search to find the maximum QPS under the SLO
         """
 
-        logger.info(
+        print(
             f"Starting search for {self.job_config.get_human_readable_name()}",
         )
 
@@ -299,22 +299,24 @@ class CapacitySearch:
         best_run_id = None
         found_valid_qps = False
 
-        for _ in range(self.args.max_iterations):
-            logger.info(f"Searching between {left} and {right}")
+        for iteration in range(self.args.max_iterations):
+            print(f"=== Starting iteration {iteration + 1}/{self.args.max_iterations} ===")
+            print(f"Search space: left={left:.2f} QPS, right={right:.2f} QPS")
 
             # Define the command and arguments as a list
             if self.args.server_launch_file is not None:
+                print(f"Loading server config from {self.args.server_launch_file}")
                 # Load server configuration from YAML file
                 with open(self.args.server_launch_file, 'r') as f:
                     server_config = yaml.safe_load(f)
                 
+                print("Constructing server command from config")
                 # Construct command from YAML configuration
-                cmd = ["python", "-m", server_config["module"]]
+                cmd = ["/scratch/chus/repos/envs/env-sglang/bin/python", "-m", server_config["module"]]
                 
                 # Add all configuration parameters from YAML
                 for key, value in server_config.items():
-                    print(f"Key: {key}, Value: {value}")
-                    if key == "module":
+                    if key == "module": 
                         continue
                     if key == "json_model_override_args":
                         cmd.extend(["--json-model-override-args", json.dumps(value)])
@@ -329,51 +331,62 @@ class CapacitySearch:
                 raise ValueError("Server launch file not specified")
 
             if self.is_port_in_use(port):
-                print(f"Port {port} is already in use. Trying to kill any process using it...")
+                logger.warning(f"Port {port} is already in use, attempting cleanup")
                 try:
                     # Try to find and kill process using the port
+                    print(f"Running fuser -k {port}/tcp")
                     subprocess.run(["fuser", "-k", f"{port}/tcp"], check=False)
-                    time.sleep(2)
+                    # time.sleep(2)
                     if self.is_port_in_use(port):
-                        print(f"Failed to free port {port}. Trying a different port.")
+                        logger.warning(f"Failed to free port {port}, incrementing port number")
                         port = port + 1
                 except Exception as e:
-                    print(f"Error trying to free port: {e}")
+                    logger.error(f"Error freeing port: {str(e)}")
                     port = port + 1
 
-            print(f"Command: {cmd}")
-            print(f"Starting server on port {port}...")
+            print(f"Final command: {' '.join(cmd)}")
+            print(f"Starting server process on port {port}")
 
             try:
                 import os
-                # Redirect output to console instead of capturing it
+                print(f"Opening log files in {self.args.output_dir}")
+                # Open log files for stdout and stderr
+                stdout_file = open(f"{self.args.output_dir}/server_stdout.log", "w")
+                stderr_file = open(f"{self.args.output_dir}/server_stderr.log", "w")
+                
+                # Redirect output to files
+                start_time = time.time()
+                print("Launching server subprocess")
                 server_process = subprocess.Popen(
                     cmd,
-                    # Don't capture stdout/stderr, let them go to the console
-                    stdout=None,  # Use None to inherit parent's stdout
-                    stderr=None,  # Use None to inherit parent's stderr
+                    stdout=stdout_file,  # Redirect stdout to file
+                    stderr=stderr_file,  # Redirect stderr to file
                     text=True,
                     preexec_fn=os.setsid  
                 )
                 
                 # Check if process started successfully
                 if server_process.poll() is not None:
-                    print(f"Server process failed to start (exit code: {server_process.returncode})")
+                    logger.error(f"Server process failed immediately with exit code: {server_process.returncode}")
                     continue
                     
                 pid = server_process.pid
-                print("Server process started with PID:", pid)
+                print(f"Server process started successfully with PID: {pid}")
 
             except Exception as e:
-                print(f"Error starting server process: {e}")
+                logger.error(f"Failed to start server process: {str(e)}", exc_info=True)
                 continue
 
             # wait for server to start
-            print("Waiting for server to start...")
-            time.sleep(120)
+            print("Waiting for server startup (180s)...")
+            time.sleep(180)
+            print(f"Server startup wait complete after {time.time() - start_time:.1f}s")
 
             # stopping condition - we have reached the minimum granularity
             if abs(left - right) < self.args.min_search_granularity * qps / 100:
+                print(f"Search granularity {abs(left - right):.2f} below minimum threshold")
+                stdout_file.close()
+                stderr_file.close()
                 break
 
             qps = (left + right) / 2
@@ -381,9 +394,13 @@ class CapacitySearch:
             qps = round(qps, 2)
 
             if qps == last_qps:
+                print(f"QPS {qps} unchanged from previous iteration, stopping search")
+                stdout_file.close()
+                stderr_file.close()
                 break
 
             last_qps = qps
+            print(f"Testing QPS: {qps}")
 
             (
                 is_under_sla,
@@ -402,16 +419,20 @@ class CapacitySearch:
                 tpot_at_max_qps = tpot
                 deadline_miss_rate_at_max_qps = deadline_miss_rate
                 best_run_id = run_id
+                print(f"Found valid QPS={qps}, updating search bounds")
 
                 if qps > VICINITY_THRESHOLD * right:
                     right = min(right * QPS_INCREASE_SCALE, min_qps_over_sla)
+                    print(f"Expanding right bound to {right}")
 
                 left = qps
             else:
                 right = qps
                 min_qps_over_sla = min(min_qps_over_sla, qps)
+                print(f"QPS={qps} exceeded SLA, updating right bound to {right}")
 
             try:
+                print(f"Terminating server process group {pid}")
                 # Kill the entire process group (server and any child processes it spawned)
                 os.killpg(os.getpgid(pid), signal.SIGTERM)
                 
@@ -420,24 +441,30 @@ class CapacitySearch:
                 
                 # If it's still running, force kill
                 if server_process.poll() is None:
+                    logger.warning("Server didn't terminate gracefully, sending SIGKILL")
                     os.killpg(os.getpgid(pid), signal.SIGKILL)
                     time.sleep(1)
+
+                stdout_file.close()
+                stderr_file.close()
                 
                 print(f"Server terminated with exit code: {server_process.returncode}")
             except Exception as e:
-                print(f"Error killing server: {e}")
-
+                logger.error(f"Error killing server: {str(e)}", exc_info=True)
+                stdout_file.close()
+                stderr_file.close()
+        
         # create and save cache visualizations
         if self.args.cache_telemetry_path is not None:
             visualize_cache_telemetry(self.args.cache_telemetry_path)
 
         if not found_valid_qps:
-            logger.info(
+            print(
                 f"No valid QPS found for {self.job_config.get_human_readable_name()}",
             )
             return {}
 
-        logger.info(
+        print(
             f"Max QPS under SLO for {self.job_config.get_human_readable_name()} - "
             f"QPS: {max_qps_under_sla}, "
             f"TBT P{self.args.tbt_percentile * 100}: {tbt_at_max_qps}, "

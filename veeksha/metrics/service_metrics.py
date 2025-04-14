@@ -63,10 +63,15 @@ class ServiceMetrics:
         # never stop due to timeout if timeout is -1
         if self.timeout == -1:
             return not (self.num_completed_requests < self.max_requests)
-        return not (
+        should_continue = (
             time.monotonic() - self.start_time < self.timeout
             and self.num_completed_requests < self.max_requests
         )
+        if time.monotonic() - self.start_time > self.timeout:
+            print(f"Timeout! {self.timeout} seconds passed")
+        if self.num_completed_requests >= self.max_requests:
+            print(f"Max requests reached! {self.max_requests} requests completed")
+        return not should_continue
 
     def register_launched_request(self):
         self.metric_store.register_launched_request()
