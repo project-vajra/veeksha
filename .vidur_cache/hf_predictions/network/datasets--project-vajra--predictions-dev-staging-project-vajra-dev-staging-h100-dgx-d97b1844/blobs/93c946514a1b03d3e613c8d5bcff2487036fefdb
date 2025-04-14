@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0",
+  "model_provider": "random_forrest",
+  "profiling_datasource": "project-vajra/dev-staging-h100-dgx",
+  "tensor_parallel_size": 8,
+  "is_multi_node": true,
+  "max_tokens": 2097152,
+  "disable_kvp_communication": true
+}

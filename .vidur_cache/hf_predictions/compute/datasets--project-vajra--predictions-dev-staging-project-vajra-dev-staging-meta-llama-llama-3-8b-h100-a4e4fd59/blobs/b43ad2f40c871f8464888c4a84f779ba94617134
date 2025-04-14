@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "model_provider": "random_forrest",
+  "profiling_datasource": "project-vajra/dev-staging-meta-llama-llama-3-8b-h100",
+  "num_tensor_parallel_workers": 8,
+  "k_fold_cv_splits": 10,
+  "block_size": 16,
+  "max_tokens": 2097152,
+  "prediction_max_prefill_chunk_size": 4096,
+  "max_batch_size": 128
+}
