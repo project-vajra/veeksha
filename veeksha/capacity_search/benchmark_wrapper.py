@@ -35,7 +35,7 @@ def run(
         openai_api_url=job_config.server_config.openai_api_url,
     )
 
-    benchmark_command = f"/scratch/chus/repos/envs/env-sglang/bin/python -m veeksha.run_benchmark {job_config.to_args()} {benchmark_config.to_args()}"
+    benchmark_command = f"python -m veeksha.run_benchmark {job_config.to_args()} {benchmark_config.to_args()}"
     logger.info(f"Running benchmark with command: {benchmark_command}")
     
     # Start the benchmark process

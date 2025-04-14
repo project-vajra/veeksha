@@ -351,7 +351,7 @@ class CapacitySearch:
                 
                 print("Constructing server command from config")
                 # Construct command from YAML configuration
-                cmd = ["/scratch/chus/repos/envs/env-sglang/bin/python", "-m", server_config["module"]]
+                cmd = ["python", "-m", server_config["module"]]
                 
                 # Add all configuration parameters from YAML
                 for key, value in server_config.items():
@@ -420,7 +420,7 @@ class CapacitySearch:
 
                 # wait for server to start
                 print("Waiting for server startup (180s)...")
-                time.sleep(120)
+                time.sleep(300)
                 print(f"Server startup wait complete after {time.time() - start_time:.1f}s")
 
             (
