@@ -303,6 +303,45 @@ class CapacitySearch:
             print(f"=== Starting iteration {iteration + 1}/{self.args.max_iterations} ===")
             print(f"Search space: left={left:.2f} QPS, right={right:.2f} QPS")
 
+            # stopping condition - we have reached the minimum granularity
+            if abs(left - right) < self.args.min_search_granularity * qps / 100:
+                print(f"Search granularity {abs(left - right):.2f} below minimum threshold")
+                stdout_file.close()
+                stderr_file.close()
+                break
+
+            qps = (left + right) / 2
+            # round to 2 decimal places
+            qps = round(qps, 2)
+
+            if qps == last_qps:
+                print(f"QPS {qps} unchanged from previous iteration, stopping search")
+                stdout_file.close()
+                stderr_file.close()
+                break
+
+            last_qps = qps
+            print(f"Testing QPS: {qps}")
+
+            slo_key = "tbtslo{}_ttftslo{}_tpotslo{}_ttftslackslo{}_deadlinemissrateslo{}_dynamicttftslo{}".format(
+                        self.args.tbt_slo,
+                        self.args.ttft_slo,
+                        self.args.tpot_slo,
+                        self.args.ttft_slack_slo,
+                        self.args.deadline_miss_rate_slo,
+                        self.args.dynamic_ttft_slo,
+            )
+            overall_key = "_".join([self.job_config.get_key(), slo_key])
+            hash_key = _get_hash(overall_key)
+            run_dir = os.path.join(
+                self.args.output_dir,
+                str(self.job_config.server_config.openai_server_engine),
+                self.job_config.model_config.name,
+                # f"ttft_slack_{self.args.ttft_slack_slo}_tbt_{self.args.tbt_slo}",
+                str(self.job_config.request_generator_config.trace_file_name),
+                f"{hash_key}_q{qps}",
+            )
+
             # Define the command and arguments as a list
             if self.args.server_launch_file is not None:
                 print(f"Loading server config from {self.args.server_launch_file}")
@@ -347,60 +386,42 @@ class CapacitySearch:
             print(f"Final command: {' '.join(cmd)}")
             print(f"Starting server process on port {port}")
 
-            try:
-                import os
-                print(f"Opening log files in {self.args.output_dir}")
-                # Open log files for stdout and stderr
-                stdout_file = open(f"{self.args.output_dir}/server_stdout.log", "w")
-                stderr_file = open(f"{self.args.output_dir}/server_stderr.log", "w")
-                
-                # Redirect output to files
-                start_time = time.time()
-                print("Launching server subprocess")
-                server_process = subprocess.Popen(
-                    cmd,
-                    stdout=stdout_file,  # Redirect stdout to file
-                    stderr=stderr_file,  # Redirect stderr to file
-                    text=True,
-                    preexec_fn=os.setsid  
-                )
-                
-                # Check if process started successfully
-                if server_process.poll() is not None:
-                    logger.error(f"Server process failed immediately with exit code: {server_process.returncode}")
-                    continue
+            cached_request_level_metrics_file = self._get_request_level_metrics(run_dir)
+            if cached_request_level_metrics_file is None:
+                print(f"Cache for qps {qps} not found, starting server")
+                try:
+                    print(f"Opening log files in {self.args.output_dir}")
+                    # Open log files for stdout and stderr
+                    stdout_file = open(f"{self.args.output_dir}/server_stdout.log", "w")
+                    stderr_file = open(f"{self.args.output_dir}/server_stderr.log", "w")
                     
-                pid = server_process.pid
-                print(f"Server process started successfully with PID: {pid}")
+                    # Redirect output to files
+                    start_time = time.time()
+                    print("Launching server subprocess")
+                    server_process = subprocess.Popen(
+                        cmd,
+                        stdout=stdout_file,  # Redirect stdout to file
+                        stderr=stderr_file,  # Redirect stderr to file
+                        text=True,
+                        preexec_fn=os.setsid  
+                    )
+                    
+                    # Check if process started successfully
+                    if server_process.poll() is not None:
+                        logger.error(f"Server process failed immediately with exit code: {server_process.returncode}")
+                        continue
+                        
+                    pid = server_process.pid
+                    print(f"Server process started successfully with PID: {pid}")
 
-            except Exception as e:
-                logger.error(f"Failed to start server process: {str(e)}", exc_info=True)
-                continue
+                except Exception as e:
+                    logger.error(f"Failed to start server process: {str(e)}", exc_info=True)
+                    continue
 
-            # wait for server to start
-            print("Waiting for server startup (180s)...")
-            time.sleep(180)
-            print(f"Server startup wait complete after {time.time() - start_time:.1f}s")
-
-            # stopping condition - we have reached the minimum granularity
-            if abs(left - right) < self.args.min_search_granularity * qps / 100:
-                print(f"Search granularity {abs(left - right):.2f} below minimum threshold")
-                stdout_file.close()
-                stderr_file.close()
-                break
-
-            qps = (left + right) / 2
-            # round to 2 decimal places
-            qps = round(qps, 2)
-
-            if qps == last_qps:
-                print(f"QPS {qps} unchanged from previous iteration, stopping search")
-                stdout_file.close()
-                stderr_file.close()
-                break
-
-            last_qps = qps
-            print(f"Testing QPS: {qps}")
+                # wait for server to start
+                print("Waiting for server startup (180s)...")
+                time.sleep(120)
+                print(f"Server startup wait complete after {time.time() - start_time:.1f}s")
 
             (
                 is_under_sla,
@@ -453,6 +474,47 @@ class CapacitySearch:
                 logger.error(f"Error killing server: {str(e)}", exc_info=True)
                 stdout_file.close()
                 stderr_file.close()
+                # get output_cache data and tag with current qps. Rename so that it's not overwritten by next run
+                cache_output_path = self.args.cache_telemetry_path
+                two_levels_up = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                output_cache_file = os.path.join(two_levels_up, cache_output_path)
+                
+                if os.path.exists(output_cache_file):
+                    with open(output_cache_file, "r") as f:
+                        output_cache = json.load(f)
+
+                    # delete previous cache telemtry data to restart
+                    os.remove(output_cache_file)
+                    
+                    # tag with current qps and save
+                    output_cache["qps"] = qps
+                    cache_path_parts = os.path.splitext(cache_output_path)
+                    modified_cache_path = f"{cache_path_parts[0]}_qps_{qps}{cache_path_parts[1]}"
+                    new_output_cache_file = os.path.join(two_levels_up, modified_cache_path)
+                    
+                    with open(new_output_cache_file, "w") as f:
+                        json.dump(output_cache, f)
+
+            # get output_cache data and tag with current qps. Rename so that it's not overwritten by next run
+            cache_output_path = self.args.cache_telemetry_path
+            two_levels_up = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            output_cache_file = os.path.join(two_levels_up, cache_output_path)
+            
+            if os.path.exists(output_cache_file):
+                with open(output_cache_file, "r") as f:
+                    output_cache = json.load(f)
+
+                # delete previous cache telemtry data to restart
+                os.remove(output_cache_file)
+                
+                # tag with current qps and save
+                output_cache["qps"] = qps
+                cache_path_parts = os.path.splitext(cache_output_path)
+                modified_cache_path = f"{cache_path_parts[0]}_qps_{qps}{cache_path_parts[1]}"
+                new_output_cache_file = os.path.join(two_levels_up, modified_cache_path)
+                
+                with open(new_output_cache_file, "w") as f:
+                    json.dump(output_cache, f)
         
         # create and save cache visualizations
         if self.args.cache_telemetry_path is not None:
