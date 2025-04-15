@@ -1,6 +1,6 @@
 servers:
   - openai_server_engine: sglang
-    openai_api_url: "http://localhost:8000/v1"
+    openai_api_url: "http://localhost:8013/v1"
     openai_api_key: token-abc123
 
 models:
@@ -13,8 +13,8 @@ request_generator_configs:
     request_length_generator_provider: "trace"
     request_generator_type: "prefix"
     request_generator_max_tokens: 128000
-    trace_request_length_generator_trace_file: "data/processed_traces/conversation_trace.jsonl"
-    trace_file_name: "conversation"
+    trace_request_length_generator_trace_file: "data/processed_traces/toolagent_trace.jsonl"
+    trace_file_name: "toolagent"
 
 client_configs:
   - num_clients: 15

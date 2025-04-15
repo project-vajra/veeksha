@@ -1,0 +1,13 @@
+# SGLang Server Configuration
+module: "sglang.launch_server"
+port: 8013
+model_path: "meta-llama/Meta-Llama-3-8B-Instruct"
+dtype: "auto"
+tensor_parallel_size: 1
+context_length: 128000
+max_running_requests: 256
+chunked_prefill_size: 512
+page_size: 16
+json_model_override_args: {'rope_scaling': {'type': 'linear', 'factor': 16.0}, 'rope_theta': 8000000}
+disable_radix_cache: true
+enable_cache_telemetry: false

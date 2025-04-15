@@ -220,27 +220,6 @@ class CapacitySearch:
 
         self._run_benchmark(benchmark_config)
 
-        # get output_cache data and tag with current qps. Rename so that it's not overwritten by next run
-        cache_output_path = self.args.cache_telemetry_path
-        two_levels_up = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        output_cache_file = os.path.join(two_levels_up, cache_output_path)
-        
-        if os.path.exists(output_cache_file):
-            with open(output_cache_file, "r") as f:
-                output_cache = json.load(f)
-
-            # delete previous cache telemtry data to restart
-            os.remove(output_cache_file)
-            
-            # tag with current qps and save
-            output_cache["qps"] = qps
-            cache_path_parts = os.path.splitext(cache_output_path)
-            modified_cache_path = f"{cache_path_parts[0]}_qps_{qps}{cache_path_parts[1]}"
-            new_output_cache_file = os.path.join(two_levels_up, modified_cache_path)
-            
-            with open(new_output_cache_file, "w") as f:
-                json.dump(output_cache, f)
-
         request_level_metrics_file = self._get_request_level_metrics(run_dir)
 
         assert (
@@ -299,6 +278,15 @@ class CapacitySearch:
         best_run_id = None
         found_valid_qps = False
 
+        first_server_launch = True
+        with open(self.args.server_launch_file, 'r') as f:
+            server_config = yaml.safe_load(f)
+
+        try:
+            enable_cache_telemetry = server_config["enable_cache_telemetry"]
+        except KeyError:
+            enable_cache_telemetry = False
+
         for iteration in range(self.args.max_iterations):
             print(f"=== Starting iteration {iteration + 1}/{self.args.max_iterations} ===")
             print(f"Search space: left={left:.2f} QPS, right={right:.2f} QPS")
@@ -347,83 +335,86 @@ class CapacitySearch:
             if cached_request_level_metrics_file is None:
                 print(f"Cache for qps {qps} not found, starting server")
 
-                # Define the command and arguments as a list
-                if self.args.server_launch_file is not None:
-                    print(f"Loading server config from {self.args.server_launch_file}")
-                    # Load server configuration from YAML file
-                    with open(self.args.server_launch_file, 'r') as f:
-                        server_config = yaml.safe_load(f)
-                    
-                    print("Constructing server command from config")
-                    # Construct command from YAML configuration
-                    cmd = ["python", "-m", server_config["module"]]
-                    
-                    # Add all configuration parameters from YAML
-                    for key, value in server_config.items():
-                        if key == "module": 
-                            continue
-                        if key == "json_model_override_args":
-                            cmd.extend(["--json-model-override-args", json.dumps(value)])
-                        else:
-                            param_key = key.replace("_", "-")
-                            if isinstance(value, bool) and value:
-                                cmd.append(f"--{param_key}")
-                            elif not isinstance(value, bool):
-                                cmd.extend([f"--{param_key}", str(value)])
-                    port = server_config["port"]
-                else:
-                    raise ValueError("Server launch file not specified")
-
-                if self.is_port_in_use(port):
-                    logger.warning(f"Port {port} is already in use, attempting cleanup")
-                    try:
-                        # Try to find and kill process using the port
-                        print(f"Running fuser -k {port}/tcp")
-                        subprocess.run(["fuser", "-k", f"{port}/tcp"], check=False)
-                        # time.sleep(2)
-                        if self.is_port_in_use(port):
-                            logger.warning(f"Failed to free port {port}, incrementing port number")
-                            port = port + 1
-                    except Exception as e:
-                        logger.error(f"Error freeing port: {str(e)}")
-                        port = port + 1
-
-                print(f"Final command: {' '.join(cmd)}")
-                print(f"Starting server process on port {port}")
-
-                try:
-                    print(f"Opening log files in {self.args.output_dir}")
-                    # Open log files for stdout and stderr
-                    stdout_file = open(f"{self.args.output_dir}/server_stdout.log", "w")
-                    stderr_file = open(f"{self.args.output_dir}/server_stderr.log", "w")
-                    
-                    # Redirect output to files
-                    start_time = time.time()
-                    print("Launching server subprocess")
-                    server_process = subprocess.Popen(
-                        cmd,
-                        stdout=stdout_file,  # Redirect stdout to file
-                        stderr=stderr_file,  # Redirect stderr to file
-                        text=True,
-                        preexec_fn=os.setsid  
-                    )
-                    
-                    # Check if process started successfully
-                    if server_process.poll() is not None:
-                        logger.error(f"Server process failed immediately with exit code: {server_process.returncode}")
-                        continue
+                ############## server launching. we restart the server on each iteration for cache telemetry
+                if enable_cache_telemetry or first_server_launch:
+                    first_server_launch = False
+                    # Define the command and arguments as a list
+                    if self.args.server_launch_file is not None:
+                        print(f"Loading server config from {self.args.server_launch_file}")
+                        # Load server configuration from YAML file
+                        with open(self.args.server_launch_file, 'r') as f:
+                            server_config = yaml.safe_load(f)
                         
-                    pid = server_process.pid
-                    print(f"Server process started successfully with PID: {pid}")
+                        print("Constructing server command from config")
+                        # Construct command from YAML configuration
+                        cmd = ["python", "-m", server_config["module"]]
+                        
+                        # Add all configuration parameters from YAML
+                        for key, value in server_config.items():
+                            if key == "module": 
+                                continue
+                            if key == "json_model_override_args":
+                                cmd.extend(["--json-model-override-args", json.dumps(value)])
+                            else:
+                                param_key = key.replace("_", "-")
+                                if isinstance(value, bool) and value:
+                                    cmd.append(f"--{param_key}")
+                                elif not isinstance(value, bool):
+                                    cmd.extend([f"--{param_key}", str(value)])
+                        port = server_config["port"]
+                    else:
+                        raise ValueError("Server launch file not specified")
 
-                except Exception as e:
-                    logger.error(f"Failed to start server process: {str(e)}", exc_info=True)
-                    continue
+                    if self.is_port_in_use(port):
+                        logger.warning(f"Port {port} is already in use, attempting cleanup")
+                        try:
+                            # Try to find and kill process using the port
+                            print(f"Running fuser -k {port}/tcp")
+                            subprocess.run(["fuser", "-k", f"{port}/tcp"], check=False)
+                            # time.sleep(2)
+                            if self.is_port_in_use(port):
+                                logger.warning(f"Failed to free port {port}, incrementing port number")
+                                port = port + 1
+                        except Exception as e:
+                            logger.error(f"Error freeing port: {str(e)}")
+                            port = port + 1
 
-                # wait for server to start
-                print("Waiting for server startup (180s)...")
-                time.sleep(180)
-                print(f"Server startup wait complete after {time.time() - start_time:.1f}s")
+                    print(f"Final command: {' '.join(cmd)}")
+                    print(f"Starting server process on port {port}")
+
+                    try:
+                        print(f"Opening log files in {self.args.output_dir}")
+                        # Open log files for stdout and stderr
+                        stdout_file = open(f"{self.args.output_dir}/server_stdout.log", "w")
+                        stderr_file = open(f"{self.args.output_dir}/server_stderr.log", "w")
+                        
+                        # Redirect output to files
+                        start_time = time.time()
+                        print("Launching server subprocess")
+                        server_process = subprocess.Popen(
+                            cmd,
+                            stdout=stdout_file,  # Redirect stdout to file
+                            stderr=stderr_file,  # Redirect stderr to file
+                            text=True,
+                            preexec_fn=os.setsid  
+                        )
+                        
+                        # Check if process started successfully
+                        if server_process.poll() is not None:
+                            logger.error(f"Server process failed immediately with exit code: {server_process.returncode}")
+                            continue
+                            
+                        pid = server_process.pid
+                        print(f"Server process started successfully with PID: {pid}")
+
+                    except Exception as e:
+                        logger.error(f"Failed to start server process: {str(e)}", exc_info=True)
+                        continue
+
+                    # wait for server to start
+                    print("Waiting for server startup (240s)...")
+                    time.sleep(240)
+                    print(f"Server startup wait complete after {time.time() - start_time:.1f}s")
 
             (
                 is_under_sla,
@@ -455,7 +446,7 @@ class CapacitySearch:
                 print(f"QPS={qps} exceeded SLA, updating right bound to {right}")
 
             print(f"Cached request level metrics file: {cached_request_level_metrics_file}")
-            if cached_request_level_metrics_file is None:
+            if cached_request_level_metrics_file is None and enable_cache_telemetry:
                 try:
                     print(f"Terminating server process group {pid}")
                     # Kill the entire process group (server and any child processes it spawned)
@@ -478,26 +469,6 @@ class CapacitySearch:
                     logger.error(f"Error killing server: {str(e)}", exc_info=True)
                     stdout_file.close()
                     stderr_file.close()
-                    # get output_cache data and tag with current qps. Rename so that it's not overwritten by next run
-                    cache_output_path = self.args.cache_telemetry_path
-                    two_levels_up = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                    output_cache_file = os.path.join(two_levels_up, cache_output_path)
-                    
-                    if os.path.exists(output_cache_file):
-                        with open(output_cache_file, "r") as f:
-                            output_cache = json.load(f)
-
-                        # delete previous cache telemtry data to restart
-                        os.remove(output_cache_file)
-                        
-                        # tag with current qps and save
-                        output_cache["qps"] = qps
-                        cache_path_parts = os.path.splitext(cache_output_path)
-                        modified_cache_path = f"{cache_path_parts[0]}_qps_{qps}{cache_path_parts[1]}"
-                        new_output_cache_file = os.path.join(two_levels_up, modified_cache_path)
-                        
-                        with open(new_output_cache_file, "w") as f:
-                            json.dump(output_cache, f)
 
                 # get output_cache data and tag with current qps. Rename so that it's not overwritten by next run
                 cache_output_path = self.args.cache_telemetry_path
