@@ -41,10 +41,10 @@ class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
         metadata={"help": "Path to the trace file for request intervals."},
     )
     start_time: str = field(
-        default="1970-01-04 12:00:00", metadata={"help": "Start time for the trace."}
+        default="1970-01-01 00:00:00", metadata={"help": "Start time for the trace."}
     )
     end_time: str = field(
-        default="1970-01-04 15:00:00", metadata={"help": "End time for the trace."}
+        default="1970-01-01 04:00:00", metadata={"help": "End time for the trace."}
     )
     time_scale_factor: float = field(
         default=0.3,

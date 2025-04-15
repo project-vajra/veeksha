@@ -413,7 +413,7 @@ class CapacitySearch:
 
                     # wait for server to start
                     print("Waiting for server startup (240s)...")
-                    time.sleep(240)
+                    time.sleep(40)
                     print(f"Server startup wait complete after {time.time() - start_time:.1f}s")
 
             (
@@ -453,7 +453,7 @@ class CapacitySearch:
                     os.killpg(os.getpgid(pid), signal.SIGTERM)
                     
                     # Give it a moment to shut down gracefully
-                    time.sleep(3)
+                    time.sleep(5)
                     
                     # If it's still running, force kill
                     if server_process.poll() is None:

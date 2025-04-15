@@ -8,7 +8,7 @@ models:
     identifier: meta-llama/Meta-Llama-3-8B-Instruct
 
 request_generator_configs:
-  - start_qps: 5
+  - start_qps: 2.5
     request_interval_generator_provider: "poisson"
     request_length_generator_provider: "trace"
     request_generator_type: "prefix"
