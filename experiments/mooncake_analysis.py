@@ -10,6 +10,7 @@ import os
 from datetime import datetime
 import sys
 
+#%%
 # --- Command Line Arguments ---
 def parse_args():
     parser = argparse.ArgumentParser(description='Analyze KVCache reuse patterns in trace files')
@@ -31,7 +32,7 @@ def parse_args():
     
     return args
 
-
+#%%
 def load_trace_data(trace_file):
     """Load and parse trace data from a file."""
     data = []
@@ -60,7 +61,7 @@ def load_trace_data(trace_file):
     
     return df
 
-
+#%%
 def create_running_hashes(hash_ids):
     """Create running hashes for a sequence of hash IDs.
     Each running hash at position i is a hash of the sequence from 0 to i."""
@@ -78,7 +79,7 @@ def create_running_hashes(hash_ids):
     
     return running_hashes
 
-
+#%%
 def analyze_single_trace(df, args, trace_name, run_dir, plots_dir):
     """Analyze a single trace file and generate a report."""
     # Store the original hash IDs before replacing them
@@ -418,7 +419,7 @@ def analyze_single_trace(df, args, trace_name, run_dir, plots_dir):
     
     return metrics, df
 
-
+#%%
 def generate_comparative_plots(metrics_list, all_dfs, plots_dir):
     """Generate comparative plots for multiple trace files."""
     # Convert metrics list to DataFrame for easier plotting
@@ -568,7 +569,7 @@ def generate_comparative_plots(metrics_list, all_dfs, plots_dir):
         plt.savefig(os.path.join(plots_dir, "block_popularity_comparison.png"))
     plt.close()
 
-
+#%%
 def main():
     args = parse_args()
     
@@ -732,3 +733,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# %%
