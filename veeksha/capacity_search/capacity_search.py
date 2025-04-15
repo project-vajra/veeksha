@@ -167,10 +167,14 @@ class CapacitySearch:
         )
 
     def is_under_sla(
-        self, qps: float
+        self, qps: float, trace_input_file: str
     ) -> Tuple[
         bool, Optional[float], Optional[float], Optional[float], Optional[float], str
     ]:
+
+        self.job_config.request_generator_config.trace_request_length_generator_trace_file = trace_input_file
+        self.job_config.request_generator_config.trace_request_interval_generator_trace_file = trace_input_file
+
         job_config_key = self.job_config.get_key()
         slo_key = "tbtslo{}_ttftslo{}_tpotslo{}_ttftslackslo{}_deadlinemissrateslo{}_dynamicttftslo{}".format(
             self.args.tbt_slo,
@@ -191,7 +195,7 @@ class CapacitySearch:
                 str(self.job_config.server_config.openai_server_engine),
                 self.job_config.model_config.name,
                 # f"ttft_slack_{self.args.ttft_slack_slo}_tbt_{self.args.tbt_slo}",
-                str(self.job_config.request_generator_config.trace_file_name),
+                trace_input_file,
                 f"{hash_key}_q{qps}",
             ),
             qps=qps,
@@ -302,6 +306,14 @@ class CapacitySearch:
             # round to 2 decimal places
             qps = round(qps, 2)
 
+            # build command
+            cmd = f"python experiments/generate_session_sampled_trace.py --trace-file ./data/processed_traces/conversation_trace.jsonl --minimum-match-threshold 0.4 --dispatch-rate {qps}"
+
+            # run command
+            subprocess.run(cmd, shell=True, check=True)
+
+            trace_input_file = f"data/generated_traces/data/processed_traces/conversation_trace.jsonl/{qps}/sampled_trace_dr{qps}_mmt0.4.jsonl"
+
             if qps == last_qps:
                 print(f"QPS {qps} unchanged from previous iteration, stopping search")
                 stdout_file.close()
@@ -326,7 +338,7 @@ class CapacitySearch:
                 str(self.job_config.server_config.openai_server_engine),
                 self.job_config.model_config.name,
                 # f"ttft_slack_{self.args.ttft_slack_slo}_tbt_{self.args.tbt_slo}",
-                str(self.job_config.request_generator_config.trace_file_name),
+                trace_input_file,# str(self.job_config.request_generator_config.trace_file_name),
                 f"{hash_key}_q{qps}",
             )
 
@@ -413,7 +425,7 @@ class CapacitySearch:
 
                     # wait for server to start
                     print("Waiting for server startup (240s)...")
-                    time.sleep(40)
+                    time.sleep(60)
                     print(f"Server startup wait complete after {time.time() - start_time:.1f}s")
 
             (
@@ -423,7 +435,7 @@ class CapacitySearch:
                 tpot,
                 deadline_miss_rate,
                 run_id,
-            ) = self.is_under_sla(qps)
+            ) = self.is_under_sla(qps, trace_input_file)
 
             if is_under_sla:
                 found_valid_qps = True
