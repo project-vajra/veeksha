@@ -363,7 +363,10 @@ class CapacitySearch:
                         if key == "module": 
                             continue
                         if key == "json_model_override_args":
-                            cmd.extend(["--json-model-override-args", json.dumps(value)])
+                            if server_config["module"].startswith("vllm"):
+                                cmd.extend(["--rope-scaling", json.dumps(value)])
+                            else:
+                                cmd.extend(["--json-model-override-args", json.dumps(value)])
                         else:
                             param_key = key.replace("_", "-")
                             if isinstance(value, bool) and value:
@@ -397,6 +400,11 @@ class CapacitySearch:
                     stdout_file = open(f"{self.args.output_dir}/server_stdout.log", "w")
                     stderr_file = open(f"{self.args.output_dir}/server_stderr.log", "w")
                     
+                    env = os.environ.copy()
+                    
+                    if server_config["module"].startswith("vllm"):
+                        env["VLLM_ALLOW_LONG_MAX_MODEL_LEN"] = "1"
+                    
                     # Redirect output to files
                     start_time = time.time()
                     print("Launching server subprocess")
@@ -405,7 +413,8 @@ class CapacitySearch:
                         stdout=stdout_file,  # Redirect stdout to file
                         stderr=stderr_file,  # Redirect stderr to file
                         text=True,
-                        preexec_fn=os.setsid  
+                        preexec_fn=os.setsid,
+                        env=env,
                     )
                     
                     # Check if process started successfully

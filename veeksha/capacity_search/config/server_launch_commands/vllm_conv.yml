@@ -1,0 +1,10 @@
+module: "vllm.entrypoints.openai.api_server"
+port: 8000
+model: "meta-llama/Meta-Llama-3-8B-Instruct"
+dtype: "auto"
+tensor_parallel_size: 1
+cache_telemetry_output_dir: "./vllm-cache-tp1-conv"
+max_model_len: 128000
+max_num_batched_tokens: 512
+rope_theta: 8000000
+json_model_override_args: {'rope_type':'linear', 'factor': 16.0}
