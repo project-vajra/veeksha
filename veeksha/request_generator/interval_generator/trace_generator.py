@@ -59,7 +59,7 @@ class TraceRequestIntervalGenerator(BaseRequestIntervalGenerator):
             f"Loaded interval trace file {trace_file} with {len(self.trace_df)} requests"
         )
 
-        print(self.trace_df)
+        logger.info(self.trace_df)
 
     def get_next_inter_request_time(self) -> float:
         if self.next_request_idx >= len(self.trace_df):

@@ -118,8 +118,8 @@ def get_sessions(requests, minimum_match_threshold=0.1):
             hash_to_length[hash_id] = prefix_len + 1
 
     # Enforce maximum time between requests in a session.
-    # Requests in a session separated by more than 15 minutes go into a new session
-    MAX_SESSION_GAP = 15 * 60 * 1000  # 15 minutes in milliseconds
+    # Requests in a session separated by more than 5 minutes go into a new session
+    MAX_SESSION_GAP = 5 * 60 * 1000
 
     new_sessions = {}
     next_session_id = 0
@@ -178,6 +178,52 @@ def get_sessions(requests, minimum_match_threshold=0.1):
     # Replace the original sessions with the new ones
     sessions = new_sessions
 
+    # # get avg request length for session 4
+    # session_requests = sessions[4]
+    # avg_request_length = np.mean([request['input_length'] for request in session_requests])
+    # print(f"Average request length for session 4: {avg_request_length}")
+
+    # # plot of when the requests from session 4 come, x axis is time, y axis is number of hits
+    # plt.figure(figsize=(10, 6))
+    # session_requests = sessions[4]
+    # timestamps = [request['timestamp'] for request in session_requests]
+    # # Convert timestamps to relative time in seconds from the first request
+    # if timestamps:
+    #     start_time = min(timestamps)
+    #     relative_times = [(t - start_time) / 1000 for t in timestamps]
+        
+    #     # Create a histogram of request times
+    #     sns.histplot(relative_times, bins=30, kde=True)
+    #     plt.xlabel('Time (seconds since first request)')
+    #     plt.ylabel('Number of Hits')
+    #     plt.title('Request Distribution for Session 4')
+    #     plt.tight_layout()
+    #     plt.savefig('session_4_requests.png')
+    #     plt.show()
+    # else:
+    #     print("Session 4 has no requests")
+
+    # print overall stats for the distance between requests within sessions
+    # mean, std, median, p25, p75, p90
+    distances = []
+    for session in sessions.values():
+        timestamps = [request['timestamp'] for request in session]
+        for i in range(len(timestamps) - 1):
+            distance = timestamps[i + 1] - timestamps[i]
+            distances.append(distance / 1000)
+    
+    print(f"Mean distance between requests within sessions: {np.mean(distances)} s")
+    print(f"Std distance between requests within sessions: {np.std(distances)} s")
+    print(f"Median distance between requests within sessions: {np.median(distances)} s")
+    print(f"P25 distance between requests within sessions: {np.percentile(distances, 25)} s")
+    print(f"P75 distance between requests within sessions: {np.percentile(distances, 75)} s")
+    print(f"P90 distance between requests within sessions: {np.percentile(distances, 90)} s")
+    print()
+
+    # print id of the largest session
+    largest_session_id = max(sessions, key=lambda x: len(sessions[x]))
+    print(f"Largest session id: {largest_session_id}")
+
     return sessions
 
 #%%
@@ -196,12 +242,16 @@ def sample_sessions(sessions, dispatch_rate):
         next_interval = min(next_interval, 1 / dispatch_rate * 3) * 1000
         session = sessions.pop(0)
         session_original_timestamp = None
-        for request in session:
+        for i, request in enumerate(session):
             if session_original_timestamp is None:
                 session_original_timestamp = request['timestamp']
             request['timestamp'] = timestamp + (request['timestamp'] - session_original_timestamp)
+
+        # filter for session with id 4
+        # if session[0]['session_id'] == 4:
+        #     sampled_sessions.append(session)
         sampled_sessions.append(session)
-        timestamp += next_interval
+        #timestamp += next_interval
 
     return sampled_sessions
 
@@ -244,15 +294,41 @@ def analyze_single_trace(df, args):
     print(f"Session p90 length: {np.percentile(session_lengths, 90)}")
     print()
 
+
+    # go through all sessions and add metadata: session id, number of requests in session, and request id (sequential)
+    for session_id, session in sessions.items():
+        for request in session:
+            request['session_id'] = session_id
+            request['num_requests_in_session'] = len(session)
+
     # 3. Sample sessions using dispatch rate with poisson distribution
     sampled_sessions = sample_sessions(sessions, args.dispatch_rate)
 
+    # # force set all timestamps to be 10 seconds away from the previous request
+    # for i in range(1, len(sampled_requests)):
+    #     if i == 1:
+    #         sampled_requests[i]['timestamp'] = 0
+    #     else:
+    #         sampled_requests[i]['timestamp'] = sampled_requests[i-1]['timestamp'] + 10000
 
     # 4. flatten the sessions
     sampled_requests = [request for session in sampled_sessions for request in session]
 
     # sort by timestamp
     sampled_requests.sort(key=lambda x: x['timestamp'])
+
+    # go through all requests and add metadata: request id (sequential)
+    sequential_request_id = 0
+    for request in sampled_requests:
+        request['request_id'] = sequential_request_id
+        sequential_request_id += 1
+
+    # apply the shrink factor (squeezes the time between requests)
+    # shrink_factor = 0.01
+    # for i in range(1, len(sampled_requests)):
+    #     sampled_requests[i]['timestamp'] = sampled_requests[i]['timestamp'] * shrink_factor
+
+    # print(f"Shrunk {len(sampled_requests)} requests by a factor of {shrink_factor}")
 
     return sampled_requests, sampled_sessions
 
@@ -266,7 +342,7 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Create a specific directory for this trace and timestamp
-    trace_dir = os.path.join(args.output_dir, args.trace_file, str(args.dispatch_rate))
+    trace_dir = os.path.join(args.output_dir, os.path.basename(args.trace_file), str(args.dispatch_rate))
     os.makedirs(trace_dir, exist_ok=True)
         
     # Load trace data

@@ -17,6 +17,7 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
     def __init__(self, config: TraceRequestLengthGeneratorConfig):
         self.config = config
 
+        print(f"Loading trace file {self.config.trace_file}")
         trace_file = self.config.trace_file
         if trace_file.endswith(".jsonl"):
             self.trace_df = pd.read_json(trace_file, lines=True)
@@ -97,9 +98,14 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
             f"Prompt/decode token ratio stats\n:{pd_ratio.describe(percentiles=[0.25, 0.5, 0.75, 0.9, 0.95, 0.99])}"
         )
 
+        # filter for only session with id number 4
+        # self.trace_df = self.trace_df[self.trace_df["session_id"] == 4]
+
         # randomly shuffle the df based on the seed
         # self.trace_df = self.trace_df.sample(frac=1, random_state=self.config.seed)
         self.next_request_idx = 0
+
+        logger.info(self.trace_df)
 
     def get_next_num_tokens(self) -> Tuple[float, float]:
         if self.next_request_idx >= len(self.trace_df):
@@ -113,10 +119,10 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
             row["num_decode_tokens"],
         )
 
-    def get_next_request_params(self) -> Tuple[list[int], int, int]:
+    def get_next_request_params(self) -> Tuple[list[int], int, int, int, int, int]:
         assert self._has_hash_ids
         if self.next_request_idx >= len(self.trace_df):
-            return [], -1, -1
+            return [], -1, -1, -1, -1, -1
 
         row = self.trace_df.iloc[self.next_request_idx]
         self.next_request_idx += 1
@@ -129,9 +135,13 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
             num_prefill_tokens + self.config.block_size - 1
         ) // self.config.block_size
 
+        request_id = row["request_id"]
+        session_id = row["session_id"]
+        num_requests_in_session = row["num_requests_in_session"]
+
         assert hash_count >= block_count, f"{hash_count} >= {block_count}"
 
-        return (hash_ids, int(num_prefill_tokens), int(num_decode_tokens))
+        return (hash_ids, int(num_prefill_tokens), int(num_decode_tokens), request_id, session_id, num_requests_in_session)
 
     def has_hash_ids(self) -> bool:
         return self._has_hash_ids

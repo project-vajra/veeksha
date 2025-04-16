@@ -172,6 +172,9 @@ class CapacitySearch:
         bool, Optional[float], Optional[float], Optional[float], Optional[float], str
     ]:
 
+        # replace "processed" with "generated"
+        trace_input_file = trace_input_file.replace("processed", "generated")
+
         self.job_config.request_generator_config.trace_request_length_generator_trace_file = trace_input_file
         self.job_config.request_generator_config.trace_request_interval_generator_trace_file = trace_input_file
 
@@ -291,6 +294,8 @@ class CapacitySearch:
         except KeyError:
             enable_cache_telemetry = False
 
+        source_trace_file = self.job_config.request_generator_config.trace_request_length_generator_trace_file
+
         for iteration in range(self.args.max_iterations):
             print(f"=== Starting iteration {iteration + 1}/{self.args.max_iterations} ===")
             print(f"Search space: left={left:.2f} QPS, right={right:.2f} QPS")
@@ -307,12 +312,12 @@ class CapacitySearch:
             qps = round(qps, 2)
 
             # build command
-            cmd = f"python experiments/generate_session_sampled_trace.py --trace-file ./data/processed_traces/conversation_trace.jsonl --minimum-match-threshold 0.4 --dispatch-rate {qps}"
+            cmd = f"python experiments/generate_session_sampled_trace.py --trace-file {source_trace_file} --minimum-match-threshold {self.args.session_match_threshold} --dispatch-rate {qps}"
 
             # run command
             subprocess.run(cmd, shell=True, check=True)
 
-            trace_input_file = f"data/generated_traces/data/processed_traces/conversation_trace.jsonl/{qps}/sampled_trace_dr{qps}_mmt0.4.jsonl"
+            trace_input_file = f"{source_trace_file}/{qps}/sampled_trace_dr{qps}_mmt{self.args.session_match_threshold}.jsonl"
 
             if qps == last_qps:
                 print(f"QPS {qps} unchanged from previous iteration, stopping search")

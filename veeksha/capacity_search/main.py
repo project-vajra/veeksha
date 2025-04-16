@@ -60,6 +60,12 @@ def get_parser():
         type=str,
         help="Path to the cache telemetry file.",
     )
+    parser.add_argument(
+        "--session-match-threshold",
+        type=float,
+        help="Session match threshold.",
+        default=0.2,
+    )
     parser.add_argument("--max-iterations", type=int, default=20)
     parser.add_argument(
         "--time-limit", type=int, default=20, help="Time limit in minutes"

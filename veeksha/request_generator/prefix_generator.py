@@ -75,9 +75,13 @@ class PrefixRequestGenerator(SyntheticRequestGenerator):
             hash_ids,
             remaining_prompt_tokens,
             num_output_tokens,
+            request_id,
+            session_id,
+            num_requests_in_session,
         ) = self.request_length_generator.get_next_request_params()
         block_size = self.request_length_generator.get_block_size()
 
+        num_prefill_tokens = remaining_prompt_tokens
         prompt = '"""'
         # print(f"Hash IDs: {hash_ids}")
         for hash_id in hash_ids:
@@ -115,6 +119,12 @@ class PrefixRequestGenerator(SyntheticRequestGenerator):
             llm_api=self.client_config.llm_api,
             address_append_value=self.client_config.address_append_value,
             id=self.request_id,
+            metadata={
+                "request_id": request_id,
+                "session_id": session_id,
+                "num_requests_in_session": num_requests_in_session,
+                "num_prefill_tokens": num_prefill_tokens,
+            },
         )
 
         self.request_id += 1

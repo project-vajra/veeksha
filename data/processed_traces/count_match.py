@@ -29,7 +29,7 @@ def count_repeated_hash_ids(file_path, n):
     return percentage
 
 # Example usage
-file_path = './data/processed_traces/conversation_trace.jsonl'
+file_path = './data/generated_traces/toolagent_trace.jsonl/0.5/sampled_.jsonl'
 n = 100000  # Number of entries to process
 percentage = count_repeated_hash_ids(file_path, n)
 print(f"Percentage of repeated hash_ids in first {n} entries: {percentage:.2f}%")

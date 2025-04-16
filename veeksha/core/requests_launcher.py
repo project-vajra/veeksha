@@ -6,7 +6,9 @@ from typing import Dict
 from veeksha.config.config import ClientConfig
 from veeksha.core.llm_clients import construct_client
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
+from veeksha.logger import init_logger
 
+logger = init_logger(__name__)
 
 class RequestsLauncher:
     """Launch requests from LLMClients to their respective LLM APIs."""
@@ -63,6 +65,11 @@ class RequestsLauncher:
             request_config = self.input_queue.get()
             if request_config is None:
                 break
+            logger.info("-" * 80)
+            logger.info(f"Client {client_id} sent request {request_config.metadata['request_id']}")
+            logger.info(f"Number of prefill tokens: {request_config.metadata['num_prefill_tokens']}")
+            logger.info(f"Session id: {request_config.metadata['session_id']}")
+            logger.info(f"Number of requests in session: {request_config.metadata['num_requests_in_session']}")
             result = self.llm_clients[client_id].send_llm_request(request_config)
             self.output_queue.put(result)
 
