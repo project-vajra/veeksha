@@ -6,7 +6,7 @@ import os
 from collections import defaultdict
 
 # Import constants from the constants file
-from constants import COLORS, OPACITY, FONT, HATCHES
+from constants import COLORS, OPACITY, FONT, HATCHES, PRETTY_NAMES, SYSTEM_NAME_MAP
 
 
 def create_running_hashes(hash_ids):
@@ -109,49 +109,99 @@ def load_and_process_data(trace_type):
     return reuse_potential
 
 
+# Define the simulated reuse rates for different systems
+# These values represent what percentage of the maximum potential reuse is actually attained
+# by each system (based on your requirements)
+SYSTEM_EFFICIENCY = {
+    "vllm": 0.65,  # vLLM achieves 65% of potential reuse
+    "sglang": 0.75,  # SGLang achieves 75% of potential reuse
+    "sglang_wts": 0.85,  # SGLang-WTS achieves 85% of potential reuse
+}
+
+# Define pretty names for trace types
+TRACE_TYPE_NAMES = {
+    "conversation": "Conversation",
+    "toolagent": "Tool Agent",
+    "swe_agent": "SWE Agent"
+}
+
+
 def plot_reuse_potential_bar(trace_types):
-    """Plot a bar chart showing the maximum reuse potential for different trace types."""
+    """Plot a bar chart showing the maximum reuse potential and actual reuse for different systems."""
     # Set up the figure with appropriate size for a single column in SOSP paper
     plt.rcParams.update({'font.size': 10})
     plt.rcParams.update({'font.family': FONT})
 
     # Create a figure optimized for single column in SOSP paper (typically ~3.33 inches wide)
-    fig, ax = plt.subplots(figsize=(3.33, 2.5))
+    fig, ax = plt.subplots(figsize=(3.33, 2.5))  # Match the CDF plot dimensions
 
     # Create a dictionary to store results for each trace type
-    results = {}
+    max_potential = {}
+    actual_reuse = defaultdict(dict)
 
     # Load data for each trace type
-    for i, trace_type in enumerate(trace_types):
+    for trace_type in trace_types:
         reuse_potential = load_and_process_data(trace_type)
         if reuse_potential > 0:
-            results[trace_type] = reuse_potential
+            max_potential[trace_type] = reuse_potential
+            
+            # Calculate simulated actual reuse for each system
+            for system, efficiency in SYSTEM_EFFICIENCY.items():
+                actual_reuse[system][trace_type] = reuse_potential * efficiency
 
     # Prepare data for plotting
-    trace_labels = [t.capitalize() for t in results.keys()]
-    reuse_values = list(results.values())
+    trace_labels = [TRACE_TYPE_NAMES.get(t, t.capitalize()) for t in max_potential.keys()]
     x_pos = np.arange(len(trace_labels))
+    width = 0.2  # Width of each bar
     
-    # Plot the bars
-    bars = ax.bar(x_pos, reuse_values, width=0.6, alpha=OPACITY)
+    # Calculate positions for grouped bars - no gaps, no overlaps
+    positions = {
+        'vllm': x_pos - width * 1.5,
+        'sglang': x_pos - width * 0.5,
+        'sglang_wts': x_pos + width * 0.5,
+        'max': x_pos + width * 1.5
+    }
     
-    # Color each bar according to its trace type
-    for i, bar in enumerate(bars):
-        bar.set_color(COLORS[i])
-        bar.set_hatch(HATCHES[i])
-
+    # Plot the bars for each system
+    system_bars = {}
+    for idx, (system, color_idx) in enumerate(zip(['vllm', 'sglang', 'sglang_wts', 'max'], [1, 2, 3, 0])):
+        values = [actual_reuse[system][t] if system != 'max' else max_potential[t] for t in max_potential.keys()]
+        
+        # Use appropriate label for each system
+        if system == 'max':
+            label = 'Maximum Potential'
+        else:
+            label = SYSTEM_NAME_MAP.get(system, PRETTY_NAMES.get(system, system.upper()))
+            
+        system_bars[system] = ax.bar(positions[system], values, width=width, alpha=OPACITY, label=label)
+        
+        # Color and add hatches to the system bars
+        for i, bar in enumerate(system_bars[system]):
+            bar.set_color(COLORS[color_idx])
+            bar.set_hatch(HATCHES[color_idx])
+    
     # Configure the plot
     ax.grid(which='major', axis='y', linestyle='--', alpha=0.7)
     ax.set_xlabel("Trace Type", fontsize=10, fontweight='bold')
     ax.set_ylabel("Reuse Potential (%)", fontsize=10, fontweight='bold')
     ax.set_xticks(x_pos)
     ax.set_xticklabels(trace_labels)
-    ax.set_ylim([0, max(reuse_values) * 1.1])  # Add 10% padding at the top
+    
+    # Set y-axis limit with some padding
+    max_value = max(max_potential.values()) if max_potential else 0
+    ax.set_ylim([0, max_value * 1.4])  # Add 10% padding at the top
+    
     ax.tick_params(axis='both', which='major', labelsize=8)
     
     # Add value labels on top of each bar
-    for i, v in enumerate(reuse_values):
-        ax.text(i, v + 0.5, f"{v:.1f}%", ha='center', fontsize=8)
+    for system, bars in system_bars.items():
+        for i, bar in enumerate(bars):
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                    f"{height:.1f}%", ha='center', va='bottom', fontsize=6, rotation=90)
+
+    # Add legend with smaller font size
+    ax.legend(loc='upper left', fontsize=6)
 
     # Tight layout to optimize space usage
     plt.tight_layout()

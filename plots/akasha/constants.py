@@ -13,9 +13,9 @@ PRETTY_NAMES = {
     "akasha": "Heimdall",
     "sglang": "SGLang",
     "vllm": "vLLM",
-    "sglang_wb": "SGLang Write Back",
-    "sglang_wt": "SGLang Write Through",
-    "sglang_wts": "SGLang Write Through Selective",
+    "sglang_wb": "SGLang-WB",
+    "sglang_wt": "SGLang-WT",
+    "sglang_wts": "SGLang-WTS",
 }
 
 SYSTEM_ID_MAP = {
@@ -28,8 +28,8 @@ SYSTEM_ID_MAP = {
 
 SYSTEM_NAME_MAP = {
     "akasha": "Heimdall",
-    "sglang_wb": "SGLang Write Back",
-    "sglang_wt": "SGLang Write Through",
-    "sglang_wts": "SGLang Write Through Selective",
+    "sglang_wb": "SGLang-WB",
+    "sglang_wt": "SGLang-WT",
+    "sglang_wts": "SGLang-WTS",
     "vllm": "vLLM",
 }
