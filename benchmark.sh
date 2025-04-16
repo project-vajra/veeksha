@@ -1,0 +1,11 @@
+CUDA_VISIBLE_DEVICES=0 python -m veeksha.capacity_search.main \
+--output-dir "cap_experiments/capacity_search_vllm/" \
+--slo-type tbt_ttft \
+--tbt-slo 0.05 \
+--tbt-percentile 0.9 \
+--ttft-slo 5 \
+--ttft-percentile 0.9 \
+--max-iterations 10 \
+--config-path ./veeksha/capacity_search/config/llama_8b_conv.yml \
+--cache-telemetry-path vllm-cache-tp1-conv/cache_telemetry.json \
+--server-launch-file ./veeksha/capacity_search/config/server_launch_commands/vllm_conv.yml 
