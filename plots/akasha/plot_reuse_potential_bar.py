@@ -194,11 +194,11 @@ def plot_reuse_potential_bar(trace_types):
     ax.tick_params(axis='both', which='major', labelsize=8)
     
     # Add value labels on top of each bar
-    for system, bars in system_bars.items():
-        for i, bar in enumerate(bars):
-            height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height + 0.5,
-                    f"{height:.1f}%", ha='center', va='bottom', fontsize=6, rotation=90)
+    # for system, bars in system_bars.items():
+    #     for i, bar in enumerate(bars):
+    #         height = bar.get_height()
+    #         ax.text(bar.get_x() + bar.get_width()/2., height + 2,
+    #                 f"{height:.0f}%", ha='center', va='bottom', fontsize=6, rotation=90)
 
     # Add legend with smaller font size
     ax.legend(loc='upper left', fontsize=6)
@@ -217,7 +217,7 @@ def plot_reuse_potential_bar(trace_types):
 
 if __name__ == "__main__":
     # Define trace types to analyze
-    trace_types = ["conversation", "toolagent", "swe_agent"]
+    trace_types = ["conversation", "toolagent", "swe_agent_short"]
     
     # Plot the bar chart of maximum reuse potential
     plot_reuse_potential_bar(trace_types)
