@@ -178,30 +178,30 @@ def get_sessions(requests, minimum_match_threshold=0.1):
     # Replace the original sessions with the new ones
     sessions = new_sessions
 
-    # # get avg request length for session 4
-    # session_requests = sessions[4]
-    # avg_request_length = np.mean([request['input_length'] for request in session_requests])
-    # print(f"Average request length for session 4: {avg_request_length}")
+    # get avg request length for session 4
+    session_requests = sessions[4]
+    avg_request_length = np.mean([request['input_length'] for request in session_requests])
+    print(f"Average request length for session 4: {avg_request_length}")
 
-    # # plot of when the requests from session 4 come, x axis is time, y axis is number of hits
-    # plt.figure(figsize=(10, 6))
-    # session_requests = sessions[4]
-    # timestamps = [request['timestamp'] for request in session_requests]
-    # # Convert timestamps to relative time in seconds from the first request
-    # if timestamps:
-    #     start_time = min(timestamps)
-    #     relative_times = [(t - start_time) / 1000 for t in timestamps]
+    # plot of when the requests from session 4 come, x axis is time, y axis is number of hits
+    plt.figure(figsize=(10, 6))
+    session_requests = sessions[4]
+    timestamps = [request['timestamp'] for request in session_requests]
+    # Convert timestamps to relative time in seconds from the first request
+    if timestamps:
+        start_time = min(timestamps)
+        relative_times = [(t - start_time) / 1000 for t in timestamps]
         
-    #     # Create a histogram of request times
-    #     sns.histplot(relative_times, bins=30, kde=True)
-    #     plt.xlabel('Time (seconds since first request)')
-    #     plt.ylabel('Number of Hits')
-    #     plt.title('Request Distribution for Session 4')
-    #     plt.tight_layout()
-    #     plt.savefig('session_4_requests.png')
-    #     plt.show()
-    # else:
-    #     print("Session 4 has no requests")
+        # Create a histogram of request times
+        sns.histplot(relative_times, bins=30, kde=True)
+        plt.xlabel('Time (seconds since first request)')
+        plt.ylabel('Number of Hits')
+        plt.title('Request Distribution for Session 4')
+        plt.tight_layout()
+        plt.savefig('session_4_requests.png')
+        plt.show()
+    else:
+        print("Session 4 has no requests")
 
     # print overall stats for the distance between requests within sessions
     # mean, std, median, p25, p75, p90
@@ -231,27 +231,41 @@ def sample_sessions(sessions, dispatch_rate):
     """Sample sessions using dispatch rate with poisson distribution."""
     sampled_sessions = []
 
-    sessions = list(sessions.values())
-    # shuffle the sessions
-    random.shuffle(sessions)
-
+    sessions_list = list(sessions.values())
+    
+    # Find the maximum number of requests in any session for scaling
+    max_requests = max(len(session) for session in sessions_list)
+    
+    # List to track which sessions have been sampled
+    remaining_sessions = sessions_list.copy()
+    
     timestamp = 0
 
-    while sessions:
+    while remaining_sessions:
         next_interval = -math.log(1.0 - random.random()) / dispatch_rate
         next_interval = min(next_interval, 1 / dispatch_rate * 3) * 1000
-        session = sessions.pop(0)
+        
+        # Rejection sampling to bias towards sessions with more requests
+        while True:
+            # Propose a session randomly from remaining sessions
+            proposed_idx = random.randint(0, len(remaining_sessions) - 1)
+            proposed_session = remaining_sessions[proposed_idx]
+            
+            # Acceptance probability proportional to number of requests
+            acceptance_prob = len(proposed_session) / max_requests
+            
+            # Accept or reject based on the computed probability
+            if random.random() < acceptance_prob:
+                session = remaining_sessions.pop(proposed_idx)
+                break
+        
         session_original_timestamp = None
-        for i, request in enumerate(session):
+        for request in session:
             if session_original_timestamp is None:
                 session_original_timestamp = request['timestamp']
             request['timestamp'] = timestamp + (request['timestamp'] - session_original_timestamp)
-
-        # filter for session with id 4
-        # if session[0]['session_id'] == 4:
-        #     sampled_sessions.append(session)
         sampled_sessions.append(session)
-        #timestamp += next_interval
+        timestamp += next_interval
 
     return sampled_sessions
 
@@ -304,12 +318,12 @@ def analyze_single_trace(df, args):
     # 3. Sample sessions using dispatch rate with poisson distribution
     sampled_sessions = sample_sessions(sessions, args.dispatch_rate)
 
-    # # force set all timestamps to be 10 seconds away from the previous request
-    # for i in range(1, len(sampled_requests)):
+    # force set all timestamps to be 10 seconds away from the previous request
+    # for i in range(1, len(sampled_sessions)):
     #     if i == 1:
-    #         sampled_requests[i]['timestamp'] = 0
+    #         sampled_sessions[i]['timestamp'] = 0
     #     else:
-    #         sampled_requests[i]['timestamp'] = sampled_requests[i-1]['timestamp'] + 10000
+    #         sampled_sessions[i]['timestamp'] = sampled_sessions[i-1]['timestamp'] + 10000
 
     # 4. flatten the sessions
     sampled_requests = [request for session in sampled_sessions for request in session]
@@ -323,8 +337,11 @@ def analyze_single_trace(df, args):
         request['request_id'] = sequential_request_id
         sequential_request_id += 1
 
+    # filter for session id 5
+    # sampled_requests = [request for request in sampled_requests if request['session_id'] == 5]
+
     # apply the shrink factor (squeezes the time between requests)
-    # shrink_factor = 0.01
+    # shrink_factor = 0.5
     # for i in range(1, len(sampled_requests)):
     #     sampled_requests[i]['timestamp'] = sampled_requests[i]['timestamp'] * shrink_factor
 
@@ -354,6 +371,7 @@ def main():
     # Analyze the trace
     sampled_requests, sampled_sessions = analyze_single_trace(df, args)
 
+    print(f"saving sampled trace to {os.path.join(trace_dir, f'sampled_trace_dr{args.dispatch_rate}_mmt{args.minimum_match_threshold}.jsonl')}")
     # Save the sampled trace as a jsonl
     with open(os.path.join(trace_dir, f'sampled_trace_dr{args.dispatch_rate}_mmt{args.minimum_match_threshold}.jsonl'), 'w') as f:
         for request in sampled_requests:

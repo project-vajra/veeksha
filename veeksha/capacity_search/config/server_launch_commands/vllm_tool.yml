@@ -1,0 +1,14 @@
+module: "vllm.entrypoints.openai.api_server"
+port: 8001
+model: "meta-llama/Meta-Llama-3-8B-Instruct"
+dtype: "auto"
+tensor_parallel_size: 1
+cache_telemetry_output_dir: "../veeksha/vllm-cache-tp1-tool"
+max_model_len: 128000
+enable_chunked_prefill: true
+enable_prefix_caching: true
+max_num_batched_tokens: 512
+block_size: 16
+rope_theta: 8000000
+json_model_override_args: {'rope_type':'linear', 'factor': 16.0}
+enable_cache_telemetry: true

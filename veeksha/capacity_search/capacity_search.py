@@ -370,8 +370,14 @@ class CapacitySearch:
                         for key, value in server_config.items():
                             if key == "module": 
                                 continue
+                            if key == "enable_cache_telemetry":
+                                if server_config["module"].startswith("vllm"):
+                                    continue
                             if key == "json_model_override_args":
-                                cmd.extend(["--json-model-override-args", json.dumps(value)])
+                                if server_config["module"].startswith("vllm"):
+                                    cmd.extend(["--rope-scaling", json.dumps(value)])
+                                else:
+                                    cmd.extend(["--json-model-override-args", json.dumps(value)])
                             else:
                                 param_key = key.replace("_", "-")
                                 if isinstance(value, bool) and value:
@@ -405,6 +411,10 @@ class CapacitySearch:
                         stdout_file = open(f"{self.args.output_dir}/server_stdout.log", "w")
                         stderr_file = open(f"{self.args.output_dir}/server_stderr.log", "w")
                         
+                        env = os.environ.copy()
+                        if server_config["module"].startswith("vllm"):
+                            env["VLLM_ALLOW_LONG_MAX_MODEL_LEN"] = "1"
+                        
                         # Redirect output to files
                         start_time = time.time()
                         print("Launching server subprocess")
@@ -413,7 +423,8 @@ class CapacitySearch:
                             stdout=stdout_file,  # Redirect stdout to file
                             stderr=stderr_file,  # Redirect stderr to file
                             text=True,
-                            preexec_fn=os.setsid  
+                            preexec_fn=os.setsid,
+                            env=env,
                         )
                         
                         # Check if process started successfully
@@ -429,8 +440,8 @@ class CapacitySearch:
                         continue
 
                     # wait for server to start
-                    print("Waiting for server startup (240s)...")
-                    time.sleep(60)
+                    print("Waiting for server startup (120s)...")
+                    time.sleep(120)
                     print(f"Server startup wait complete after {time.time() - start_time:.1f}s")
 
             (
@@ -492,7 +503,11 @@ class CapacitySearch:
                 two_levels_up = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
                 output_cache_file = os.path.join(two_levels_up, cache_output_path)
                 
+                logger.info(f"Loading cache telemetry data from {output_cache_file}")
+                
                 if os.path.exists(output_cache_file):
+                    
+                    
                     with open(output_cache_file, "r") as f:
                         output_cache = json.load(f)
 
@@ -504,6 +519,8 @@ class CapacitySearch:
                     cache_path_parts = os.path.splitext(cache_output_path)
                     modified_cache_path = f"{cache_path_parts[0]}_qps_{qps}{cache_path_parts[1]}"
                     new_output_cache_file = os.path.join(two_levels_up, modified_cache_path)
+                    
+                    logger.info(f"Saving cache telemetry data to {new_output_cache_file}")
                     
                     with open(new_output_cache_file, "w") as f:
                         json.dump(output_cache, f)
