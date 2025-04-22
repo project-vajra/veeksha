@@ -7,7 +7,8 @@ import signal
 import requests
 import time
 import yaml
-from typing import Optional, Tuple
+from typing import Optional, Tuple, IO, Any, List
+import re
 
 import numpy as np
 import wandb
@@ -22,6 +23,74 @@ logger = init_logger(__name__)
 QPS_INCREASE_SCALE = 2
 # Threshold to increase the upper bound of QPS during binary search
 VICINITY_THRESHOLD = 0.8
+
+
+def check_server_logs_for_errors(
+    stdout_f: Optional[IO[Any]], # File handle opened in 'r' mode
+    stderr_f: Optional[IO[Any]], # File handle opened in 'r' mode
+    error_patterns: List[str],
+    last_stdout_pos: int,
+    last_stderr_pos: int,
+) -> Tuple[bool, Optional[str], int, int]:
+    """Reads new lines from server log files and checks for error patterns using regex."""
+    new_stdout_pos = last_stdout_pos
+    new_stderr_pos = last_stderr_pos
+    found_pattern = None
+    original_error_patterns = list(error_patterns) # Copy to avoid modifying caller's list
+
+    files_to_check = []
+    if stdout_f: files_to_check.append((stdout_f, last_stdout_pos, "stdout"))
+    if stderr_f: files_to_check.append((stderr_f, last_stderr_pos, "stderr"))
+
+    try:
+        for f_handle, last_pos, log_type in files_to_check:
+            if not f_handle or f_handle.closed: continue
+            try:
+                current_pos = f_handle.tell() # Get current position before reading
+                f_handle.seek(last_pos)
+                new_lines = f_handle.readlines() # Read only new lines since last check
+                # Important: Reset position to end of file after reading new lines
+                # This seems counter-intuitive, but seeking back is needed if the file
+                # handle is shared or used elsewhere. Let's try just updating the pos var.
+                # f_handle.seek(0, os.SEEK_END) # Seek to end? No, just update position variable
+                current_pos = f_handle.tell() # Get new position *after* reading
+            except ValueError: # Handle seeking on closed file
+                 print(f"  Warning: Attempted to seek/read on closed log file handle for {log_type}", flush=True)
+                 continue
+            except Exception as read_err:
+                 print(f"  Warning: Error reading {log_type} log file: {read_err}", flush=True)
+                 continue # Skip checking this file on this iteration
+
+
+            if log_type == "stdout": new_stdout_pos = current_pos
+            else: new_stderr_pos = current_pos
+
+            if not new_lines: continue
+
+            for line in new_lines:
+                if not line.strip(): continue
+                for pattern in original_error_patterns:
+                    try:
+                        if re.search(pattern, line):
+                            print(f"  ERROR DETECTED in {log_type}: Pattern '{pattern}' matched line: {line.strip()}", flush=True)
+                            found_pattern = pattern
+                            return True, found_pattern, new_stdout_pos, new_stderr_pos
+                    except re.error as re_err:
+                        print(f"  Warning: Invalid regex pattern '{pattern}': {re_err}", flush=True)
+                        # Avoid repeated warnings by trying to remove from the original list if possible
+                        # This might fail if error_patterns is used concurrently, safer to ignore remove error.
+                        try: error_patterns.remove(pattern)
+                        except ValueError: pass
+
+    except IOError as e:
+        print(f"  Warning: IOError check_server_logs_for_errors loop: {e}", flush=True)
+        return False, None, new_stdout_pos, new_stderr_pos # Return current positions
+    except Exception as e:
+        print(f"  Warning: Unexpected error checking logs: {e}", flush=True)
+        traceback.print_exc()
+        return False, None, new_stdout_pos, new_stderr_pos # Return current positions
+
+    return False, None, new_stdout_pos, new_stderr_pos
 
 
 class CapacitySearch:
@@ -368,7 +437,7 @@ class CapacitySearch:
                         
                         # Add all configuration parameters from YAML
                         for key, value in server_config.items():
-                            if key == "module": 
+                            if key == "module" or key == "error_patterns" or key == "readiness_timeout": 
                                 continue
                             if key == "json_model_override_args":
                                 cmd.extend(["--json-model-override-args", json.dumps(value)])
@@ -428,10 +497,41 @@ class CapacitySearch:
                         logger.error(f"Failed to start server process: {str(e)}", exc_info=True)
                         continue
 
-                    # wait for server to start
-                    print("Waiting for server startup (240s)...")
-                    time.sleep(60)
-                    print(f"Server startup wait complete after {time.time() - start_time:.1f}s")
+                    error_patterns = server_config.get('error_patterns', [])
+                    last_stdout_pos, last_stderr_pos = 0, 0
+                    # poll server until it's up or we timeout
+                    try:
+                        stdout_file_r = open(f"{self.args.output_dir}/server_stdout.log", "r")
+                        stderr_file_r = open(f"{self.args.output_dir}/server_stderr.log", "r")
+                        while time.monotonic() - start_time < server_config['readiness_timeout']:
+                            if server_process.poll() is not None: # Check 1: Process died?
+                                raise RuntimeError(f"{engine_name} server (PID: {server_process.pid}) exited prematurely (code {server_process.returncode}).")
+
+                            if error_patterns and (stdout_file_r or stderr_file_r): # Check 2: Errors in logs?
+                                found_error, error_msg, last_stdout_pos, last_stderr_pos = check_server_logs_for_errors(
+                                    stdout_file_r, stderr_file_r, error_patterns, last_stdout_pos, last_stderr_pos
+                                )
+                                if found_error:
+                                    detected_fatal_error = True
+                                    print(f"\n!!! Detected fatal server error pattern: '{error_msg}' in logs for {engine_tp_pp_id} !!!", flush=True)
+                                    break # Exit readiness loop
+                            
+                            # Check 3: API Ready?
+                            api_check_url = f"http://localhost:{server_config['port']}/v1/models"
+                            try:
+                                response = requests.get(api_check_url, timeout=2)
+                                if response.status_code == 200:
+                                    print(f"\nServer API is ready! ({api_check_url} responded {response.status_code} in {time.monotonic() - start_time:.2f}s)", flush=True)
+                                    server_ready_status = True
+                                    break
+                                else: print(f"S({response.status_code})", end='', flush=True)
+                            except ConnectionError: print(".", end='', flush=True)
+                            except Exception as api_e: print(f"E({type(api_e).__name__})", end='', flush=True)
+
+                            time.sleep(2)
+                    finally:
+                        if stdout_file_r: stdout_file_r.close()
+                        if stderr_file_r: stderr_file_r.close()
 
             (
                 is_under_sla,
@@ -478,14 +578,14 @@ class CapacitySearch:
                         os.killpg(os.getpgid(pid), signal.SIGKILL)
                         time.sleep(1)
 
-                    stdout_file.close()
-                    stderr_file.close()
+                    if stdout_file: stdout_file.close()
+                    if stderr_file: stderr_file.close()
                     
                     print(f"Server terminated with exit code: {server_process.returncode}")
                 except Exception as e:
                     logger.error(f"Error killing server: {str(e)}", exc_info=True)
-                    stdout_file.close()
-                    stderr_file.close()
+                    if stdout_file: stdout_file.close()
+                    if stderr_file: stderr_file.close()
 
                 # get output_cache data and tag with current qps. Rename so that it's not overwritten by next run
                 cache_output_path = self.args.cache_telemetry_path
@@ -507,6 +607,21 @@ class CapacitySearch:
                     
                     with open(new_output_cache_file, "w") as f:
                         json.dump(output_cache, f)
+
+                    # when the telemetry is reset a cache telemetry file with timestamps is created (this is to avoid writing big files every 5 seconds).
+                    # we also get this file and tag it with qps
+                    output_cache_file_ts = output_cache_file.replace(".json", "_ts.json")
+                    with open(output_cache_file_ts, "r") as f:
+                        output_cache = json.load(f)
+                    output_cache["qps"] = qps
+                    # tag filename
+                    cache_path_parts = os.path.splitext(output_cache_file_ts)
+                    modified_cache_path = f"{cache_path_parts[0]}_qps_{qps}{cache_path_parts[1]}"
+                    new_output_cache_file = os.path.join(two_levels_up, modified_cache_path)
+                    with open(new_output_cache_file, "w") as f:
+                        json.dump(output_cache, f)
+                    # remove it
+                    os.remove(output_cache_file_ts)
         
                 # create and save cache visualizations
                 if self.args.cache_telemetry_path is not None:

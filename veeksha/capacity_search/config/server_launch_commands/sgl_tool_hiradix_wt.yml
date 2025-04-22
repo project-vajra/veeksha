@@ -1,6 +1,6 @@
 # SGLang Server Configuration
 module: "sglang.launch_server"
-port: 8005
+port: 8002
 model_path: "meta-llama/Meta-Llama-3-8B-Instruct"
 dtype: "auto"
 tensor_parallel_size: 1
