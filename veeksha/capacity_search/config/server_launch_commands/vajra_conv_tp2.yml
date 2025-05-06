@@ -1,0 +1,16 @@
+# SGLang Server Configuration
+module: "vajra.entrypoints.openai.api_server"
+port: 8001
+model_config_model: "meta-llama/Meta-Llama-3-8B-Instruct"
+model_config_dtype: "auto"
+parallel_config_tensor_parallel_size: 2
+model_config_max_model_len: 128000
+max_running_requests: 256
+fixed_chunk_replica_scheduler_config_chunk_size: 512
+cache_config_enable_prefix_caching: true
+cache_config_block_size: 16
+readiness_timeout: 600
+error_patterns:
+  - "CUDA out of memory"
+  - "NCCL error"
+  - "socket.error: [Errno 98] Address already in use"

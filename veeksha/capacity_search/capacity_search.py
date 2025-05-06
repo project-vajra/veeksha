@@ -5,6 +5,7 @@ import subprocess
 import os
 import signal
 import requests
+from requests.exceptions import ConnectionError
 import time
 import yaml
 from typing import Optional, Tuple, IO, Any, List
@@ -267,7 +268,7 @@ class CapacitySearch:
                 str(self.job_config.server_config.openai_server_engine),
                 self.job_config.model_config.name,
                 # f"ttft_slack_{self.args.ttft_slack_slo}_tbt_{self.args.tbt_slo}",
-                trace_input_file,
+                trace_input_file,# str(self.job_config.request_generator_config.trace_file_name),
                 f"{hash_key}_q{qps}",
             ),
             qps=qps,
@@ -381,7 +382,7 @@ class CapacitySearch:
             qps = round(qps, 2)
 
             # build command
-            cmd = f"python experiments/generate_session_sampled_trace.py --trace-file {source_trace_file} --minimum-match-threshold {self.args.session_match_threshold} --dispatch-rate {qps}"
+            cmd = f"python experiments/generate_session_sampled_trace.py --trace-file {source_trace_file} --minimum-match-threshold {self.args.session_match_threshold} --dispatch-rate {qps} --max-context-length {self.job_config.request_generator_config.request_generator_max_tokens}"
 
             # run command
             subprocess.run(cmd, shell=True, check=True)
@@ -416,13 +417,18 @@ class CapacitySearch:
                 f"{hash_key}_q{qps}",
             )
 
+            print(f"Run directory: {run_dir}")
+
+            if self.job_config.request_generator_config.request_interval_generator_provider == "trace" and self.job_config.request_generator_config.request_length_generator_provider == "trace":
+                run_dir = run_dir.replace("processed_traces", "generated_traces")
+
             cached_request_level_metrics_file = self._get_request_level_metrics(run_dir)
             print(f"Cached request level metrics file: {cached_request_level_metrics_file}")
             if cached_request_level_metrics_file is None:
                 print(f"Cache for qps {qps} not found, starting server")
 
-                ############## server launching. we restart the server on each iteration for cache telemetry
-                if enable_cache_telemetry or first_server_launch:
+                ############## server launching. we restart the server on each iteration
+                if True: #enable_cache_telemetry or first_server_launch:
                     first_server_launch = False
                     # Define the command and arguments as a list
                     if self.args.server_launch_file is not None:
@@ -505,7 +511,7 @@ class CapacitySearch:
                         stderr_file_r = open(f"{self.args.output_dir}/server_stderr.log", "r")
                         while time.monotonic() - start_time < server_config['readiness_timeout']:
                             if server_process.poll() is not None: # Check 1: Process died?
-                                raise RuntimeError(f"{engine_name} server (PID: {server_process.pid}) exited prematurely (code {server_process.returncode}).")
+                                raise RuntimeError(f"{self.job_config.server_config.openai_server_engine} server (PID: {server_process.pid}) exited prematurely (code {server_process.returncode}).")
 
                             if error_patterns and (stdout_file_r or stderr_file_r): # Check 2: Errors in logs?
                                 found_error, error_msg, last_stdout_pos, last_stderr_pos = check_server_logs_for_errors(
@@ -513,7 +519,7 @@ class CapacitySearch:
                                 )
                                 if found_error:
                                     detected_fatal_error = True
-                                    print(f"\n!!! Detected fatal server error pattern: '{error_msg}' in logs for {engine_tp_pp_id} !!!", flush=True)
+                                    print(f"\n!!! Detected fatal server error pattern: '{error_msg}' in logs for {self.job_config.server_config.openai_server_engine} !!!", flush=True)
                                     break # Exit readiness loop
                             
                             # Check 3: API Ready?
@@ -562,15 +568,86 @@ class CapacitySearch:
                 min_qps_over_sla = min(min_qps_over_sla, qps)
                 print(f"QPS={qps} exceeded SLA, updating right bound to {right}")
 
+            # get output_cache data and tag with current qps. Rename so that it's not overwritten by next run
+            
+            if enable_cache_telemetry:
+                cache_output_path = self.args.cache_telemetry_path
+                two_levels_up = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                output_cache_file = os.path.join(two_levels_up, cache_output_path)
+                new_output_cache_file = None
+                new_output_cache_file_ts = None
+
+                if not os.path.exists(output_cache_file):
+                    logger.warning(f"Output cache file {output_cache_file} does not exist")
+                    continue
+
+                with open(output_cache_file, "r") as f:
+                    output_cache = json.load(f)
+
+                # delete previous cache telemtry data to restart
+                os.remove(output_cache_file)
+                
+                # tag with current qps and save
+                output_cache["qps"] = qps
+                cache_path_parts = os.path.splitext(cache_output_path)
+                modified_cache_path = f"{cache_path_parts[0]}_qps_{qps}{cache_path_parts[1]}"
+                new_output_cache_file = os.path.join(two_levels_up, modified_cache_path)
+                
+                with open(new_output_cache_file, "w") as f:
+                    json.dump(output_cache, f)
+
+                # when the telemetry is reset a cache telemetry file with timestamps is created (this is to avoid writing big files every 5 seconds).
+                # we also get this file and tag it with qps
+                output_cache_file_ts = output_cache_file.replace(".json", "_ts.json")
+
+                # wait until the cache timeseries is written
+                try:
+                    start_time = time.monotonic()
+                    # First wait for the file to exist
+                    while not os.path.exists(output_cache_file_ts):
+                        if time.monotonic() - start_time > 180:
+                            raise RuntimeError("Cache timeseries file not written after 180 seconds")
+                        time.sleep(1)
+                    
+                    # Then wait for the file size to stabilize, indicating complete write
+                    last_size = -1
+                    stable_count = 0
+                    while stable_count < 10:  # Wait for size to be stable for 10 consecutive checks
+                        current_size = os.path.getsize(output_cache_file_ts)
+                        if current_size == last_size:
+                            stable_count += 1
+                        else:
+                            stable_count = 0
+                            last_size = current_size
+                        
+                        if time.monotonic() - start_time > 180:  # 3 minute timeout
+                            raise RuntimeError("Cache timeseries file size not stabilized after 3 minutes")
+                        time.sleep(1)
+                    
+                    # Now it's safe to read the file
+                    with open(output_cache_file_ts, "r") as f:
+                        output_cache = json.load(f)
+                    output_cache["qps"] = qps
+                    # tag filename
+                    cache_path_parts = os.path.splitext(output_cache_file_ts)
+                    modified_cache_path = f"{cache_path_parts[0]}_qps_{qps}{cache_path_parts[1]}"
+                    new_output_cache_file_ts = os.path.join(two_levels_up, modified_cache_path)
+                    with open(new_output_cache_file_ts, "w") as f:
+                        json.dump(output_cache, f)
+                    # remove it
+                    os.remove(output_cache_file_ts)
+                except Exception as e:
+                    logger.error(f"Failed to wait for cache timeseries file: {str(e)}", exc_info=True)
+
             print(f"Cached request level metrics file: {cached_request_level_metrics_file}")
-            if cached_request_level_metrics_file is None and enable_cache_telemetry:
+            if cached_request_level_metrics_file is None:
                 try:
                     print(f"Terminating server process group {pid}")
                     # Kill the entire process group (server and any child processes it spawned)
                     os.killpg(os.getpgid(pid), signal.SIGTERM)
                     
                     # Give it a moment to shut down gracefully
-                    time.sleep(5)
+                    time.sleep(30)
                     
                     # If it's still running, force kill
                     if server_process.poll() is None:
@@ -586,46 +663,13 @@ class CapacitySearch:
                     logger.error(f"Error killing server: {str(e)}", exc_info=True)
                     if stdout_file: stdout_file.close()
                     if stderr_file: stderr_file.close()
-
-                # get output_cache data and tag with current qps. Rename so that it's not overwritten by next run
-                cache_output_path = self.args.cache_telemetry_path
-                two_levels_up = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                output_cache_file = os.path.join(two_levels_up, cache_output_path)
-                
-                if os.path.exists(output_cache_file):
-                    with open(output_cache_file, "r") as f:
-                        output_cache = json.load(f)
-
-                    # delete previous cache telemtry data to restart
-                    os.remove(output_cache_file)
-                    
-                    # tag with current qps and save
-                    output_cache["qps"] = qps
-                    cache_path_parts = os.path.splitext(cache_output_path)
-                    modified_cache_path = f"{cache_path_parts[0]}_qps_{qps}{cache_path_parts[1]}"
-                    new_output_cache_file = os.path.join(two_levels_up, modified_cache_path)
-                    
-                    with open(new_output_cache_file, "w") as f:
-                        json.dump(output_cache, f)
-
-                    # when the telemetry is reset a cache telemetry file with timestamps is created (this is to avoid writing big files every 5 seconds).
-                    # we also get this file and tag it with qps
-                    output_cache_file_ts = output_cache_file.replace(".json", "_ts.json")
-                    with open(output_cache_file_ts, "r") as f:
-                        output_cache = json.load(f)
-                    output_cache["qps"] = qps
-                    # tag filename
-                    cache_path_parts = os.path.splitext(output_cache_file_ts)
-                    modified_cache_path = f"{cache_path_parts[0]}_qps_{qps}{cache_path_parts[1]}"
-                    new_output_cache_file = os.path.join(two_levels_up, modified_cache_path)
-                    with open(new_output_cache_file, "w") as f:
-                        json.dump(output_cache, f)
-                    # remove it
-                    os.remove(output_cache_file_ts)
         
                 # create and save cache visualizations
-                if self.args.cache_telemetry_path is not None:
-                    visualize_cache_telemetry(self.args.cache_telemetry_path)
+                if self.args.cache_telemetry_path is not None and new_output_cache_file is not None and new_output_cache_file_ts is not None:
+                    try:
+                        visualize_cache_telemetry(new_output_cache_file, new_output_cache_file_ts)
+                    except Exception as e:
+                        logger.error(f"Error visualizing cache telemetry: {str(e)}", exc_info=True)
 
         if not found_valid_qps:
             print(
@@ -655,7 +699,7 @@ class CapacitySearch:
         }
 
 
-def visualize_cache_telemetry(cache_telemetry_path):
+def visualize_cache_telemetry(cache_telemetry_path, cache_telemetry_path_ts):
     """
     Visualize cache telemetry data by calling the visualization script.
     
@@ -675,17 +719,8 @@ def visualize_cache_telemetry(cache_telemetry_path):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     visualization_script = os.path.join(script_dir, "visualize_cache_telemetry.py")
     
-
-    # Use the parent directory of the cache telemetry path for the pattern
-    if os.path.isfile(cache_telemetry_path) or cache_telemetry_path.endswith('.json'):
-        # If it's a file, use its directory
-        pattern = os.path.join(os.path.dirname(cache_telemetry_path), "*.json")
-    else:
-        # If it's already a directory, use it directly
-        pattern = os.path.join(cache_telemetry_path, "*.json")
-    
     # Build the command
-    cmd = ["python", visualization_script, "--pattern", pattern, "--output", output_dir]
+    cmd = ["python", visualization_script, "--file", cache_telemetry_path, "--file_ts", cache_telemetry_path_ts, "--output", output_dir]
     
     print(f"Running visualization command: {' '.join(cmd)}")
     

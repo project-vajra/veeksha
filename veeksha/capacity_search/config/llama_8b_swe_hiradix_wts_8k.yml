@@ -1,6 +1,6 @@
 servers:
   - openai_server_engine: sglang
-    openai_api_url: "http://localhost:8004/v1"
+    openai_api_url: "http://localhost:8003/v1"
     openai_api_key: token-abc123
 
 models:
@@ -8,18 +8,19 @@ models:
     identifier: meta-llama/Meta-Llama-3-8B-Instruct
 
 request_generator_configs:
-  - start_qps: 5
-    request_interval_generator_provider: "poisson"
+  - start_qps: 0.5
+    request_interval_generator_provider: "trace"
     request_length_generator_provider: "trace"
     request_generator_type: "prefix"
-    request_generator_max_tokens: 128000
-    trace_request_length_generator_trace_file: "data/processed_traces/toolagent_trace.jsonl"
-    trace_file_name: "toolagent"
+    request_generator_max_tokens: 8000
+    trace_request_length_generator_trace_file: "data/processed_traces/swe_agent_trace_short.jsonl"
+    trace_request_interval_generator_trace_file: "data/processed_traces/swe_agent_trace_short.jsonl"
+    trace_file_name: "swe_agent_trace_short"
 
 client_configs:
   - num_clients: 15
     num_concurrent_requests_per_client: 10
-    timeout: 1200
+    timeout: 3600
     max_num_completed_requests: 30000
     additional_sampling_params: {}
     llm_api: "openai_chat"

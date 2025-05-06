@@ -24,6 +24,7 @@ def parse_args():
     parser.add_argument('--output-dir', default='./data/generated_traces', help='Directory to save the report and plots')
     parser.add_argument('--dispatch-rate', type=float, default=1, help='Dispatch rate')
     parser.add_argument('--minimum-match-threshold', type=float, default=0.1, help='Minimum match threshold')
+    parser.add_argument('--max-context-length', type=int, default=128000, help='Maximum context length in tokens')
     args = parser.parse_args()
 
     return args
@@ -314,6 +315,28 @@ def analyze_single_trace(df, args):
         for request in session:
             request['session_id'] = session_id
             request['num_requests_in_session'] = len(session)
+
+    # delete requests that are longer than max_context_length tokens
+    # first, count the number of requests longer than max_context_length tokens in each session
+    sessions_to_delete = []
+    requests_to_gt_max_cl = 0
+    for session_id, session in sessions.items():
+        requests_to_delete = [request for request in session if request['input_length'] > args.max_context_length]
+        requests_to_gt_max_cl += len(requests_to_delete)
+
+        # if there are still >= 5 requests in the session, keep it. Else, delete it
+        if len(session) - len(requests_to_delete) < 5:
+            sessions_to_delete.append(session_id)
+        else:
+            # delete the requests in the session
+            for request in requests_to_delete:
+                session.remove(request)
+
+    print(f"Deleted {len(sessions_to_delete)} sessions with requests longer than {args.max_context_length} tokens ({requests_to_gt_max_cl} requests)")
+    
+    # delete sessions with requests that are longer than max_context_length tokens
+    for session_id in sessions_to_delete:
+        del sessions[session_id]
 
     # 3. Sample sessions using dispatch rate with poisson distribution
     sampled_sessions = sample_sessions(sessions, args.dispatch_rate)

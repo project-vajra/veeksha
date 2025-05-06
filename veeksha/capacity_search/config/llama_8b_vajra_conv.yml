@@ -1,6 +1,6 @@
 servers:
-  - openai_server_engine: sglang
-    openai_api_url: "http://localhost:8002/v1"
+  - openai_server_engine: vajra
+    openai_api_url: "http://localhost:8001/v1"
     openai_api_key: token-abc123
 
 models:
@@ -8,7 +8,7 @@ models:
     identifier: meta-llama/Meta-Llama-3-8B-Instruct
 
 request_generator_configs:
-  - start_qps: 5
+  - start_qps: 0.5
     request_interval_generator_provider: "trace"
     request_length_generator_provider: "trace"
     request_generator_type: "prefix"
@@ -20,7 +20,7 @@ request_generator_configs:
 client_configs:
   - num_clients: 15
     num_concurrent_requests_per_client: 10
-    timeout: 1200
-    max_num_completed_requests: 10000
+    timeout: 3600
+    max_num_completed_requests: 20000
     additional_sampling_params: {}
     llm_api: "openai_chat"

@@ -1,11 +1,13 @@
 # SGLang Server Configuration
 module: "sglang.launch_server"
-port: 8001
+port: 8002
 model_path: "meta-llama/Meta-Llama-3-8B-Instruct"
 dtype: "auto"
 tensor_parallel_size: 1
 enable_cache_telemetry: true
-cache_telemetry_output_dir: "../veeksha/sgl-cache-tp1-radix-conv"
+cache_telemetry_output_dir: "../veeksha/sgl-cache-tp1-hiradix-tool-wb"
+enable_hierarchical_cache: true
+hicache_write_policy: "write_back"
 reset_cache_telemetry_on_new_file: true
 context_length: 128000
 max_running_requests: 256

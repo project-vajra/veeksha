@@ -12,7 +12,7 @@ max_running_requests: 256
 chunked_prefill_size: 512
 page_size: 16
 json_model_override_args: {'rope_scaling': {'type': 'linear', 'factor': 16.0}, 'rope_theta': 8000000}
-readiness_timeout: 300
+readiness_timeout: 600
 error_patterns:
   - "CUDA out of memory"
   - "NCCL error"

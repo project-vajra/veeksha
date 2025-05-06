@@ -12,10 +12,10 @@ request_generator_configs:
     request_interval_generator_provider: "trace"
     request_length_generator_provider: "trace"
     request_generator_type: "prefix"
-    request_generator_max_tokens: 128000
-    trace_request_length_generator_trace_file: "data/processed_traces/toolagent_trace.jsonl"
-    trace_request_interval_generator_trace_file: "data/processed_traces/toolagent_trace.jsonl"
-    trace_file_name: "toolagent"
+    request_generator_max_tokens: 16000
+    trace_request_length_generator_trace_file: "data/processed_traces/swe_agent_trace_short.jsonl"
+    trace_request_interval_generator_trace_file: "data/processed_traces/swe_agent_trace_short.jsonl"
+    trace_file_name: "swe"
 
 client_configs:
   - num_clients: 15

@@ -1,6 +1,6 @@
 # SGLang Server Configuration
 module: "sglang.launch_server"
-port: 8002
+port: 8003
 model_path: "meta-llama/Meta-Llama-3-8B-Instruct"
 dtype: "auto"
 tensor_parallel_size: 1
@@ -12,3 +12,8 @@ max_running_requests: 256
 chunked_prefill_size: 512
 page_size: 16
 json_model_override_args: {'rope_scaling': {'type': 'linear', 'factor': 16.0}, 'rope_theta': 8000000}
+readiness_timeout: 600
+error_patterns:
+  - "CUDA out of memory"
+  - "NCCL error"
+  - "socket.error: [Errno 98] Address already in use"
