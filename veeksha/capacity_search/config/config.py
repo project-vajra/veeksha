@@ -212,11 +212,13 @@ class JobConfig:
         request_generator_config: RequestGeneratorConfig,
         client_config: ClientConfig,
         server_config: ServerConfig,
+        server_env: Optional[str] = None,
     ):
         self.model_config = model_config
         self.request_generator_config = request_generator_config
         self.client_config = client_config
         self.server_config = server_config
+        self.server_env = server_env
         self.start_qps = self.request_generator_config.start_qps
 
     def get_key(self):
@@ -261,11 +263,13 @@ class JobConfig:
             request_generator_config,
             client_config,
             server_config,
+            server_env,
         ) in product(
             config["models"],
             config["request_generator_configs"],
             config["client_configs"],
             config["servers"],
+            config["server_envs"],
         ):
             model_config = ModelConfig(**model_config)
             request_generator_config = RequestGeneratorConfig(
@@ -279,6 +283,7 @@ class JobConfig:
                 request_generator_config,
                 client_config,
                 server_config,
+                server_env,
             )
             job_configs.append(job_config)
 
