@@ -471,6 +471,10 @@ class CapacitySearch:
                             logger.error(f"Error freeing port: {str(e)}")
                             port = port + 1
 
+                    print("Server env: ", self.args.server_env)
+                    if self.args.server_env:
+                        cmd = ["mamba", "run", "-p", self.args.server_env] + cmd
+
                     print(f"Final command: {' '.join(cmd)}")
                     print(f"Starting server process on port {port}")
 

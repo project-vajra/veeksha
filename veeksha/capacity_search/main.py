@@ -56,6 +56,12 @@ def get_parser():
         default=None,
     )
     parser.add_argument(
+        "--server-env",
+        type=str,
+        help="Path to the environment to use for launching the server.",
+        default=None,
+    )
+    parser.add_argument(
         "--cache-telemetry-path",
         type=str,
         help="Path to the cache telemetry file.",
