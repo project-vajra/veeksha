@@ -13,10 +13,11 @@ class ServerConfig:
     openai_server_engine: Optional[str] = None
     openai_api_url: Optional[str] = None
     openai_api_key: Optional[str] = None
+    server_env: Optional[str] = None
 
     def get_key(self):
         return (
-            f"{self.openai_server_engine}_{self.openai_api_url}_{self.openai_api_key}"
+            f"{self.openai_server_engine}_{self.openai_api_url}_{self.openai_api_key}_{self.server_env}"
         )
 
     def get_human_readable_name(self):
@@ -27,6 +28,7 @@ class ServerConfig:
             "openai_server_engine": self.openai_server_engine,
             "openai_api_url": self.openai_api_url,
             "openai_api_key": self.openai_api_key,
+            "server_env": self.server_env,
         }
 
 
