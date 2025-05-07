@@ -1,4 +1,3 @@
-from dataclasses import fields, is_dataclass
 from typing import Union, get_args, get_origin
 
 primitive_types = {int, str, float, bool, type(None)}
@@ -36,7 +35,30 @@ def is_composed_of_primitives(field_type: type) -> bool:
 
 
 def to_snake_case(name: str) -> str:
-    return "".join(["_" + i.lower() if i.isupper() else i for i in name]).lstrip("_")
+    # Examples:
+    # "HelloWorld" -> "hello_world"
+    # "helloWorld" -> "hello_world"
+    # "hello_world" -> "hello_world"
+    # "HTTPResponse" -> "http_response"
+    # "REQUEST" -> "request"
+
+    result = []
+    for i, char in enumerate(name):
+        if char.isupper():
+            # If it's the first character, just add lowercase
+            if i == 0:
+                result.append(char.lower())
+            else:
+                # If previous char was lowercase, add underscore
+                if name[i - 1].islower():
+                    result.append("_" + char.lower())
+                # If previous char was uppercase, just add lowercase
+                else:
+                    result.append(char.lower())
+        else:
+            result.append(char)
+
+    return "".join(result)
 
 
 def is_optional(field_type: type) -> bool:
@@ -53,35 +75,9 @@ def is_dict(field_type: type) -> bool:
     return get_origin(field_type) is dict
 
 
-def is_bool(field_type: type) -> bool:
-    return field_type is bool
-
-
 def get_inner_type(field_type: type) -> type:
     return next(t for t in get_args(field_type) if t is not type(None))
 
 
 def is_subclass(cls, parent: type) -> bool:
     return hasattr(cls, "__bases__") and parent in cls.__bases__
-
-
-def dataclass_to_dict(obj):
-    if isinstance(obj, list):
-        return [dataclass_to_dict(item) for item in obj]
-    elif is_dataclass(obj):
-        data = {}
-        for field in fields(obj):
-            value = getattr(obj, field.name)
-            data[field.name] = dataclass_to_dict(value)
-        # Include members created in __post_init__
-        for key, value in obj.__dict__.items():
-            if key not in data:
-                data[key] = dataclass_to_dict(value)
-        # Include the name of the class
-        if hasattr(obj, "get_type") and callable(getattr(obj, "get_type")):
-            data["name"] = str(obj.get_type())  # type: ignore
-        elif hasattr(obj, "get_name") and callable(getattr(obj, "get_name")):
-            data["name"] = obj.get_name()  # type: ignore
-        return data
-    else:
-        return obj

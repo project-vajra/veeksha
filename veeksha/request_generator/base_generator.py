@@ -3,8 +3,8 @@ from typing import List, Union
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 from veeksha.config.config import BaseRequestGeneratorConfig
-from veeksha.core.request_config import RequestConfig
-from veeksha.core.response import Response
+from veeksha.datatypes.request_config import RequestConfig
+from veeksha.datatypes.response import Response
 from veeksha.logger import init_logger
 from veeksha.request_generator.length_generator.base_generator import (
     BaseRequestLengthGenerator,

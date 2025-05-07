@@ -1,9 +1,10 @@
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 
-from pydantic import BaseModel
+from veeksha.utils.dataclasses import frozen_dataclass
 
 
-class Response(BaseModel):
+@frozen_dataclass
+class Response:
     """The response object from the LLM API.
 
     Args:
@@ -12,9 +13,9 @@ class Response(BaseModel):
         logprobs: logprobs from LLM
     """
 
-    id: Optional[int] = None
+    id: int
     text: str
-    logprobs: Optional[Dict] = None
+    logprobs: Optional[Dict[str, Any]] = None
 
     def __str__(self) -> str:
         return f"Response(id={self.id}, text={self.text}, logprobs={self.logprobs})"

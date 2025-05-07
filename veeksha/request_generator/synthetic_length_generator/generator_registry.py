@@ -1,4 +1,4 @@
-from veeksha.types.base_registry import BaseRegistry
+from veeksha.utils.base_registry import BaseRegistry
 from veeksha.types.request_length_generator_type import RequestLengthGeneratorType
 
 from .fixed_generator import FixedRequestLengthGenerator

@@ -198,7 +198,6 @@ class ClientConfig:
     timeout: Optional[int] = None
     max_num_completed_requests: Optional[int] = None
     additional_sampling_params: Optional[Dict[str, Any]] = None
-    llm_api: Optional[str] = None
 
     def to_config_dict(self):
         return {
@@ -207,7 +206,6 @@ class ClientConfig:
             "timeout": self.timeout,
             "max_completed_requests": self.max_num_completed_requests,
             "client_config_additional_sampling_params": self.additional_sampling_params,
-            "client_config_llm_api": self.llm_api,
         }
 
     def to_args(self):
@@ -222,10 +220,10 @@ class ClientConfig:
         return " ".join(args)
 
     def get_key(self):
-        return f"{self.num_clients}_{self.timeout}_{self.max_num_completed_requests}_{self.llm_api}"
+        return f"{self.num_clients}_{self.timeout}_{self.max_num_completed_requests}"
 
     def to_human_readable_name(self):
-        return f"Num ray clients: {self.num_clients}, Num concurrent requests per client: {self.num_concurrent_requests_per_client}, Timeout: {self.timeout}, Max num completed requests: {self.max_num_completed_requests}, LLM API: {self.llm_api}"
+        return f"Num ray clients: {self.num_clients}, Num concurrent requests per client: {self.num_concurrent_requests_per_client}, Timeout: {self.timeout}, Max num completed requests: {self.max_num_completed_requests}"
 
 
 @dataclass

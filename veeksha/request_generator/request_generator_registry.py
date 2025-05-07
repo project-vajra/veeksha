@@ -1,5 +1,5 @@
 from veeksha.types import RequestGeneratorType
-from veeksha.types.base_registry import BaseRegistry
+from veeksha.utils.base_registry import BaseRegistry
 
 from .lmeval_generator import LMEvalRequestGenerator
 from .prefix_generator import PrefixRequestGenerator

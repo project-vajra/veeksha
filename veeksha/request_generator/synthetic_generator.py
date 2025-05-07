@@ -1,11 +1,12 @@
 import math
 import random
-from typing import List, Optional, Tuple, Union
+import os
+from typing import Generator, List, Tuple, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
-from veeksha.config.config import ClientConfig, SyntheticRequestGeneratorConfig
-from veeksha.core.request_config import RequestConfig
+from veeksha.config.config import SyntheticRequestGeneratorConfig
+from veeksha.datatypes.request_config import RequestConfig
 from veeksha.logger import init_logger
 from veeksha.request_generator.base_generator import BaseRequestGenerator
 from veeksha.request_generator.length_generator.base_generator import (
@@ -14,6 +15,11 @@ from veeksha.request_generator.length_generator.base_generator import (
 
 logger = init_logger(__name__)
 
+CORPUS_RELATIVE_PATH = "../../data/corpus.txt"
+CORPUS_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), CORPUS_RELATIVE_PATH)
+)
+
 
 class SyntheticRequestGenerator(BaseRequestGenerator):
     def __init__(
@@ -21,24 +27,33 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         config: SyntheticRequestGeneratorConfig,
         request_length_generator: BaseRequestLengthGenerator,
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
-        client_config: ClientConfig,
-        corpus_lines: Optional[List[str]] = None,
     ):
-        self.config = config
-        self.request_length_generator = request_length_generator
-        self.tokenizer = tokenizer
+        self.config: SyntheticRequestGeneratorConfig = config
+        self.request_length_generator: BaseRequestLengthGenerator = request_length_generator
+        self.tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast] = tokenizer
 
-        self.client_config = client_config
-        self.corpus_lines = corpus_lines
+        self.request_id: int = 0
 
-        self.request_id = 0
+    def load_corpus(self) -> List[str]:
+        """Load the corpus lines from the corpus.txt file."""
+        with open(CORPUS_PATH, "r") as f:
+            corpus_lines = f.readlines()
+        return corpus_lines
+
+    def get_corpus_line(self) -> Generator[str, None, None]:
+        # create an infinite generator of corpus lines
+        # shuffle the corpus lines
+        corpus_lines = self.load_corpus()
+        while True:
+            random.shuffle(corpus_lines)
+            for line in corpus_lines:
+                yield line
 
     def generate_random_prompt(
         self,
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         num_prompt_tokens: int = 1024,
         num_output_tokens: int = 128,
-        corpus_lines: Union[List[str], None] = None,
         add_instruction: bool = True,
     ) -> Tuple[str, int]:
         """Generate a random prompt with a given number of tokens.
@@ -53,8 +68,6 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         Returns:
             A random prompt with the given number of tokens.
         """
-        assert corpus_lines is not None, "corpus_lines must be provided"
-
         get_token_length = lambda text: len(tokenizer.encode(text))
 
         instruction = (
@@ -63,12 +76,12 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         )
 
         remaining_prompt_tokens = num_prompt_tokens - get_token_length(instruction)
-        random.shuffle(corpus_lines)
+
         sampling_lines = True
         prompt = (instruction + '"""') if add_instruction else ""
         remaining_prompt_tokens -= get_token_length(prompt) * 2
         while sampling_lines:
-            for line in corpus_lines:
+            for line in self.get_corpus_line():
                 line_to_add = line
                 if remaining_prompt_tokens - get_token_length(line_to_add) < 0:
                     # This will cut off a line in the middle of a word, but that's ok since an
@@ -99,19 +112,13 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             tokenizer=self.tokenizer,
             num_prompt_tokens=num_prompt_tokens,
             num_output_tokens=num_output_tokens,
-            corpus_lines=self.corpus_lines,
         )
-        default_sampling_params = {"max_tokens": num_output_tokens, "ignore_eos": True}
-        default_sampling_params.update(
-            self.client_config.additional_sampling_params_dict
-        )
+        sampling_params = {"max_tokens": num_output_tokens, "ignore_eos": True}
         request_config = RequestConfig(
-            model=self.client_config.model,
-            prompt=prompt,
-            sampling_params=default_sampling_params,
-            llm_api=self.client_config.llm_api,
-            address_append_value=self.client_config.address_append_value,
             id=self.request_id,
+            prompt=prompt,
+            num_prompt_tokens=num_prompt_tokens,
+            sampling_params=sampling_params,
         )
 
         self.request_id += 1

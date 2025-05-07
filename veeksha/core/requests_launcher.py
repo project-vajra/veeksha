@@ -4,8 +4,7 @@ from threading import Thread
 from typing import Dict
 
 from veeksha.config.config import ClientConfig
-from veeksha.core.llm_clients import construct_client
-from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
+from veeksha.core.openai_api_client import OpenAIAPIClient
 
 
 class RequestsLauncher:
@@ -18,7 +17,7 @@ class RequestsLauncher:
         output_queue: MPQueue,
     ):
         self.clients = []
-        self.llm_clients: Dict[int, BaseLLMClient] = {}
+        self.llm_clients: Dict[int, OpenAIAPIClient] = {}
 
         self.client_config = client_config
         self.input_queue = input_queue
@@ -38,14 +37,8 @@ class RequestsLauncher:
 
     def run_client(self, client_id: int) -> None:
         """Run the client."""
-        assert self.client_config.tokenizer is not None
-        assert self.client_config.model is not None
-
-        self.llm_clients[client_id] = construct_client(
-            model_name=self.client_config.model,
-            tokenizer_name=self.client_config.tokenizer,
-            llm_api=self.client_config.llm_api,
-            api_url=self.client_config.api_url,
+        self.llm_clients[client_id] = OpenAIAPIClient(
+            config=self.client_config,
         )
         self.start_threads(client_id=client_id)
 

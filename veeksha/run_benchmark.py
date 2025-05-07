@@ -10,7 +10,7 @@ import json
 from multiprocessing import Queue
 from queue import Empty
 from threading import Thread
-from typing import List, Dict, Any
+from typing import List
 
 from tqdm import tqdm  # type: ignore
 
@@ -20,9 +20,9 @@ from veeksha.benchmark_data_utils import (
     store_lmeval_results,
 )
 from veeksha.config.config import BenchmarkConfig
-from veeksha.core.hf_utils import get_tokenizer
+from veeksha.utils.hf_utils import get_tokenizer
 from veeksha.core.requests_launcher import RequestsLauncher
-from veeksha.core.response import Response
+from veeksha.datatypes.response import Response
 from veeksha.logger import init_logger
 from veeksha.metrics.service_metrics import ServiceMetrics
 from veeksha.request_generator.base_generator import BaseRequestGenerator
@@ -281,7 +281,7 @@ def run_benchmark(
     )
 
     logger.info(
-        f"Results for token benchmark for {benchmark_config.client_config.model} queried with the {benchmark_config.client_config.llm_api} api. {service_metrics}"
+        f"Results for token benchmark for {benchmark_config.client_config.model}. Summary: {service_metrics}"
     )
 
     service_metrics.store_output()

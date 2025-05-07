@@ -1,4 +1,4 @@
-from veeksha.types.base_registry import BaseRegistry
+from veeksha.utils.base_registry import BaseRegistry
 from veeksha.types.request_interval_generator_type import RequestIntervalGeneratorType
 
 from .gamma_generator import GammaRequestIntervalGenerator

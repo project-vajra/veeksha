@@ -1,21 +1,21 @@
 from abc import ABC
-from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 from veeksha.config.utils import get_all_subclasses
+from veeksha.utils.dataclasses import frozen_dataclass
 
 
-@dataclass
+@frozen_dataclass
 class BasePolyConfig(ABC):
+
     @classmethod
-    def create_from_type(cls, type_: Any) -> Any:
+    def create_from_type(cls, type_: Enum) -> Any:
         for subclass in get_all_subclasses(cls):
             if subclass.get_type() == type_:
                 return subclass()
         raise ValueError(f"Invalid type: {type_}")
 
-    @classmethod
-    def get_type(cls) -> Any:
-        raise NotImplementedError(
-            f"[{cls.__name__}] get_type() method is not implemented"
-        )
+    @staticmethod
+    def get_type() -> Enum:
+        raise NotImplementedError

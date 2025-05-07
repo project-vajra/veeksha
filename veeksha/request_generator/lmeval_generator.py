@@ -15,8 +15,8 @@ from lm_eval.tasks import Task, TaskManager, get_task_dict
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 from veeksha.config.config import ClientConfig, LmevalRequestGeneratorConfig
-from veeksha.core.request_config import RequestConfig
-from veeksha.core.response import Response
+from veeksha.datatypes.request_config import RequestConfig
+from veeksha.datatypes.response import Response
 from veeksha.logger import init_logger
 from veeksha.types import LMEvalOutputType
 from veeksha.request_generator.length_generator.base_generator import (
@@ -167,12 +167,9 @@ class LMEvalRequestGenerator:
                         f"Context length exceeds max tokens limit. Truncated context to {context_length} tokens."
                     )
             return RequestConfig(
-                model=self.client_config.model,
+                id=self.req_idx - 1,
                 prompt=(context, context_length),
                 sampling_params=all_gen_kwargs,
-                llm_api=self.client_config.llm_api,
-                address_append_value=self.client_config.address_append_value,
-                id=self.req_idx - 1,
             )
         elif req.request_type == str(LMEvalOutputType.LOGLIKELIHOOD):
             context, target = req.args  # type: ignore
@@ -180,7 +177,7 @@ class LMEvalRequestGenerator:
             if self.config.num_fewshot > 0:
                 context = context + target
             return RequestConfig(
-                model=self.client_config.model,
+                id=self.req_idx - 1,
                 prompt=(context, len(self.tokenizer.encode(context))),
                 sampling_params={
                     "stream": False,
@@ -189,9 +186,6 @@ class LMEvalRequestGenerator:
                     "max_tokens": 1,
                     "top_logprobs": 20,
                 },
-                llm_api=self.client_config.llm_api,
-                address_append_value=self.client_config.address_append_value,
-                id=self.req_idx - 1,
             )
         else:
             raise NotImplementedError(

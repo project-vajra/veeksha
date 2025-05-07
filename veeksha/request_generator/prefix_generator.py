@@ -2,8 +2,8 @@ from typing import List, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
-from veeksha.config.config import ClientConfig, SyntheticRequestGeneratorConfig
-from veeksha.core.request_config import RequestConfig
+from veeksha.config.config import SyntheticRequestGeneratorConfig
+from veeksha.datatypes.request_config import RequestConfig
 from veeksha.logger import init_logger
 from veeksha.request_generator.length_generator.base_generator import (
     BaseRequestLengthGenerator,
@@ -22,9 +22,8 @@ class PrefixRequestGenerator(SyntheticRequestGenerator):
         config: SyntheticRequestGeneratorConfig,
         request_length_generator: BaseRequestLengthGenerator,
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
-        client_config: ClientConfig,
     ):
-        super().__init__(config, request_length_generator, tokenizer, client_config)
+        super().__init__(config, request_length_generator, tokenizer)
 
         assert (
             isinstance(self.request_length_generator, TraceRequestLengthGenerator)
@@ -101,18 +100,12 @@ class PrefixRequestGenerator(SyntheticRequestGenerator):
 
         final_token_count = len(self.encode(prompt))
 
-        default_sampling_params = {"max_tokens": num_output_tokens, "ignore_eos": True}
-        default_sampling_params.update(
-            self.client_config.additional_sampling_params_dict
-        )
+        sampling_params = {"max_tokens": num_output_tokens, "ignore_eos": True}
 
         request_config = RequestConfig(
-            model=self.client_config.model,
-            prompt=(prompt, final_token_count),
-            sampling_params=default_sampling_params,
-            llm_api=self.client_config.llm_api,
-            address_append_value=self.client_config.address_append_value,
             id=self.request_id,
+            prompt=(prompt, final_token_count),
+            sampling_params=sampling_params,
         )
 
         self.request_id += 1

@@ -1,19 +1,20 @@
-from dataclasses import dataclass, field
+from dataclasses import field
 from functools import cached_property
 from statistics import mean
 from typing import List, Optional
 
+from veeksha.utils.dataclasses import frozen_dataclass
 
-@dataclass
+
+@frozen_dataclass
 class RequestMetrics:
     """
     Request-level metrics for 1 request, all metrics are in seconds.
     """
-
-    request_dispatched_at: float = 0.0
+    num_prompt_tokens: int
+    num_output_tokens: int
+    request_dispatched_at: float
     inter_token_times: List[float] = field(default_factory=list)
-    num_prompt_tokens: int = 0
-    num_output_tokens: int = 0
     error_msg: Optional[str] = None
     error_code: Optional[int] = None
 
@@ -54,7 +55,7 @@ class RequestMetrics:
         if self.end_to_end_latency == 0:
             return 0
 
-        return self.num_output_tokens / self.end_to_end_latency    
+        return self.num_output_tokens / self.end_to_end_latency
 
     @cached_property
     def token_arrival_times(self):
@@ -67,8 +68,8 @@ class RequestMetrics:
         arrival_times = []
         cumulative_time = self.request_dispatched_at
 
-        for t in self.inter_token_times:
-            cumulative_time += t
+        for token_time in self.inter_token_times:
+            cumulative_time += token_time
             arrival_times.append(cumulative_time)
 
         return arrival_times
