@@ -1,0 +1,11 @@
+# Experiment run commands
+# Generated on: 2025-04-04 14:15:45
+
+# For vajra engine:
+python -m veeksha.server_benchmark --config-dir veeksha/server_benchmark/experiment_configs/20250404_141545_multi-engine_Meta-Llama-3-8B_tp_MULTI_VALUES_1_2_4_qps5.0/vajra
+
+# For sglang engine:
+python -m veeksha.server_benchmark --config-dir veeksha/server_benchmark/experiment_configs/20250404_141545_multi-engine_Meta-Llama-3-8B_tp_MULTI_VALUES_1_2_4_qps5.0/sglang
+
+# For vllm engine:
+python -m veeksha.server_benchmark --config-dir veeksha/server_benchmark/experiment_configs/20250404_141545_multi-engine_Meta-Llama-3-8B_tp_MULTI_VALUES_1_2_4_qps5.0/vllm

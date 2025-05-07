@@ -1,0 +1,5 @@
+# Experiment run commands
+# Generated on: 2025-04-04 23:22:44
+
+# For vajra engine:
+python -m veeksha.server_benchmark --config veeksha/server_benchmark/experiment_configs/20250404_232244_vajra_llama-3-8b_tp1_pp1_decode_qps5/vajra/vajra.yml

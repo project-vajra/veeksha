@@ -1,0 +1,36 @@
+server:
+  openai_server_engine: sglang
+  openai_api_url: http://localhost:8001/v1
+  openai_api_port: 8001
+  openai_api_key: token-abc123
+  fixed_chunk_size: 32768
+  request_prioratizer_type: fcfs
+  scheduler_type: FIXED_CHUNK
+model:
+  name: llama-3-8b
+  identifier: meta-llama/Meta-Llama-3-8B
+  chat_template: |-
+    {% set loop_messages = messages %}{% for message in loop_messages %}{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>
+
+    '+ message['content'] | trim + '<|eot_id|>' %}{% if loop.index0 == 0 %}{% set content = bos_token + content %}{% endif %}{{ content }}{% endfor %}{{ '<|start_header_id|>assistant<|end_header_id|>
+
+    ' }}
+parallel_spec:
+  tp_dimension: 1
+  pp_dimension: 1
+request_config:
+  num_clients: 10
+  num_concurrent_requests_per_client: 10
+  timeout: 1200
+  max_num_completed_requests: 64
+  additional_sampling_params: {}
+  llm_api: openai_chat
+benchmark_config:
+  output_dir: results/vajra_llama-3-8b_tp1_pp1_decode
+  should_use_given_dir: true
+  benchmark_type: prefill
+decode_benchmark_config:
+  batch_size: 64
+  context_length: 1024
+prefill_benchmark_config:
+  context_length: 1024

@@ -6,7 +6,7 @@ servers:
 
 models:
   - name: llama-3-8b-instruct
-    identifier: meta-llama/Meta-Llama-3-8B-Instruct
+    identifier: "meta-llama/Meta-Llama-3-8B-Instruct"
 
 request_generator_configs:
   - start_qps: 0.5
