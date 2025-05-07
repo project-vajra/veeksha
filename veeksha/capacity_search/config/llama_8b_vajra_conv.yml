@@ -2,7 +2,7 @@ servers:
   - openai_server_engine: vajra
     openai_api_url: "http://localhost:8001/v1"
     openai_api_key: token-abc123
-    server_env: "../vajra/env_vajra" # todo
+    server_env: "../vajra/env" # todo
 
 models:
   - name: llama-3-8b-instruct
