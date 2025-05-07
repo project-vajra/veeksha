@@ -269,7 +269,7 @@ class JobConfig:
             config["request_generator_configs"],
             config["client_configs"],
             config["servers"],
-            config["server_envs"],
+            config["server_env"],
         ):
             model_config = ModelConfig(**model_config)
             request_generator_config = RequestGeneratorConfig(
