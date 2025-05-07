@@ -448,9 +448,17 @@ class CapacitySearch:
                             if key == "json_model_override_args":
                                 cmd.extend(["--json-model-override-args", json.dumps(value)])
                             else:
-                                param_key = key.replace("_", "-")
+                                # Check if we're using vajra server engine
+                                is_vajra = "vajra" in server_config["module"]
+                                
+                                # For vajra, keep underscores; for others, replace with hyphens
+                                param_key = key if is_vajra else key.replace("_", "-")
+                                
                                 if isinstance(value, bool) and value:
-                                    cmd.append(f"--{param_key}")
+                                    if is_vajra:
+                                        cmd.extend([f"--{param_key}", str(value).lower()])
+                                    else:
+                                        cmd.append(f"--{param_key}")
                                 elif not isinstance(value, bool):
                                     cmd.extend([f"--{param_key}", str(value)])
                         port = server_config["port"]
@@ -471,9 +479,8 @@ class CapacitySearch:
                             logger.error(f"Error freeing port: {str(e)}")
                             port = port + 1
 
-                    print("Server env: ", self.job_config.server_config.server_env)
                     if self.job_config.server_config.server_env:
-                        cmd = ["mamba", "run", "-p", self.job_config.server_config.server_env] + cmd
+                        cmd = ["mamba", "run", "--no-capture-output", "-p", self.job_config.server_config.server_env] + cmd
 
                     print(f"Final command: {' '.join(cmd)}")
                     print(f"Starting server process on port {port}")

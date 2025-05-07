@@ -1,0 +1,29 @@
+server:
+  openai_server_engine: sglang
+  openai_api_url: http://localhost:8001/v1
+  openai_api_port: 8001
+  openai_api_key: token-abc123
+model:
+  name: llama-3-8b
+  identifier: meta-llama/Meta-Llama-3-8B
+parallel_spec:
+  tp_dimension: 4
+request_generator_config:
+  start_qps: 1
+  request_interval_generator_provider: poisson
+  request_length_generator_provider: trace
+  trace_request_length_generator_trace_file: data/processed_traces/sharegpt_8k_stats_llama2_tokenizer_filtered_v2.csv
+request_config:
+  num_clients: 2
+  num_concurrent_requests_per_client: 2
+  timeout: 1200
+  max_num_completed_requests: 10
+  additional_sampling_params: {}
+  llm_api: openai_chat
+  request_generator_max_tokens: 8192
+benchmark_config:
+  output_dir: results/MULTI_VALUES_vajra_sglang_vllm_llama-3-8b_tpMULTI_VALUES_1_2_4_pp1_MULTI_VALUES_data_processed_traces_sharegpt_8k_stats_llama2_tokenizer_filtered_v2.csv_decode
+  qps: 5.0
+  should_use_given_dir: true
+metadata:
+  config_id: 587ece15ba7547f44984102cd51fdaee
