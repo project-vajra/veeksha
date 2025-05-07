@@ -494,11 +494,21 @@ class CapacitySearch:
                         # Redirect output to files
                         start_time = time.time()
                         print("Launching server subprocess")
+                        
+                        # Extract environment variables from server_config if they exist
+                        env = os.environ.copy()  # Start with current environment
+                        if 'environment_variables' in server_config:
+                            print(f"Setting environment variables from server_config")
+                            for key, value in server_config['environment_variables'].items():
+                                env[key] = str(value)
+                                print(f"  {key}={value}")
+                        
                         server_process = subprocess.Popen(
                             cmd,
                             stdout=stdout_file,  # Redirect stdout to file
                             stderr=stderr_file,  # Redirect stderr to file
                             text=True,
+                            env=env,  # Set environment variables
                             preexec_fn=os.setsid  
                         )
                         

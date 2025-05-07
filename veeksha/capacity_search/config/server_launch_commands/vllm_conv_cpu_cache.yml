@@ -5,16 +5,26 @@ model_path: "meta-llama/Meta-Llama-3-8B-Instruct"
 dtype: "auto"
 tensor_parallel_size: 1
 enable_cache_telemetry: true
-cache_telemetry_output_dir: "../veeksha/vllm-cache-tp1-conv"
+cache_telemetry_output_dir: "../veeksha/cache_telemetry_output/tp1/vllm_cpu_cache_conv"
 reset_cache_telemetry_on_new_file: true
 context_length: 128000
 max_running_requests: 256
 enable_chunked_prefill: true
 chunked_prefill_size: 512
+enable_prefix_caching: true
 page_size: 16
 json_model_override_args: {'rope_scaling': {'type': 'linear', 'factor': 16.0}, 'rope_theta': 8000000}
 readiness_timeout: 600
+kv-transfer-config: '{"kv_connector":"LMCacheConnectorV1", "kv_role":"kv_both"}'
 error_patterns:
   - "CUDA out of memory"
   - "NCCL error"
   - "socket.error: [Errno 98] Address already in use"
+environment_variables:
+  LMCACHE_USE_EXPERIMENTAL: true
+  # 256 Tokens per KV Chunk
+  LMCACHE_CHUNK_SIZE: 256
+  # Enable CPU memory backend
+  LMCACHE_LOCAL_CPU: true # default
+  # 5GB of Pinned CPU memory
+  LMCACHE_MAX_LOCAL_CPU_SIZE: 80.0

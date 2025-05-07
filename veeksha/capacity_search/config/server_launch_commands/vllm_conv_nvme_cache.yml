@@ -1,0 +1,31 @@
+# SGLang Server Configuration
+module: "vllm.launch_server"
+port: 8001
+model_path: "meta-llama/Meta-Llama-3-8B-Instruct"
+dtype: "auto"
+tensor_parallel_size: 1
+enable_cache_telemetry: true
+cache_telemetry_output_dir: "../veeksha/cache_telemetry_output/tp1/vllm_nvme_cache_conv"
+reset_cache_telemetry_on_new_file: true
+context_length: 128000
+max_running_requests: 256
+enable_chunked_prefill: true
+chunked_prefill_size: 512
+enable_prefix_caching: true
+page_size: 16
+json_model_override_args: {'rope_scaling': {'type': 'linear', 'factor': 16.0}, 'rope_theta': 8000000}
+readiness_timeout: 600
+kv-transfer-config: '{"kv_connector":"LMCacheConnectorV1", "kv_role":"kv_both"}'
+error_patterns:
+  - "CUDA out of memory"
+  - "NCCL error"
+  - "socket.error: [Errno 98] Address already in use"
+environment_variables:
+  LMCACHE_USE_EXPERIMENTAL: true
+  LMCACHE_CHUNK_SIZE: 256
+  LMCACHE_LOCAL_CPU: true
+  LMCACHE_MAX_LOCAL_CPU_SIZE: 80.0
+  LMCACHE_LOCAL_DISK: "file:///mnt/nvme/vllm_lmcache/"
+  LMCACHE_MAX_LOCAL_DISK_SIZE: 200.0
+
+
