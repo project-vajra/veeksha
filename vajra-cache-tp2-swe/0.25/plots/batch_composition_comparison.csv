@@ -1,0 +1,5 @@
+BATCH_COMPOSITION,COUNT
+batch_num_tokens,5965141.0
+batch_num_prefill_tokens,5544980.0
+batch_num_decode_tokens,420161.0
+batch_size,435098.0

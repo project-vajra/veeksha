@@ -10,6 +10,7 @@ import time
 import yaml
 from typing import Optional, Tuple, IO, Any, List
 import re
+import shutil
 
 import numpy as np
 import wandb
@@ -332,6 +333,25 @@ class CapacitySearch:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             return s.connect_ex((host, port)) == 0
 
+    def _get_directory_state(self, dir_path: str) -> Tuple[int, int]:
+        """Helper to get item count and total size of files in a directory."""
+        item_count = 0
+        total_size = 0
+        if not os.path.isdir(dir_path):
+            return 0, 0
+        try:
+            for root, _, files in os.walk(dir_path):
+                item_count += len(files) # Consider if dirs should be counted too
+                for f_name in files:
+                    try:
+                        total_size += os.path.getsize(os.path.join(root, f_name))
+                    except OSError:
+                        pass # File might be gone or inaccessible during walk
+        except Exception as e:
+            logger.warning(f"Error walking directory {dir_path} for state: {e}")
+            return -1, -1 # Indicate error
+        return item_count, total_size
+
     def search(self):
         """
         Perform binary search to find the maximum QPS under the SLO
@@ -407,6 +427,8 @@ class CapacitySearch:
                         self.args.dynamic_ttft_slo,
             )
             overall_key = "_".join([self.job_config.get_key(), slo_key])
+            # since key is very long, hash it to get a unique key for a particular config
+            # just check config.json to know actual config
             hash_key = _get_hash(overall_key)
             run_dir = os.path.join(
                 self.args.output_dir,
@@ -670,6 +692,117 @@ class CapacitySearch:
                     if stderr_file: stderr_file.close()
                     
                     print(f"Server terminated with exit code: {server_process.returncode}")
+
+                    if "vajra" in server_config["module"]:
+                        logger.info("Running Vajra-specific telemetry tagging logic (CWD path strategy).")
+                        relative_metrics_output_dir_from_yaml = server_config.get("metrics_config_output_dir")
+                        logger.info(f"  Raw metrics_config_output_dir from server_config: {relative_metrics_output_dir_from_yaml}")
+
+                        if relative_metrics_output_dir_from_yaml:
+                            path_parts = relative_metrics_output_dir_from_yaml.split("veeksha/", 1)
+                            if len(path_parts) > 1:
+                                path_suffix_after_veeksha = path_parts[1]
+                                logger.info(f"  Path segment extracted after 'veeksha/': {path_suffix_after_veeksha}")
+                                
+                                current_working_dir = os.getcwd()
+                                logger.info(f"  Current Working Directory (CWD): {current_working_dir}")
+                                
+                                absolute_metrics_output_dir = os.path.join(current_working_dir, path_suffix_after_veeksha)
+                                absolute_metrics_output_dir = os.path.normpath(absolute_metrics_output_dir)
+                                logger.info(f"  Constructed absolute_metrics_output_dir: {absolute_metrics_output_dir}")
+
+                                logger.info(f"  Checking existence of: {absolute_metrics_output_dir}")
+                                if os.path.exists(absolute_metrics_output_dir) and os.path.isdir(absolute_metrics_output_dir):
+                                    logger.info(f"  Metrics output directory {absolute_metrics_output_dir} exists. Waiting for file writing to stabilize before moving.")
+                                    
+                                    # Wait for directory stability
+                                    STABILITY_CHECKS_REQUIRED = 5
+                                    DIRECTORY_WAIT_TIMEOUT_SECONDS = 180 # 3 minutes
+                                    wait_start_time = time.monotonic()
+                                    last_item_count, last_total_size = -1, -1
+                                    stable_checks_count = 0
+
+                                    while stable_checks_count < STABILITY_CHECKS_REQUIRED:
+                                        if time.monotonic() - wait_start_time > DIRECTORY_WAIT_TIMEOUT_SECONDS:
+                                            logger.warning(f"Timeout after {DIRECTORY_WAIT_TIMEOUT_SECONDS}s waiting for directory {absolute_metrics_output_dir} to stabilize. Proceeding with current contents.")
+                                            break
+                                        
+                                        current_item_count, current_total_size = self._get_directory_state(absolute_metrics_output_dir)
+                                        logger.debug(f"    Stability check for {absolute_metrics_output_dir}: Items={current_item_count}, Size={current_total_size}. Stable checks: {stable_checks_count}/{STABILITY_CHECKS_REQUIRED}")
+
+                                        if current_item_count == last_item_count and current_total_size == last_total_size and current_item_count != -1:
+                                            stable_checks_count += 1
+                                        else:
+                                            stable_checks_count = 0
+                                        
+                                        last_item_count = current_item_count
+                                        last_total_size = current_total_size
+                                        
+                                        if stable_checks_count < STABILITY_CHECKS_REQUIRED:
+                                            time.sleep(2)
+
+                                    if stable_checks_count >= STABILITY_CHECKS_REQUIRED:
+                                        logger.info(f"  Directory {absolute_metrics_output_dir} stabilized with {last_item_count} items and total size {last_total_size} bytes.")
+                                    # Proceed regardless of timeout, with warning if it occurred.
+
+                                    logger.info(f"  Proceeding to move contents from stabilized directory: {absolute_metrics_output_dir}")
+                                    parent_dir_of_metrics_output = os.path.dirname(absolute_metrics_output_dir)
+                                    new_qps_specific_dir_name = f"{qps}" # User confirmed this naming (no 'qps_')
+                                    new_qps_specific_dir_path = os.path.join(parent_dir_of_metrics_output, new_qps_specific_dir_name)
+                                    logger.info(f"  Parent directory for QPS-specific folder: {parent_dir_of_metrics_output}")
+                                    logger.info(f"  New QPS-specific directory name: {new_qps_specific_dir_name}")
+                                    logger.info(f"  New QPS-specific directory full path: {new_qps_specific_dir_path}")
+
+                                    logger.info(f"  Creating directory (if not exists): {new_qps_specific_dir_path}")
+                                    os.makedirs(new_qps_specific_dir_path, exist_ok=True)
+
+                                    logger.info(f"  Listing items in {absolute_metrics_output_dir} to move.")
+                                    items_in_source_before_move = []
+                                    if os.path.exists(absolute_metrics_output_dir):
+                                        items_in_source_before_move = os.listdir(absolute_metrics_output_dir)
+                                    logger.info(f"    Items found in source dir '{absolute_metrics_output_dir}': {items_in_source_before_move}")
+
+                                    for item_name in items_in_source_before_move: # Iterate over the captured list
+                                        source_item_path = os.path.join(absolute_metrics_output_dir, item_name)
+                                        destination_item_path = os.path.join(new_qps_specific_dir_path, item_name)
+                                        
+                                        logger.info(f"    Processing item: '{item_name}'")
+                                        logger.info(f"      Source path: {source_item_path}")
+                                        logger.info(f"      Destination path: {destination_item_path}")
+                                        logger.info(f"      Source exists before move? {os.path.exists(source_item_path)}")
+                                        logger.info(f"      Source is file before move? {os.path.isfile(source_item_path)}")
+                                        logger.info(f"      Source is dir before move? {os.path.isdir(source_item_path)}")
+
+                                        logger.info(f"    Attempting to move {source_item_path} to {destination_item_path}")
+                                        try:
+                                            if os.path.exists(source_item_path): # Extra check before actual move
+                                                shutil.move(source_item_path, destination_item_path)
+                                                logger.info(f"      Successfully reported move of {item_name}")
+                                                logger.info(f"      Destination exists after move? {os.path.exists(destination_item_path)}")
+                                                logger.info(f"      Source still exists after move? {os.path.exists(source_item_path)}")
+                                            else:
+                                                logger.warning(f"      Source {source_item_path} disappeared before move operation for item '{item_name}'")
+                                        except Exception as e:
+                                            logger.error(f"      Error moving {source_item_path} to {destination_item_path}: {e}", exc_info=True)
+                                            logger.info(f"      Checking paths after error: Source exists? {os.path.exists(source_item_path)}, Dest exists? {os.path.exists(destination_item_path)}")
+                                    
+                                    logger.info(f"  Finished iterating through items for moving from {absolute_metrics_output_dir} to {new_qps_specific_dir_path}")
+                                    if os.path.exists(absolute_metrics_output_dir):
+                                        logger.info(f"    Final contents of source dir '{absolute_metrics_output_dir}': {os.listdir(absolute_metrics_output_dir)}")
+                                    else:
+                                        logger.info(f"    Source dir '{absolute_metrics_output_dir}' no longer exists or was moved itself.")
+                                    
+                                    if os.path.exists(new_qps_specific_dir_path):
+                                        logger.info(f"    Final contents of dest dir '{new_qps_specific_dir_path}': {os.listdir(new_qps_specific_dir_path)}")
+                                    else:
+                                        logger.info(f"    Dest dir '{new_qps_specific_dir_path}' does not exist.")
+                                else:
+                                    logger.warning(f"  Metrics output directory {absolute_metrics_output_dir} does not exist or is not a directory. Skipping telemetry tagging for vajra.")
+                            else:
+                                logger.warning(f"  'veeksha/' not found as a separable segment in '{relative_metrics_output_dir_from_yaml}'. Cannot use CWD-based path strategy. Skipping telemetry tagging for vajra.")
+                        else:
+                            logger.warning("  `metrics_config_output_dir` not found in server_config. Skipping telemetry tagging for vajra.")
+
                 except Exception as e:
                     logger.error(f"Error killing server: {str(e)}", exc_info=True)
                     if stdout_file: stdout_file.close()

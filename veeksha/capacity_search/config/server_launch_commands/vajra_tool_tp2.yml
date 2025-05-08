@@ -1,0 +1,20 @@
+# SGLang Server Configuration
+module: "vajra.entrypoints.openai.api_server"
+port: 8002
+model_config_model: "meta-llama/Meta-Llama-3-8B-Instruct"
+model_config_dtype: "float16"
+parallel_config_tensor_parallel_size: 2
+model_config_max_model_len: 16000
+fixed_chunk_replica_scheduler_config_max_batch_size: 256
+fixed_chunk_replica_scheduler_config_chunk_size: 512
+cache_config_enable_prefix_caching: true
+cache_config_block_size: 16
+metrics_config_write_metrics: true
+metrics_config_keep_individual_batch_metrics: true
+metrics_config_output_dir: "../veeksha/vajra-cache-tp2-tool/results"
+inference_engine_config_global_resource_mapping: '{"0": [["node:130.207.125.89", 2], ["node:130.207.125.89", 3]]}' # todo get with ray status
+readiness_timeout: 600
+error_patterns:
+  - "CUDA out of memory"
+  - "NCCL error"
+  - "socket.error: [Errno 98] Address already in use"
