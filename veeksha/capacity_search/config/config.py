@@ -14,10 +14,12 @@ class ServerConfig:
     openai_api_url: Optional[str] = None
     openai_api_key: Optional[str] = None
     server_env: Optional[str] = None
+    is_local: bool = True
 
     def get_key(self):
+        url = self.openai_api_url if not self.is_local else ""
         return (
-            f"{self.openai_server_engine}_{self.openai_api_url}_{self.openai_api_key}_{self.server_env}"
+            f"{self.openai_server_engine}_{url}_{self.openai_api_key}_{self.server_env}"
         )
 
     def get_human_readable_name(self):
