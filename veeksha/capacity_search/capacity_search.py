@@ -461,14 +461,23 @@ class CapacitySearch:
                         
                         print("Constructing server command from config")
                         # Construct command from YAML configuration
-                        cmd = ["python", "-m", server_config["module"]]
+                        if "vllm" in server_config["module"]:
+                            cmd = ["vllm", "serve", server_config["model"]]
+                            # remove model from config
+                            del server_config["model"]
+                        else:
+                            cmd = ["python", "-m", server_config["module"]]
                         
                         # Add all configuration parameters from YAML
                         for key, value in server_config.items():
                             if key == "module" or key == "error_patterns" or key == "readiness_timeout": 
                                 continue
-                            if key == "json_model_override_args":
-                                cmd.extend(["--json-model-override-args", json.dumps(value)])
+                            elif key == "environment_variables":
+                                # set environment variables with the values from the config {'LMCACHE_USE_EXPERIMENTAL': True, 'LMCACHE_CHUNK_SIZE': 256, 'LMCACHE_LOCAL_CPU': True, 'LMCACHE_MAX_LOCAL_CPU_SIZE': 80.0}
+                                for k, v in value.items():
+                                    os.environ[k] = str(v)
+                            elif key in ["json_model_override_args", "hf_overrides"]:
+                                cmd.extend(["--" + key, json.dumps(value)])
                             else:
                                 # Check if we're using vajra server engine
                                 is_vajra = "vajra" in server_config["module"]
