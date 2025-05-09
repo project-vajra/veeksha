@@ -462,6 +462,12 @@ class CapacitySearch:
                         print("Constructing server command from config")
                         # Construct command from YAML configuration
                         cmd = ["python", "-m", server_config["module"]]
+
+                        port = 8000
+                        while self.is_port_in_use(port):
+                            port += 1
+
+                        server_config["port"] = port
                         
                         # Add all configuration parameters from YAML
                         for key, value in server_config.items():
@@ -483,29 +489,16 @@ class CapacitySearch:
                                         cmd.append(f"--{param_key}")
                                 elif not isinstance(value, bool):
                                     cmd.extend([f"--{param_key}", str(value)])
-                        port = server_config["port"]
                     else:
                         raise ValueError("Server launch file not specified")
 
-                    if self.is_port_in_use(port):
-                        logger.warning(f"Port {port} is already in use, attempting cleanup")
-                        try:
-                            # Try to find and kill process using the port
-                            print(f"Running fuser -k {port}/tcp")
-                            subprocess.run(["fuser", "-k", f"{port}/tcp"], check=False)
-                            # time.sleep(2)
-                            if self.is_port_in_use(port):
-                                logger.warning(f"Failed to free port {port}, incrementing port number")
-                                port = port + 1
-                        except Exception as e:
-                            logger.error(f"Error freeing port: {str(e)}")
-                            port = port + 1
 
                     if self.job_config.server_config.server_env:
                         cmd = ["mamba", "run", "--no-capture-output", "-p", self.job_config.server_config.server_env] + cmd
 
                     print(f"Final command: {' '.join(cmd)}")
                     print(f"Starting server process on port {port}")
+                    self.job_config.server_config.openai_api_url = f"http://localhost:{port}/v1"
 
                     try:
                         print(f"Opening log files in {self.args.output_dir}")
