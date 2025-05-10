@@ -1,19 +1,18 @@
 # SGLang Server Configuration
 module: "vllm serve"
 port: 8001
-model: "meta-llama/Meta-Llama-3-8B-Instruct"
+model: "gradientai/Llama-3-8B-Instruct-Gradient-1048k"
 dtype: "auto"
 tensor_parallel_size: 1
-enable_cache_telemetry: true
-cache_telemetry_output_dir: "../veeksha/cache_telemetry_output/tp1/vllm_nvme_cache_conv"
-reset_cache_telemetry_on_new_file: true
+#enable_cache_telemetry: true
+#cache_telemetry_output_dir: "../veeksha/cache_telemetry_output/tp1/vllm_nvme_cache_conv"
+#reset_cache_telemetry_on_new_file: true
 max_model_len: 128000
 max_num_seqs: 256
 enable_chunked_prefill: true
 max_num_batched_tokens: 512
 enable_prefix_caching: true
-page_size: 16
-json_model_override_args: {'rope_scaling': {'type': 'linear', 'factor': 16.0}, 'rope_theta': 8000000}
+block_size: 16
 readiness_timeout: 600
 kv-transfer-config: '{"kv_connector":"LMCacheConnectorV1", "kv_role":"kv_both"}'
 error_patterns:
@@ -24,7 +23,7 @@ environment_variables:
   LMCACHE_USE_EXPERIMENTAL: true
   LMCACHE_CHUNK_SIZE: 256
   LMCACHE_LOCAL_CPU: true
-  LMCACHE_MAX_LOCAL_CPU_SIZE: 80.0
+  LMCACHE_MAX_LOCAL_CPU_SIZE: 100.0
   LMCACHE_LOCAL_DISK: "file:///mnt/nvme/vllm_lmcache/"
   LMCACHE_MAX_LOCAL_DISK_SIZE: 200.0
 

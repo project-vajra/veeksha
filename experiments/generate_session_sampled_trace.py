@@ -274,9 +274,16 @@ def sample_sessions(sessions, dispatch_rate, session_length):
     timestamp = 0
     sampled_sessions = []
 
+    session_id = 0
     while remaining_sessions:
         session, timestamp = rejection_sample(remaining_sessions, max_requests, dispatch_rate, timestamp)
-        sampled_sessions.append(session)
+        # Make a deep copy of the session to avoid modifying the original data
+        session_copy = copy.deepcopy(session)
+        # Assign session_id to each request in the session
+        for request in session_copy:
+            request['session_id'] = session_id
+        sampled_sessions.append(session_copy)
+        session_id += 1
 
     extra_sessions = 0
     while timestamp < session_length * 1000:
@@ -284,8 +291,14 @@ def sample_sessions(sessions, dispatch_rate, session_length):
         # sample in a ring fashion until we reach the session length (+ some margin due to sampling in blocks of sessions_list)
         while remaining_sessions:
             session, timestamp = rejection_sample(remaining_sessions, max_requests, dispatch_rate, timestamp)
-            sampled_sessions.append(session)
+            # Make a deep copy of the session to avoid modifying the original data
+            session_copy = copy.deepcopy(session)
+            # Assign session_id to each request in the session
+            for request in session_copy:
+                request['session_id'] = session_id
+            sampled_sessions.append(session_copy)
             extra_sessions += 1
+            session_id += 1
 
     if extra_sessions > 0:    
         print(f"Sampled {extra_sessions} extra sessions to reach session length {session_length}.")
@@ -390,7 +403,7 @@ def analyze_single_trace(df, args):
     print(f"Session p25 length: {np.percentile(session_lengths, 25)}")
     print(f"Session p75 length: {np.percentile(session_lengths, 75)}")
     print(f"Session p90 length: {np.percentile(session_lengths, 90)}")
-    print()
+    print()    
 
     # force set all timestamps to be 10 seconds away from the previous request
     # for i in range(1, len(sampled_sessions)):
@@ -410,6 +423,50 @@ def analyze_single_trace(df, args):
     for request in sampled_requests:
         request['request_id'] = sequential_request_id
         sequential_request_id += 1
+
+    # dispatch time stats
+    print("\n=====SESSION DISPATCH STATS=====")
+    
+    # Find the first request of each session
+    first_requests_by_session = {}
+    for request in sampled_requests:
+        session_id = request['session_id']
+        if session_id not in first_requests_by_session:
+            first_requests_by_session[session_id] = request
+    
+    # Sort first requests by timestamp
+    first_requests = sorted(first_requests_by_session.values(), key=lambda x: x['timestamp'])
+    
+    # Calculate dispatch times (time between consecutive first requests)
+    dispatch_times_ms = []
+    for i in range(1, len(first_requests)):
+        dispatch_time = first_requests[i]['timestamp'] - first_requests[i-1]['timestamp']
+        dispatch_times_ms.append(dispatch_time)
+    
+    if len(dispatch_times_ms) > 0:
+        # Convert milliseconds to seconds for display
+        dispatch_times_sec = [t/1000.0 for t in dispatch_times_ms]
+        
+        # Compute statistics
+        print(f"Target dispatch rate: {args.dispatch_rate:.6f} sessions/second")
+
+        # Calculate dispatch rate in terms of sessions per second
+        mean_dispatch_time_sec = np.mean(dispatch_times_sec)
+        dispatch_rate_per_second = 1.0 / mean_dispatch_time_sec if mean_dispatch_time_sec > 0 else 0
+        print(f"Empirical dispatch rate: {dispatch_rate_per_second:.6f} sessions/second")
+
+        print(f"Number of dispatch intervals: {len(dispatch_times_ms)}")
+        print(f"Min dispatch interval: {min(dispatch_times_sec):.4f} seconds")
+        print(f"Max dispatch interval: {max(dispatch_times_sec):.4f} seconds")
+        print(f"Mean dispatch interval: {np.mean(dispatch_times_sec):.4f} seconds")
+        print(f"Median dispatch interval: {np.median(dispatch_times_sec):.4f} seconds")
+        print(f"Std dispatch interval: {np.std(dispatch_times_sec):.4f} seconds")
+        print(f"P25 dispatch interval: {np.percentile(dispatch_times_sec, 25):.4f} seconds")
+        print(f"P75 dispatch interval: {np.percentile(dispatch_times_sec, 75):.4f} seconds")
+        print(f"P90 dispatch interval: {np.percentile(dispatch_times_sec, 90):.4f} seconds")
+    
+    else:
+        print("Not enough sessions to calculate dispatch time statistics")
 
     # filter for session id 5
     # sampled_requests = [request for request in sampled_requests if request['session_id'] == 5]

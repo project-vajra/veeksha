@@ -1,19 +1,18 @@
 # SGLang Server Configuration
 module: "vllm serve"
 port: 8001
-model: "meta-llama/Meta-Llama-3-8B-Instruct"
+model: "gradientai/Llama-3-8B-Instruct-Gradient-1048k"
 dtype: "auto"
 tensor_parallel_size: 1
-enable_cache_telemetry: true
-cache_telemetry_output_dir: "../veeksha/tp1/vllm_gpu_nocache_conv"
-reset_cache_telemetry_on_new_file: true
+#enable_cache_telemetry: true
+#cache_telemetry_output_dir: "../veeksha/tp1/vllm_gpu_cache_conv"
+#reset_cache_telemetry_on_new_file: true
 max_model_len: 128000
 max_num_seqs: 256
 enable_chunked_prefill: true
 max_num_batched_tokens: 512
-enable_prefix_caching: false
-page_size: 16
-json_model_override_args: {'rope_scaling': {'type': 'linear', 'factor': 16.0}, 'rope_theta': 8000000}
+enable_prefix_caching: true
+block_size: 16
 readiness_timeout: 600
 error_patterns:
   - "CUDA out of memory"

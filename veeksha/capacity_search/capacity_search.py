@@ -37,7 +37,8 @@ class LogMonitorThread(threading.Thread):
                  stderr_file_path: str, 
                  error_patterns: List[str],
                  check_interval: int = 5,
-                 callback=None):
+                 callback=None,
+                 server_url: str = "http://localhost:8000"):
         """Initialize the log monitor thread.
         
         Args:
@@ -54,9 +55,8 @@ class LogMonitorThread(threading.Thread):
         self.check_interval = check_interval
         self.callback = callback
         self.running = False
-        self.last_stdout_pos = 0
-        self.last_stderr_pos = 0
         self._stop_event = threading.Event()
+        self.server_url = server_url
     
     def stop(self):
         """Stop the monitoring thread."""
@@ -64,41 +64,46 @@ class LogMonitorThread(threading.Thread):
         self.running = False
     
     def run(self):
-        """Main thread loop that periodically checks logs for errors."""
+        """Main thread loop that periodically pings the server to check if it's alive."""
         self.running = True
-        stdout_file = None
-        stderr_file = None
         
         try:
-            stdout_file = open(self.stdout_file_path, "r")
-            stderr_file = open(self.stderr_file_path, "r")
-            
             while not self._stop_event.is_set() and self.running:
-                # Check for errors in logs
-                found_error, error_msg, self.last_stdout_pos, self.last_stderr_pos = check_server_logs_for_errors(
-                    stdout_file, stderr_file, self.error_patterns, 
-                    self.last_stdout_pos, self.last_stderr_pos
-                )                
+                # Ping the server to check if it's responsive
+                found_error = False
+                error_msg = None
+                
+                try:
+                    # Try to connect to the server's /v1/models endpoint
+                    models_url = f"{self.server_url}/v1/models"
+                    response = requests.get(models_url, timeout=2)  # Short timeout to quickly detect issues
+                    
+                    # Check if response is not 200 OK
+                    if response.status_code != 200:
+                        found_error = True
+                        error_msg = f"Server responded with non-200 status code: {response.status_code}"
+                        
+                except (requests.ConnectionError, requests.Timeout) as e:
+                    found_error = True
+                    error_msg = f"Server connection failed: {str(e)}"
+                except Exception as e:
+                    found_error = True
+                    error_msg = f"Unexpected error pinging server: {str(e)}"
+                
                 # If error found, call the callback if provided
                 if found_error:
                     if self.callback:
                         self.callback(error_msg)
                     else:
-                        print(f"LogMonitorThread detected error: {error_msg}", flush=True)
+                        print(f"LogMonitorThread detected server error: {error_msg}", flush=True)
                 
                 # Wait for next check interval
                 self._stop_event.wait(self.check_interval)
                 
         except Exception as e:
-            print(f"Error in log monitoring thread: {str(e)}", flush=True)
+            print(f"Error in server monitoring thread: {str(e)}", flush=True)
             import traceback
             traceback.print_exc()
-        finally:
-            # Close files when thread exits
-            if stdout_file and not stdout_file.closed:
-                stdout_file.close()
-            if stderr_file and not stderr_file.closed:
-                stderr_file.close()
 
 
 def check_server_logs_for_errors(
@@ -177,6 +182,8 @@ class CapacitySearch:
     ) -> None:
         self.job_config = job_config
         self.args = args
+        # Create a stop event that can be triggered by error detection thread
+        self.stop_event = threading.Event()
 
         if (self.args.slo_type == "deadline") and self.args.dynamic_ttft_slo:
             assert (
@@ -184,7 +191,39 @@ class CapacitySearch:
             ), "Deadline SLO needs profiled predictions"
 
     def _run_benchmark(self, benchmark_config: BenchmarkConfig):
-        run(self.job_config, benchmark_config)
+        # Pass stop_event to benchmark function or periodically check it here
+        # This is a simple implementation that checks every 5 seconds if we should stop
+        import time
+        import threading
+        
+        # Create a thread that runs the benchmark but checks for stop signals
+        def run_with_stop_check():
+            # Start the actual benchmark
+            benchmark_thread = threading.Thread(
+                target=run,
+                args=(self.job_config, benchmark_config),
+                daemon=True
+            )
+            benchmark_thread.start()
+            
+            # Monitor the stop event while benchmark is running
+            while benchmark_thread.is_alive():
+                # If stop requested, exit the monitoring loop
+                if self.stop_event.is_set():
+                    print("\nBenchmark run interrupted due to server error detected in logs!", flush=True)
+                    # We don't forcibly kill the benchmark thread, just return control
+                    # The main process will then skip to the next iteration
+                    return
+                # Check every second if we should stop
+                time.sleep(1)
+            
+            # Wait for benchmark to finish if it's still running
+            benchmark_thread.join(timeout=0)
+        
+        # Start the monitoring wrapper thread and wait for it to complete
+        monitor_thread = threading.Thread(target=run_with_stop_check)
+        monitor_thread.start()
+        monitor_thread.join()
 
     def _get_result_file(self, run_dir: str, metric_name: str) -> Optional[str]:
         files = glob.glob(os.path.join(run_dir, f"{metric_name}.csv"))
@@ -369,6 +408,12 @@ class CapacitySearch:
             return self._is_under_sla(
                 cached_request_level_metrics_file, benchmark_config
             )
+        
+        # Check if we should skip due to an error detected before running the benchmark
+        if self.stop_event.is_set():
+            print(f"Skipping benchmark for QPS={qps} due to detected server error", flush=True)
+            # Consider this QPS as over SLA since server had errors
+            return False, None, None, None, None, "error_detected"
 
         self._run_benchmark(benchmark_config)
 
@@ -379,27 +424,6 @@ class CapacitySearch:
         ), f"Service-level metrics file not found for {benchmark_config.to_human_readable_name()}"
 
         return self._is_under_sla(request_level_metrics_file, benchmark_config)
-
-    def is_server_up(self, host="localhost", port=8000, max_retries=10, retry_interval=3):
-        """Check if the SGLang server is up and responding."""
-        url = f"http://{host}:{port}/v1/completions"
-        
-        for attempt in range(max_retries):
-            try:
-                response = requests.get(url, timeout=5)
-                if response.status_code == 200:
-                    print(f"Server is up after {attempt+1} attempts!")
-                    return True
-                else:
-                    print(f"Server responded with status code {response.status_code}, retrying...")
-            except (requests.ConnectionError, requests.Timeout) as e:
-                print(f"Attempt {attempt+1}/{max_retries}: Server not ready yet ({str(e)})")
-            
-            if attempt < max_retries - 1:  # Don't sleep after the last attempt
-                time.sleep(retry_interval)
-        
-        print(f"Server failed to come up after {max_retries} attempts")
-        return False
 
     def is_port_in_use(self, port, host='localhost'):
         """Check if a port is already in use."""
@@ -463,6 +487,11 @@ class CapacitySearch:
         for iteration in range(self.args.max_iterations):
             print(f"=== Starting iteration {iteration + 1}/{self.args.max_iterations} ===")
             print(f"Search space: left={left:.2f} QPS, right={right:.2f} QPS")
+            
+            # Initialize error detection flags for this iteration
+            should_skip_iteration = False
+            # Clear any previous stop signals
+            self.stop_event.clear()
 
             # stopping condition - we have reached the minimum granularity
             if abs(left - right) < self.args.min_search_granularity * qps / 100:
@@ -521,151 +550,171 @@ class CapacitySearch:
                 print(f"Cache for qps {qps} not found, starting server")
 
                 ############## server launching. we restart the server on each iteration
-                if True: #enable_cache_telemetry or first_server_launch:
-                    # first_server_launch = False
-                    # Define the command and arguments as a list
-                    if self.args.server_launch_file is not None:
-                        print(f"Loading server config from {self.args.server_launch_file}")
-                        # Load server configuration from YAML file
-                        with open(self.args.server_launch_file, 'r') as f:
-                            server_config = yaml.safe_load(f)
-                        
-                        print("Constructing server command from config")
-                        # Construct command from YAML configuration
+                #if enable_cache_telemetry or first_server_launch:
+                # first_server_launch = False
+                # Define the command and arguments as a list
+                if self.args.server_launch_file is not None:
+                    print(f"Loading server config from {self.args.server_launch_file}")
+                    # Load server configuration from YAML file
+                    with open(self.args.server_launch_file, 'r') as f:
+                        server_config = yaml.safe_load(f)
+                    
+                    print("Constructing server command from config")
+                    # Construct command from YAML configuration
 
-                        if "vllm" in server_config["module"]:
-                            cmd = ["vllm", "serve", server_config["model"]]
-                            # remove model from config
-                            del server_config["model"]
-                        else:
-                            cmd = ["python", "-m", server_config["module"]]
-
-                        port = 8000
-                        while self.is_port_in_use(port):
-                            port += 1
-
-                        server_config["port"] = port
-
-                        is_vajra = "vajra" in server_config["module"]
-                        is_sglang = "sglang" in server_config["module"]
-                        is_vllm = "vllm" in server_config["module"]
-                        
-                        # Add all configuration parameters from YAML
-                        for key, value in server_config.items():
-                            if key == "module" or key == "error_patterns" or key == "readiness_timeout": 
-                                continue
-                            elif key == "environment_variables":
-                                # set environment variables with the values from the config {'LMCACHE_USE_EXPERIMENTAL': True, 'LMCACHE_CHUNK_SIZE': 256, 'LMCACHE_LOCAL_CPU': True, 'LMCACHE_MAX_LOCAL_CPU_SIZE': 80.0}
-                                for k, v in value.items():
-                                    os.environ[k] = str(v)
-                            elif key in ["json_model_override_args", "hf_overrides"]:
-                                if is_sglang:
-                                    key = key.replace("_", "-")
-                                cmd.extend(["--" + key, json.dumps(value)])
-                            else:
-                                # For vajra, keep underscores; for others, replace with hyphens
-                                param_key = key if is_vajra else key.replace("_", "-")
-                                
-                                if isinstance(value, bool) and value:
-                                    if is_vajra:
-                                        cmd.extend([f"--{param_key}", str(value).lower()])
-                                    else:
-                                        cmd.append(f"--{param_key}")
-                                elif not isinstance(value, bool):
-                                    cmd.extend([f"--{param_key}", str(value)])
+                    if "vllm" in server_config["module"]:
+                        cmd = ["vllm", "serve", server_config["model"]]
+                        # remove model from config
+                        del server_config["model"]
                     else:
-                        raise ValueError("Server launch file not specified")
+                        cmd = ["python", "-m", server_config["module"]]
 
+                    import random
+                    port = random.randint(8000, 32000) # pray 🙏
+                    while self.is_port_in_use(port):
+                        port += 1
 
-                    if self.job_config.server_config.server_env:
-                        cmd = ["mamba", "run", "--no-capture-output", "-p", self.job_config.server_config.server_env] + cmd
+                    server_config["port"] = port
 
-                    print(f"Final command: {' '.join(cmd)}")
-                    print(f"Starting server process on port {port}")
-                    self.job_config.server_config.openai_api_url = f"http://localhost:{port}/v1"
-
-                    try:
-                        print(f"Opening log files in {self.args.output_dir}")
-                        # Open log files for stdout and stderr
-                        stdout_file = open(f"{self.args.output_dir}/server_stdout.log", "w")
-                        stderr_file = open(f"{self.args.output_dir}/server_stderr.log", "w")
-                        
-                        # Redirect output to files
-                        start_time = time.time()
-                        print("Launching server subprocess")
-                        
-                        # Extract environment variables from server_config if they exist
-                        env = os.environ.copy()  # Start with current environment
-                        if 'environment_variables' in server_config:
-                            print(f"Setting environment variables from server_config")
-                            for key, value in server_config['environment_variables'].items():
-                                env[key] = str(value)
-                                print(f"  {key}={value}")
-                        
-                        server_process = subprocess.Popen(
-                            cmd,
-                            stdout=stdout_file,  # Redirect stdout to file
-                            stderr=stderr_file,  # Redirect stderr to file
-                            text=True,
-                            env=env,  # Set environment variables
-                            preexec_fn=os.setsid  
-                        )
-                        
-                        # Check if process started successfully
-                        if server_process.poll() is not None:
-                            logger.error(f"Server process failed immediately with exit code: {server_process.returncode}")
+                    is_vajra = "vajra" in server_config["module"]
+                    is_sglang = "sglang" in server_config["module"]
+                    is_vllm = "vllm" in server_config["module"]
+                    
+                    # Add all configuration parameters from YAML
+                    for key, value in server_config.items():
+                        if key == "module" or key == "error_patterns" or key == "readiness_timeout": 
                             continue
+                        elif key == "environment_variables":
+                            # set environment variables with the values from the config {'LMCACHE_USE_EXPERIMENTAL': True, 'LMCACHE_CHUNK_SIZE': 256, 'LMCACHE_LOCAL_CPU': True, 'LMCACHE_MAX_LOCAL_CPU_SIZE': 80.0}
+                            for k, v in value.items():
+                                os.environ[k] = str(v)
+                        elif key in ["json_model_override_args", "hf_overrides"]:
+                            if is_sglang:
+                                key = key.replace("_", "-")
+                            cmd.extend(["--" + key, json.dumps(value)])
+                        else:
+                            # For vajra, keep underscores; for others, replace with hyphens
+                            param_key = key if is_vajra else key.replace("_", "-")
                             
-                        pid = server_process.pid
-                        print(f"Server process started successfully with PID: {pid}")
+                            if isinstance(value, bool) and value:
+                                if is_vajra:
+                                    cmd.extend([f"--{param_key}", str(value).lower()])
+                                else:
+                                    cmd.append(f"--{param_key}")
+                            elif not isinstance(value, bool):
+                                cmd.extend([f"--{param_key}", str(value)])
+                else:
+                    raise ValueError("Server launch file not specified")
 
-                    except Exception as e:
-                        logger.error(f"Failed to start server process: {str(e)}", exc_info=True)
+                if self.job_config.server_config.server_env:
+                    cmd = ["mamba", "run", "--no-capture-output", "-p", self.job_config.server_config.server_env] + cmd
+
+                print(f"Final command: {' '.join(cmd)}")
+                print(f"Starting server process on port {port}")
+                self.job_config.server_config.openai_api_url = f"http://localhost:{port}/v1"
+
+                try:
+                    print(f"Opening log files in {self.args.output_dir}")
+                    # Open log files for stdout and stderr
+                    stdout_file = open(f"{self.args.output_dir}/server_stdout.log", "w")
+                    stderr_file = open(f"{self.args.output_dir}/server_stderr.log", "w")
+                    
+                    # Redirect output to files
+                    start_time = time.time()
+                    print("Launching server subprocess")
+                    
+                    # Extract environment variables from server_config if they exist
+                    env = os.environ.copy()  # Start with current environment
+                    if 'environment_variables' in server_config:
+                        print(f"Setting environment variables from server_config")
+                        for key, value in server_config['environment_variables'].items():
+                            env[key] = str(value)
+                            print(f"  {key}={value}")
+                    
+                    server_process = subprocess.Popen(
+                        cmd,
+                        stdout=stdout_file,  # Redirect stdout to file
+                        stderr=stderr_file,  # Redirect stderr to file
+                        text=True,
+                        env=env,  # Set environment variables
+                        preexec_fn=os.setsid  
+                    )
+                    
+                    # Check if process started successfully
+                    if server_process.poll() is not None:
+                        logger.error(f"Server process failed immediately with exit code: {server_process.returncode}")
                         continue
-
-                    error_patterns = server_config.get('error_patterns', [])
-                    detected_fatal_error = False
-                    # Start a log monitor thread to continuously check for errors in the background
-                    if error_patterns:
-                        def error_callback(error_msg):
-                            print(f"\n!!! Log monitor detected fatal server error pattern: '{error_msg}' in logs for {self.job_config.server_config.openai_server_engine} !!!", flush=True)
-                            detected_fatal_error = True
                         
-                        # Create and assign log monitor
-                        log_monitor = LogMonitorThread(
-                            stdout_file_path=f"{self.args.output_dir}/server_stdout.log",
-                            stderr_file_path=f"{self.args.output_dir}/server_stderr.log",
-                            error_patterns=error_patterns,
-                            check_interval=5,  # Check logs every 5 seconds
-                            callback=error_callback
+                    pid = server_process.pid
+                    print(f"Server process started successfully with PID: {pid}")
+
+                except Exception as e:
+                    logger.error(f"Failed to start server process: {str(e)}", exc_info=True)
+                    continue
+
+                error_patterns = server_config.get('error_patterns', [])
+                detected_fatal_error = False
+                    
+                # poll server until it's up or we timeout
+                try:
+                    stdout_file_r = open(f"{self.args.output_dir}/server_stdout.log", "r")
+                    stderr_file_r = open(f"{self.args.output_dir}/server_stderr.log", "r")
+                    last_stdout_pos = 0
+                    last_stderr_pos = 0
+                    while time.monotonic() - start_time < server_config['readiness_timeout'] and not detected_fatal_error:
+                        # check server logs (out of memory, etc)
+                        found_error, error_msg, last_stdout_pos, last_stderr_pos = check_server_logs_for_errors(
+                            stdout_file_r, stderr_file_r, error_patterns, 
+                            last_stdout_pos, last_stderr_pos
                         )
-                        log_monitor.start()
-                        print(f"Started background log monitoring thread for server logs", flush=True)
-                        
-                    # poll server until it's up or we timeout
-                    try:
-                        stdout_file_r = open(f"{self.args.output_dir}/server_stdout.log", "r")
-                        stderr_file_r = open(f"{self.args.output_dir}/server_stderr.log", "r")
-                        while time.monotonic() - start_time < server_config['readiness_timeout'] and not detected_fatal_error:
-                            if server_process.poll() is not None: # Check 1: Process died?
-                                raise RuntimeError(f"{self.job_config.server_config.openai_server_engine} server (PID: {pid}) exited prematurely (code {server_process.returncode}).")
-                            
-                            # Check 3: API Ready?
-                            api_check_url = f"http://localhost:{server_config['port']}/v1/models"
-                            try:
-                                response = requests.get(api_check_url, timeout=2)
-                                if response.status_code == 200:
-                                    print(f"\nServer API is ready! ({api_check_url} responded {response.status_code} in {time.monotonic() - start_time:.2f}s)", flush=True)
-                                    server_ready_status = True
-                                    break
-                                else: print(f"S({response.status_code})", end='', flush=True)
-                            except ConnectionError: print(".", end='', flush=True)
-                            except Exception as api_e: print(f"E({type(api_e).__name__})", end='', flush=True)
 
-                            time.sleep(2)
-                    finally:
-                        if stdout_file_r: stdout_file_r.close()
-                        if stderr_file_r: stderr_file_r.close()
+                        if found_error:
+                            # skip iteration
+                            print(f"Skipping iteration at QPS={qps} due to server error: {error_msg}", flush=True)
+                            continue
+                        
+                        # Check 3: API Ready?
+                        api_check_url = f"http://localhost:{server_config['port']}/v1/models"
+                        try:
+                            response = requests.get(api_check_url, timeout=2)
+                            if response.status_code == 200:
+                                print(f"\nServer API is ready! ({api_check_url} responded {response.status_code} in {time.monotonic() - start_time:.2f}s)", flush=True)
+                                server_ready_status = True
+                                break
+                            else: print(f"S({response.status_code})", end='', flush=True)
+                        except ConnectionError: print(".", end='', flush=True)
+                        except Exception as api_e: print(f"E({type(api_e).__name__})", end='', flush=True)
+
+                        time.sleep(2)
+                finally:
+                    if stdout_file_r: stdout_file_r.close()
+                    if stderr_file_r: stderr_file_r.close()
+
+                # Start a log monitor thread to continuously check for errors in the background
+                # Flag to signal if the current iteration should be skipped due to server error
+                should_skip_iteration = False
+                if error_patterns:
+                    # Create a nonlocal function to update both flags when an error is detected
+                    def error_callback(error_msg):
+                        print(f"\n!!! Log monitor detected fatal server error pattern: '{error_msg}' in logs for {self.job_config.server_config.openai_server_engine} !!!", flush=True)
+                        nonlocal detected_fatal_error, should_skip_iteration
+                        detected_fatal_error = True
+                        should_skip_iteration = True  # Signal to skip current iteration
+                        # Set the event to stop any running benchmark
+                        self.stop_event.set()
+                        print(f"Signaling to skip the current iteration at QPS={qps} due to server error", flush=True)
+                    
+                    # Create and assign log monitor
+                    log_monitor = LogMonitorThread(
+                        stdout_file_path=f"{self.args.output_dir}/server_stdout.log",
+                        stderr_file_path=f"{self.args.output_dir}/server_stderr.log",
+                        error_patterns=error_patterns,
+                        check_interval=5,  # Check server every 5 seconds
+                        callback=error_callback,
+                        server_url=f"http://localhost:{server_config['port']}"
+                    )
+                    # log_monitor.start()
+                    print(f"Started background log monitoring thread for server logs", flush=True)
 
             (
                 is_under_sla,
@@ -769,6 +818,16 @@ class CapacitySearch:
 
             print(f"Cached request level metrics file: {cached_request_level_metrics_file}")
             if cached_request_level_metrics_file is None:
+                # Check if we should skip this iteration due to a server error
+                if should_skip_iteration:
+                    print(f"Skipping current iteration at QPS={qps} due to detected server error", flush=True)
+                    # Since we're skipping, consider this QPS as over the SLA
+                    right = qps
+                    min_qps_over_sla = min(min_qps_over_sla, qps)
+                    print(f"Marking QPS={qps} as exceeding SLA due to server error, updating right bound to {right}")
+                    # Continue to next iteration
+                    continue
+                    
                 try:
                     print(f"Terminating server process group {pid}")
                     # Kill the entire process group (server and any child processes it spawned)
