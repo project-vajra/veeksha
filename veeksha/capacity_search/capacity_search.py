@@ -474,6 +474,10 @@ class CapacitySearch:
                             port += 1
 
                         server_config["port"] = port
+
+                        is_vajra = "vajra" in server_config["module"]
+                        is_sglang = "sglang" in server_config["module"]
+                        is_vllm = "vllm" in server_config["module"]
                         
                         # Add all configuration parameters from YAML
                         for key, value in server_config.items():
@@ -484,11 +488,10 @@ class CapacitySearch:
                                 for k, v in value.items():
                                     os.environ[k] = str(v)
                             elif key in ["json_model_override_args", "hf_overrides"]:
+                                if is_sglang:
+                                    key = key.replace("_", "-")
                                 cmd.extend(["--" + key, json.dumps(value)])
                             else:
-                                # Check if we're using vajra server engine
-                                is_vajra = "vajra" in server_config["module"]
-                                
                                 # For vajra, keep underscores; for others, replace with hyphens
                                 param_key = key if is_vajra else key.replace("_", "-")
                                 

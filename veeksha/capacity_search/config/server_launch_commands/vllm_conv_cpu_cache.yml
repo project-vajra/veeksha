@@ -1,20 +1,19 @@
 # SGLang Server Configuration
 module: "vllm serve"
 port: 8001
-model: "meta-llama/Meta-Llama-3-8B-Instruct"
+model: "gradientai/Llama-3-8B-Instruct-Gradient-1048k"
 dtype: "auto"
 tensor_parallel_size: 1
 enable_cache_telemetry: true
-cache_telemetry_output_dir: "../veeksha/cache_telemetry_output/tp1/vllm_cpu_cache_conv"
+cache_telemetry_output_dir: "../veeksha/vllm-cpu-cache-conv"
 reset_cache_telemetry_on_new_file: true
 max_model_len: 128000
-max_num_seqs: 256
+max_num_seqs: 128
 enable_chunked_prefill: true
 max_num_batched_tokens: 512
 enable_prefix_caching: true
-gpu_memory_utilization: 0.8
+gpu_memory_utilization: 0.7
 block_size: 16
-# hf_overrides: {'rope_scaling': {'type': 'linear', 'factor': 16.0}, 'rope_theta': 8000000}
 readiness_timeout: 600
 kv-transfer-config: '{"kv_connector":"LMCacheConnectorV1", "kv_role":"kv_both"}'
 error_patterns:

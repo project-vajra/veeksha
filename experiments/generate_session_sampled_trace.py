@@ -25,6 +25,7 @@ def parse_args():
     parser.add_argument('--dispatch-rate', type=float, default=1, help='Dispatch rate')
     parser.add_argument('--minimum-match-threshold', type=float, default=0.1, help='Minimum match threshold')
     parser.add_argument('--max-context-length', type=int, default=128000, help='Maximum context length in tokens')
+    parser.add_argument('--session-length', type=int, default=3600, help='Session length in seconds')
     args = parser.parse_args()
 
     return args
@@ -227,11 +228,40 @@ def get_sessions(requests, minimum_match_threshold=0.1):
 
     return sessions
 
-#%%
-def sample_sessions(sessions, dispatch_rate):
-    """Sample sessions using dispatch rate with poisson distribution."""
-    sampled_sessions = []
 
+def rejection_sample(remaining_sessions, max_requests, dispatch_rate, timestamp):
+    """Rejection sample a session."""
+    next_interval = -math.log(1.0 - random.random()) / dispatch_rate
+    next_interval = min(next_interval, 1 / dispatch_rate * 3) * 1000
+
+    # Rejection sampling to bias towards sessions with more requests
+    while True:
+        # Propose a session randomly from remaining sessions
+        proposed_idx = random.randint(0, len(remaining_sessions) - 1)
+        proposed_session = remaining_sessions[proposed_idx]
+        
+        # Acceptance probability proportional to number of requests
+        acceptance_prob = len(proposed_session) / max_requests
+        
+        # Accept or reject based on the computed probability
+        if random.random() < acceptance_prob:
+            session = remaining_sessions.pop(proposed_idx)
+            break
+
+    session_original_timestamp = None
+    for request in session:
+        if session_original_timestamp is None:
+            session_original_timestamp = request['timestamp']
+        request['timestamp'] = timestamp + (request['timestamp'] - session_original_timestamp)
+
+    timestamp += next_interval
+
+    return session, timestamp
+
+
+#%%
+def sample_sessions(sessions, dispatch_rate, session_length):
+    """Sample sessions using dispatch rate with poisson distribution."""
     sessions_list = list(sessions.values())
     
     # Find the maximum number of requests in any session for scaling
@@ -241,32 +271,23 @@ def sample_sessions(sessions, dispatch_rate):
     remaining_sessions = sessions_list.copy()
     
     timestamp = 0
+    sampled_sessions = []
 
     while remaining_sessions:
-        next_interval = -math.log(1.0 - random.random()) / dispatch_rate
-        next_interval = min(next_interval, 1 / dispatch_rate * 3) * 1000
-        
-        # Rejection sampling to bias towards sessions with more requests
-        while True:
-            # Propose a session randomly from remaining sessions
-            proposed_idx = random.randint(0, len(remaining_sessions) - 1)
-            proposed_session = remaining_sessions[proposed_idx]
-            
-            # Acceptance probability proportional to number of requests
-            acceptance_prob = len(proposed_session) / max_requests
-            
-            # Accept or reject based on the computed probability
-            if random.random() < acceptance_prob:
-                session = remaining_sessions.pop(proposed_idx)
-                break
-        
-        session_original_timestamp = None
-        for request in session:
-            if session_original_timestamp is None:
-                session_original_timestamp = request['timestamp']
-            request['timestamp'] = timestamp + (request['timestamp'] - session_original_timestamp)
+        session, timestamp = rejection_sample(remaining_sessions, max_requests, dispatch_rate, timestamp)
         sampled_sessions.append(session)
-        timestamp += next_interval
+
+    extra_sessions = 0
+    while timestamp < session_length * 1000:
+        remaining_sessions = sessions_list.copy()
+        # sample in a ring fashion until we reach the session length (+ some margin due to sampling in blocks of sessions_list)
+        while remaining_sessions:
+            session, timestamp = rejection_sample(remaining_sessions, max_requests, dispatch_rate, timestamp)
+            sampled_sessions.append(session)
+            extra_sessions += 1
+
+    if extra_sessions > 0:    
+        print(f"Sampled {extra_sessions} extra sessions to reach session length {session_length}.")
 
     return sampled_sessions
 
@@ -296,9 +317,51 @@ def analyze_single_trace(df, args):
 
     print("Created {0} sessions for {1} requests".format(len(sessions), len(requests)))
 
+    # go through all sessions and add metadata: session id, number of requests in session, and request id (sequential)
+    for session_id, session in sessions.items():
+        for request in session:
+            request['session_id'] = session_id
+            request['num_requests_in_session'] = len(session)
 
+    # delete requests that are longer than max_context_length tokens
+    # first, count the number of requests longer than max_context_length tokens in each session
+    sessions_to_delete = []
+    requests_to_delete_gt_max_cl = 0
+    sessions_to_delete_gt_max_cl = 0
+    sessions_to_delete_lt_5 = 0
+    for session_id, session in sessions.items():
+        requests_to_delete = [request for request in session if request['input_length'] > args.max_context_length]
+        requests_to_delete_gt_max_cl += len(requests_to_delete)
+
+        # if there are still >= 5 requests in the session, keep it. Else, delete it
+        if len(session) - len(requests_to_delete) < 5:
+            sessions_to_delete.append(session_id)
+            if len(session) < 5:
+                sessions_to_delete_lt_5 += 1
+            else:
+                sessions_to_delete_gt_max_cl += 1
+        else:
+            # delete the requests in the session
+            for request in requests_to_delete:
+                session.remove(request)
+
+    print(f"Deleted {sessions_to_delete_lt_5} sessions with less than 5 requests before filtering out requests longer than {args.max_context_length} tokens.")
+    print(f"Deleted {requests_to_delete_gt_max_cl} requests longer than {args.max_context_length} tokens.")
+    print(f"Deleted {sessions_to_delete_gt_max_cl} sessions after filtering out requests longer than {args.max_context_length} tokens.")
+    
+    # delete sessions with requests that are longer than max_context_length tokens
+    for session_id in sessions_to_delete:
+        del sessions[session_id]
+
+    # delete sessions with more than 200 requests
+    sessions_to_delete = [session_id for session_id, session in sessions.items() if len(session) > 200]
+    for session_id in sessions_to_delete:
+        del sessions[session_id]
+
+    print("=====SESSION STATS BEFORE SAMPLING=====")
     # print the stats of the session length min, max, std, mean, median, p25, p75, p90
     session_lengths = [len(session) for session in sessions.values()]
+    print(f"Number of sessions: {len(sessions)}")
     print(f"Session max length: {max(session_lengths)}")
     print(f"Session min length: {min(session_lengths)}")
     print(f"Session mean length: {np.mean(session_lengths)}")
@@ -309,37 +372,22 @@ def analyze_single_trace(df, args):
     print(f"Session p90 length: {np.percentile(session_lengths, 90)}")
     print()
 
-
-    # go through all sessions and add metadata: session id, number of requests in session, and request id (sequential)
-    for session_id, session in sessions.items():
-        for request in session:
-            request['session_id'] = session_id
-            request['num_requests_in_session'] = len(session)
-
-    # delete requests that are longer than max_context_length tokens
-    # first, count the number of requests longer than max_context_length tokens in each session
-    sessions_to_delete = []
-    requests_to_gt_max_cl = 0
-    for session_id, session in sessions.items():
-        requests_to_delete = [request for request in session if request['input_length'] > args.max_context_length]
-        requests_to_gt_max_cl += len(requests_to_delete)
-
-        # if there are still >= 5 requests in the session, keep it. Else, delete it
-        if len(session) - len(requests_to_delete) < 5:
-            sessions_to_delete.append(session_id)
-        else:
-            # delete the requests in the session
-            for request in requests_to_delete:
-                session.remove(request)
-
-    print(f"Deleted {len(sessions_to_delete)} sessions with requests longer than {args.max_context_length} tokens ({requests_to_gt_max_cl} requests)")
-    
-    # delete sessions with requests that are longer than max_context_length tokens
-    for session_id in sessions_to_delete:
-        del sessions[session_id]
-
     # 3. Sample sessions using dispatch rate with poisson distribution
-    sampled_sessions = sample_sessions(sessions, args.dispatch_rate)
+    sampled_sessions = sample_sessions(sessions, args.dispatch_rate, args.session_length)
+
+    print("=====SESSION STATS AFTER SAMPLING=====")
+    # print the stats of the session length min, max, std, mean, median, p25, p75, p90
+    session_lengths = [len(session) for session in sampled_sessions]
+    print(f"Number of sessions: {len(sampled_sessions)}")
+    print(f"Session max length: {max(session_lengths)}")
+    print(f"Session min length: {min(session_lengths)}")
+    print(f"Session mean length: {np.mean(session_lengths)}")
+    print(f"Session std length: {np.std(session_lengths)}")
+    print(f"Session median length: {np.median(session_lengths)}")
+    print(f"Session p25 length: {np.percentile(session_lengths, 25)}")
+    print(f"Session p75 length: {np.percentile(session_lengths, 75)}")
+    print(f"Session p90 length: {np.percentile(session_lengths, 90)}")
+    print()
 
     # force set all timestamps to be 10 seconds away from the previous request
     # for i in range(1, len(sampled_sessions)):
@@ -372,7 +420,7 @@ def analyze_single_trace(df, args):
 
     return sampled_requests, sampled_sessions
 
-
+# length of the session and dispatch rate
 
 #%%
 def main():
