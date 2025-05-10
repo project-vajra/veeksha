@@ -37,8 +37,7 @@ class LogMonitorThread(threading.Thread):
                  stderr_file_path: str, 
                  error_patterns: List[str],
                  check_interval: int = 5,
-                 callback=None,
-                 skip_iteration_flag=None):
+                 callback=None):
         """Initialize the log monitor thread.
         
         Args:
@@ -47,7 +46,6 @@ class LogMonitorThread(threading.Thread):
             error_patterns: List of regex patterns to check for errors
             check_interval: How often to check logs (in seconds)
             callback: Optional callback function when error is found, receives error_msg as parameter
-            skip_iteration_flag: An Event object that can be set to signal the main loop to skip an iteration
         """
         super().__init__(daemon=True)  # daemon=True means thread will exit when main thread exits
         self.stdout_file_path = stdout_file_path
@@ -55,7 +53,6 @@ class LogMonitorThread(threading.Thread):
         self.error_patterns = error_patterns
         self.check_interval = check_interval
         self.callback = callback
-        self.skip_iteration_flag = skip_iteration_flag
         self.running = False
         self.last_stdout_pos = 0
         self.last_stderr_pos = 0
@@ -82,12 +79,8 @@ class LogMonitorThread(threading.Thread):
                     stdout_file, stderr_file, self.error_patterns, 
                     self.last_stdout_pos, self.last_stderr_pos
                 )                
-                # If error found, set the skip_iteration_flag and call the callback if provided
+                # If error found, call the callback if provided
                 if found_error:
-                    if self.skip_iteration_flag:
-                        print(f"LogMonitorThread detected error, signaling to skip iteration: {error_msg}", flush=True)
-                        self.skip_iteration_flag.set()
-                        
                     if self.callback:
                         self.callback(error_msg)
                     else:
