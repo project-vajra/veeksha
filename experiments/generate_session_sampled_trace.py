@@ -362,6 +362,7 @@ def analyze_single_trace(df, args):
     # print the stats of the session length min, max, std, mean, median, p25, p75, p90
     session_lengths = [len(session) for session in sessions.values()]
     print(f"Number of sessions: {len(sessions)}")
+    print(f"Number of requests: {sum(session_lengths)}")
     print(f"Session max length: {max(session_lengths)}")
     print(f"Session min length: {min(session_lengths)}")
     print(f"Session mean length: {np.mean(session_lengths)}")
@@ -379,6 +380,7 @@ def analyze_single_trace(df, args):
     # print the stats of the session length min, max, std, mean, median, p25, p75, p90
     session_lengths = [len(session) for session in sampled_sessions]
     print(f"Number of sessions: {len(sampled_sessions)}")
+    print(f"Number of requests: {sum(session_lengths)}")
     print(f"Session max length: {max(session_lengths)}")
     print(f"Session min length: {min(session_lengths)}")
     print(f"Session mean length: {np.mean(session_lengths)}")
@@ -461,6 +463,10 @@ def main():
 
 
 if __name__ == "__main__":
+    main()
+
+# %%
+
     main()
 
 # %%
