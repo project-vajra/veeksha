@@ -12,6 +12,7 @@ import argparse
 import os
 from datetime import datetime
 import sys
+import datetime
 
 random.seed(42)
 
@@ -427,7 +428,6 @@ def analyze_single_trace(df, args):
 #%%
 def main():
     args = parse_args()
-    
     # Create the output directory if it doesn't exist
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -464,9 +464,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# %%
-
-    main()
-
-# %%

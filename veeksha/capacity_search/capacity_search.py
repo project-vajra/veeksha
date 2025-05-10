@@ -3,12 +3,14 @@ import glob
 import json
 import subprocess
 import os
+import threading
 import signal
 import requests
+import traceback
+from typing import Optional, Union, List, Tuple, Dict, Any, IO, TextIO
 from requests.exceptions import ConnectionError
 import time
 import yaml
-from typing import Optional, Tuple, IO, Any, List
 import re
 import shutil
 
@@ -25,6 +27,85 @@ logger = init_logger(__name__)
 QPS_INCREASE_SCALE = 2
 # Threshold to increase the upper bound of QPS during binary search
 VICINITY_THRESHOLD = 0.8
+
+
+class LogMonitorThread(threading.Thread):
+    """Thread class to continuously monitor server logs for errors."""
+    
+    def __init__(self, 
+                 stdout_file_path: str, 
+                 stderr_file_path: str, 
+                 error_patterns: List[str],
+                 check_interval: int = 5,
+                 callback=None,
+                 skip_iteration_flag=None):
+        """Initialize the log monitor thread.
+        
+        Args:
+            stdout_file_path: Path to the stdout log file
+            stderr_file_path: Path to the stderr log file
+            error_patterns: List of regex patterns to check for errors
+            check_interval: How often to check logs (in seconds)
+            callback: Optional callback function when error is found, receives error_msg as parameter
+            skip_iteration_flag: An Event object that can be set to signal the main loop to skip an iteration
+        """
+        super().__init__(daemon=True)  # daemon=True means thread will exit when main thread exits
+        self.stdout_file_path = stdout_file_path
+        self.stderr_file_path = stderr_file_path
+        self.error_patterns = error_patterns
+        self.check_interval = check_interval
+        self.callback = callback
+        self.skip_iteration_flag = skip_iteration_flag
+        self.running = False
+        self.last_stdout_pos = 0
+        self.last_stderr_pos = 0
+        self._stop_event = threading.Event()
+    
+    def stop(self):
+        """Stop the monitoring thread."""
+        self._stop_event.set()
+        self.running = False
+    
+    def run(self):
+        """Main thread loop that periodically checks logs for errors."""
+        self.running = True
+        stdout_file = None
+        stderr_file = None
+        
+        try:
+            stdout_file = open(self.stdout_file_path, "r")
+            stderr_file = open(self.stderr_file_path, "r")
+            
+            while not self._stop_event.is_set() and self.running:
+                # Check for errors in logs
+                found_error, error_msg, self.last_stdout_pos, self.last_stderr_pos = check_server_logs_for_errors(
+                    stdout_file, stderr_file, self.error_patterns, 
+                    self.last_stdout_pos, self.last_stderr_pos
+                )                
+                # If error found, set the skip_iteration_flag and call the callback if provided
+                if found_error:
+                    if self.skip_iteration_flag:
+                        print(f"LogMonitorThread detected error, signaling to skip iteration: {error_msg}", flush=True)
+                        self.skip_iteration_flag.set()
+                        
+                    if self.callback:
+                        self.callback(error_msg)
+                    else:
+                        print(f"LogMonitorThread detected error: {error_msg}", flush=True)
+                
+                # Wait for next check interval
+                self._stop_event.wait(self.check_interval)
+                
+        except Exception as e:
+            print(f"Error in log monitoring thread: {str(e)}", flush=True)
+            import traceback
+            traceback.print_exc()
+        finally:
+            # Close files when thread exits
+            if stdout_file and not stdout_file.closed:
+                stdout_file.close()
+            if stderr_file and not stderr_file.closed:
+                stderr_file.close()
 
 
 def check_server_logs_for_errors(
@@ -401,11 +482,8 @@ class CapacitySearch:
             # round to 2 decimal places
             qps = round(qps, 2)
 
-            # build command
-            cmd = f"python experiments/generate_session_sampled_trace.py --trace-file {source_trace_file} --minimum-match-threshold {self.args.session_match_threshold} --dispatch-rate {qps} --max-context-length {self.job_config.request_generator_config.request_generator_max_tokens}"
-
-            # run command
-            subprocess.run(cmd, shell=True, check=True)
+            cmd_generate_trace = f"python experiments/generate_session_sampled_trace.py --trace-file {source_trace_file} --minimum-match-threshold {self.args.session_match_threshold} --dispatch-rate {qps} --max-context-length {self.job_config.request_generator_config.request_generator_max_tokens}"
+            subprocess.run(cmd_generate_trace, shell=True, check=True)
 
             trace_input_file = f"{source_trace_file}/{qps}/sampled_trace_dr{qps}_mmt{self.args.session_match_threshold}.jsonl"
 
@@ -451,7 +529,7 @@ class CapacitySearch:
 
                 ############## server launching. we restart the server on each iteration
                 if True: #enable_cache_telemetry or first_server_launch:
-                    first_server_launch = False
+                    # first_server_launch = False
                     # Define the command and arguments as a list
                     if self.args.server_launch_file is not None:
                         print(f"Loading server config from {self.args.server_launch_file}")
@@ -553,23 +631,31 @@ class CapacitySearch:
                         continue
 
                     error_patterns = server_config.get('error_patterns', [])
-                    last_stdout_pos, last_stderr_pos = 0, 0
+                    detected_fatal_error = False
+                    # Start a log monitor thread to continuously check for errors in the background
+                    if error_patterns:
+                        def error_callback(error_msg):
+                            print(f"\n!!! Log monitor detected fatal server error pattern: '{error_msg}' in logs for {self.job_config.server_config.openai_server_engine} !!!", flush=True)
+                            detected_fatal_error = True
+                        
+                        # Create and assign log monitor
+                        log_monitor = LogMonitorThread(
+                            stdout_file_path=f"{self.args.output_dir}/server_stdout.log",
+                            stderr_file_path=f"{self.args.output_dir}/server_stderr.log",
+                            error_patterns=error_patterns,
+                            check_interval=5,  # Check logs every 5 seconds
+                            callback=error_callback
+                        )
+                        log_monitor.start()
+                        print(f"Started background log monitoring thread for server logs", flush=True)
+                        
                     # poll server until it's up or we timeout
                     try:
                         stdout_file_r = open(f"{self.args.output_dir}/server_stdout.log", "r")
                         stderr_file_r = open(f"{self.args.output_dir}/server_stderr.log", "r")
-                        while time.monotonic() - start_time < server_config['readiness_timeout']:
+                        while time.monotonic() - start_time < server_config['readiness_timeout'] and not detected_fatal_error:
                             if server_process.poll() is not None: # Check 1: Process died?
-                                raise RuntimeError(f"{self.job_config.server_config.openai_server_engine} server (PID: {server_process.pid}) exited prematurely (code {server_process.returncode}).")
-
-                            if error_patterns and (stdout_file_r or stderr_file_r): # Check 2: Errors in logs?
-                                found_error, error_msg, last_stdout_pos, last_stderr_pos = check_server_logs_for_errors(
-                                    stdout_file_r, stderr_file_r, error_patterns, last_stdout_pos, last_stderr_pos
-                                )
-                                if found_error:
-                                    detected_fatal_error = True
-                                    print(f"\n!!! Detected fatal server error pattern: '{error_msg}' in logs for {self.job_config.server_config.openai_server_engine} !!!", flush=True)
-                                    break # Exit readiness loop
+                                raise RuntimeError(f"{self.job_config.server_config.openai_server_engine} server (PID: {pid}) exited prematurely (code {server_process.returncode}).")
                             
                             # Check 3: API Ready?
                             api_check_url = f"http://localhost:{server_config['port']}/v1/models"
