@@ -1,8 +1,10 @@
+import asyncio
 import json
 import os
 import time
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
+import aiohttp
 import requests
 
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
@@ -55,8 +57,8 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
         previous_token_count = self.total_tokens(previous_responses)
         return current_tokens_received, previous_token_count
 
-    def send_llm_request(
-        self, request_config: RequestConfig
+    async def send_llm_request(
+        self, request_config: RequestConfig, request_dispatched_at: float
     ) -> Tuple[RequestMetrics, Response]:
         prompt, prompt_len = request_config.prompt
 
@@ -90,60 +92,63 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
         previous_token_count = 0
 
         most_recent_received_token_time = time.monotonic()
-        request_dispatched_at = time.monotonic() - self.start_time
 
         try:
-            with requests.post(
-                address, json=body, timeout=None, headers=headers, stream=True
-            ) as response:
-                if response.status_code != 200:
-                    error_response_code = response.status_code
-                    error_msg = response.text
-                    logger.error(f"Request Error: {error_msg}")
-                    response.raise_for_status()
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    address, json=body, headers=headers
+                ) as response:
+                    if response.status != 200:
+                        error_response_code = response.status
+                        error_msg = await response.text()
+                        logger.error(f"Request Error: {error_msg}")
+                        response.raise_for_status()
+                    
+                    # Process the stream response
+                    async for line in response.content:
+                        line_str = line.decode('utf-8').strip()
+                        
+                        if not line_str:
+                            continue
+                            
+                        if line_str.startswith('data: '):
+                            line_str = line_str[len('data: '):]
+                            
+                        if line_str in ["[DONE]"]:
+                            continue
 
-                for chunk in response.iter_lines(chunk_size=None):
-                    chunk = chunk.strip()
+                        try:
+                            data = json.loads(line_str)
+                        except json.JSONDecodeError:
+                            logger.error(f"JSON decode error with line: {line_str}")
+                            continue  # Skip malformed JSON
 
-                    if not chunk:
-                        continue
-                    stem = "data: "
-                    chunk = chunk[len(stem) :]
-                    if chunk in [b"[DONE]", "[DONE]"]:
-                        continue
+                        if "error" in data:
+                            error_msg = data["error"]["message"]
+                            error_response_code = data["error"]["code"]
+                            raise RuntimeError(data["error"]["message"])
 
-                    try:
-                        data = json.loads(chunk)
-                    except json.JSONDecodeError:
-                        logger.error(f"JSON decode error with chunk: {chunk}")
-                        continue  # Skip malformed JSON
-
-                    if "error" in data:
-                        error_msg = data["error"]["message"]
-                        error_response_code = data["error"]["code"]
-                        raise RuntimeError(data["error"]["message"])
-
-                    delta = data["choices"][0]["delta"]
-                    if delta.get("content", None):
-                        (
-                            current_tokens_received,
-                            previous_token_count,
-                        ) = self.get_current_tokens_received(
-                            previous_responses=previous_responses,
-                            current_response=delta["content"],
-                            previous_token_count=previous_token_count,
-                        )
-
-                        tokens_received += current_tokens_received
-                        inter_token_times.append(
-                            time.monotonic() - most_recent_received_token_time
-                        )
-                        if current_tokens_received > 1:
-                            inter_token_times.extend(
-                                [0] * (current_tokens_received - 1)
+                        delta = data["choices"][0]["delta"]
+                        if delta.get("content", None):
+                            (
+                                current_tokens_received,
+                                previous_token_count,
+                            ) = self.get_current_tokens_received(
+                                previous_responses=previous_responses,
+                                current_response=delta["content"],
+                                previous_token_count=previous_token_count,
                             )
-                        most_recent_received_token_time = time.monotonic()
-                        generated_text += delta["content"]
+
+                            tokens_received += current_tokens_received
+                            inter_token_times.append(
+                                time.monotonic() - most_recent_received_token_time
+                            )
+                            if current_tokens_received > 1:
+                                inter_token_times.extend(
+                                    [0] * (current_tokens_received - 1)
+                                )
+                            most_recent_received_token_time = time.monotonic()
+                            generated_text += delta["content"]
         except Exception as e:
             logger.error(f"Warning Or Error: ({error_response_code}) {e}")
 

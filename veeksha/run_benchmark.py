@@ -1,13 +1,12 @@
+import asyncio
 import multiprocessing
 import platform
 import random
-import threading
 import time
 import os
 from multiprocessing import Queue
 from queue import Empty
-from threading import Thread
-from typing import List
+from typing import List, Dict, Tuple
 
 from tqdm import tqdm  # type: ignore
 
@@ -22,6 +21,7 @@ from veeksha.core.requests_launcher import RequestsLauncher
 from veeksha.core.response import Response
 from veeksha.logger import init_logger
 from veeksha.metrics.service_metrics import ServiceMetrics
+from veeksha.metrics.request_metrics import RequestMetrics
 from veeksha.request_generator.base_generator import BaseRequestGenerator
 from veeksha.request_generator.interval_generator.base_generator import (
     BaseRequestIntervalGenerator,
@@ -47,14 +47,14 @@ def should_send_new_request(
     )
 
 
-def dispatch_requests(
+async def dispatch_requests(
     input_queue: Queue,
     service_metrics: ServiceMetrics,
     requests_interval_generator: BaseRequestIntervalGenerator,
     request_generator: BaseRequestGenerator,
-    stop_event: threading.Event,
+    stop_event: asyncio.Event,
 ) -> None:
-    """Thread function to generate and dispatch requests."""
+    """Async function to generate and dispatch requests."""
     num_errored_requests_handled = 0
 
     while not stop_event.is_set():
@@ -68,7 +68,7 @@ def dispatch_requests(
             # Create and dispatch request
             service_metrics.register_launched_request()
             request_config = request_generator.get_request()
-            input_queue.put(request_config)
+            await asyncio.to_thread(input_queue.put, request_config)
 
             # Wait for next interval
             next_request_interval = (
@@ -81,25 +81,28 @@ def dispatch_requests(
                 )
                 break
 
-            while not stop_event.is_set():
-                if time.monotonic() - request_start_time >= next_request_interval:
-                    break
-                time.sleep(0.01)
+            # Wait for the next request interval using asyncio.sleep
+            remainder = next_request_interval
+            while not stop_event.is_set() and remainder > 0:
+                sleep_time = min(remainder, 0.01)
+                await asyncio.sleep(sleep_time)
+                remainder = next_request_interval - (time.monotonic() - request_start_time)
         else:
-            time.sleep(0.01)
+            await asyncio.sleep(0.01)
 
 
-def process_results(
+async def process_results(
     output_queue: Queue,
     service_metrics: ServiceMetrics,
     generated_responses: List[Response],
     pbar: tqdm,
-    stop_event: threading.Event,
+    stop_event: asyncio.Event,
 ) -> None:
-    """Thread function to process results from the output queue."""
+    """Async function to process results from the output queue."""
     while not stop_event.is_set() or not output_queue.empty():
         try:
-            result = output_queue.get(timeout=0.1)
+            # Use run_in_executor to perform blocking queue.get
+            result = await asyncio.to_thread(output_queue.get, True, 0.1)
             request_metrics, generated_response = result
             if generated_response:
                 service_metrics.add_request_metrics(request_metrics)
@@ -107,10 +110,10 @@ def process_results(
 
             pbar.update(service_metrics.num_completed_requests - pbar.n)
         except Empty:
-            continue
+            await asyncio.sleep(0.01)
 
 
-def run_main_loop(
+async def run_main_loop(
     benchmark_config: BenchmarkConfig,
     requests_interval_generator: BaseRequestIntervalGenerator,
     request_generator: BaseRequestGenerator,
@@ -118,71 +121,88 @@ def run_main_loop(
     generated_responses: List[Response],
     pbar: tqdm,
 ):
-    """Run the main loop for the benchmark."""
+    """Run the main loop for the benchmark using asyncio."""
 
     print("Starting the main loop.")
 
     # Create queues for communication
     input_queue = Queue()
     output_queue = Queue()
-    stop_event = threading.Event()
+    stop_event = asyncio.Event()
 
     # Initialize request launcher
     req_launcher = RequestsLauncher(
         client_config=benchmark_config.client_config,
         input_queue=input_queue,
         output_queue=output_queue,
+        total_benchmark_time=service_metrics.timeout,
     )
 
     # Start the request launcher processes
     req_launcher.start()
 
-    # Create and start producer-consumer threads
-    dispatcher_thread = Thread(
-        target=dispatch_requests,
-        args=(
+    # Create and start tasks
+    dispatcher_task = asyncio.create_task(
+        dispatch_requests(
             input_queue,
             service_metrics,
             requests_interval_generator,
             request_generator,
             stop_event,
-        ),
+        )
     )
 
-    processor_thread = Thread(
-        target=process_results,
-        args=(
+    processor_task = asyncio.create_task(
+        process_results(
             output_queue,
             service_metrics,
             generated_responses,
             pbar,
             stop_event,
-        ),
+        )
     )
-
-    dispatcher_thread.start()
-    processor_thread.start()
 
     # Monitor and wait for completion
     with service_metrics:
         while not service_metrics.should_stop():
-            time.sleep(0.1)
+            await asyncio.sleep(0.1)
         print("Stopping the main loop.")
 
-    # Signal threads to stop and wait for completion
-    print("Setting stop event to terminate threads")
+    # Signal tasks to stop 
+    print("Setting stop event to terminate tasks")
     stop_event.set()
     
-    print("Waiting for dispatcher thread to complete...")
-    dispatcher_thread.join()
-    print("Dispatcher thread terminated")
+    print("Waiting for dispatcher task to complete...")
+    await dispatcher_task
+    print("Dispatcher task terminated")
     
-    print("Waiting for processor thread to complete...")
-    processor_thread.join()
-    print("Processor thread terminated")
+    print("Waiting for processor task to complete...")
+    await processor_task
+    print("Processor task terminated")
 
     # Terminate all clients
     print("Terminating all client connections")
+    
+    # Get the final state of unfinished requests
+    # Try to sleep briefly to ensure all debug output has been printed
+    await asyncio.sleep(1)
+    
+    print("\n--------- FINAL REQUEST METRICS ---------")
+    
+    unfinished_count = req_launcher.get_unfinished_requests_count()
+    print(f"Final request state: {unfinished_count} unfinished")
+    
+    # Keep track of any unfinished requests for reporting
+    if unfinished_count > 0:
+        print("\nUnfinished requests by client ID:")
+        unfinished_requests = req_launcher.get_unfinished_requests()
+        for client_id, metrics_list in unfinished_requests.items():
+            if metrics_list:  # Check if the list is not empty
+                print(f"  Client {client_id} has {len(metrics_list)} unfinished requests")
+                for metric in metrics_list:
+                    # Add metrics to the service metrics
+                    service_metrics.add_request_metrics(metric)
+    
     req_launcher.kill_clients()
     print("All clients terminated")
 
@@ -191,7 +211,7 @@ def run_main_loop(
     print("Main loop completed.")
 
 
-def run_benchmark(
+async def run_benchmark(
     benchmark_config: BenchmarkConfig,
 ):
     """Get the token throughput and latencies for the given model.
@@ -255,7 +275,7 @@ def run_benchmark(
         prefill_profiler_config=benchmark_config.prefill_profiler_config,
     )
 
-    run_main_loop(
+    await run_main_loop(
         benchmark_config=benchmark_config,
         requests_interval_generator=requests_interval_generator,
         request_generator=request_generator,
@@ -285,11 +305,14 @@ def run_benchmark(
         store_lmeval_results(service_metrics.output_dir, lmeval_results)
 
 
-if __name__ == "__main__":
+def main():
     if platform.system() == "Darwin":
         multiprocessing.set_start_method("fork", force=True)
 
     benchmark_config: BenchmarkConfig = BenchmarkConfig.create_from_cli_args()
     random.seed(benchmark_config.seed)
-    run_benchmark(benchmark_config=benchmark_config)
+    asyncio.run(run_benchmark(benchmark_config=benchmark_config))
     os._exit(0)
+
+if __name__ == "__main__":
+    main()

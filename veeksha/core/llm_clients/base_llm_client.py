@@ -1,5 +1,5 @@
 import abc
-from typing import Tuple
+from typing import Optional, Tuple
 
 from veeksha.core.hf_utils import get_tokenizer
 from veeksha.core.request_config import RequestConfig
@@ -21,8 +21,8 @@ class BaseLLMClient:
         return len(self.tokenizer.encode(text))
 
     @abc.abstractmethod
-    def send_llm_request(
-        self, request_config: RequestConfig
+    async def send_llm_request(
+        self, request_config: RequestConfig, request_dispatched_at: float
     ) -> Tuple[RequestMetrics, Response]:
         """Make a single completion request to a LLM API
 
