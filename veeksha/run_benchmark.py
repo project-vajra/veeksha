@@ -192,6 +192,7 @@ async def run_main_loop(
     unfinished_count = req_launcher.get_unfinished_requests_count()
     print(f"Final request state: {unfinished_count} unfinished")
     
+    num_reqs_without_prefill = 0
     # Keep track of any unfinished requests for reporting
     if unfinished_count > 0:
         print("\nUnfinished requests by client ID:")
@@ -199,9 +200,14 @@ async def run_main_loop(
         for client_id, metrics_list in unfinished_requests.items():
             if metrics_list:  # Check if the list is not empty
                 print(f"  Client {client_id} has {len(metrics_list)} unfinished requests")
-                for metric in metrics_list:
+                for metrics, response in metrics_list:
                     # Add metrics to the service metrics
-                    service_metrics.add_request_metrics(metric)
+                    if metrics.num_output_tokens > 0:
+                        service_metrics.add_request_metrics(metrics)
+                    else:
+                        num_reqs_without_prefill += 1
+
+    print(f"Out of {unfinished_count} unfinished requests, {num_reqs_without_prefill} requests didn't finish prefill.")
     
     req_launcher.kill_clients()
     print("All clients terminated")

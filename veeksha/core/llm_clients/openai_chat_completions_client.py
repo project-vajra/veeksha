@@ -58,7 +58,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
         return current_tokens_received, previous_token_count
 
     async def send_llm_request(
-        self, request_config: RequestConfig, request_dispatched_at: float
+        self, request_config: RequestConfig, request_dispatched_at: float, on_token_callback=None
     ) -> Tuple[RequestMetrics, Response]:
         prompt, prompt_len = request_config.prompt
 
@@ -90,6 +90,20 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
         generated_text = ""
         previous_responses = []
         previous_token_count = 0
+
+        metrics = RequestMetrics(
+            request_dispatched_at=request_dispatched_at,
+            inter_token_times=[],
+            num_prompt_tokens=request_config.metadata['num_prefill_tokens'],
+            num_output_tokens=0,
+            error_code=-1,
+            error_msg="Request not finished",
+        )
+
+        out_response = Response(
+            id=request_config.id,
+            text="",
+        )
 
         most_recent_received_token_time = time.monotonic()
 
@@ -147,23 +161,22 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
                                 inter_token_times.extend(
                                     [0] * (current_tokens_received - 1)
                                 )
+
                             most_recent_received_token_time = time.monotonic()
                             generated_text += delta["content"]
+                            
+                            # Call the callback if provided to update metrics in real-time
+                            if on_token_callback:
+                                metrics.num_output_tokens = tokens_received
+                                metrics.inter_token_times = inter_token_times
+                                out_response.text = generated_text
+                                await on_token_callback(request_config, metrics, out_response)
         except Exception as e:
             logger.error(f"Warning Or Error: ({error_response_code}) {e}")
 
-        metrics = RequestMetrics(
-            request_dispatched_at=request_dispatched_at,
-            inter_token_times=inter_token_times,
-            num_prompt_tokens=prompt_len,
-            num_output_tokens=tokens_received,
-            error_code=error_response_code,
-            error_msg=error_msg,
-        )
+        metrics.error_code = error_response_code
+        metrics.error_msg = error_msg
+        if on_token_callback and error_response_code is not None:
+            await on_token_callback(request_config, metrics, out_response)
 
-        response = Response(
-            id=request_config.id,
-            text=generated_text,
-        )
-
-        return metrics, response
+        return metrics, out_response

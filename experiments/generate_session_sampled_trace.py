@@ -230,22 +230,33 @@ def get_sessions(requests, minimum_match_threshold=0.1):
     return sessions
 
 
-def rejection_sample(remaining_sessions, max_requests, dispatch_rate, timestamp):
-    """Rejection sample a session."""
-    next_interval = -math.log(1.0 - random.random()) / dispatch_rate
+def rejection_sample(remaining_sessions, max_requests, dispatch_rate, timestamp, seed=None):
+    """Rejection sample a session with optional deterministic seed.
+    
+    Args:
+        remaining_sessions: List of remaining sessions to sample from
+        max_requests: Maximum number of requests in a session
+        dispatch_rate: Rate at which to dispatch sessions
+        timestamp: Current timestamp
+        seed: Optional random seed for deterministic sampling
+    """
+    # Create a local random number generator with the provided seed
+    rng = random.Random(seed)
+    
+    next_interval = -math.log(1.0 - rng.random()) / dispatch_rate
     next_interval = min(next_interval, 1 / dispatch_rate * 3) * 1000
 
     # Rejection sampling to bias towards sessions with more requests
     while True:
         # Propose a session randomly from remaining sessions
-        proposed_idx = random.randint(0, len(remaining_sessions) - 1)
+        proposed_idx = rng.randint(0, len(remaining_sessions) - 1)
         proposed_session = remaining_sessions[proposed_idx]
         
         # Acceptance probability proportional to number of requests
         acceptance_prob = len(proposed_session) / max_requests
         
         # Accept or reject based on the computed probability
-        if random.random() < acceptance_prob:
+        if rng.random() < acceptance_prob:
             session = remaining_sessions.pop(proposed_idx)
             break
 
@@ -260,9 +271,15 @@ def rejection_sample(remaining_sessions, max_requests, dispatch_rate, timestamp)
     return session, timestamp
 
 
-#%%
-def sample_sessions(sessions, dispatch_rate, session_length):
-    """Sample sessions using dispatch rate with poisson distribution."""
+def sample_sessions(sessions, dispatch_rate, session_length, seed=None):
+    """Sample sessions using dispatch rate with poisson distribution.
+    
+    Args:
+        sessions: Dictionary of sessions
+        dispatch_rate: Rate at which to dispatch sessions
+        session_length: Length of session in seconds
+        seed: Optional random seed for deterministic sampling
+    """
     sessions_list = list(sessions.values())
     
     # Find the maximum number of requests in any session for scaling
@@ -274,9 +291,19 @@ def sample_sessions(sessions, dispatch_rate, session_length):
     timestamp = 0
     sampled_sessions = []
 
+    # Create a deterministic seed sequence for all sampling operations
+    if seed is not None:
+        # Create a seed sequence to generate multiple seeds
+        seed_seq = random.Random(seed).randrange(2**32)
+        seed_generator = random.Random(seed_seq)
+    else:
+        seed_generator = None
+
     session_id = 0
     while remaining_sessions:
-        session, timestamp = rejection_sample(remaining_sessions, max_requests, dispatch_rate, timestamp)
+        # Generate a new seed for each rejection_sample call
+        current_seed = seed_generator.randrange(2**32) if seed_generator else None
+        session, timestamp = rejection_sample(remaining_sessions, max_requests, dispatch_rate, timestamp, current_seed)
         # Make a deep copy of the session to avoid modifying the original data
         session_copy = copy.deepcopy(session)
         # Assign session_id to each request in the session
@@ -290,7 +317,9 @@ def sample_sessions(sessions, dispatch_rate, session_length):
         remaining_sessions = sessions_list.copy()
         # sample in a ring fashion until we reach the session length (+ some margin due to sampling in blocks of sessions_list)
         while remaining_sessions:
-            session, timestamp = rejection_sample(remaining_sessions, max_requests, dispatch_rate, timestamp)
+            # Generate a new seed for each rejection_sample call
+            current_seed = seed_generator.randrange(2**32) if seed_generator else None
+            session, timestamp = rejection_sample(remaining_sessions, max_requests, dispatch_rate, timestamp, current_seed)
             # Make a deep copy of the session to avoid modifying the original data
             session_copy = copy.deepcopy(session)
             # Assign session_id to each request in the session
@@ -388,7 +417,8 @@ def analyze_single_trace(df, args):
     print()
 
     # 3. Sample sessions using dispatch rate with poisson distribution
-    sampled_sessions = sample_sessions(sessions, args.dispatch_rate, args.session_length)
+    # Use a fixed seed for deterministic results
+    sampled_sessions = sample_sessions(sessions, args.dispatch_rate, args.session_length, seed=888)
 
     print("=====SESSION STATS AFTER SAMPLING=====")
     # print the stats of the session length min, max, std, mean, median, p25, p75, p90

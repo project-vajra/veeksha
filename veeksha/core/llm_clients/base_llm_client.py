@@ -22,7 +22,7 @@ class BaseLLMClient:
 
     @abc.abstractmethod
     async def send_llm_request(
-        self, request_config: RequestConfig, request_dispatched_at: float
+        self, request_config: RequestConfig, request_dispatched_at: float, on_token_callback=None
     ) -> Tuple[RequestMetrics, Response]:
         """Make a single completion request to a LLM API
 

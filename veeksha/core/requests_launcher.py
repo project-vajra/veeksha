@@ -2,8 +2,9 @@ import asyncio
 import time
 from multiprocessing import Process, Manager
 from multiprocessing import Queue as MPQueue
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple
 
+from veeksha.core.response import Response
 from veeksha.config.config import ClientConfig
 from veeksha.core.llm_clients import construct_client
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
@@ -27,7 +28,7 @@ class RequestsLauncher:
         
         # Create a shared manager for the request_metrics dictionary
         self.manager = Manager()
-        self.request_metrics = self.manager.dict()
+        self.request_outputs = self.manager.dict() # {client_id: {request_id: [metrics, output, is_finished]}}
         
         self.client_config = client_config
         self.input_queue = input_queue
@@ -36,7 +37,7 @@ class RequestsLauncher:
 
         # Initialize the nested structure for each client
         for client_id in range(self.client_config.num_clients):
-            self.request_metrics[client_id] = self.manager.dict()
+            self.request_outputs[client_id] = self.manager.dict()
             client = Process(
                 target=self.run_client,
                 args=(client_id,),
@@ -90,31 +91,41 @@ class RequestsLauncher:
             
             request_dispatched_at = time.monotonic() - self.llm_clients[client_id].start_time
 
-            metrics = RequestMetrics(
+            # add to data structure
+            request_id = request_config.metadata['request_id']
+            client_requests = dict(self.request_outputs[client_id])
+
+            client_requests[request_id] = [RequestMetrics(
                 request_dispatched_at=request_dispatched_at,
                 inter_token_times=[],
                 num_prompt_tokens=request_config.metadata['num_prefill_tokens'],
                 num_output_tokens=0,
                 error_code=-1,
                 error_msg="Request not finished",
+            ), Response(
+            id=request_config.id,
+            text="",
+            ), False]
+
+            self.request_outputs[client_id] = client_requests
+
+            # will update metrics with response stream
+            async def token_callback(req_config, updated_metrics, response):
+                await self.on_token_received(client_id, req_config, updated_metrics, response)
+                
+            metrics, response = await self.llm_clients[client_id].send_llm_request(
+                request_config, 
+                request_dispatched_at,
+                on_token_callback=token_callback,
             )
 
-            # add to data structure - use a copy of the client's dictionary
-            request_id = request_config.metadata['request_id']
-            client_requests = dict(self.request_metrics[client_id])
-            client_requests[request_id] = [metrics, False]
-            self.request_metrics[client_id] = client_requests
-
-            # Assuming send_llm_request is async or can be awaited
-            result = await self.llm_clients[client_id].send_llm_request(request_config, request_dispatched_at)
-
             # update data structure: request has completed
-            client_requests = dict(self.request_metrics[client_id])
-            client_requests[request_id][1] = True
-            self.request_metrics[client_id] = client_requests
+            client_requests = dict(self.request_outputs[client_id])
+            client_requests[request_id] = [metrics, response, True]
+            self.request_outputs[client_id] = client_requests
             
             # Use an executor to put result in queue
-            await asyncio.to_thread(self.output_queue.put, result)
+            await asyncio.to_thread(self.output_queue.put, (metrics, response))
 
     def complete_tasks(self) -> None:
         """Complete the clients."""
@@ -128,6 +139,16 @@ class RequestsLauncher:
         for client in self.clients:
             client.join()
 
+    async def on_token_received(self, client_id, request_config, updated_metrics, response):
+        if hasattr(request_config, 'metadata') and 'request_id' in request_config.metadata:
+            request_id = request_config.metadata['request_id']
+            if client_id in self.request_outputs and request_id in self.request_outputs[client_id]:
+                # Update the metrics while preserving the completion status
+                client_requests = dict(self.request_outputs[client_id])
+                client_requests[request_id][0] = updated_metrics
+                client_requests[request_id][1] = response
+                self.request_outputs[client_id] = client_requests
+
     def kill_clients(self) -> None:
         """Kill all the clients."""
         for client in self.clients:
@@ -136,16 +157,16 @@ class RequestsLauncher:
             client.kill()
             client.close()
             
-    def get_request_metrics(self) -> Dict:
-        """Get the request metrics data structure.
+    def get_request_outputs(self) -> Dict:
+        """Get the request outputs data structure.
         
         Returns:
-            Dict mapping client_id to a dictionary of request_id -> (RequestMetrics, is_finished)
+            Dict mapping client_id to a dictionary of request_id -> [RequestMetrics, Response, is_finished]
         """
         # Convert manager dictionary to regular Python dictionary for easier debugging
         result = {}
-        for client_id in self.request_metrics.keys():
-            result[client_id] = dict(self.request_metrics[client_id])
+        for client_id in self.request_outputs.keys():
+            result[client_id] = dict(self.request_outputs[client_id])
             
         return result
 
@@ -156,8 +177,8 @@ class RequestsLauncher:
             The count of requests that have been marked as finished.
         """
         count = 0
-        for client_id, request_metrics in self.get_request_metrics().items():
-            for request_id, (metrics, finished) in request_metrics.items():
+        for client_id, request_metrics in self.get_request_outputs().items():
+            for request_id, (metrics, response, finished) in request_metrics.items():
                 if finished:
                     count += 1
         return count
@@ -169,26 +190,26 @@ class RequestsLauncher:
             The count of requests that are still in progress.
         """
         count = 0
-        metrics_dict = self.get_request_metrics()
+        metrics_dict = self.get_request_outputs()
         
         for client_id, request_metrics in metrics_dict.items():
-            for request_id, (metrics, finished) in request_metrics.items():
+            for request_id, (metrics, response, finished) in request_metrics.items():
                 if not finished:
                     count += 1
         return count
 
-    def get_unfinished_requests(self) -> Dict[int, List[RequestMetrics]]:
+    def get_unfinished_requests(self) -> Dict[int, List[Tuple[RequestMetrics, Response]]]:
         """Get the unfinished requests.
         
         Returns:
-            Dict mapping client_id to RequestMetrics for unfinished requests
+            Dict mapping client_id to List of (RequestMetrics, Response) for unfinished requests
         """
-        metrics_dict = self.get_request_metrics()
+        metrics_dict = self.get_request_outputs()
         unfinished_requests = {client_id: [] for client_id in metrics_dict}
         
         for client_id, request_metrics in metrics_dict.items():
-            for request_id, (metrics, finished) in request_metrics.items():
+            for request_id, (metrics, response, finished) in request_metrics.items():
                 if not finished:
-                    unfinished_requests[client_id].append(metrics)
+                    unfinished_requests[client_id].append((metrics, response))
         
         return unfinished_requests
