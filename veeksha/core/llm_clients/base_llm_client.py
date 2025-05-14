@@ -1,4 +1,5 @@
 import abc
+import time
 from typing import Optional, Tuple
 
 from veeksha.core.hf_utils import get_tokenizer
@@ -16,6 +17,8 @@ class BaseLLMClient:
             tokenizer_name,
             trust_remote_code=True,
         )
+        # Initialize start_time for tracking request timing
+        self.start_time = time.monotonic()
 
     def get_token_length(self, text: str) -> int:
         return len(self.tokenizer.encode(text))

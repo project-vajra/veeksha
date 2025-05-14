@@ -106,6 +106,9 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
         )
 
         most_recent_received_token_time = time.monotonic()
+        streaming_tokens_buffer = []
+        streaming_buffer_max_size = 10
+        first_token = True # allows callback to be called on first token as to keep track of prefill time
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -153,30 +156,42 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
                                 previous_token_count=previous_token_count,
                             )
 
+                            new_inter_token_times = []
                             tokens_received += current_tokens_received
-                            inter_token_times.append(
+                            latest_token_time = (
                                 time.monotonic() - most_recent_received_token_time
                             )
+                            new_inter_token_times.append(latest_token_time)
                             if current_tokens_received > 1:
-                                inter_token_times.extend(
+                                new_inter_token_times.extend(
                                     [0] * (current_tokens_received - 1)
                                 )
 
                             most_recent_received_token_time = time.monotonic()
                             generated_text += delta["content"]
+
+                            inter_token_times.extend(new_inter_token_times)
+                            streaming_tokens_buffer.extend(new_inter_token_times)
                             
                             # Call the callback if provided to update metrics in real-time
-                            if on_token_callback:
-                                metrics.num_output_tokens = tokens_received
-                                metrics.inter_token_times = inter_token_times
-                                out_response.text = generated_text
-                                await on_token_callback(request_config, metrics, out_response)
+                            if on_token_callback and (len(streaming_tokens_buffer) >= streaming_buffer_max_size or first_token):
+                                try:
+                                    await on_token_callback(request_config, streaming_tokens_buffer.copy())
+                                    streaming_tokens_buffer = []
+                                except Exception as callback_error:
+                                    logger.error(f"Callback error: {callback_error}")
+                                    # Continue processing even if callback fails
+
+                            if first_token:
+                                first_token = False
+                            
         except Exception as e:
             logger.error(f"Warning Or Error: ({error_response_code}) {e}")
 
+        metrics.num_output_tokens = tokens_received
+        metrics.inter_token_times = inter_token_times
         metrics.error_code = error_response_code
         metrics.error_msg = error_msg
-        if on_token_callback and error_response_code is not None:
-            await on_token_callback(request_config, metrics, out_response)
+        out_response.text = generated_text
 
         return metrics, out_response

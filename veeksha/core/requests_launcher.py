@@ -110,13 +110,13 @@ class RequestsLauncher:
             self.request_outputs[client_id] = client_requests
 
             # will update metrics with response stream
-            async def token_callback(req_config, updated_metrics, response):
-                await self.on_token_received(client_id, req_config, updated_metrics, response)
+            async def token_callback(req_config, token_times_to_append):
+                await self.on_token_received(client_id, req_config, token_times_to_append)
                 
             metrics, response = await self.llm_clients[client_id].send_llm_request(
                 request_config, 
                 request_dispatched_at,
-                on_token_callback=token_callback,
+                on_token_callback=token_callback, # because we want to also track unfinished requests
             )
 
             # update data structure: request has completed
@@ -139,15 +139,47 @@ class RequestsLauncher:
         for client in self.clients:
             client.join()
 
-    async def on_token_received(self, client_id, request_config, updated_metrics, response):
-        if hasattr(request_config, 'metadata') and 'request_id' in request_config.metadata:
-            request_id = request_config.metadata['request_id']
-            if client_id in self.request_outputs and request_id in self.request_outputs[client_id]:
-                # Update the metrics while preserving the completion status
-                client_requests = dict(self.request_outputs[client_id])
-                client_requests[request_id][0] = updated_metrics
-                client_requests[request_id][1] = response
-                self.request_outputs[client_id] = client_requests
+    async def on_token_received(self, client_id, request_config, token_times_to_append):
+        """Update request metrics and response in real-time as tokens arrive.
+        
+        Args:
+            client_id: The ID of the client processing the request
+            request_config: The request configuration
+            token_times_to_append: New token timing data to append to metrics
+        
+        This method is designed to be thread-safe when used with multiprocessing.Manager dictionaries.
+        """
+        try:
+            if hasattr(request_config, 'metadata') and 'request_id' in request_config.metadata:
+                request_id = request_config.metadata['request_id']
+                
+                # Safe check if the dictionary keys exist
+                if client_id in self.request_outputs and request_id in self.request_outputs[client_id]:
+                    # Make a complete copy of the nested dictionary to avoid race conditions
+                    client_requests = dict(self.request_outputs[client_id])
+                    current_entry = client_requests[request_id]
+                    
+                    # Extract current metrics and completion status
+                    current_metrics = current_entry[0]
+                    current_response = current_entry[1]
+                    is_completed = current_entry[2] if len(current_entry) > 2 else False
+                    
+                    # Update metrics atomically
+                    current_metrics.num_output_tokens += len(token_times_to_append)
+                    current_metrics.inter_token_times.extend(token_times_to_append)
+                    
+                    # Create updated entry with the same structure
+                    client_requests[request_id] = [
+                        current_metrics,  # Updated metrics
+                        current_response,  # Keep current response
+                        is_completed      # Preserve completion status
+                    ]
+                    
+                    # Atomic update of the entire dictionary at once
+                    self.request_outputs[client_id] = client_requests
+        except Exception as e:
+            logger.error(f"Error in on_token_received: {e}")
+            # Don't re-raise - we want to continue processing even if updates fail
 
     def kill_clients(self) -> None:
         """Kill all the clients."""
