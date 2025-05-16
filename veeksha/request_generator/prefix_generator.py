@@ -78,6 +78,7 @@ class PrefixRequestGenerator(SyntheticRequestGenerator):
             request_id,
             session_id,
             num_requests_in_session,
+            prefix_match_pct,
         ) = self.request_length_generator.get_next_request_params()
         block_size = self.request_length_generator.get_block_size()
 
@@ -124,6 +125,7 @@ class PrefixRequestGenerator(SyntheticRequestGenerator):
                 "session_id": session_id,
                 "num_requests_in_session": num_requests_in_session,
                 "num_prefill_tokens": num_prefill_tokens,
+                "prefix_match_pct": prefix_match_pct,
             },
         )
 

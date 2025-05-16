@@ -86,6 +86,7 @@ class RequestsLauncher:
             logger.info("-" * 80)
             logger.info(f"Client {client_id} sent request {request_config.metadata['request_id']}")
             logger.info(f"Number of prefill tokens: {request_config.metadata['num_prefill_tokens']}")
+            logger.info(f"Prefix match (%): {request_config.metadata['prefix_match_pct']}")
             logger.info(f"Session id: {request_config.metadata['session_id']}")
             logger.info(f"Number of requests in session: {request_config.metadata['num_requests_in_session']}")
             

@@ -4,17 +4,10 @@ import json
 import math
 import random
 import pandas as pd
-from collections import Counter
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 import argparse
 import os
-from datetime import datetime
-import sys
-import datetime
-
-random.seed(42)
+from typing import Dict
 
 #%%
 # --- Command Line Arguments ---
@@ -75,7 +68,36 @@ def create_running_hashes(hash_ids):
     
     return running_hashes
 
-#%%
+# basic prefix cache implementation
+class TrieNode:
+    def __init__(self):
+        self.children: Dict[int, TrieNode] = {}
+
+class PrefixCache:
+    def __init__(self):
+        self.root = TrieNode()
+
+    def add_request(self, request):
+        # insert the full request into the trie
+        current = self.root
+        for id in request['hash_ids']:
+            if id not in current.children:
+                current.children[id] = TrieNode()
+            current = current.children[id]
+
+    def get_prefix_length_match(self, request):
+        # traverse trie to find longest cached prefix
+        current = self.root
+        length = 0
+        for id in request['hash_ids']:
+            if id in current.children:
+                current = current.children[id]
+                length += 1
+            else:
+                break
+        return length
+
+
 def get_sessions(requests, minimum_match_threshold=0.1):
     request_to_session = {}
     hash_to_request = {}
@@ -335,7 +357,6 @@ def sample_sessions(sessions, dispatch_rate, session_length, seed=None):
     return sampled_sessions
 
 
-#%%
 def analyze_single_trace(df, args):
     """Analyze a single trace file and generate a report."""
     # Store the original hash IDs before replacing them
@@ -448,11 +469,30 @@ def analyze_single_trace(df, args):
     # sort by timestamp
     sampled_requests.sort(key=lambda x: x['timestamp'])
 
-    # go through all requests and add metadata: request id (sequential)
+    # go through all requests and add 
+    # metadata: request id (sequential)
+    # metadata: prefix match (%)
     sequential_request_id = 0
+    prefix_cache = PrefixCache()
+    total_hashes_matched = 0
+    total_hashes_seen = 0
+    cummulative_prefix_match_pct = 0
     for request in sampled_requests:
         request['request_id'] = sequential_request_id
         sequential_request_id += 1
+
+        # add prefix match
+        request['prefix_match_n_hashes'] = prefix_cache.get_prefix_length_match(request)
+        request['prefix_match_pct'] = round(100*(request['prefix_match_n_hashes'] / len(request['hash_ids'])), 2)
+        prefix_cache.add_request(request)
+
+        total_hashes_matched += request['prefix_match_n_hashes']
+        total_hashes_seen += len(request['hash_ids'])
+
+        cummulative_prefix_match_pct = round(100*(total_hashes_matched / total_hashes_seen), 2)
+        request['cummulative_prefix_match_pct'] = cummulative_prefix_match_pct
+
+    print(f"Prefix match in generated trace: {cummulative_prefix_match_pct}%")
 
     # dispatch time stats
     print("\n=====SESSION DISPATCH STATS=====")

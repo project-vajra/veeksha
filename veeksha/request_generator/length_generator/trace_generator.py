@@ -119,10 +119,10 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
             row["num_decode_tokens"],
         )
 
-    def get_next_request_params(self) -> Tuple[list[int], int, int, int, int, int]:
+    def get_next_request_params(self) -> Tuple[list[int], int, int, int, int, int, float]:
         assert self._has_hash_ids
         if self.next_request_idx >= len(self.trace_df):
-            return [], -1, -1, -1, -1, -1
+            return [], -1, -1, -1, -1, -1, -1
 
         row = self.trace_df.iloc[self.next_request_idx]
         self.next_request_idx += 1
@@ -138,10 +138,11 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
         request_id = row["request_id"]
         session_id = row["session_id"]
         num_requests_in_session = row["num_requests_in_session"]
+        prefix_match_pct = row['prefix_match_pct']
 
         assert hash_count >= block_count, f"{hash_count} >= {block_count}"
 
-        return (hash_ids, int(num_prefill_tokens), int(num_decode_tokens), request_id, session_id, num_requests_in_session)
+        return (hash_ids, int(num_prefill_tokens), int(num_decode_tokens), request_id, session_id, num_requests_in_session, prefix_match_pct)
 
     def has_hash_ids(self) -> bool:
         return self._has_hash_ids
