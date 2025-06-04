@@ -1,14 +1,13 @@
-import argparse
-import glob
 import json
 import os
+import threading
 from typing import Optional, Tuple
 
 import numpy as np
 import wandb
 
 from veeksha.capacity_search.benchmark_wrapper import run
-from veeksha.capacity_search.config.config import BenchmarkConfig, JobConfig, _get_hash
+from veeksha.capacity_search.config.config import CapacitySearchConfig, BenchmarkConfig, _get_hash
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
@@ -22,16 +21,19 @@ VICINITY_THRESHOLD = 0.8
 class CapacitySearch:
     def __init__(
         self,
-        job_config: JobConfig,
-        args: argparse.Namespace,
+        capacity_search_config: CapacitySearchConfig,
+        benchmark_config: BenchmarkConfig,
     ) -> None:
-        self.job_config = job_config
-        self.args = args
+        self.capacity_search_config = capacity_search_config
+        self.benchmark_config = benchmark_config
 
-        if (self.args.slo_type == "deadline") and self.args.dynamic_ttft_slo:
+        self.stop_event = threading.Event()
+
+        if (self.capacity_search_config.slo_type == "deadline") and self.capacity_search_config.dynamic_ttft_slo \
+            and self.benchmark_config.prefill_profiler_config.use_predictions_for_ttft:
             assert (
-                self.args.profile_dir is not None
-            ), "Deadline SLO needs profiled predictions"
+                self.benchmark_config.prefill_profiler_config.predictor_dir is not None
+            ), "Deadline SLO needs predictor directory"
 
     def _run_benchmark(self, benchmark_config: BenchmarkConfig):
         run(self.job_config, benchmark_config)

@@ -29,7 +29,6 @@ class ServerConfig:
             "openai_api_key": self.openai_api_key,
         }
 
-
 @dataclass
 class ModelConfig:
     name: str

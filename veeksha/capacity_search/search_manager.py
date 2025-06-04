@@ -1,21 +1,21 @@
-import argparse
 from functools import partial
 from multiprocessing import Pool
 
 from veeksha.capacity_search.capacity_search import CapacitySearch
-from veeksha.capacity_search.config.config import JobConfig
+from veeksha.config.config import CapacitySearchConfig, BenchmarkConfig
 from veeksha.logger import init_logger
+from typing import List
 
 logger = init_logger(__name__)
 
 
 def run_search(
-    job_config: JobConfig,
-    args: argparse.Namespace,
+    capacity_search_config: CapacitySearchConfig,
+    benchmark_config: BenchmarkConfig,
 ):
     capacity_search = CapacitySearch(
-        job_config,
-        args,
+        capacity_search_config,
+        benchmark_config,
     )
     return capacity_search.search()
 
@@ -23,19 +23,18 @@ def run_search(
 class SearchManager:
     def __init__(
         self,
-        args: argparse.Namespace,
-        config: dict,
+        capacity_search_config: CapacitySearchConfig,
+        benchmark_configs: List[BenchmarkConfig],
     ):
-        self.args = args
-        self.config = config
+        self.capacity_search_config = capacity_search_config
+        self.benchmark_configs = benchmark_configs
 
     def run(self):
-        job_configs = JobConfig.generate_job_configs(self.config)
-        num_jobs = len(job_configs)
+        num_jobs = len(self.benchmark_configs)
         logger.info(f"Running {num_jobs} jobs")
 
         with Pool(processes=num_jobs) as capacity_search_pool:
-            run_search_partial = partial(run_search, args=self.args)  # Pre-fill `args`
-            all_results = capacity_search_pool.map(run_search_partial, job_configs)
+            run_search_partial = partial(run_search, self.capacity_search_config)
+            all_results = capacity_search_pool.map(run_search_partial, self.benchmark_configs)
 
         return all_results

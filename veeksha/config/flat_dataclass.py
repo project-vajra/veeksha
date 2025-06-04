@@ -74,7 +74,7 @@ def reconstruct_original_dataclass(self) -> Any:
                 args[original_field_name] = instances[field_type]
             else:
                 value = getattr(self, prefixed_field_name)
-                if callable(value):
+                if value is not MISSING and callable(value):
                     # to handle default factory values
                     value = value()
                 args[original_field_name] = value
@@ -138,6 +138,14 @@ def create_from_cli_args(cls) -> Any:
     return cls(**vars(args))
 
 
+def get_config_class_by_type_name(config_class: Any, type_name: str) -> Any:
+    for subclass in get_all_subclasses(config_class):
+        if subclass.get_type().name == type_name.upper():
+            return subclass
+
+    raise ValueError(f"Config class with name {type_name} not found.")
+
+
 def create_flat_dataclass(input_dataclass: Any) -> Any:
     """
     Creates a new FlatClass type by recursively flattening the input dataclass.
@@ -155,6 +163,11 @@ def create_flat_dataclass(input_dataclass: Any) -> Any:
             return
 
         processed_classes.add(_input_dataclass)
+
+        # Ensure the current dataclass is part of the dependency graph's keys.
+        # This is crucial for dataclasses that don't have any nested dataclass fields,
+        # as they might otherwise not be added as a key to dataclass_dependencies
+        _ = dataclass_dependencies[_input_dataclass]
 
         for field in fields(_input_dataclass):
             prefixed_name = f"{prefix}{field.name}"

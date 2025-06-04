@@ -4,6 +4,7 @@ import re
 from abc import ABC
 from dataclasses import dataclass, field
 from datetime import datetime
+from itertools import product
 from typing import Optional
 
 import joblib
@@ -12,7 +13,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import PolynomialFeatures
 
 from veeksha.config.base_poly_config import BasePolyConfig
-from veeksha.config.flat_dataclass import create_flat_dataclass
+from veeksha.config.flat_dataclass import create_flat_dataclass, get_config_class_by_type_name
 from veeksha.config.utils import dataclass_to_dict
 from veeksha.constants.prefill_constants import PREFILL_POLYNOMIAL_DEGREE
 from veeksha.core.llm_clients import SUPPORTED_APIS
@@ -41,10 +42,10 @@ class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
         metadata={"help": "Path to the trace file for request intervals."},
     )
     start_time: str = field(
-        default="1970-01-04 12:00:00", metadata={"help": "Start time for the trace."}
+        default="1970-01-01 00:00:00", metadata={"help": "Start time for the trace."}
     )
     end_time: str = field(
-        default="1970-01-04 15:00:00", metadata={"help": "End time for the trace."}
+        default="1970-01-01 04:00:00", metadata={"help": "End time for the trace."}
     )
     time_scale_factor: float = field(
         default=0.3,
@@ -325,6 +326,18 @@ class MetricsConfig:
         default=None,
         metadata={"help": "The wandb run name to log metrics to."},
     )
+    enable_wandb_sweep: bool = field(
+        default=False,
+        metadata={"help": "Whether to enable wandb sweep."},
+    )
+    wandb_sweep_id: Optional[str] = field(
+        default=None,
+        metadata={"help": "The wandb sweep id to log metrics to."},
+    )
+    wandb_sweep_name: Optional[str] = field(
+        default=None,
+        metadata={"help": "The wandb sweep name to log metrics to."},
+    )
 
 
 @dataclass
@@ -544,5 +557,202 @@ class BenchmarkConfig(ABC):
         config_dict = dataclass_to_dict(self)
         with open(
             os.path.join(f"{self.metrics_config.output_dir}", "config.json"), "w"
+        ) as f:
+            json.dump(config_dict, f, indent=4)
+
+    @classmethod
+    def generate_capacity_search_benchmark_configs(cls, configs: dict):
+        all_benchmarks = []
+        
+        benchmark_configs = configs.get("benchmark", [])
+        client_configs = configs.get("client", [])
+        request_generator_configs = configs.get("request_generator", [])
+        request_interval_generator_configs = configs.get("request_interval_generator", [])
+        request_length_generator_configs = configs.get("request_length_generator", [])
+        
+        if not request_interval_generator_configs:
+            request_interval_generator_configs = [{}]
+            
+        if not request_length_generator_configs:
+            request_length_generator_configs = [{}]
+        
+        for (
+            benchmark_config,
+            client_config,
+            request_generator_config,
+            request_interval_generator_config,
+            request_length_generator_config,
+        ) in product(
+            benchmark_configs,
+            client_configs,
+            request_generator_configs,
+            request_interval_generator_configs,
+            request_length_generator_configs,
+        ):
+            interval_config_dict = dict(request_interval_generator_config)
+            interval_type = interval_config_dict.pop("type")
+            
+            interval_config_class = get_config_class_by_type_name(
+                BaseRequestIntervalGeneratorConfig,
+                interval_type
+            )
+            request_interval_generator_config = interval_config_class(**interval_config_dict)
+
+            length_config_dict = dict(request_length_generator_config)
+            length_type = length_config_dict.pop("type")
+            
+            length_config_class = get_config_class_by_type_name(
+                BaseRequestLengthGeneratorConfig,
+                length_type
+            )
+            request_length_generator_config = length_config_class(**length_config_dict)
+            
+            gen_config_dict = dict(request_generator_config)
+            gen_type = gen_config_dict.pop("type")
+            
+            gen_config_class = get_config_class_by_type_name(
+                BaseRequestGeneratorConfig,
+                gen_type
+            )
+            request_generator_config = gen_config_class(**gen_config_dict)
+            
+            client_config = ClientConfig(**client_config)
+
+            # TODO: we don't want to pass manually set values to the benchmark config
+            # we should pass all available ones
+            benchmark_config = cls(
+                **benchmark_config,
+                client_config=client_config,
+                request_generator_config=request_generator_config,
+                request_interval_generator_config=request_interval_generator_config,
+                request_length_generator_config=request_length_generator_config,
+            )
+
+            all_benchmarks.append(benchmark_config)
+
+        return all_benchmarks
+
+@dataclass
+class CapacitySearchConfig:
+    """Configuration for capacity search benchmark. This is a special benchmark that runs multiple benchmarks with different QPS and
+    finds the maximum QPS that can be sustained given the deadline constraints."""
+
+    seed: int = field(
+        default=42,
+        metadata={"help": "Seed for the random number generator for capacity search."},
+    )
+    start_qps: float = field(
+        default=1,
+        metadata={"help": "The starting QPS for the capacity search."},
+    )
+    num_qps_steps: int = field(
+        default=10,
+        metadata={"help": "The number of QPS steps for the capacity search."},
+    )
+    min_search_granularity: float = field(
+        default=2.5,
+        metadata={"help": "Minimum search granularity for capacity (%)"},
+    )
+    max_iterations: int = field(
+        default=20,
+        metadata={"help": "Maximum number of iterations for capacity search."},
+    )
+    output_dir: str = field(
+        default="./veeksha/capacity_search/output",
+        metadata={"help": "Output directory for capacity search."},
+    )
+    benchmark_config_file: str = field(
+        default="./veeksha/capacity_search/config/default_config.yml",
+        metadata={"help": "Path to benchmark config file."},
+    )
+    server_config_file: Optional[str] = field(
+        # TODO: make the optional flow work
+        default=None,
+        metadata={"help": "Path to server launch command file"},
+    )
+    slo_type: str = field(
+        default="deadline",
+        metadata={"help": "Type of SLO to use for capacity search"},
+    )
+    tbt_slo: float = field(
+        default=0.03,
+        metadata={"help": "TBT SLO for capacity search"},
+    )
+    tbt_percentile: float = field(
+        default=0.99,
+        metadata={"help": "TBT percentile for capacity search"},
+    )
+    ttft_slo: float = field(
+        default=0.1,
+        metadata={"help": "TTFT SLO for capacity search"},
+    )
+    ttft_percentile: float = field(
+        default=0.9,
+        metadata={"help": "TTFT percentile for capacity search"},
+    )
+    tpot_slo: float = field(
+        default=0.1,
+        metadata={"help": "TPOT SLO for capacity search"},
+    )
+    tpot_percentile: float = field(
+        default=0.9,
+        metadata={"help": "TPOT percentile for capacity search"},
+    )
+    ttft_slack_slo: float = field(
+        default=0.3,
+        metadata={"help": "TTFT slack SLO for capacity search"},
+    )
+    deadline_miss_rate_slo: float = field(
+        default=0.1,
+        metadata={"help": "Deadline miss rate SLO for capacity search"},
+    )
+    deadline_miss_rate_percentile: float = field(
+        default=0.99,
+        metadata={"help": "Deadline miss rate percentile for capacity search"},
+    )
+    dynamic_ttft_slo: bool = field(
+        default=True,
+        metadata={"help": "Dynamic TTFT SLO for capacity search"},
+    )
+    # TODO: remove from arg, move to trace config or similar
+    trace_session_match_threshold: float = field(
+        default=0.9,
+        metadata={"help": "Trace session match threshold for capacity search"},
+    )
+    wandb_project: Optional[str] = field(
+        default=None,
+        metadata={"help": "Wandb project for capacity search"},
+    )
+    enable_wandb_sweep: bool = field(
+        default=False,
+        metadata={"help": "Enable wandb sweep for capacity search"},
+    )
+    wandb_sweep_name: Optional[str] = field(
+        default=None,
+        metadata={"help": "Wandb sweep name for capacity search"},
+    )
+    wandb_sweep_id: Optional[str] = field(
+        default=None,
+        metadata={"help": "Wandb sweep id for capacity search"},
+    )
+
+    @classmethod
+    def create_from_cli_args(cls):
+        flat_config = create_flat_dataclass(cls).create_from_cli_args()
+        instance = flat_config.reconstruct_original_dataclass()
+        instance.__flat_config__ = flat_config
+        return instance
+
+    def to_dict(self):
+        if not hasattr(self, "__flat_config__"):
+            logger.warning("Flat config not found. Returning the original config.")
+            return self.__dict__
+
+        return self.__flat_config__.__dict__  # type: ignore
+
+    def write_config_to_file(self):
+        config_dict = dataclass_to_dict(self)
+        with open(
+            os.path.join(f"{self.output_dir}", "config.json"), "w"
         ) as f:
             json.dump(config_dict, f, indent=4)
