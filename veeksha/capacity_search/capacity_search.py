@@ -1,4 +1,5 @@
 import json
+import glob
 import os
 import threading
 from typing import Optional, Tuple
@@ -7,7 +8,8 @@ import numpy as np
 import wandb
 
 from veeksha.capacity_search.benchmark_wrapper import run
-from veeksha.capacity_search.config.config import CapacitySearchConfig, BenchmarkConfig, _get_hash
+from veeksha.config.config import CapacitySearchConfig, BenchmarkConfig
+from veeksha.config.utils import _get_hash
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
@@ -36,7 +38,7 @@ class CapacitySearch:
             ), "Deadline SLO needs predictor directory"
 
     def _run_benchmark(self, benchmark_config: BenchmarkConfig):
-        run(self.job_config, benchmark_config)
+        run(benchmark_config)
 
     def _get_result_file(self, run_dir: str, metric_name: str) -> Optional[str]:
         files = glob.glob(os.path.join(run_dir, f"{metric_name}.csv"))
@@ -69,10 +71,10 @@ class CapacitySearch:
 
         # Calculate percentile values of deadline miss rate
         deadline_miss_rate = np.quantile(
-            deadline_miss_rate_array, self.args.deadline_miss_rate_percentile
+            deadline_miss_rate_array, self.capacity_search_config.deadline_miss_rate_percentile
         )
 
-        is_under_sla = deadline_miss_rate <= self.args.deadline_miss_rate_slo
+        is_under_sla = deadline_miss_rate <= self.capacity_search_config.deadline_miss_rate_slo
 
         return is_under_sla, deadline_miss_rate
 
@@ -93,10 +95,10 @@ class CapacitySearch:
             combined_tbt_array.extend(tbt_array[i])
 
         # Calculate percentile values of TBT, TTFT
-        tbt = np.quantile(combined_tbt_array, self.args.tbt_percentile)
-        ttft = np.quantile(ttft_array, self.args.ttft_percentile)
+        tbt = np.quantile(combined_tbt_array, self.capacity_search_config.tbt_percentile)
+        ttft = np.quantile(ttft_array, self.capacity_search_config.ttft_percentile)
 
-        is_under_sla = tbt <= self.args.tbt_slo and ttft <= self.args.ttft_slo
+        is_under_sla = tbt <= self.capacity_search_config.tbt_slo and ttft <= self.capacity_search_config.ttft_slo
 
         return is_under_sla, tbt, ttft
 
@@ -112,17 +114,17 @@ class CapacitySearch:
         tpot_array = request_level_metrics["tpot"]
 
         # Calculate percentile values of TTFT, TPOT
-        ttft = np.quantile(ttft_array, self.args.ttft_percentile)
-        tpot = np.quantile(tpot_array, self.args.tpot_percentile)
+        ttft = np.quantile(ttft_array, self.capacity_search_config.ttft_percentile)
+        tpot = np.quantile(tpot_array, self.capacity_search_config.tpot_percentile)
 
-        is_under_sla = ttft <= self.args.ttft_slo and tpot <= self.args.tpot_slo
+        is_under_sla = ttft <= self.capacity_search_config.ttft_slo and tpot <= self.capacity_search_config.tpot_slo
 
         return is_under_sla, ttft, tpot
 
     def _is_under_sla(
         self,
         request_level_metrics_file: str,
-        benchmark_config: BenchmarkConfig,
+        qps: float,
     ) -> Tuple[
         bool, Optional[float], Optional[float], Optional[float], Optional[float], str
     ]:
@@ -132,27 +134,27 @@ class CapacitySearch:
         tpot = None
         deadline_miss_rate = None
 
-        if self.args.slo_type == "deadline":
+        if self.capacity_search_config.slo_type == "deadline":
             is_under_sla, deadline_miss_rate = self._use_deadline_based_slo(
                 request_level_metrics_file
             )
-        elif self.args.slo_type == "tbt_ttft":
+        elif self.capacity_search_config.slo_type == "tbt_ttft":
             is_under_sla, tbt, ttft = self._use_tbt_and_ttft_slo(
                 request_level_metrics_file
             )
-        elif self.args.slo_type == "ttft_tpot":
+        elif self.capacity_search_config.slo_type == "ttft_tpot":
             is_under_sla, ttft, tpot = self._use_ttft_and_tpot_slo(
                 request_level_metrics_file
             )
         else:
-            raise ValueError(f"Invalid SLO type: {self.args.slo_type}")
+            raise ValueError(f"Invalid SLO type: {self.capacity_search_config.slo_type}")
 
         logger.info(
-            f"{benchmark_config.to_human_readable_name()}"
-            f" - TBT P{self.args.tbt_percentile * 100} Tokens: {tbt}"
-            f" - TTFT P{self.args.ttft_percentile * 100} Tokens: {ttft}"
-            f" - TPOT P{self.args.tpot_percentile * 100} Requests: {tpot}"
-            f" - Deadline Miss Rate P{self.args.deadline_miss_rate_percentile * 100} Requests: {deadline_miss_rate}",
+            f"QPS: {qps}"
+            f" - TBT P{self.capacity_search_config.tbt_percentile * 100} Tokens: {tbt}"
+            f" - TTFT P{self.capacity_search_config.ttft_percentile * 100} Tokens: {ttft}"
+            f" - TPOT P{self.capacity_search_config.tpot_percentile * 100} Requests: {tpot}"
+            f" - Deadline Miss Rate P{self.capacity_search_config.deadline_miss_rate_percentile * 100} Requests: {deadline_miss_rate}",
         )
         return (
             is_under_sla,
@@ -160,7 +162,7 @@ class CapacitySearch:
             ttft,
             tpot,
             deadline_miss_rate,
-            benchmark_config.get_run_id(),
+            str(qps),
         )
 
     def is_under_sla(
@@ -168,43 +170,43 @@ class CapacitySearch:
     ) -> Tuple[
         bool, Optional[float], Optional[float], Optional[float], Optional[float], str
     ]:
-        job_config_key = self.job_config.get_key()
-        slo_key = "tbtslo{}_ttftslo{}_tpotslo{}_ttftslackslo{}_deadlinemissrateslo{}_dynamicttftslo{}".format(
-            self.args.tbt_slo,
-            self.args.ttft_slo,
-            self.args.tpot_slo,
-            self.args.ttft_slack_slo,
-            self.args.deadline_miss_rate_slo,
-            self.args.dynamic_ttft_slo,
-        )
-        overall_key = "_".join([job_config_key, slo_key])
+        #cap_search_config_key = self.capacity_search_config.to_dict()
+        #benchmark_config_key = self.benchmark_config.to_dict()
+
+        #overall_key = "_".join([str(cap_search_config_key), str(benchmark_config_key)])
         # since key is very long, hash it to get a unique key for a particular config
         # just check config.json to know actual config
-        hash_key = _get_hash(overall_key)
+        #hash_key = _get_hash(overall_key)
 
-        benchmark_config = BenchmarkConfig(
-            output_dir=os.path.join(
-                self.args.output_dir,
-                str(self.job_config.server_config.openai_server_engine),
-                self.job_config.model_config.name,
-                # f"ttft_slack_{self.args.ttft_slack_slo}_tbt_{self.args.tbt_slo}",
-                str(self.job_config.request_generator_config.trace_file_name),
-                f"{hash_key}_q{qps}",
-            ),
-            qps=qps,
-            tbt_deadline=self.args.tbt_slo,
-            ttft_deadline=self.args.ttft_slo,
-            ttft_slack=self.args.ttft_slack_slo,
-            wandb_project=self.args.wandb_project,
-            wandb_group=self.args.wandb_group,
-            wandb_run_name=f"qps_{qps}_model_{self.job_config.model_config.name}_engine_{self.job_config.server_config.openai_server_engine}",
-            should_write_metrics=self.args.should_write_metrics_to_wandb,
-            use_predictions_for_ttft=(self.args.slo_type == "deadline")
-            and self.args.dynamic_ttft_slo,
-            predictor_dir=self.args.profile_dir,
-        )
+        # benchmark_config = BenchmarkConfig(
+        #     output_dir=os.path.join(
+        #         self.args.output_dir,
+        #         str(self.job_config.server_config.openai_server_engine),
+        #         self.job_config.model_config.name,
+        #         # f"ttft_slack_{self.args.ttft_slack_slo}_tbt_{self.args.tbt_slo}",
+        #         str(self.job_config.request_generator_config.trace_file_name),
+        #         f"{hash_key}_q{qps}",
+        #     ),
+        #     qps=qps,
+        #     tbt_deadline=self.args.tbt_slo,
+        #     ttft_deadline=self.args.ttft_slo,
+        #     ttft_slack=self.args.ttft_slack_slo,
+        #     wandb_project=self.args.wandb_project,
+        #     wandb_group=self.args.wandb_group,
+        #     wandb_run_name=f"qps_{qps}_model_{self.job_config.model_config.name}_engine_{self.job_config.server_config.openai_server_engine}",
+        #     should_write_metrics=self.args.should_write_metrics_to_wandb,
+        #     use_predictions_for_ttft=(self.args.slo_type == "deadline")
+        #     and self.args.dynamic_ttft_slo,
+        #     predictor_dir=self.args.profile_dir,
+        # )
 
-        run_dir = benchmark_config.get_run_dir()
+        if not self.benchmark_config.metrics_config.wandb_group:
+            self.benchmark_config.metrics_config.wandb_group = self.capacity_search_config.output_dir
+        if not self.benchmark_config.metrics_config.wandb_run_name:
+            self.benchmark_config.metrics_config.wandb_run_name = f"qps_{qps}_model_{self.benchmark_config.client_config.model}"
+        self.benchmark_config.metrics_config.output_dir = self.capacity_search_config.output_dir + f"/{qps}"
+
+        run_dir = self.benchmark_config.metrics_config.output_dir
         os.makedirs(run_dir, exist_ok=True)
 
         cached_request_level_metrics_file = self._get_request_level_metrics(run_dir)
@@ -212,18 +214,18 @@ class CapacitySearch:
         if cached_request_level_metrics_file is not None:
             logger.info(f"Cached results found for {qps}")
             return self._is_under_sla(
-                cached_request_level_metrics_file, benchmark_config
+                cached_request_level_metrics_file, qps
             )
-
-        self._run_benchmark(benchmark_config)
+            
+        self._run_benchmark(self.benchmark_config)
 
         request_level_metrics_file = self._get_request_level_metrics(run_dir)
 
         assert (
             request_level_metrics_file is not None
-        ), f"Service-level metrics file not found for {benchmark_config.to_human_readable_name()}"
+        ), f"Service-level metrics file not found for QPS: {qps}"
 
-        return self._is_under_sla(request_level_metrics_file, benchmark_config)
+        return self._is_under_sla(request_level_metrics_file, qps)
 
     def search(self):
         """
@@ -231,11 +233,11 @@ class CapacitySearch:
         """
 
         logger.info(
-            f"Starting search for {self.job_config.get_human_readable_name()}",
+            f"Starting search. SLO type: {self.capacity_search_config.slo_type}, start QPS: {self.capacity_search_config.start_qps}",
         )
 
         left = 0
-        right = self.job_config.start_qps * 2
+        right = self.capacity_search_config.start_qps * 2
         qps = 0
         last_qps = 0
         max_qps_under_sla = None
@@ -248,10 +250,10 @@ class CapacitySearch:
         best_run_id = None
         found_valid_qps = False
 
-        for _ in range(self.args.max_iterations):
+        for _ in range(self.capacity_search_config.max_iterations):
             logger.info(f"Searching between {left} and {right}")
             # stopping condition - we have reached the minimum granularity
-            if abs(left - right) < self.args.min_search_granularity * qps / 100:
+            if abs(left - right) < self.capacity_search_config.min_search_granularity * qps / 100:
                 break
 
             qps = (left + right) / 2
@@ -291,27 +293,27 @@ class CapacitySearch:
 
         if not found_valid_qps:
             logger.info(
-                f"No valid QPS found for {self.job_config.get_human_readable_name()}",
+                f"No valid QPS found.",
             )
             return {}
 
         logger.info(
-            f"Max QPS under SLO for {self.job_config.get_human_readable_name()} - "
+            f"Max QPS under SLO: "
             f"QPS: {max_qps_under_sla}, "
-            f"TBT P{self.args.tbt_percentile * 100}: {tbt_at_max_qps}, "
-            f"TTFT P{self.args.ttft_percentile * 100}: {ttft_at_max_qps}, "
-            f"TPOT P{self.args.tpot_percentile * 100}: {tpot_at_max_qps}, "
-            f"Deadline Miss Rate P{self.args.deadline_miss_rate_percentile * 100}: {deadline_miss_rate_at_max_qps}"
+            f"TBT P{self.capacity_search_config.tbt_percentile * 100}: {tbt_at_max_qps}, "
+            f"TTFT P{self.capacity_search_config.ttft_percentile * 100}: {ttft_at_max_qps}, "
+            f"TPOT P{self.capacity_search_config.tpot_percentile * 100}: {tpot_at_max_qps}, "
+            f"Deadline Miss Rate P{self.capacity_search_config.deadline_miss_rate_percentile * 100}: {deadline_miss_rate_at_max_qps}"
             f"Best Run ID: {best_run_id}",
         )
 
-        if self.args.wandb_project is not None and self.args.enable_wandb_sweep:
-            best_run = wandb.Api().run(f"{self.args.wandb_project}/{best_run_id}")
+        if self.capacity_search_config.wandb_project is not None and self.capacity_search_config.enable_wandb_sweep:
+            best_run = wandb.Api().run(f"{self.capacity_search_config.wandb_project}/{best_run_id}")
             best_run.tags.append("BEST_CONFIG")
             best_run.update()
 
         return {
-            **self.job_config.to_config_dict(),
+            **self.capacity_search_config.to_dict(),
             "max_qps_under_sla": max_qps_under_sla,
             "deadline_miss_rate_at_max_qps": deadline_miss_rate_at_max_qps,
         }

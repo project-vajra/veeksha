@@ -1,24 +1,30 @@
 from functools import partial
 from multiprocessing import Pool
+import multiprocessing
 
 from veeksha.capacity_search.capacity_search import CapacitySearch
-from veeksha.config.config import CapacitySearchConfig, BenchmarkConfig
+from veeksha.config.config import BenchmarkConfig, CapacitySearchConfig
 from veeksha.logger import init_logger
-from typing import List
+from typing import List, Dict
 
 logger = init_logger(__name__)
 
 
 def run_search(
-    capacity_search_config: CapacitySearchConfig,
     benchmark_config: BenchmarkConfig,
+    capacity_search_config: Dict,
 ):
     capacity_search = CapacitySearch(
-        capacity_search_config,
+        CapacitySearchConfig(**capacity_search_config),
         benchmark_config,
     )
     return capacity_search.search()
 
+
+def init_worker():
+    # Make the current process non-daemon
+    current = multiprocessing.current_process()
+    current._config['daemon'] = False
 
 class SearchManager:
     def __init__(
@@ -33,8 +39,8 @@ class SearchManager:
         num_jobs = len(self.benchmark_configs)
         logger.info(f"Running {num_jobs} jobs")
 
-        with Pool(processes=num_jobs) as capacity_search_pool:
-            run_search_partial = partial(run_search, self.capacity_search_config)
-            all_results = capacity_search_pool.map(run_search_partial, self.benchmark_configs)
+        with Pool(processes=num_jobs, initializer=init_worker) as capacity_search_pool:
+            run_search_partial = partial(run_search, capacity_search_config=self.capacity_search_config.to_dict())
+            all_results = capacity_search_pool.map(run_search_partial, iterable=self.benchmark_configs)
 
         return all_results

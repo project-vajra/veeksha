@@ -1,7 +1,12 @@
+import hashlib
 from dataclasses import fields, is_dataclass
 from typing import Union, get_args, get_origin
 
 primitive_types = {int, str, float, bool, type(None)}
+
+
+def _get_hash(key):
+    return hashlib.sha1(key.encode("utf-8")).hexdigest()[:8]
 
 
 def get_all_subclasses(cls):
@@ -85,3 +90,17 @@ def dataclass_to_dict(obj):
         return data
     else:
         return obj
+
+
+def dict_to_args(class_dict):
+    args = []
+    for key, value in class_dict.items():
+        if value is not None:
+            if isinstance(value, bool):
+                if value:
+                    args.append(f"--{key}")
+                else:
+                    args.append(f"--no-{key}")
+            else:
+                args.append(f"--{key} {value}")
+    return " ".join(args)

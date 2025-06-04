@@ -3,6 +3,7 @@ import os
 import platform
 import random
 import time
+import json
 import wandb
 import yaml  # type: ignore
 
@@ -23,21 +24,25 @@ def run():
             capacity_search_config.wandb_sweep_name
         ), "wandb-sweep-name/id is required with wandb-project"
 
-    # TODO: load veeksha and server configs
-    benchmark_configs = yaml.safe_load(open(capacity_search_config.benchmark_config_file))
-    benchmark_configs = BenchmarkConfig.generate_capacity_search_benchmark_configs(benchmark_configs)
-    if capacity_search_config.server_config_file:
-        server_config = yaml.safe_load(open(capacity_search_config.server_config_file))
-    else:
-        server_config = None
-        # TODO: make sure this works without a server config
-        logger.info("Server config not provided. Will not launch server.")
+    benchmark_configs_yaml = yaml.safe_load(open(capacity_search_config.benchmark_config_file))
+    benchmark_configs = BenchmarkConfig.generate_capacity_search_benchmark_configs(benchmark_configs_yaml)
+    # TODO: launch server
+    # if capacity_search_config.server_config_file:
+    #     server_config = yaml.safe_load(open(capacity_search_config.server_config_file))
+    # else:
+    #     server_config = None
+    #     logger.info("Server config not provided. Will not launch server.")
 
     assert capacity_search_config.deadline_miss_rate_slo >= 0 and capacity_search_config.deadline_miss_rate_slo <= 1
 
     os.makedirs(capacity_search_config.output_dir, exist_ok=True)
 
-    capacity_search_config.write_config_to_file()
+    # write configs to file
+    capacity_search_config_dict = capacity_search_config.to_dict()
+    full_config = {"capacity_search": capacity_search_config_dict, **benchmark_configs_yaml}
+
+    with open(os.path.join(capacity_search_config.output_dir, "config.json"), "w") as f:
+        json.dump(full_config, f, indent=4)
 
     if capacity_search_config.wandb_project and capacity_search_config.enable_wandb_sweep and not capacity_search_config.wandb_sweep_id:
         capacity_search_config.wandb_sweep_id = wandb.sweep(capacity_search_config.to_dict(), project=capacity_search_config.wandb_project)

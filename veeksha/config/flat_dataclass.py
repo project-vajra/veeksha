@@ -146,6 +146,65 @@ def get_config_class_by_type_name(config_class: Any, type_name: str) -> Any:
     raise ValueError(f"Config class with name {type_name} not found.")
 
 
+def to_flat_dataclass(instance: Any) -> Any:
+    """
+    Converts an existing dataclass instance to a flattened version.
+    All fields retain their values from the original instance.
+    
+    Args:
+        instance: An instance of a dataclass to be flattened
+        
+    Returns:
+        An instance of the flattened dataclass with all values preserved
+    """
+    # First create the flat dataclass type
+    FlatClass = create_flat_dataclass(instance.__class__)
+    
+    # Initialize with default values
+    flat_instance = FlatClass()
+    
+    # Fill in the values from the instance
+    def fill_values(src_instance, prefix=""):
+        for field in fields(src_instance.__class__):
+            prefixed_name = f"{prefix}{field.name}"
+            
+            if is_optional(field.type):  # type: ignore
+                field_type = get_inner_type(field.type)  # type: ignore
+            else:
+                field_type = field.type
+                
+            # Handle BasePolyConfig fields
+            if is_subclass(field_type, BasePolyConfig):
+                value = getattr(src_instance, field.name)
+                type_field_name = f"{field.name}_type"
+                setattr(flat_instance, type_field_name, str(value.get_type()))
+                
+                # Process the actual polymorphic instance
+                # Use the class name for the prefix
+                value_class_name = value.__class__.__name__
+                fill_values(value, f"{to_snake_case(value_class_name)}_")
+                continue
+                
+            # Handle nested dataclass fields
+            if hasattr(field_type, "__dataclass_fields__"):
+                nested_instance = getattr(src_instance, field.name)
+                # Get the class name safely
+                if hasattr(field_type, "__name__"):
+                    type_name = field_type.__name__
+                else:
+                    # Fallback if field_type doesn't have __name__ attribute
+                    type_name = str(field_type).split("'")[1].split(".")[-1]
+                fill_values(nested_instance, f"{to_snake_case(type_name)}_")
+                continue
+                
+            # Handle regular fields
+            value = getattr(src_instance, field.name)
+            setattr(flat_instance, prefixed_name, value)
+    
+    fill_values(instance)
+    return flat_instance
+
+
 def create_flat_dataclass(input_dataclass: Any) -> Any:
     """
     Creates a new FlatClass type by recursively flattening the input dataclass.

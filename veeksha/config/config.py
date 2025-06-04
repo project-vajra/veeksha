@@ -462,6 +462,14 @@ class BenchmarkConfig(ABC):
         default_factory=lambda: datetime.now().strftime("%Y-%m-%d-%H-%M-%S"),
         metadata={"help": "The time stamp for the benchmark."},
     )
+    api_url: Optional[str] = field(
+        default="http://localhost:8000/v1",
+        metadata={"help": "The API URL for the benchmark."},
+    )
+    api_key: Optional[str] = field(
+        default="token-abc123",
+        metadata={"help": "The API key for the benchmark."},
+    )
     client_config: ClientConfig = field(
         default_factory=ClientConfig,
         metadata={"help": "The client configuration for the benchmark."},
@@ -545,6 +553,14 @@ class BenchmarkConfig(ABC):
         instance = flat_config.reconstruct_original_dataclass()
         instance.__flat_config__ = flat_config
         return instance
+
+    @classmethod
+    def create_flat_config(cls):
+        instance = create_flat_dataclass(cls)
+        instance.reconstruct_original_dataclass()
+        instance.__flat_config__ = instance
+        return
+        
 
     def to_dict(self):
         if not hasattr(self, "__flat_config__"):
@@ -632,6 +648,7 @@ class BenchmarkConfig(ABC):
 
         return all_benchmarks
 
+
 @dataclass
 class CapacitySearchConfig:
     """Configuration for capacity search benchmark. This is a special benchmark that runs multiple benchmarks with different QPS and
@@ -666,7 +683,6 @@ class CapacitySearchConfig:
         metadata={"help": "Path to benchmark config file."},
     )
     server_config_file: Optional[str] = field(
-        # TODO: make the optional flow work
         default=None,
         metadata={"help": "Path to server launch command file"},
     )
@@ -739,19 +755,13 @@ class CapacitySearchConfig:
     @classmethod
     def create_from_cli_args(cls):
         flat_config = create_flat_dataclass(cls).create_from_cli_args()
-        instance = flat_config.reconstruct_original_dataclass()
-        instance.__flat_config__ = flat_config
-        return instance
+        return flat_config.reconstruct_original_dataclass()
 
     def to_dict(self):
-        if not hasattr(self, "__flat_config__"):
-            logger.warning("Flat config not found. Returning the original config.")
-            return self.__dict__
-
-        return self.__flat_config__.__dict__  # type: ignore
+        return self.__dict__
 
     def write_config_to_file(self):
-        config_dict = dataclass_to_dict(self)
+        config_dict = self.to_dict()
         with open(
             os.path.join(f"{self.output_dir}", "config.json"), "w"
         ) as f:

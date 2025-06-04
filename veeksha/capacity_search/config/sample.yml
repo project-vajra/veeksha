@@ -1,0 +1,20 @@
+benchmark:
+  - timeout: 10000
+    max_completed_requests: 5
+    api_url: "http://localhost:30000/v1"
+    api_key: "token-abc123"
+
+client:
+  - model: "meta-llama/Meta-Llama-3-8B-Instruct"
+    num_clients: 15
+    num_concurrent_requests_per_client: 10
+    llm_api: "openai_chat"
+    
+request_generator:
+  - type: "synthetic"
+
+request_interval_generator:
+  - type: "poisson"
+
+request_length_generator:
+  - type: "uniform"
