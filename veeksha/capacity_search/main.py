@@ -26,7 +26,7 @@ def run():
 
     benchmark_configs_yaml = yaml.safe_load(open(capacity_search_config.benchmark_config_file))
     benchmark_configs = BenchmarkConfig.generate_capacity_search_benchmark_configs(benchmark_configs_yaml)
-    # TODO: launch server
+    # TODO(chus): launch server support
     # if capacity_search_config.server_config_file:
     #     server_config = yaml.safe_load(open(capacity_search_config.server_config_file))
     # else:

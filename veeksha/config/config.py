@@ -4,8 +4,7 @@ import re
 from abc import ABC
 from dataclasses import dataclass, field
 from datetime import datetime
-from itertools import product
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 import joblib
 import numpy as np
@@ -184,6 +183,7 @@ class BaseRequestGeneratorConfig(BasePolyConfig):
         self.length_generator_config: BaseRequestLengthGeneratorConfig = None  # type: ignore
 
 
+# this has interval and length provider
 @dataclass
 class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
     @classmethod
@@ -197,15 +197,17 @@ class PrefixRequestGeneratorConfig(BaseRequestGeneratorConfig):
     def get_type(cls):
         return RequestGeneratorType.PREFIX
 
+    # two interval providers
+    # - session interval provider
+    # - intra-session request interval provider
 
+
+# no length, interval provider
 @dataclass
 class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     trace_file: str = field(
         default="data/processed_traces/sydney_enterprise.csv",
         metadata={"help": "Path to the trace file for request generation."},
-    )
-    date: str = field(
-        default="2023-08-21", metadata={"help": "Date for the trace data."}
     )
     prefill_scale_factor: float = field(
         default=0.3, metadata={"help": "Scale factor for prefill tokens."}
@@ -222,6 +224,7 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
         return RequestGeneratorType.TRACE
 
 
+# only interval provider
 @dataclass
 class LmevalRequestGeneratorConfig(BaseRequestGeneratorConfig):
     tasks: list = field(
@@ -441,6 +444,7 @@ class PrefillProfilerConfig:
             self.save_predictions()
 
 
+# take a look at the config system in vajra benchmarkrunner and vajra design docs
 @dataclass
 class BenchmarkConfig(ABC):
     seed: int = field(
@@ -503,6 +507,7 @@ class BenchmarkConfig(ABC):
         metadata={"help": "The request generator configuration for the benchmark."},
     )
 
+    # TODO this will need to go out
     def __post_init__(self):
         if not os.path.exists(self.metrics_config.output_dir):
             os.makedirs(self.metrics_config.output_dir)
@@ -576,77 +581,128 @@ class BenchmarkConfig(ABC):
         ) as f:
             json.dump(config_dict, f, indent=4)
 
+    # TODO: out of config class
     @classmethod
     def generate_capacity_search_benchmark_configs(cls, configs: dict):
         all_benchmarks = []
+
+        from copy import deepcopy
+
+        def _expand_dict(d: Dict) -> List[Dict]:
+            """
+            Recursively expand a configuration dictionary that may contain lists into
+            a list of dictionaries representing every combination in the Cartesian
+            product of the list elements. Lists may appear at any depth of the
+            configuration tree. Nested dictionaries are handled recursively.
+            """
+            variants: List[Dict] = [dict()]
+
+            for key, value in d.items():
+                # Figure out all the possible values for this key
+                if isinstance(value, list):
+                    # Each element in the list may be a dictionary that itself needs
+                    # expansion. Scalars are taken as-is.
+                    possible_values = []
+                    for item in value:
+                        if isinstance(item, dict):
+                            possible_values.extend(_expand_dict(item))
+                        else:
+                            possible_values.append(item)
+                elif isinstance(value, dict):
+                    possible_values = _expand_dict(value)
+                else:
+                    possible_values = [value]
+
+                # Compose current variants with the new possibilities (cartesian product)
+                new_variants: list[dict] = []
+                for base in variants:
+                    for option in possible_values:
+                        v_copy = deepcopy(base)
+                        v_copy[key] = option
+                        new_variants.append(v_copy)
+                variants = new_variants
+
+            return variants
+
+        # Expand the raw YAML dictionary into fully-specified configuration dicts
+        benchmark_config_dicts = _expand_dict(configs)
+
+        for config_dict in benchmark_config_dicts:
+            print("\n")
+            print(config_dict)
+
+        # TODO(chus): benchmark config dict to benchmark config. Init recursively while checking if provided args are valid.
+        return
+                
+        # benchmark_config_dicts = []
         
-        benchmark_configs = configs.get("benchmark", [])
-        client_configs = configs.get("client", [])
-        request_generator_configs = configs.get("request_generator", [])
-        request_interval_generator_configs = configs.get("request_interval_generator", [])
-        request_length_generator_configs = configs.get("request_length_generator", [])
+        # benchmark_configs = configs.get("benchmark", [])
+        # client_configs = configs.get("client", [])
+        # request_generator_configs = configs.get("request_generator", [])
+        # request_interval_generator_configs = configs.get("request_interval_generator", [])
+        # request_length_generator_configs = configs.get("request_length_generator", [])
         
-        if not request_interval_generator_configs:
-            request_interval_generator_configs = [{}]
+        # if not request_interval_generator_configs:
+        #     request_interval_generator_configs = [{}]
             
-        if not request_length_generator_configs:
-            request_length_generator_configs = [{}]
+        # if not request_length_generator_configs:
+        #     request_length_generator_configs = [{}]
         
-        for (
-            benchmark_config,
-            client_config,
-            request_generator_config,
-            request_interval_generator_config,
-            request_length_generator_config,
-        ) in product(
-            benchmark_configs,
-            client_configs,
-            request_generator_configs,
-            request_interval_generator_configs,
-            request_length_generator_configs,
-        ):
-            interval_config_dict = dict(request_interval_generator_config)
-            interval_type = interval_config_dict.pop("type")
+        # for (
+        #     benchmark_config,
+        #     client_config,
+        #     request_generator_config,
+        #     request_interval_generator_config,
+        #     request_length_generator_config,
+        # ) in product(
+        #     benchmark_configs,
+        #     client_configs,
+        #     request_generator_configs,
+        #     request_interval_generator_configs,
+        #     request_length_generator_configs,
+        # ):
+        #     interval_config_dict = dict(request_interval_generator_config)
+        #     interval_type = interval_config_dict.pop("type")
             
-            interval_config_class = get_config_class_by_type_name(
-                BaseRequestIntervalGeneratorConfig,
-                interval_type
-            )
-            request_interval_generator_config = interval_config_class(**interval_config_dict)
+        #     interval_config_class = get_config_class_by_type_name(
+        #         BaseRequestIntervalGeneratorConfig,
+        #         interval_type
+        #     )
+        #     request_interval_generator_config = interval_config_class(**interval_config_dict)
 
-            length_config_dict = dict(request_length_generator_config)
-            length_type = length_config_dict.pop("type")
+        #     length_config_dict = dict(request_length_generator_config)
+        #     length_type = length_config_dict.pop("type")
             
-            length_config_class = get_config_class_by_type_name(
-                BaseRequestLengthGeneratorConfig,
-                length_type
-            )
-            request_length_generator_config = length_config_class(**length_config_dict)
+        #     length_config_class = get_config_class_by_type_name(
+        #         BaseRequestLengthGeneratorConfig,
+        #         length_type
+        #     )
+        #     request_length_generator_config = length_config_class(**length_config_dict)
             
-            gen_config_dict = dict(request_generator_config)
-            gen_type = gen_config_dict.pop("type")
+        #     gen_config_dict = dict(request_generator_config)
+        #     gen_type = gen_config_dict.pop("type")
             
-            gen_config_class = get_config_class_by_type_name(
-                BaseRequestGeneratorConfig,
-                gen_type
-            )
-            request_generator_config = gen_config_class(**gen_config_dict)
+        #     gen_config_class = get_config_class_by_type_name(
+        #         BaseRequestGeneratorConfig,
+        #         gen_type
+        #     )
+        #     request_generator_config = gen_config_class(**gen_config_dict)
             
-            client_config = ClientConfig(**client_config)
+        #     client_config = ClientConfig(**client_config)
 
-            # TODO: we don't want to pass manually set values to the benchmark config
-            # we should pass all available ones
-            benchmark_config = cls(
-                **benchmark_config,
-                client_config=client_config,
-                request_generator_config=request_generator_config,
-                request_interval_generator_config=request_interval_generator_config,
-                request_length_generator_config=request_length_generator_config,
-            )
+        #     # TODO: we don't want to pass manually set values to the benchmark config
+        #     # we should pass all available ones
+        #     benchmark_config = cls(
+        #         **benchmark_config,
+        #         client_config=client_config,
+        #         request_generator_config=request_generator_config,
+        #         request_interval_generator_config=request_interval_generator_config,
+        #         request_length_generator_config=request_length_generator_config,
+        #     )
 
-            all_benchmarks.append(benchmark_config)
+        #     all_benchmarks.append(benchmark_config)
 
-        return all_benchmarks
+        # return all_benchmarks
 
 
 @dataclass
@@ -730,11 +786,11 @@ class CapacitySearchConfig:
         default=True,
         metadata={"help": "Dynamic TTFT SLO for capacity search"},
     )
-    # TODO: remove from arg, move to trace config or similar
-    trace_session_match_threshold: float = field(
-        default=0.9,
-        metadata={"help": "Trace session match threshold for capacity search"},
-    )
+    # # TODO: remove from arg, move to trace config or similar
+    # trace_session_match_threshold: float = field(
+    #     default=0.9,
+    #     metadata={"help": "Trace session match threshold for capacity search"},
+    # )
     wandb_project: Optional[str] = field(
         default=None,
         metadata={"help": "Wandb project for capacity search"},
@@ -755,6 +811,8 @@ class CapacitySearchConfig:
     @classmethod
     def create_from_cli_args(cls):
         flat_config = create_flat_dataclass(cls).create_from_cli_args()
+        instance = flat_config.reconstruct_original_dataclass()
+        object.__setattr__(instance, "__flat_config__", flat_config)
         return flat_config.reconstruct_original_dataclass()
 
     def to_dict(self):
