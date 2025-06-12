@@ -197,8 +197,8 @@ def run_benchmark(
     generated_responses: List[Response] = []
 
     requests_interval_generator = RequestIntervalGeneratorRegistry.get(
-        benchmark_config.request_interval_generator_config.get_type(),
-        benchmark_config.request_interval_generator_config,
+        benchmark_config.request_generator_config.interval_generator_config.get_type(),
+        benchmark_config.request_generator_config.interval_generator_config,
     )
 
     assert (

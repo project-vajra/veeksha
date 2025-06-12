@@ -38,6 +38,9 @@ def run():
     os.makedirs(capacity_search_config.output_dir, exist_ok=True)
 
     # write configs to file
+    # TODO(chus): when saving the config, we are saving the global config in a single cap search dir. 
+    # We should save each cap search & benchmark config in its own dir, as they are different experiments.
+    # TODO(chus): save config as yaml instead of json to be consistent with the input config format
     capacity_search_config_dict = capacity_search_config.to_dict()
     full_config = {"capacity_search": capacity_search_config_dict, **benchmark_configs_yaml}
 

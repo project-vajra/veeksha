@@ -15,10 +15,9 @@ client_config:
     
 request_generator_config:
   - type: "synthetic"
-    request_interval_generator_config:
+    interval_generator_config:
       - type: "poisson"
       - type: "gamma"
-    request_length_generator_config:
+    length_generator_config:
       - type: "uniform"
-  - type: "trace"
     

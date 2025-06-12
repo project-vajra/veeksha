@@ -1,9 +1,13 @@
 import hashlib
+import logging
 from dataclasses import fields, is_dataclass
 from typing import Union, get_args, get_origin
+from copy import deepcopy
+from typing import List, Dict, Any, get_origin, get_args, Union
 
 primitive_types = {int, str, float, bool, type(None)}
 
+logger = logging.getLogger(__name__)
 
 def _get_hash(key):
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:8]
@@ -104,3 +108,187 @@ def dict_to_args(class_dict):
             else:
                 args.append(f"--{key} {value}")
     return " ".join(args)
+
+
+def expand_dict(d: Dict) -> List[Dict]:
+    """
+    Recursively expand a configuration dictionary that may contain lists into
+    a list of dictionaries representing every combination in the Cartesian
+    product of the list elements. Lists may appear at any depth of the
+    configuration tree. Nested dictionaries are handled recursively.
+    """
+    variants: List[Dict] = [dict()]
+
+    for key, value in d.items():
+        # Figure out all the possible values for this key
+        if isinstance(value, list):
+            # Each element in the list may be a dictionary that itself needs
+            # expansion. Scalars are taken as-is.
+            possible_values = []
+            for item in value:
+                if isinstance(item, dict):
+                    possible_values.extend(expand_dict(item))
+                else:
+                    possible_values.append(item)
+        elif isinstance(value, dict):
+            possible_values = expand_dict(value)
+        else:
+            possible_values = [value]
+
+        # Compose current variants with the new possibilities (cartesian product)
+        new_variants: list[dict] = []
+        for base in variants:
+            for option in possible_values:
+                v_copy = deepcopy(base)
+                v_copy[key] = option
+                new_variants.append(v_copy)
+        variants = new_variants
+
+    return variants
+
+
+def _strip_optional(t: Any) -> Any:
+    """Return the inner type if *t* is Optional[T], otherwise return *t* unchanged."""
+    if get_origin(t) is Union:
+        non_none = [a for a in get_args(t) if a is not type(None)]  # noqa: E721
+        if len(non_none) == 1:
+            return non_none[0]
+    return t
+
+
+def _issubclass_safe(cls: Any, parent: type) -> bool:
+    """Safe variant of issubclass that returns False for non-class *cls*."""
+    try:
+        return isinstance(cls, type) and issubclass(cls, parent)
+    except TypeError:
+        return False
+
+
+def _match_subclass_by_type(parent: type, type_val: Any) -> type:
+    """Return the subclass of *parent* whose ``get_type()`` equals *type_val*.
+
+    The comparison is performed with a bit of leniency: we allow Enum values,
+    strings matching Enum names (case-insensitive) or the string or repr of the
+    Enum value itself.
+    """
+    from veeksha.config.utils import get_all_subclasses
+
+    for subclass in get_all_subclasses(parent):
+        subtype = subclass.get_type()
+        if subtype == type_val:
+            return subclass
+        # Handle Enum → str comparisons in either direction
+        if hasattr(subtype, "name") and isinstance(type_val, str):
+            if subtype.name.lower() == type_val.lower():
+                return subclass
+        if isinstance(subtype, str) and isinstance(type_val, str):
+            if subtype.lower() == type_val.lower():
+                return subclass
+    raise ValueError(
+        f"No subclass of {parent.__name__} matches type value {type_val}."
+    )
+
+
+def create_class_from_dict(cls: type, config_dict: dict | None):
+    """Recursively instantiate *cls* using values from *config_dict*.
+
+    This utility understands three kinds of fields:
+    1. Primitive (or containers of primitives) – their value is taken directly.
+    2. Nested dataclasses – they are created recursively.
+    3. Polymorphic configs that inherit from ``BasePolyConfig`` – the concrete
+       subclass is selected using the ``type`` key in the corresponding dict
+       (or by providing the type directly as a string/enum value).
+
+    Any keys present in *config_dict* that do not correspond to a dataclass
+    field are ignored.
+    """
+    from veeksha.config.base_poly_config import BasePolyConfig
+
+    # Fast path: if *cls* is not a dataclass we simply return *config_dict* as is.
+    if not is_dataclass(cls) or config_dict is None or not isinstance(config_dict, dict):
+        logger.debug("create_class_from_dict fast path for %s with value %s", cls, config_dict)
+        # Caller will assign directly.
+        return config_dict
+
+    # Warn about any unexpected keys in the config dictionary
+    known_fields = {f.name for f in fields(cls)}
+    extra_keys = set(config_dict) - known_fields
+    if extra_keys:
+        logger.warning(
+            "create_class_from_dict: Ignoring unknown fields for %s: %s",
+            cls.__name__,
+            sorted(extra_keys),
+        )
+
+    kwargs: dict[str, Any] = {}
+
+    for f in fields(cls):
+        if f.name not in config_dict:
+            logger.debug("Field '%s' not supplied for %s; using default.", f.name, cls.__name__)
+            # Not supplied – rely on dataclass default.
+            continue
+
+        raw_value = config_dict[f.name]
+        field_type = _strip_optional(f.type)
+
+        # Handle list/tuple/dict containers with potential dataclass items.
+        origin = get_origin(field_type)
+        if origin is list and isinstance(raw_value, list):
+            inner_type = _strip_optional(get_args(field_type)[0])
+            if is_dataclass(inner_type) or _issubclass_safe(inner_type, BasePolyConfig):
+                processed_list = [
+                    create_class_from_dict(inner_type, itm) if isinstance(itm, dict) else itm
+                    for itm in raw_value
+                ]
+                kwargs[f.name] = processed_list
+                continue
+        elif origin is dict and isinstance(raw_value, dict):
+            key_type, val_type = get_args(field_type)
+            if is_dataclass(val_type) or _issubclass_safe(val_type, BasePolyConfig):
+                processed_dict = {
+                    k: create_class_from_dict(val_type, v) if isinstance(v, dict) else v
+                    for k, v in raw_value.items()
+                }
+                kwargs[f.name] = processed_dict
+                continue
+
+        # Polymorphic configuration – choose subclass based on "type" key.
+        if _issubclass_safe(field_type, BasePolyConfig):
+            if isinstance(raw_value, dict):
+                type_val = raw_value.get("type")
+                if type_val is not None:
+                    subclass = _match_subclass_by_type(field_type, type_val)
+                    # Remove the discriminator before recursion.
+                    sub_dict = {k: v for k, v in raw_value.items() if k != "type"}
+                else:
+                    # Type not specified – assume the parent type itself.
+                    subclass = field_type
+                    sub_dict = raw_value
+                kwargs[f.name] = create_class_from_dict(subclass, sub_dict)
+            else:
+                # raw_value directly specifies the type discriminator.
+                subclass = _match_subclass_by_type(field_type, raw_value)
+                kwargs[f.name] = subclass()
+            continue
+
+        # Nested dataclass (non-poly)
+        if is_dataclass(field_type):
+            if isinstance(raw_value, dict):
+                kwargs[f.name] = create_class_from_dict(field_type, raw_value)
+            else:
+                kwargs[f.name] = raw_value
+            continue
+
+        # Primitive or unknown – assign directly.
+        kwargs[f.name] = raw_value
+
+    try:
+        return cls(**kwargs)
+    except TypeError as e:
+        logger.error(
+            "Failed to instantiate %s with kwargs %s. Error: %s",
+            cls.__name__,
+            kwargs,
+            e,
+        )
+        raise

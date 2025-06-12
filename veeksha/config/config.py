@@ -4,7 +4,7 @@ import re
 from abc import ABC
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional
 
 import joblib
 import numpy as np
@@ -12,8 +12,8 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import PolynomialFeatures
 
 from veeksha.config.base_poly_config import BasePolyConfig
-from veeksha.config.flat_dataclass import create_flat_dataclass, get_config_class_by_type_name
-from veeksha.config.utils import dataclass_to_dict
+from veeksha.config.flat_dataclass import create_flat_dataclass
+from veeksha.config.utils import dataclass_to_dict, expand_dict, create_class_from_dict
 from veeksha.constants.prefill_constants import PREFILL_POLYNOMIAL_DEGREE
 from veeksha.core.llm_clients import SUPPORTED_APIS
 from veeksha.logger import init_logger
@@ -23,8 +23,9 @@ from veeksha.types import (
     RequestLengthGeneratorType,
 )
 
-logger = init_logger(__name__)
+# TODO(chus): freeze config dataclasses
 
+logger = init_logger(__name__)
 
 @dataclass
 class BaseRequestIntervalGeneratorConfig(BasePolyConfig):
@@ -179,13 +180,16 @@ class BaseRequestGeneratorConfig(BasePolyConfig):
         default=8192, metadata={"help": "Maximum number of tokens allowed."}
     )
 
-    def __post_init__(self):
-        self.length_generator_config: BaseRequestLengthGeneratorConfig = None  # type: ignore
 
 
-# this has interval and length provider
 @dataclass
 class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
+    length_generator_config: BaseRequestLengthGeneratorConfig = field(
+        default_factory=TraceRequestLengthGeneratorConfig
+    )
+    interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
+        default_factory=PoissonRequestIntervalGeneratorConfig
+    )
     @classmethod
     def get_type(cls):
         return RequestGeneratorType.SYNTHETIC
@@ -197,12 +201,12 @@ class PrefixRequestGeneratorConfig(BaseRequestGeneratorConfig):
     def get_type(cls):
         return RequestGeneratorType.PREFIX
 
+    # TODO: implement
     # two interval providers
     # - session interval provider
     # - intra-session request interval provider
 
 
-# no length, interval provider
 @dataclass
 class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     trace_file: str = field(
@@ -218,13 +222,15 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     time_scale_factor: float = field(
         default=0.04, metadata={"help": "Scale factor for time intervals."}
     )
+    interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
+        default_factory=PoissonRequestIntervalGeneratorConfig
+    )
 
     @classmethod
     def get_type(cls):
         return RequestGeneratorType.TRACE
 
 
-# only interval provider
 @dataclass
 class LmevalRequestGeneratorConfig(BaseRequestGeneratorConfig):
     tasks: list = field(
@@ -244,6 +250,9 @@ class LmevalRequestGeneratorConfig(BaseRequestGeneratorConfig):
         metadata={
             "help": "Whether the evaluation is logit based. If True, the task will be evaluated using OpenAI Completions API."
         },
+    )
+    interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
+        default_factory=PoissonRequestIntervalGeneratorConfig
     )
 
     @classmethod
@@ -289,6 +298,7 @@ class ClientConfig:
         metadata={"help": "The address append value for OpenAI API."},
     )
 
+    # TODO rm
     def __post_init__(self):
         self.additional_sampling_params_dict = {}
 
@@ -365,6 +375,7 @@ class DeadlineConfig:
     )
 
 
+# TODO: tentative deprecate
 @dataclass
 class PrefillProfilerConfig:
     prefill_lengths: list = field(
@@ -444,9 +455,9 @@ class PrefillProfilerConfig:
             self.save_predictions()
 
 
-# take a look at the config system in vajra benchmarkrunner and vajra design docs
 @dataclass
-class BenchmarkConfig(ABC):
+class BenchmarkConfig:
+    # TODO seed is set once in the benchmarkconfig and propagated to all nested configs
     seed: int = field(
         default=42,
         metadata={"help": "Seed for the random number generator."},
@@ -490,18 +501,6 @@ class BenchmarkConfig(ABC):
         default_factory=PrefillProfilerConfig,
         metadata={"help": "The prefill profiler configuration for the benchmark."},
     )
-    request_interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
-        default_factory=TraceRequestIntervalGeneratorConfig,
-        metadata={
-            "help": "The request interval generator configuration for the benchmark."
-        },
-    )
-    request_length_generator_config: BaseRequestLengthGeneratorConfig = field(
-        default_factory=TraceRequestLengthGeneratorConfig,
-        metadata={
-            "help": "The request length generator configuration for the benchmark."
-        },
-    )
     request_generator_config: BaseRequestGeneratorConfig = field(
         default_factory=SyntheticRequestGeneratorConfig,
         metadata={"help": "The request generator configuration for the benchmark."},
@@ -527,14 +526,6 @@ class BenchmarkConfig(ABC):
                 self.request_generator_config.max_tokens,
             )
             self.prefill_profiler_config.fill_predictions_array()
-
-        # assign the length generator config to the request generator config
-        self.request_generator_config.length_generator_config = (
-            self.request_length_generator_config
-        )
-        self.request_length_generator_config.max_tokens = (
-            self.request_generator_config.max_tokens
-        )
 
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
             logger.warning("Removing timeout for LMEval.")
@@ -586,53 +577,15 @@ class BenchmarkConfig(ABC):
     def generate_capacity_search_benchmark_configs(cls, configs: dict):
         all_benchmarks = []
 
-        from copy import deepcopy
-
-        def _expand_dict(d: Dict) -> List[Dict]:
-            """
-            Recursively expand a configuration dictionary that may contain lists into
-            a list of dictionaries representing every combination in the Cartesian
-            product of the list elements. Lists may appear at any depth of the
-            configuration tree. Nested dictionaries are handled recursively.
-            """
-            variants: List[Dict] = [dict()]
-
-            for key, value in d.items():
-                # Figure out all the possible values for this key
-                if isinstance(value, list):
-                    # Each element in the list may be a dictionary that itself needs
-                    # expansion. Scalars are taken as-is.
-                    possible_values = []
-                    for item in value:
-                        if isinstance(item, dict):
-                            possible_values.extend(_expand_dict(item))
-                        else:
-                            possible_values.append(item)
-                elif isinstance(value, dict):
-                    possible_values = _expand_dict(value)
-                else:
-                    possible_values = [value]
-
-                # Compose current variants with the new possibilities (cartesian product)
-                new_variants: list[dict] = []
-                for base in variants:
-                    for option in possible_values:
-                        v_copy = deepcopy(base)
-                        v_copy[key] = option
-                        new_variants.append(v_copy)
-                variants = new_variants
-
-            return variants
-
         # Expand the raw YAML dictionary into fully-specified configuration dicts
-        benchmark_config_dicts = _expand_dict(configs)
-
-        for config_dict in benchmark_config_dicts:
-            print("\n")
-            print(config_dict)
+        benchmark_config_dicts = expand_dict(configs)
 
         # TODO(chus): benchmark config dict to benchmark config. Init recursively while checking if provided args are valid.
-        return
+        for config_dict in benchmark_config_dicts:
+            # todo(chus): create_class_from_dict
+            benchmark_config = create_class_from_dict(cls, config_dict)
+            all_benchmarks.append(benchmark_config)
+        return all_benchmarks
                 
         # benchmark_config_dicts = []
         

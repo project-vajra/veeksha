@@ -37,10 +37,13 @@ class SearchManager:
 
     def run(self):
         num_jobs = len(self.benchmark_configs)
-        logger.info(f"Running {num_jobs} jobs")
+        logger.info(f"Running {num_jobs} jobs sequentially")
 
-        with Pool(processes=num_jobs, initializer=init_worker) as capacity_search_pool:
-            run_search_partial = partial(run_search, capacity_search_config=self.capacity_search_config.to_dict())
-            all_results = capacity_search_pool.map(run_search_partial, iterable=self.benchmark_configs)
+        # TODO fix(chus): subsequent jobs use the cache from the first job
+        run_search_partial = partial(
+            run_search,
+            capacity_search_config=self.capacity_search_config.to_dict(),
+        )
+        all_results = [run_search_partial(cfg) for cfg in self.benchmark_configs]
 
         return all_results
