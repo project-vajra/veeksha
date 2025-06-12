@@ -199,12 +199,12 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
        subclass is selected using the ``type`` key in the corresponding dict
        (or by providing the type directly as a string/enum value).
 
-    Any keys present in *config_dict* that do not correspond to a dataclass
-    field are ignored.
+    If there are any keys present in *config_dict* that do not correspond to a dataclass
+    field, a TypeError is raised.
     """
     from veeksha.config.base_poly_config import BasePolyConfig
 
-    # Fast path: if *cls* is not a dataclass we simply return *config_dict* as is.
+    # Fast path: if cls is not a dataclass return config_dict as is
     if not is_dataclass(cls) or config_dict is None or not isinstance(config_dict, dict):
         logger.debug("create_class_from_dict fast path for %s with value %s", cls, config_dict)
         # Caller will assign directly.
@@ -214,24 +214,25 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
     known_fields = {f.name for f in fields(cls)}
     extra_keys = set(config_dict) - known_fields
     if extra_keys:
-        logger.warning(
-            "create_class_from_dict: Ignoring unknown fields for %s: %s",
+        logger.error(
+            "create_class_from_dict: unknown arguments for %s: %s",
             cls.__name__,
             sorted(extra_keys),
         )
+        raise TypeError(f"Unknown arguments provided for {cls.__name__}: {sorted(extra_keys)}")
 
     kwargs: dict[str, Any] = {}
 
     for f in fields(cls):
         if f.name not in config_dict:
             logger.debug("Field '%s' not supplied for %s; using default.", f.name, cls.__name__)
-            # Not supplied – rely on dataclass default.
+            # Not supplied: rely on dataclass default
             continue
 
         raw_value = config_dict[f.name]
         field_type = _strip_optional(f.type)
 
-        # Handle list/tuple/dict containers with potential dataclass items.
+        # Handle list/tuple/dict containers with potential dataclass items
         origin = get_origin(field_type)
         if origin is list and isinstance(raw_value, list):
             inner_type = _strip_optional(get_args(field_type)[0])
@@ -252,21 +253,20 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
                 kwargs[f.name] = processed_dict
                 continue
 
-        # Polymorphic configuration – choose subclass based on "type" key.
+        # Polymorphic config: choose subclass based on "type" key
         if _issubclass_safe(field_type, BasePolyConfig):
             if isinstance(raw_value, dict):
                 type_val = raw_value.get("type")
                 if type_val is not None:
                     subclass = _match_subclass_by_type(field_type, type_val)
-                    # Remove the discriminator before recursion.
                     sub_dict = {k: v for k, v in raw_value.items() if k != "type"}
                 else:
-                    # Type not specified – assume the parent type itself.
+                    # Type not specified: assume the parent type itself
                     subclass = field_type
                     sub_dict = raw_value
                 kwargs[f.name] = create_class_from_dict(subclass, sub_dict)
             else:
-                # raw_value directly specifies the type discriminator.
+                # raw_value directly specifies the type discriminator
                 subclass = _match_subclass_by_type(field_type, raw_value)
                 kwargs[f.name] = subclass()
             continue

@@ -2,6 +2,7 @@ import json
 import glob
 import os
 import threading
+import hashlib
 from typing import Optional, Tuple
 
 import numpy as np
@@ -9,7 +10,7 @@ import wandb
 
 from veeksha.capacity_search.benchmark_wrapper import run
 from veeksha.config.config import CapacitySearchConfig, BenchmarkConfig
-from veeksha.config.utils import _get_hash
+from veeksha.config.utils import _get_hash, dataclass_to_dict
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
@@ -166,7 +167,7 @@ class CapacitySearch:
         )
 
     def is_under_sla(
-        self, qps: float
+        self, qps: float, job_output_dir: str
     ) -> Tuple[
         bool, Optional[float], Optional[float], Optional[float], Optional[float], str
     ]:
@@ -204,12 +205,12 @@ class CapacitySearch:
             self.benchmark_config.metrics_config.wandb_group = self.capacity_search_config.output_dir
         if not self.benchmark_config.metrics_config.wandb_run_name:
             self.benchmark_config.metrics_config.wandb_run_name = f"qps_{qps}_model_{self.benchmark_config.client_config.model}"
-        self.benchmark_config.metrics_config.output_dir = self.capacity_search_config.output_dir + f"/{qps}"
+        self.benchmark_config.metrics_config.output_dir = job_output_dir + f"/{qps}"
 
-        run_dir = self.benchmark_config.metrics_config.output_dir
-        os.makedirs(run_dir, exist_ok=True)
+        qps_run_dir = self.benchmark_config.metrics_config.output_dir
+        os.makedirs(qps_run_dir, exist_ok=True)
 
-        cached_request_level_metrics_file = self._get_request_level_metrics(run_dir)
+        cached_request_level_metrics_file = self._get_request_level_metrics(qps_run_dir)
 
         if cached_request_level_metrics_file is not None:
             logger.info(f"Cached results found for {qps}")
@@ -219,7 +220,7 @@ class CapacitySearch:
             
         self._run_benchmark(self.benchmark_config)
 
-        request_level_metrics_file = self._get_request_level_metrics(run_dir)
+        request_level_metrics_file = self._get_request_level_metrics(qps_run_dir)
 
         assert (
             request_level_metrics_file is not None
@@ -235,6 +236,18 @@ class CapacitySearch:
         logger.info(
             f"Starting search. SLO type: {self.capacity_search_config.slo_type}, start QPS: {self.capacity_search_config.start_qps}",
         )
+
+        full_config = {"capacity_search_config": dataclass_to_dict(self.capacity_search_config), "benchmark_config": dataclass_to_dict(self.benchmark_config)}
+
+        model_name = self.benchmark_config.client_config.model.split("/")[-1]
+        config_hash = hashlib.md5(str(full_config).encode()).hexdigest()[:8]
+
+        job_output_dir = f"{self.capacity_search_config.output_dir}/{model_name}_{config_hash}" # TODO add request generator types
+
+        os.makedirs(job_output_dir, exist_ok=True)
+
+        with open(os.path.join(job_output_dir, "config.json"), "w") as f:
+            json.dump(full_config, f, indent=4)
 
         left = 0
         right = self.capacity_search_config.start_qps * 2
@@ -272,7 +285,7 @@ class CapacitySearch:
                 tpot,
                 deadline_miss_rate,
                 run_id,
-            ) = self.is_under_sla(qps)
+            ) = self.is_under_sla(qps, job_output_dir)
 
             if is_under_sla:
                 found_valid_qps = True
@@ -304,7 +317,7 @@ class CapacitySearch:
             f"TTFT P{self.capacity_search_config.ttft_percentile * 100}: {ttft_at_max_qps}, "
             f"TPOT P{self.capacity_search_config.tpot_percentile * 100}: {tpot_at_max_qps}, "
             f"Deadline Miss Rate P{self.capacity_search_config.deadline_miss_rate_percentile * 100}: {deadline_miss_rate_at_max_qps}"
-            f"Best Run ID: {best_run_id}",
+            f"Best Run ID: {best_run_id} \n",
         )
 
         if self.capacity_search_config.wandb_project is not None and self.capacity_search_config.enable_wandb_sweep:

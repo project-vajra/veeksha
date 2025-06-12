@@ -39,7 +39,6 @@ class SearchManager:
         num_jobs = len(self.benchmark_configs)
         logger.info(f"Running {num_jobs} jobs sequentially")
 
-        # TODO fix(chus): subsequent jobs use the cache from the first job
         run_search_partial = partial(
             run_search,
             capacity_search_config=self.capacity_search_config.to_dict(),

@@ -473,10 +473,6 @@ class BenchmarkConfig:
             "that its possible for the test to timeout first."
         },
     )
-    timestamp: str = field(
-        default_factory=lambda: datetime.now().strftime("%Y-%m-%d-%H-%M-%S"),
-        metadata={"help": "The time stamp for the benchmark."},
-    )
     api_url: Optional[str] = field(
         default="http://localhost:8000/v1",
         metadata={"help": "The API URL for the benchmark."},
@@ -577,86 +573,15 @@ class BenchmarkConfig:
     def generate_capacity_search_benchmark_configs(cls, configs: dict):
         all_benchmarks = []
 
-        # Expand the raw YAML dictionary into fully-specified configuration dicts
+        # expand the raw YAML dictionary into fully-specified configuration dicts
         benchmark_config_dicts = expand_dict(configs)
 
-        # TODO(chus): benchmark config dict to benchmark config. Init recursively while checking if provided args are valid.
+        # init benchmarkconfigs recursively while checking if provided args are valid
         for config_dict in benchmark_config_dicts:
-            # todo(chus): create_class_from_dict
             benchmark_config = create_class_from_dict(cls, config_dict)
             all_benchmarks.append(benchmark_config)
         return all_benchmarks
                 
-        # benchmark_config_dicts = []
-        
-        # benchmark_configs = configs.get("benchmark", [])
-        # client_configs = configs.get("client", [])
-        # request_generator_configs = configs.get("request_generator", [])
-        # request_interval_generator_configs = configs.get("request_interval_generator", [])
-        # request_length_generator_configs = configs.get("request_length_generator", [])
-        
-        # if not request_interval_generator_configs:
-        #     request_interval_generator_configs = [{}]
-            
-        # if not request_length_generator_configs:
-        #     request_length_generator_configs = [{}]
-        
-        # for (
-        #     benchmark_config,
-        #     client_config,
-        #     request_generator_config,
-        #     request_interval_generator_config,
-        #     request_length_generator_config,
-        # ) in product(
-        #     benchmark_configs,
-        #     client_configs,
-        #     request_generator_configs,
-        #     request_interval_generator_configs,
-        #     request_length_generator_configs,
-        # ):
-        #     interval_config_dict = dict(request_interval_generator_config)
-        #     interval_type = interval_config_dict.pop("type")
-            
-        #     interval_config_class = get_config_class_by_type_name(
-        #         BaseRequestIntervalGeneratorConfig,
-        #         interval_type
-        #     )
-        #     request_interval_generator_config = interval_config_class(**interval_config_dict)
-
-        #     length_config_dict = dict(request_length_generator_config)
-        #     length_type = length_config_dict.pop("type")
-            
-        #     length_config_class = get_config_class_by_type_name(
-        #         BaseRequestLengthGeneratorConfig,
-        #         length_type
-        #     )
-        #     request_length_generator_config = length_config_class(**length_config_dict)
-            
-        #     gen_config_dict = dict(request_generator_config)
-        #     gen_type = gen_config_dict.pop("type")
-            
-        #     gen_config_class = get_config_class_by_type_name(
-        #         BaseRequestGeneratorConfig,
-        #         gen_type
-        #     )
-        #     request_generator_config = gen_config_class(**gen_config_dict)
-            
-        #     client_config = ClientConfig(**client_config)
-
-        #     # TODO: we don't want to pass manually set values to the benchmark config
-        #     # we should pass all available ones
-        #     benchmark_config = cls(
-        #         **benchmark_config,
-        #         client_config=client_config,
-        #         request_generator_config=request_generator_config,
-        #         request_interval_generator_config=request_interval_generator_config,
-        #         request_length_generator_config=request_length_generator_config,
-        #     )
-
-        #     all_benchmarks.append(benchmark_config)
-
-        # return all_benchmarks
-
 
 @dataclass
 class CapacitySearchConfig:
