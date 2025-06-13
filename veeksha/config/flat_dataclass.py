@@ -146,7 +146,6 @@ def get_config_class_by_type_name(config_class: Any, type_name: str) -> Any:
     raise ValueError(f"Config class with name {type_name} not found.")
 
 
-
 def create_flat_dataclass(input_dataclass: Any) -> Any:
     """
     Creates a new FlatClass type by recursively flattening the input dataclass.

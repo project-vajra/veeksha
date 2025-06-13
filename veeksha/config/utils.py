@@ -1,13 +1,13 @@
 import hashlib
 import logging
-from dataclasses import fields, is_dataclass
-from typing import Union, get_args, get_origin
 from copy import deepcopy
-from typing import List, Dict, Any, get_origin, get_args, Union
+from dataclasses import fields, is_dataclass
+from typing import Any, Dict, List, Union, get_args, get_origin
 
 primitive_types = {int, str, float, bool, type(None)}
 
 logger = logging.getLogger(__name__)
+
 
 def _get_hash(key):
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:8]
@@ -184,9 +184,7 @@ def _match_subclass_by_type(parent: type, type_val: Any) -> type:
         if isinstance(subtype, str) and isinstance(type_val, str):
             if subtype.lower() == type_val.lower():
                 return subclass
-    raise ValueError(
-        f"No subclass of {parent.__name__} matches type value {type_val}."
-    )
+    raise ValueError(f"No subclass of {parent.__name__} matches type value {type_val}.")
 
 
 def create_class_from_dict(cls: type, config_dict: dict | None):
@@ -205,8 +203,14 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
     from veeksha.config.base_poly_config import BasePolyConfig
 
     # Fast path: if cls is not a dataclass return config_dict as is
-    if not is_dataclass(cls) or config_dict is None or not isinstance(config_dict, dict):
-        logger.debug("create_class_from_dict fast path for %s with value %s", cls, config_dict)
+    if (
+        not is_dataclass(cls)
+        or config_dict is None
+        or not isinstance(config_dict, dict)
+    ):
+        logger.debug(
+            "create_class_from_dict fast path for %s with value %s", cls, config_dict
+        )
         # Caller will assign directly.
         return config_dict
 
@@ -219,13 +223,17 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
             cls.__name__,
             sorted(extra_keys),
         )
-        raise TypeError(f"Unknown arguments provided for {cls.__name__}: {sorted(extra_keys)}")
+        raise TypeError(
+            f"Unknown arguments provided for {cls.__name__}: {sorted(extra_keys)}"
+        )
 
     kwargs: dict[str, Any] = {}
 
     for f in fields(cls):
         if f.name not in config_dict:
-            logger.debug("Field '%s' not supplied for %s; using default.", f.name, cls.__name__)
+            logger.debug(
+                "Field '%s' not supplied for %s; using default.", f.name, cls.__name__
+            )
             # Not supplied: rely on dataclass default
             continue
 
@@ -238,7 +246,11 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
             inner_type = _strip_optional(get_args(field_type)[0])
             if is_dataclass(inner_type) or _issubclass_safe(inner_type, BasePolyConfig):
                 processed_list = [
-                    create_class_from_dict(inner_type, itm) if isinstance(itm, dict) else itm
+                    (
+                        create_class_from_dict(inner_type, itm)
+                        if isinstance(itm, dict)
+                        else itm
+                    )
                     for itm in raw_value
                 ]
                 kwargs[f.name] = processed_list

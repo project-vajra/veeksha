@@ -1,11 +1,11 @@
 from abc import ABC
-from dataclasses import dataclass
 from typing import Any
 
+from veeksha.config.frozen_dataclass import frozen_dataclass
 from veeksha.config.utils import get_all_subclasses
 
 
-@dataclass
+@frozen_dataclass
 class BasePolyConfig(ABC):
     @classmethod
     def create_from_type(cls, type_: Any) -> Any:

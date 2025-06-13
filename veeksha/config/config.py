@@ -1,9 +1,6 @@
 import json
 import os
-import re
-from abc import ABC
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import field
 from typing import Optional
 
 import joblib
@@ -13,7 +10,8 @@ from sklearn.preprocessing import PolynomialFeatures
 
 from veeksha.config.base_poly_config import BasePolyConfig
 from veeksha.config.flat_dataclass import create_flat_dataclass
-from veeksha.config.utils import dataclass_to_dict, expand_dict, create_class_from_dict
+from veeksha.config.frozen_dataclass import frozen_dataclass
+from veeksha.config.utils import dataclass_to_dict
 from veeksha.constants.prefill_constants import PREFILL_POLYNOMIAL_DEGREE
 from veeksha.core.llm_clients import SUPPORTED_APIS
 from veeksha.logger import init_logger
@@ -23,11 +21,10 @@ from veeksha.types import (
     RequestLengthGeneratorType,
 )
 
-# TODO(chus): freeze config dataclasses
-
 logger = init_logger(__name__)
 
-@dataclass
+
+@frozen_dataclass
 class BaseRequestIntervalGeneratorConfig(BasePolyConfig):
     seed: int = field(
         default=42,
@@ -35,7 +32,7 @@ class BaseRequestIntervalGeneratorConfig(BasePolyConfig):
     )
 
 
-@dataclass
+@frozen_dataclass
 class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
     trace_file: str = field(
         default="data/processed_traces/AzureFunctionsInvocationTraceForTwoWeeksJan2021Processed.csv",
@@ -57,7 +54,7 @@ class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
         return RequestIntervalGeneratorType.TRACE
 
 
-@dataclass
+@frozen_dataclass
 class PoissonRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
     qps: float = field(
         default=1.0,
@@ -69,7 +66,7 @@ class PoissonRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
         return RequestIntervalGeneratorType.POISSON
 
 
-@dataclass
+@frozen_dataclass
 class GammaRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
     qps: float = field(
         default=1.0, metadata={"help": "Queries per second for the Gamma distribution."}
@@ -84,14 +81,14 @@ class GammaRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
         return RequestIntervalGeneratorType.GAMMA
 
 
-@dataclass
+@frozen_dataclass
 class StaticRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
     @classmethod
     def get_type(cls):
         return RequestIntervalGeneratorType.STATIC
 
 
-@dataclass
+@frozen_dataclass
 class BaseRequestLengthGeneratorConfig(BasePolyConfig):
     seed: int = field(
         default=42, metadata={"help": "Random seed for the request length generator."}
@@ -101,7 +98,7 @@ class BaseRequestLengthGeneratorConfig(BasePolyConfig):
     )
 
 
-@dataclass
+@frozen_dataclass
 class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
     trace_file: str = field(
         default="data/processed_traces/sharegpt_8k_filtered_stats_llama2_tokenizer.csv",
@@ -123,7 +120,7 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
         return RequestLengthGeneratorType.TRACE
 
 
-@dataclass
+@frozen_dataclass
 class ZipfRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
     theta: float = field(
         default=0.6, metadata={"help": "Theta parameter for the Zipf distribution."}
@@ -143,7 +140,7 @@ class ZipfRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
         return RequestLengthGeneratorType.ZIPF
 
 
-@dataclass
+@frozen_dataclass
 class UniformRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
     min_tokens: int = field(
         default=1024, metadata={"help": "Minimum number of tokens."}
@@ -157,7 +154,7 @@ class UniformRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
         return RequestLengthGeneratorType.UNIFORM
 
 
-@dataclass
+@frozen_dataclass
 class FixedRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
     prefill_tokens: int = field(
         default=4096, metadata={"help": "Number of prefill tokens."}
@@ -171,7 +168,7 @@ class FixedRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
         return RequestLengthGeneratorType.FIXED
 
 
-@dataclass
+@frozen_dataclass
 class BaseRequestGeneratorConfig(BasePolyConfig):
     seed: int = field(
         default=42, metadata={"help": "Random seed for the request generator."}
@@ -181,8 +178,7 @@ class BaseRequestGeneratorConfig(BasePolyConfig):
     )
 
 
-
-@dataclass
+@frozen_dataclass
 class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
     length_generator_config: BaseRequestLengthGeneratorConfig = field(
         default_factory=TraceRequestLengthGeneratorConfig
@@ -190,12 +186,13 @@ class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
     interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
         default_factory=PoissonRequestIntervalGeneratorConfig
     )
+
     @classmethod
     def get_type(cls):
         return RequestGeneratorType.SYNTHETIC
 
 
-@dataclass
+@frozen_dataclass
 class PrefixRequestGeneratorConfig(BaseRequestGeneratorConfig):
     @classmethod
     def get_type(cls):
@@ -207,7 +204,7 @@ class PrefixRequestGeneratorConfig(BaseRequestGeneratorConfig):
     # - intra-session request interval provider
 
 
-@dataclass
+@frozen_dataclass
 class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     trace_file: str = field(
         default="data/processed_traces/sydney_enterprise.csv",
@@ -231,7 +228,7 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
         return RequestGeneratorType.TRACE
 
 
-@dataclass
+@frozen_dataclass
 class LmevalRequestGeneratorConfig(BaseRequestGeneratorConfig):
     tasks: list = field(
         default_factory=lambda: [],
@@ -260,10 +257,10 @@ class LmevalRequestGeneratorConfig(BaseRequestGeneratorConfig):
         return RequestGeneratorType.LMEVAL
 
 
-@dataclass
+@frozen_dataclass
 class ClientConfig:
     model: str = field(
-        default="gpt-3.5-turbo",
+        default="meta-llama/Meta-Llama-3-8B-Instruct",
         metadata={"help": "The model to use for this load test."},
     )
     tokenizer: Optional[str] = field(
@@ -311,7 +308,7 @@ class ClientConfig:
             self.tokenizer = self.model
 
 
-@dataclass
+@frozen_dataclass
 class MetricsConfig:
     output_dir: str = field(
         default="benchmark_results",
@@ -353,7 +350,7 @@ class MetricsConfig:
     )
 
 
-@dataclass
+@frozen_dataclass
 class DeadlineConfig:
     ttft_deadline: float = field(
         default=0.1,
@@ -376,7 +373,7 @@ class DeadlineConfig:
 
 
 # TODO: tentative deprecate
-@dataclass
+@frozen_dataclass
 class PrefillProfilerConfig:
     prefill_lengths: list = field(
         default_factory=lambda: [],
@@ -455,7 +452,7 @@ class PrefillProfilerConfig:
             self.save_predictions()
 
 
-@dataclass
+@frozen_dataclass
 class BenchmarkConfig:
     # TODO seed is set once in the benchmarkconfig and propagated to all nested configs
     seed: int = field(
@@ -502,19 +499,10 @@ class BenchmarkConfig:
         metadata={"help": "The request generator configuration for the benchmark."},
     )
 
-    # TODO this will need to go out
+    # TODO move this away
     def __post_init__(self):
         if not os.path.exists(self.metrics_config.output_dir):
             os.makedirs(self.metrics_config.output_dir)
-
-        if not self.metrics_config.should_use_given_dir:
-            benchmark_identifier = f"{self.client_config.model}_{self.request_interval_generator_config.get_type()}_{self.request_generator_config.get_type()}"
-            benchmark_identifier = re.sub(r"[^\w\d-]+", "-", benchmark_identifier)
-            benchmark_identifier = re.sub(r"-{2,}", "-", benchmark_identifier)
-
-            self.metrics_config.output_dir = os.path.join(
-                self.metrics_config.output_dir, benchmark_identifier, self.timestamp
-            )
 
         if self.prefill_profiler_config.use_predictions_for_ttft:
             self.prefill_profiler_config.max_prefill_tokens_to_predict = max(
@@ -552,7 +540,6 @@ class BenchmarkConfig:
         instance.reconstruct_original_dataclass()
         instance.__flat_config__ = instance
         return
-        
 
     def to_dict(self):
         if not hasattr(self, "__flat_config__"):
@@ -568,22 +555,8 @@ class BenchmarkConfig:
         ) as f:
             json.dump(config_dict, f, indent=4)
 
-    # TODO: out of config class
-    @classmethod
-    def generate_capacity_search_benchmark_configs(cls, configs: dict):
-        all_benchmarks = []
 
-        # expand the raw YAML dictionary into fully-specified configuration dicts
-        benchmark_config_dicts = expand_dict(configs)
-
-        # init benchmarkconfigs recursively while checking if provided args are valid
-        for config_dict in benchmark_config_dicts:
-            benchmark_config = create_class_from_dict(cls, config_dict)
-            all_benchmarks.append(benchmark_config)
-        return all_benchmarks
-                
-
-@dataclass
+@frozen_dataclass
 class CapacitySearchConfig:
     """Configuration for capacity search benchmark. This is a special benchmark that runs multiple benchmarks with different QPS and
     finds the maximum QPS that can be sustained given the deadline constraints."""
@@ -698,7 +671,5 @@ class CapacitySearchConfig:
 
     def write_config_to_file(self):
         config_dict = self.to_dict()
-        with open(
-            os.path.join(f"{self.output_dir}", "config.json"), "w"
-        ) as f:
+        with open(os.path.join(f"{self.output_dir}", "config.json"), "w") as f:
             json.dump(config_dict, f, indent=4)
