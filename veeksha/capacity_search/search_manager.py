@@ -1,4 +1,3 @@
-import multiprocessing
 from functools import partial
 from typing import Dict, List
 
@@ -20,12 +19,7 @@ def run_search(
     return capacity_search.search()
 
 
-def init_worker():
-    # Make the current process non-daemon
-    current = multiprocessing.current_process()
-    current._config["daemon"] = False
-
-
+# TODO implement parallel jobs if they have different servers
 class SearchManager:
     def __init__(
         self,

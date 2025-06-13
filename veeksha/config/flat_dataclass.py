@@ -140,7 +140,7 @@ def create_from_cli_args(cls) -> Any:
 
 def get_config_class_by_type_name(config_class: Any, type_name: str) -> Any:
     for subclass in get_all_subclasses(config_class):
-        if subclass.get_type().name == type_name.upper():
+        if subclass.get_type().name.upper() == type_name.upper():
             return subclass
 
     raise ValueError(f"Config class with name {type_name} not found.")
