@@ -36,13 +36,7 @@ class BaseRequestIntervalGeneratorConfig(BasePolyConfig):
 class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
     trace_file: str = field(
         default="data/processed_traces/AzureFunctionsInvocationTraceForTwoWeeksJan2021Processed.csv",
-        metadata={"help": "Path to the trace file for request intervals."},
-    )
-    start_time: str = field(
-        default="1970-01-01 00:00:00", metadata={"help": "Start time for the trace."}
-    )
-    end_time: str = field(
-        default="1970-01-01 04:00:00", metadata={"help": "End time for the trace."}
+        metadata={"help": "Path to the trace file for request intervals. Should be a csv or jsonl file."},
     )
     time_scale_factor: float = field(
         default=0.3,
