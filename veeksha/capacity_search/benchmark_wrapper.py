@@ -3,38 +3,35 @@ This file contains the wrapper for the benchmarking.
 """
 
 import os
-import subprocess
 
-from veeksha.capacity_search.config.config import BenchmarkConfig, JobConfig
+from veeksha.config.config import BenchmarkConfig
 from veeksha.logger import init_logger
+from veeksha.run_benchmark import run_benchmark
 
 logger = init_logger(__name__)
 
 
 def setup_api_environment(
-    openai_api_key=None,
-    openai_api_url=None,
+    api_key=None,
+    api_url=None,
 ):
     """Set up environment variables for OpenAI API"""
-    assert openai_api_key is not None, "OpenAI API key is required"
-    assert openai_api_url is not None, "OpenAI port is required"
-    os.environ["OPENAI_API_KEY"] = openai_api_key
-    os.environ["OPENAI_API_BASE"] = openai_api_url
+    assert api_key is not None, "API key is required"
+    assert api_url is not None, "API port is required"
+    os.environ["OPENAI_API_KEY"] = api_key
+    os.environ["OPENAI_API_BASE"] = api_url
 
 
 def run(
-    job_config: JobConfig,
     benchmark_config: BenchmarkConfig,
 ):
     """Main function to run benchmark"""
 
     setup_api_environment(
-        openai_api_key=job_config.server_config.openai_api_key,
-        openai_api_url=job_config.server_config.openai_api_url,
+        api_key=benchmark_config.api_key,
+        api_url=benchmark_config.api_url,
     )
 
-    benchmark_command = f"python -m veeksha.run_benchmark {job_config.to_args()} {benchmark_config.to_args()}"
-    logger.info(f"Running benchmark with command: {benchmark_command}")
-    benchmark_process = subprocess.Popen(benchmark_command, shell=True)
-    benchmark_process.wait()
+    print(f"Running benchmark with config: {benchmark_config}")
+    run_benchmark(benchmark_config)
     logger.info("Benchmark finished")

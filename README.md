@@ -7,17 +7,17 @@ Veeksha is a LLM Inference systems benchmarking tool. Please refer to our [docum
 ### Clone repository
 ```bash
 git clone https://github.com/project-vajra/veeksha.git
+cd veeksha
 ```
 
 ### Create conda environment
 ```bash
-conda create -n veeksha python=3.10
-conda activate veeksha
+conda create -p ./env python=3.12
+conda activate ./env
 ```
 
 ### Install veeksha
 ```bash
-cd veeksha
 pip install -e .
 ```
 

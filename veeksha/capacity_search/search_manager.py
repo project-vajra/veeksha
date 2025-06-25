@@ -1,41 +1,45 @@
-import argparse
 from functools import partial
-from multiprocessing import Pool
+from typing import Dict, List
 
 from veeksha.capacity_search.capacity_search import CapacitySearch
-from veeksha.capacity_search.config.config import JobConfig
+from veeksha.config.config import CapacitySearchConfig
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
 
 
 def run_search(
-    job_config: JobConfig,
-    args: argparse.Namespace,
+    benchmark_config_params: Dict,
+    capacity_search_config: CapacitySearchConfig,
 ):
     capacity_search = CapacitySearch(
-        job_config,
-        args,
+        capacity_search_config,
+        benchmark_config_params,
     )
     return capacity_search.search()
 
 
+# TODO implement parallel jobs if they have different servers
 class SearchManager:
     def __init__(
         self,
-        args: argparse.Namespace,
-        config: dict,
+        capacity_search_config: CapacitySearchConfig,
+        benchmark_configs_params: List[Dict],
     ):
-        self.args = args
-        self.config = config
+        self.capacity_search_config = capacity_search_config
+        self.benchmark_configs_params = benchmark_configs_params
 
     def run(self):
-        job_configs = JobConfig.generate_job_configs(self.config)
-        num_jobs = len(job_configs)
-        logger.info(f"Running {num_jobs} jobs")
+        num_jobs = len(self.benchmark_configs_params)
+        logger.info(f"Running {num_jobs} jobs sequentially")
 
-        with Pool(processes=num_jobs) as capacity_search_pool:
-            run_search_partial = partial(run_search, args=self.args)  # Pre-fill `args`
-            all_results = capacity_search_pool.map(run_search_partial, job_configs)
+        run_search_partial = partial(
+            run_search,
+            capacity_search_config=self.capacity_search_config,
+        )
+        all_results = [
+            run_search_partial(cfg_params)
+            for cfg_params in self.benchmark_configs_params
+        ]
 
         return all_results
