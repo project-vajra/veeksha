@@ -372,7 +372,6 @@ class DeadlineConfig:
     )
 
 
-# TODO: tentative deprecate
 @frozen_dataclass
 class PrefillProfilerConfig:
     prefill_lengths: list = field(
