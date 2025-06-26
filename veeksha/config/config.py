@@ -92,13 +92,13 @@ class BaseSessionGeneratorConfig(BasePolyConfig):
 
 @frozen_dataclass
 class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
-    session_dispatch_rate: float = field(
-        default=1.0,
-        metadata={"help": "How many sessions per second to dispatch."},
+    session_interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
+        default_factory=PoissonRequestIntervalGeneratorConfig,
+        metadata={"help": "Interval generator for session dispatch. This will determine how often sessions are dispatched."}
     )
-    minimum_similarity: float = field(
+    minimum_prefix_match: float = field(
         default=0.8,
-        metadata={"help": "Minimum pct. of prefix similarity between requests in a session."},
+        metadata={"help": "Minimum pct. of prefix match between requests in a session."},
     )
     min_session_size: int = field(
         default=1,
@@ -231,19 +231,13 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
         metadata={"help": "Path to the trace file for request generation."},
     )
     prefill_scale_factor: float = field(
-        default=0.3, metadata={"help": "Scale factor for prefill tokens."}
+        default=1, metadata={"help": "Scale factor for prefill tokens."}
     )
     decode_scale_factor: float = field(
         default=1, metadata={"help": "Scale factor for decode tokens."}
     )
     time_scale_factor: float = field(
-        default=0.04, metadata={"help": "Scale factor for time intervals."}
-    )
-    interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
-        default_factory=TraceRequestIntervalGeneratorConfig
-    )
-    length_generator_config: BaseRequestLengthGeneratorConfig = field(
-        default_factory=TraceRequestLengthGeneratorConfig
+        default=1, metadata={"help": "Scale factor for request dispatch intervals."}
     )
     use_prefix_hash_ids: Optional[bool] = field(
         default=False,
