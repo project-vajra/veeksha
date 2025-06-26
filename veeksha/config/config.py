@@ -21,6 +21,7 @@ from veeksha.types import (
     RequestLengthGeneratorType,
     SessionGeneratorType,
 )
+from veeksha.constants.configuration_constants import DEFAULT_SEED
 
 logger = init_logger(__name__)
 
@@ -28,7 +29,7 @@ logger = init_logger(__name__)
 @frozen_dataclass
 class BaseRequestIntervalGeneratorConfig(BasePolyConfig):
     seed: int = field(
-        default=42,
+        default=DEFAULT_SEED,
         metadata={"help": "Seed for the random number generator."},
     )
 
@@ -87,7 +88,7 @@ class StaticRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
 @frozen_dataclass
 class BaseSessionGeneratorConfig(BasePolyConfig):
     seed: int = field(
-        default=42, metadata={"help": "Random seed for the session generator."}
+        default=DEFAULT_SEED, metadata={"help": "Random seed for the session generator."}
     )
 
 @frozen_dataclass
@@ -122,7 +123,7 @@ class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
 @frozen_dataclass
 class BaseRequestLengthGeneratorConfig(BasePolyConfig):
     seed: int = field(
-        default=42, metadata={"help": "Random seed for the request length generator."}
+        default=DEFAULT_SEED, metadata={"help": "Random seed for the request length generator."}
     )
     max_tokens: int = field(
         default=4096, metadata={"help": "Maximum number of tokens allowed."}
@@ -203,7 +204,7 @@ class FixedRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
 @frozen_dataclass
 class BaseRequestGeneratorConfig(BasePolyConfig):
     seed: int = field(
-        default=42, metadata={"help": "Random seed for the request generator."}
+        default=DEFAULT_SEED, metadata={"help": "Random seed for the request generator."}
     )
     max_tokens: int = field(
         default=8192, metadata={"help": "Maximum number of tokens allowed."}
@@ -481,7 +482,7 @@ class PrefillProfilerConfig:
 class BenchmarkConfig:
     # TODO seed is set once in the benchmarkconfig and propagated to all nested configs
     seed: int = field(
-        default=42,
+        default=DEFAULT_SEED,
         metadata={"help": "Seed for the random number generator."},
     )
     timeout: int = field(
@@ -587,7 +588,7 @@ class CapacitySearchConfig:
     finds the maximum QPS that can be sustained given the deadline constraints."""
 
     seed: int = field(
-        default=42,
+        default=DEFAULT_SEED,
         metadata={"help": "Seed for the random number generator for capacity search."},
     )
     start_qps: float = field(
