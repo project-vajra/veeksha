@@ -19,11 +19,12 @@ from veeksha.types import (
     RequestGeneratorType,
     RequestIntervalGeneratorType,
     RequestLengthGeneratorType,
+    SessionGeneratorType,
 )
 
 logger = init_logger(__name__)
 
-
+# --------- INTERVAL GENERATOR CONFIGS ---------
 @frozen_dataclass
 class BaseRequestIntervalGeneratorConfig(BasePolyConfig):
     seed: int = field(
@@ -82,6 +83,42 @@ class StaticRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
         return RequestIntervalGeneratorType.STATIC
 
 
+# --------- SESSION GENERATOR CONFIG ---------
+@frozen_dataclass
+class BaseSessionGeneratorConfig(BasePolyConfig):
+    seed: int = field(
+        default=42, metadata={"help": "Random seed for the session generator."}
+    )
+
+@frozen_dataclass
+class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
+    session_dispatch_rate: float = field(
+        default=1.0,
+        metadata={"help": "How many sessions per second to dispatch."},
+    )
+    minimum_similarity: float = field(
+        default=0.8,
+        metadata={"help": "Minimum pct. of prefix similarity between requests in a session."},
+    )
+    min_session_size: int = field(
+        default=1,
+        metadata={"help": "Minimum number of requests per session."},
+    )
+    max_session_size: int = field(
+        default=10,
+        metadata={"help": "Maximum number of requests per session."},
+    )
+    max_request_interval: float = field(
+        default=1.0,
+        metadata={"help": "Maximum time interval between consecutive requests in a session, in seconds."},
+    )
+
+    @classmethod
+    def get_type(cls):
+        return SessionGeneratorType.SYNTHETIC
+
+
+# --------- LENGTH GENERATOR CONFIGS ---------
 @frozen_dataclass
 class BaseRequestLengthGeneratorConfig(BasePolyConfig):
     seed: int = field(
@@ -162,6 +199,7 @@ class FixedRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
         return RequestLengthGeneratorType.FIXED
 
 
+# --------- REQUEST GENERATOR CONFIGS ---------
 @frozen_dataclass
 class BaseRequestGeneratorConfig(BasePolyConfig):
     seed: int = field(
@@ -187,18 +225,6 @@ class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
 
 
 @frozen_dataclass
-class PrefixRequestGeneratorConfig(BaseRequestGeneratorConfig):
-    @classmethod
-    def get_type(cls):
-        return RequestGeneratorType.PREFIX
-
-    # TODO: implement
-    # two interval providers
-    # - session interval provider
-    # - intra-session request interval provider
-
-
-@frozen_dataclass
 class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     trace_file: str = field(
         default="data/processed_traces/sydney_enterprise.csv",
@@ -214,7 +240,18 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
         default=0.04, metadata={"help": "Scale factor for time intervals."}
     )
     interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
-        default_factory=PoissonRequestIntervalGeneratorConfig
+        default_factory=TraceRequestIntervalGeneratorConfig
+    )
+    length_generator_config: BaseRequestLengthGeneratorConfig = field(
+        default_factory=TraceRequestLengthGeneratorConfig
+    )
+    use_prefix_hash_ids: Optional[bool] = field(
+        default=False,
+        metadata={"help": "If True, veeksha will use prefix hash IDs of requests to generate request inputs. Trace file specified by interval or/and length generator must include hash_ids: list[int]."}
+    )
+    session_generator_config: Optional[BaseSessionGeneratorConfig] = field(
+        default=None,
+        metadata={"help": "If not None, it will determine how sessions are created. (SyntheticSessionGeneratorConfig requires use_prefix_hash_ids to be True to determine similarity between requests in a session)."}
     )
 
     @classmethod
@@ -251,6 +288,7 @@ class LmevalRequestGeneratorConfig(BaseRequestGeneratorConfig):
         return RequestGeneratorType.LMEVAL
 
 
+# --------- OTHER CONFIGS ---------
 @frozen_dataclass
 class ClientConfig:
     model: str = field(
