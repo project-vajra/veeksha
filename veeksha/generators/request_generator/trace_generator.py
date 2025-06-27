@@ -1,18 +1,14 @@
-from typing import List, Union
+from typing import Dict, List, Union
+import ast
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
-from veeksha.config.config import ClientConfig, TraceRequestGeneratorConfig, TraceRequestLengthGeneratorConfig, TraceRequestIntervalGeneratorConfig
+from veeksha.config.generators.request_generator.trace_generator import TraceRequestGeneratorConfig
+from veeksha.config.client import ClientConfig
 from veeksha.core.request_config import RequestConfig
 from veeksha.logger import init_logger
-from veeksha.generators.base_generator import BaseRequestGenerator
-from veeksha.generators.length_generator.generator_registry import (
-    RequestLengthGeneratorRegistry,
-)
-from veeksha.generators.interval_generator.generator_registry import (
-    RequestIntervalGeneratorRegistry,
-)
-from veeksha.types import RequestLengthGeneratorType, RequestIntervalGeneratorType
+from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
+from veeksha.generators.utils import process_request_length_trace, process_request_interval_trace, load_trace
 
 logger = init_logger(__name__)
 
@@ -24,14 +20,44 @@ class TraceRequestGenerator(BaseRequestGenerator):
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         client_config: ClientConfig,
     ):
-        from veeksha.generators.generator_registry import (
+        from veeksha.generators.session_generator.generator_registry import (
             SessionGeneratorRegistry,
         )
+
         self.config = config
         self.tokenizer = tokenizer
         self.request_id = 0
         self.client_config = client_config
-        self.past_prompts: dict[int, str] = {}
+        self.past_prompts: Dict[int, str] = {}
+
+        self.trace_df = load_trace(self.config.trace_file)
+
+        self.trace_df = process_request_length_trace(
+            self.trace_df,
+            self.config.trace_file,
+            self.config.prefill_scale_factor,
+            self.config.decode_scale_factor,
+            self.config.max_tokens,
+        )
+
+        self.trace_df = process_request_interval_trace(
+            self.trace_df,
+            self.config.trace_file,
+            self.config.time_scale_factor,
+        )
+
+        logger.info(
+            f"Loaded trace file {self.config.trace_file} with {len(self.trace_df)} requests"
+        )
+
+        self._has_hash_ids = "hash_ids" in self.trace_df.columns
+
+        # parse hash_ids if needed
+        if self.config.use_prefix_hash_ids and self._has_hash_ids:
+            if not isinstance(self.trace_df["hash_ids"].iloc[0], list):
+                self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
+                    ast.literal_eval
+                )
 
         if self.config.session_generator_config is not None:
             self.session_generator = SessionGeneratorRegistry.get(
@@ -39,23 +65,11 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 self.config.session_generator_config,
             )
 
-        self.request_length_generator = RequestLengthGeneratorRegistry.get(
-            RequestLengthGeneratorType.TRACE,
-            TraceRequestLengthGeneratorConfig(
-                trace_file=self.config.trace_file,
-                prefill_scale_factor=self.config.prefill_scale_factor,
-                decode_scale_factor=self.config.decode_scale_factor,
-                block_size=self.config.block_size,
-            )
-        )
+            # add sessions to trace
+            # save trace to memory
 
-        self.request_interval_generator = RequestIntervalGeneratorRegistry.get(
-            RequestIntervalGeneratorType.TRACE,
-            TraceRequestIntervalGeneratorConfig(
-                trace_file=self.config.trace_file,
-                time_scale_factor=self.config.time_scale_factor,
-            )
-        )
+        if self.config.use_prefix_hash_ids:
+            assert self.request_length_generator.has_hash_ids(), "Cannot find hash_ids in trace file"
 
     def is_stable_encoding(
         self,
@@ -98,12 +112,18 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         raise Exception(f"Could not generate stable encoding for value {value}")
 
+    
+
     def get_request(self) -> RequestConfig:
-        (
-            hash_ids,
-            remaining_prompt_tokens,
-            num_output_tokens,
-        ) = self.request_length_generator.get_next_request_params()
+        request_params = self.request_length_generator.get_next_request_params()
+
+        if self.config.use_prefix_hash_ids:
+            block_count = (
+                request_params["input_length"] + self.config.block_size - 1
+            ) // self.config.block_size
+
+            assert request_params["hash_count"] >= block_count, f"Hash count {request_params['hash_count']} cannot be less than block count {block_count}"
+
         block_size = self.request_length_generator.get_block_size()
 
         prompt = '"""'

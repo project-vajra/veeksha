@@ -6,7 +6,9 @@ import pandas as pd
 import plotly_express as px
 import wandb
 
-from veeksha.config.config import DeadlineConfig, MetricsConfig, PrefillProfilerConfig
+from veeksha.config.metrics import MetricsConfig
+from veeksha.config.deadline import DeadlineConfig
+from veeksha.config.prefill_profiler import PrefillProfilerConfig
 from veeksha.logger import init_logger
 from veeksha.metrics.cdf_sketch import CDFSketch
 from veeksha.metrics.metric_utils import (

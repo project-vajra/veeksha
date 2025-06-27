@@ -8,7 +8,7 @@ import wandb
 import yaml  # type: ignore
 
 from veeksha.capacity_search.search_manager import SearchManager
-from veeksha.config.config import CapacitySearchConfig
+from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.config.utils import expand_dict
 from veeksha.logger import init_logger
 

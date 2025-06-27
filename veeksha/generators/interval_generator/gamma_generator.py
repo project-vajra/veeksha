@@ -1,6 +1,6 @@
 from scipy.stats import gamma
 
-from veeksha.config.config import GammaRequestIntervalGeneratorConfig
+from veeksha.config.generators.interval_generator.gamma_generator import GammaRequestIntervalGeneratorConfig
 from veeksha.generators.interval_generator.base_generator import (
     BaseRequestIntervalGenerator,
 )

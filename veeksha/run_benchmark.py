@@ -15,22 +15,21 @@ from veeksha.benchmark_data_utils import (
     store_generated_texts,
     store_lmeval_results,
 )
-from veeksha.config.config import BenchmarkConfig
+from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.core.hf_utils import get_tokenizer
 from veeksha.core.requests_launcher import RequestsLauncher
 from veeksha.core.response import Response
 from veeksha.logger import init_logger
 from veeksha.metrics.service_metrics import ServiceMetrics
-from veeksha.generators.base_generator import BaseRequestGenerator
+from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.generators.interval_generator.base_generator import (
     BaseRequestIntervalGenerator,
 )
 from veeksha.generators.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
 )
-from veeksha.generators.generator_registry import (
+from veeksha.generators.request_generator.generator_registry import (
     RequestGeneratorRegistry,
-    SessionGeneratorRegistry,
 )
 from veeksha.types import RequestGeneratorType
 

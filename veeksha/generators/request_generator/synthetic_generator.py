@@ -4,10 +4,11 @@ from typing import List, Optional, Tuple, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
-from veeksha.config.config import ClientConfig, SyntheticRequestGeneratorConfig, SyntheticSessionGeneratorConfig
+from veeksha.config.generators.request_generator.synthetic_generator import SyntheticRequestGeneratorConfig
+from veeksha.config.client import ClientConfig
 from veeksha.core.request_config import RequestConfig
 from veeksha.logger import init_logger
-from veeksha.generators.base_generator import BaseRequestGenerator, BaseSessionGenerator
+from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.generators.length_generator.generator_registry import (
     RequestLengthGeneratorRegistry,
 )
@@ -119,10 +120,3 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         self.request_id += 1
 
         return request_config
-
-class SyntheticSessionGenerator(BaseSessionGenerator):
-    def __init__(
-        self,
-        config: SyntheticSessionGeneratorConfig,
-    ):
-        self.config = config

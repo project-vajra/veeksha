@@ -184,7 +184,7 @@ def _match_subclass_by_type(parent: type, type_val: Any) -> type:
         if isinstance(subtype, str) and isinstance(type_val, str):
             if subtype.lower() == type_val.lower():
                 return subclass
-    raise ValueError(f"No subclass of {parent.__name__} matches type value {type_val}.")
+    raise ValueError(f"No subclass of '{parent.__name__}' matches type value '{type_val}'.")
 
 
 def create_class_from_dict(cls: type, config_dict: dict | None):
@@ -200,7 +200,7 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
     If there are any keys present in *config_dict* that do not correspond to a dataclass
     field, a TypeError is raised.
     """
-    from veeksha.config.base_poly_config import BasePolyConfig
+    from veeksha.config.core.base_poly_config import BasePolyConfig
 
     # Fast path: if cls is not a dataclass return config_dict as is
     if (

@@ -4,7 +4,7 @@ This file contains the wrapper for the benchmarking.
 
 import os
 
-from veeksha.config.config import BenchmarkConfig
+from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.logger import init_logger
 from veeksha.run_benchmark import run_benchmark
 
@@ -32,6 +32,6 @@ def run(
         api_url=benchmark_config.api_url,
     )
 
-    print(f"Running benchmark with config: {benchmark_config}")
+    logger.info(f"Running benchmark with config: {benchmark_config}")
     run_benchmark(benchmark_config)
     logger.info("Benchmark finished")

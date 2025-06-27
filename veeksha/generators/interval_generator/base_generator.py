@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from veeksha.config.config import BaseRequestIntervalGeneratorConfig
+from veeksha.config.generators.interval_generator.base_generator import BaseRequestIntervalGeneratorConfig
 
 
 class BaseRequestIntervalGenerator(ABC):

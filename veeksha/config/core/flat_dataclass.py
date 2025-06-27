@@ -8,7 +8,7 @@ from collections import defaultdict, deque
 from dataclasses import MISSING, fields, make_dataclass
 from typing import Any, get_args
 
-from veeksha.config.base_poly_config import BasePolyConfig
+from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.utils import (
     get_all_subclasses,
     get_inner_type,

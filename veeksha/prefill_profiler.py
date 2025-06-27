@@ -12,11 +12,9 @@ import wandb
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import PolynomialFeatures
 
-from veeksha.config.config import (
-    BenchmarkConfig,
-    FixedRequestLengthGeneratorConfig,
-    StaticRequestIntervalGeneratorConfig,
-)
+from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.generators.length_generator.fixed_generator import FixedRequestLengthGeneratorConfig
+from veeksha.config.generators.interval_generator.static_generator import StaticRequestIntervalGeneratorConfig
 from veeksha.constants.prefill_constants import *
 from veeksha.logger import init_logger
 from veeksha.run_benchmark import run_benchmark

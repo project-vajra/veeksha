@@ -2,7 +2,7 @@ from functools import partial
 from typing import Dict, List
 
 from veeksha.capacity_search.capacity_search import CapacitySearch
-from veeksha.config.config import CapacitySearchConfig
+from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)

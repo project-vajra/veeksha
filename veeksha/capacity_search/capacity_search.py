@@ -9,7 +9,8 @@ import numpy as np
 import wandb
 
 from veeksha.capacity_search.benchmark_wrapper import run
-from veeksha.config.config import BenchmarkConfig, CapacitySearchConfig
+from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.config.utils import create_class_from_dict, dataclass_to_dict
 from veeksha.logger import init_logger
 

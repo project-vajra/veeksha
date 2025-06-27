@@ -14,7 +14,8 @@ from lm_eval.evaluator_utils import (
 from lm_eval.tasks import Task, TaskManager, get_task_dict
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
-from veeksha.config.config import ClientConfig, LmevalRequestGeneratorConfig
+from veeksha.config.client import ClientConfig
+from veeksha.config.generators.request_generator.lmeval_generator import LmevalRequestGeneratorConfig
 from veeksha.core.request_config import RequestConfig
 from veeksha.core.response import Response
 from veeksha.logger import init_logger

@@ -2,7 +2,7 @@ from typing import List, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
-from veeksha.config.config import BaseRequestGeneratorConfig, BaseSessionGeneratorConfig
+from veeksha.config.generators.request_generator.base_generator import BaseRequestGeneratorConfig
 from veeksha.core.request_config import RequestConfig
 from veeksha.core.response import Response
 from veeksha.logger import init_logger
@@ -30,7 +30,3 @@ class BaseRequestGenerator:
 
     def get_responses(self, responses: List[Response]) -> None:
         pass
-
-class BaseSessionGenerator:
-    def __init__(self, config: BaseSessionGeneratorConfig):
-        self.config = config

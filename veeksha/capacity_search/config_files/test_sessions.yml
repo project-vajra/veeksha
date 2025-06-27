@@ -14,7 +14,7 @@ request_generator_config:
     trace_file: "data/processed_traces/swe_agent_trace_short.jsonl"
     use_prefix_hash_ids: true
     session_generator_config:
-      type: "synthetic"
+      type: "trace_synthetic"
       session_interval_generator_config:
         type: "poisson"
       minimum_prefix_match: 0.25
