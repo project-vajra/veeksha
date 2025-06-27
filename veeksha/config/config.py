@@ -142,7 +142,6 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
     decode_scale_factor: float = field(
         default=1, metadata={"help": "Scale factor for decode tokens."}
     )
-
     block_size: int = field(
         default=512, metadata={"help": "Number of tokens per block."}
     )
@@ -228,7 +227,7 @@ class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
 @frozen_dataclass
 class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     trace_file: str = field(
-        default="data/processed_traces/sydney_enterprise.csv",
+        default="data/processed_traces/swe_agent_trace_short.jsonl",
         metadata={"help": "Path to the trace file for request generation."},
     )
     prefill_scale_factor: float = field(
@@ -236,6 +235,9 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     )
     decode_scale_factor: float = field(
         default=1, metadata={"help": "Scale factor for decode tokens."}
+    )
+    block_size: int = field(
+        default=512, metadata={"help": "Number of tokens per block."}
     )
     time_scale_factor: float = field(
         default=1, metadata={"help": "Scale factor for request dispatch intervals."}

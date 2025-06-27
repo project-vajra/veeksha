@@ -21,15 +21,16 @@ from veeksha.core.requests_launcher import RequestsLauncher
 from veeksha.core.response import Response
 from veeksha.logger import init_logger
 from veeksha.metrics.service_metrics import ServiceMetrics
-from veeksha.request_generator.base_generator import BaseRequestGenerator
-from veeksha.request_generator.interval_generator.base_generator import (
+from veeksha.generators.base_generator import BaseRequestGenerator
+from veeksha.generators.interval_generator.base_generator import (
     BaseRequestIntervalGenerator,
 )
-from veeksha.request_generator.interval_generator.generator_registry import (
+from veeksha.generators.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
 )
-from veeksha.request_generator.request_generator_registry import (
+from veeksha.generators.generator_registry import (
     RequestGeneratorRegistry,
+    SessionGeneratorRegistry,
 )
 from veeksha.types import RequestGeneratorType
 
@@ -64,15 +65,10 @@ def dispatch_requests(
             if service_metrics.num_requests >= service_metrics.max_requests:
                 num_errored_requests_handled += 1
 
-            # Create and dispatch request
+            # Get next request and its dispatch time
+            next_request_interval = requests_interval_generator.get_next_inter_request_time()
             service_metrics.register_launched_request()
             request_config = request_generator.get_request()
-            input_queue.put(request_config)
-
-            # Wait for next interval
-            next_request_interval = (
-                requests_interval_generator.get_next_inter_request_time()
-            )
 
             if next_request_interval < 0:
                 logger.warning(
@@ -80,10 +76,14 @@ def dispatch_requests(
                 )
                 break
 
+            # Wait for dispatch time
             while not stop_event.is_set():
                 if time.monotonic() - request_start_time >= next_request_interval:
                     break
                 time.sleep(0.01)
+
+            # Dispatch request
+            input_queue.put(request_config)
         else:
             time.sleep(0.01)
 
@@ -196,10 +196,13 @@ def run_benchmark(
 
     generated_responses: List[Response] = []
 
-    requests_interval_generator = RequestIntervalGeneratorRegistry.get(
-        benchmark_config.request_generator_config.interval_generator_config.get_type(),
-        benchmark_config.request_generator_config.interval_generator_config,
-    )
+    if benchmark_config.request_generator_config.get_type() != RequestGeneratorType.TRACE:
+        requests_interval_generator = RequestIntervalGeneratorRegistry.get(
+            benchmark_config.request_generator_config.interval_generator_config.get_type(),
+            benchmark_config.request_generator_config.interval_generator_config,
+        )
+    else:
+        requests_interval_generator = None
 
     assert (
         benchmark_config.client_config.tokenizer is not None
