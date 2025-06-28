@@ -52,24 +52,27 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         self._has_hash_ids = "hash_ids" in self.trace_df.columns
 
-        # parse hash_ids if needed
-        if self.config.use_prefix_hash_ids and self._has_hash_ids:
-            if not isinstance(self.trace_df["hash_ids"].iloc[0], list):
-                self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
-                    ast.literal_eval
-                )
+        # parse, or not, hash_ids
+        if self.config.use_trace_prefix_hash_ids:
+            if not self._has_hash_ids:
+                raise ValueError("Trace file does not contain hash_ids")
+            else:
+                if not isinstance(self.trace_df["hash_ids"].iloc[0], list):
+                    self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
+                        ast.literal_eval
+                    )
 
-        if self.config.session_generator_config is not None:
+        if self.config.use_trace_sessions:
+            # TODO: implement
+            raise NotImplementedError("to be implemented")
+        elif self.config.session_generator_config is not None:
             self.session_generator = SessionGeneratorRegistry.get(
                 self.config.session_generator_config.get_type(),
                 self.config.session_generator_config,
             )
+            self.trace_df_with_sessions = self.session_generator.generate_sessions(self.trace_df)
 
-            # add sessions to trace
-            # save trace to memory
-
-        if self.config.use_prefix_hash_ids:
-            assert self.request_length_generator.has_hash_ids(), "Cannot find hash_ids in trace file"
+        self.request_idx = 0
 
     def is_stable_encoding(
         self,
@@ -112,40 +115,51 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         raise Exception(f"Could not generate stable encoding for value {value}")
 
-    
-
     def get_request(self) -> RequestConfig:
-        request_params = self.request_length_generator.get_next_request_params()
+        request_to_send = self.trace_df.iloc[self.request_idx]
 
-        if self.config.use_prefix_hash_ids:
+        request_metadata = {
+            "input_length": request_to_send["input_length"],
+            "output_length": request_to_send["output_length"],
+        }
+
+        if self.config.use_trace_sessions or self.config.session_generator_config is not None:
+            request_metadata["session_id"] = request_to_send["session_id"]
+            request_metadata["session_size"] = request_to_send["session_size"]
+
+        if self.config.use_trace_prefix_hash_ids:
             block_count = (
-                request_params["input_length"] + self.config.block_size - 1
+                request_to_send["input_length"] + self.config.block_size - 1
             ) // self.config.block_size
 
-            assert request_params["hash_count"] >= block_count, f"Hash count {request_params['hash_count']} cannot be less than block count {block_count}"
+            request_metadata["block_count"] = block_count
 
-        block_size = self.request_length_generator.get_block_size()
+            assert request_to_send["hash_count"] >= block_count, f"Hash count {request_to_send['hash_count']} cannot be less than block count {block_count}"
 
         prompt = '"""'
-        for hash_id in hash_ids:
-            if hash_id not in self.past_prompts:
-                chunk = self.generate_unique_encoding(hash_id)
-                block = self.pad_to_block_size(chunk, block_size)
-                prompt_segment = self.decode(block)
-                remaining_prompt_tokens -= block_size
-                self.past_prompts[hash_id] = prompt_segment
-            prompt += self.past_prompts[hash_id]
-
+        remaining_prompt_tokens = request_to_send["input_length"]
+        if self.config.use_trace_prefix_hash_ids:
+            for hash_id in request_to_send["hash_ids"]:
+                if hash_id not in self.past_prompts:
+                    chunk = self.generate_unique_encoding(hash_id)
+                    block = self.pad_to_block_size(chunk, self.config.block_size)
+                    prompt_segment = self.decode(block)
+                    remaining_prompt_tokens -= self.config.block_size
+                    self.past_prompts[hash_id] = prompt_segment
+                prompt += self.past_prompts[hash_id]
+        else:
+            # todo input text
+            raise NotImplementedError("to be implemented")
         prompt += '"""'
 
         prompt += (
             '\n\nINSTRUCTION: Mimic above text enclosed in """ quotes and generate '
-            f"long text of at least {num_output_tokens} tokens."
+            f"long text of at least {request_to_send['output_length']} tokens."
         )
 
         final_token_count = len(self.encode(prompt))
 
-        default_sampling_params = {"max_tokens": num_output_tokens}
+        default_sampling_params = {"max_tokens": self.config.max_tokens}
         default_sampling_params.update(
             self.client_config.additional_sampling_params_dict
         )
@@ -156,9 +170,10 @@ class TraceRequestGenerator(BaseRequestGenerator):
             sampling_params=default_sampling_params,
             llm_api=self.client_config.llm_api,
             address_append_value=self.client_config.address_append_value,
-            id=self.request_id,
+            id=self.request_idx,
+            metadata=request_metadata,
         )
 
-        self.request_id += 1
+        self.request_idx += 1
 
         return request_config

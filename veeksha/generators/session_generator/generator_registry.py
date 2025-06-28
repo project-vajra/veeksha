@@ -1,7 +1,7 @@
 from veeksha.types import SessionGeneratorType
 from veeksha.types.base_registry import BaseRegistry
 
-from .trace_synthetic_generator import TraceSyntheticSessionGenerator
+from .synthetic_generator import SyntheticSessionGenerator
 
 class SessionGeneratorRegistry(BaseRegistry):
     @classmethod
@@ -9,5 +9,5 @@ class SessionGeneratorRegistry(BaseRegistry):
         return SessionGeneratorType.from_str(key_str)  # type: ignore
 
 SessionGeneratorRegistry.register(
-    SessionGeneratorType.TRACE_SYNTHETIC, TraceSyntheticSessionGenerator
+    SessionGeneratorType.SYNTHETIC, SyntheticSessionGenerator
 )

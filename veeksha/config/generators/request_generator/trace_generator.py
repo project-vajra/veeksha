@@ -26,13 +26,17 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     time_scale_factor: float = field(
         default=1, metadata={"help": "Scale factor for request dispatch intervals."}
     )
-    use_prefix_hash_ids: Optional[bool] = field(
+    use_trace_prefix_hash_ids: Optional[bool] = field(
         default=False,
         metadata={"help": "If True, veeksha will use prefix hash IDs of requests to generate request inputs. Trace file specified by interval or/and length generator must include hash_ids: list[int]."}
     )
+    use_trace_sessions: Optional[bool] = field(
+        default=False,
+        metadata={"help": "If True, veeksha will use sessions provided in the trace file (session_id: int)."}
+    )
     session_generator_config: Optional[BaseSessionGeneratorConfig] = field(
         default=None,
-        metadata={"help": "If not None, it will determine how sessions are created. (SyntheticSessionGeneratorConfig requires use_prefix_hash_ids to be True to determine similarity between requests in a session)."}
+        metadata={"help": "If not None, it will synthesize sessions based on the trace file and prefix hash IDs of requests (requires use_prefix_hash_ids to be True)."}
     )
 
     @classmethod

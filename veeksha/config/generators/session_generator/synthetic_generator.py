@@ -8,7 +8,7 @@ from veeksha.types.session_generator_type import SessionGeneratorType
 
 
 @frozen_dataclass
-class TraceSyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
+class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
     session_interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
         default_factory=PoissonRequestIntervalGeneratorConfig,
         metadata={"help": "Interval generator for session dispatch. This will determine how often sessions are dispatched."}
@@ -29,7 +29,15 @@ class TraceSyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
         default=1.0,
         metadata={"help": "Maximum time interval between consecutive requests in a session, in seconds."},
     )
+    save_as_trace_file: bool = field(
+        default=False,
+        metadata={"help": "If true, save the trace after session generation as a jsonl file. Trace will be saved in data/generated_traces/."},
+    )
+    trace_file_name: str = field(
+        default="",
+        metadata={"help": "If save_as_trace_file is true, this is the name of the trace file, without the extension. Config params will be appended to the file name."},
+    )
 
     @classmethod
     def get_type(cls):
-        return SessionGeneratorType.TRACE_SYNTHETIC
+        return SessionGeneratorType.SYNTHETIC
