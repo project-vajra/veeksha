@@ -102,7 +102,7 @@ def process_request_length_trace(trace_df: pd.DataFrame, trace_file: str, prefil
     return trace_df
 
 
-def process_request_interval_trace(trace_df: pd.DataFrame, trace_file: str, time_scale_factor: float = 1.) -> pd.DataFrame:
+def process_request_interval_trace(trace_df: pd.DataFrame, trace_file: str, time_scale_factor: float = 1., ms_to_s: bool = True) -> pd.DataFrame:
     """
     Postprocess a trace file containing request timestamps `timestamp` and computes `inter_request_time`.
 
@@ -115,7 +115,8 @@ def process_request_interval_trace(trace_df: pd.DataFrame, trace_file: str, time
     if "timestamp" not in trace_df.columns: 
         raise ValueError(f"Trace file '{trace_file}' must have column 'timestamp' (ms)")
 
-    trace_df["timestamp"] = trace_df["timestamp"] / 1000.0
+    if ms_to_s:
+        trace_df["timestamp"] = trace_df["timestamp"] / 1000.0
 
     # The interval for the first request is its own timestamp. Subsequent intervals are the time difference
     # between consecutive requests. .diff() creates a NaN for the first row, which we fill with the first

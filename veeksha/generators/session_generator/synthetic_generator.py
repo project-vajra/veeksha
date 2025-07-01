@@ -136,10 +136,7 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
             if "seed" in interval_config.__dict__:
                 params.append(f"seed-{interval_config.__dict__['seed']}")
             
-            import time
-            timestamp = int(time.time())
-            
-            return f"{base_name}_{'_'.join(params)}_{timestamp}.jsonl"
+            return f"{base_name}_{'_'.join(params)}.jsonl"
             
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
         file_name = os.path.join(project_root, "data", "generated_traces", create_clean_filename())
@@ -389,7 +386,6 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
             if col not in result_df.columns:
                 raise ValueError(f"Column {col} not found in generated trace")
 
-        if self.config.save_as_trace_file:
-            self.save_requests_as_trace(result_df)
+        self.trace_df = result_df
 
         return result_df

@@ -19,7 +19,7 @@ class RequestConfig(BaseModel):
     prompt: Tuple[str, int]
     sampling_params: Optional[Dict[str, Any]] = None
     llm_api: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Dict[str, Any] = {}
     address_append_value: Optional[str] = None
     id: Optional[int] = None
 

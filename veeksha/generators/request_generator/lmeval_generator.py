@@ -20,6 +20,9 @@ from veeksha.core.request_config import RequestConfig
 from veeksha.core.response import Response
 from veeksha.logger import init_logger
 from veeksha.types import LMEvalOutputType
+from veeksha.generators.interval_generator.generator_registry import (
+    RequestIntervalGeneratorRegistry,
+)
 
 logger = init_logger(__name__)
 
@@ -35,6 +38,11 @@ class LMEvalRequestGenerator:
         self.limit = self.config.limit
         self.tokenizer = tokenizer
         self.client_config = client_config
+
+        self.requests_interval_generator = RequestIntervalGeneratorRegistry.get(
+            self.config.interval_generator_config.get_type(),
+            self.config.interval_generator_config,
+        )
 
         self.task_manager = TaskManager()
         self.task_dict = get_task_dict(self.config.tasks, self.task_manager)  # type: ignore
@@ -145,7 +153,12 @@ class LMEvalRequestGenerator:
         if self.req_idx >= len(self.cloned_requests):
             return None  # type: ignore
         req: Instance = self.cloned_requests[self.req_idx]
+        request_dispatch_interval = self.requests_interval_generator.get_next_inter_request_time()
         self.req_idx += 1
+
+        metadata = {
+            "request_dispatch_interval": request_dispatch_interval,
+        }
 
         # just need context to send to the model
         if req.request_type == str(LMEvalOutputType.GENERATE_UNTIL):
@@ -170,6 +183,7 @@ class LMEvalRequestGenerator:
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
                 id=self.req_idx - 1,
+                metadata=metadata,
             )
         elif req.request_type == str(LMEvalOutputType.LOGLIKELIHOOD):
             context, target = req.args  # type: ignore
@@ -189,6 +203,7 @@ class LMEvalRequestGenerator:
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
                 id=self.req_idx - 1,
+                metadata=metadata,
             )
         else:
             raise NotImplementedError(

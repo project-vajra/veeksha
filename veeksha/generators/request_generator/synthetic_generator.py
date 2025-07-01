@@ -12,6 +12,9 @@ from veeksha.generators.request_generator.base_generator import BaseRequestGener
 from veeksha.generators.length_generator.generator_registry import (
     RequestLengthGeneratorRegistry,
 )
+from veeksha.generators.interval_generator.generator_registry import (
+    RequestIntervalGeneratorRegistry,
+)
 
 logger = init_logger(__name__)
 
@@ -31,6 +34,10 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         self.request_length_generator = RequestLengthGeneratorRegistry.get(
             self.config.length_generator_config.get_type(),
             self.config.length_generator_config,
+        )
+        self.requests_interval_generator = RequestIntervalGeneratorRegistry.get(
+            self.config.interval_generator_config.get_type(),
+            self.config.interval_generator_config,
         )
         self.corpus_lines = corpus_lines
 
@@ -92,6 +99,12 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             num_prompt_tokens,
             num_output_tokens,
         ) = self.request_length_generator.get_next_num_tokens()
+        request_dispatch_interval = self.requests_interval_generator.get_next_inter_request_time()
+        metadata = {
+            "num_prompt_tokens": num_prompt_tokens,
+            "num_output_tokens": num_output_tokens,
+            "request_dispatch_interval": request_dispatch_interval,
+        }
         if num_prompt_tokens < 0 or num_output_tokens < 0:
             logger.error(
                 f"Invalid number of tokens generated: prompt={num_prompt_tokens}, output={num_output_tokens} (potentially from trace request length generator)."
@@ -104,7 +117,7 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             num_output_tokens=num_output_tokens,
             corpus_lines=self.corpus_lines,
         )
-        default_sampling_params = {"max_tokens": num_output_tokens}
+        default_sampling_params = {"min_tokens": num_output_tokens, "max_tokens": num_output_tokens}
         default_sampling_params.update(
             self.client_config.additional_sampling_params_dict
         )
@@ -115,6 +128,7 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             llm_api=self.client_config.llm_api,
             address_append_value=self.client_config.address_append_value,
             id=self.request_id,
+            metadata=metadata,
         )
 
         self.request_id += 1

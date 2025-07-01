@@ -70,7 +70,17 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 self.config.session_generator_config.get_type(),
                 self.config.session_generator_config,
             )
-            self.trace_df_with_sessions = self.session_generator.generate_sessions(self.trace_df)
+            self.trace_df = self.session_generator.generate_sessions(self.trace_df)
+
+            # get next request intervals again, because session sampling might shuffle requests
+            self.trace_df = process_request_interval_trace(
+                self.trace_df,
+                self.config.trace_file,
+                self.config.time_scale_factor,
+                ms_to_s=False,
+            )
+
+            self.session_generator.save_requests_as_trace(self.trace_df)
 
         self.request_idx = 0
 
@@ -121,11 +131,12 @@ class TraceRequestGenerator(BaseRequestGenerator):
         request_metadata = {
             "input_length": request_to_send["input_length"],
             "output_length": request_to_send["output_length"],
+            "request_dispatch_interval": request_to_send["inter_request_time"],
         }
 
         if self.config.use_trace_sessions or self.config.session_generator_config is not None:
             request_metadata["session_id"] = request_to_send["session_id"]
-            request_metadata["session_size"] = request_to_send["session_size"]
+            request_metadata["session_size"] = request_to_send["num_requests_in_session"]
 
         if self.config.use_trace_prefix_hash_ids:
             block_count = (
@@ -134,9 +145,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
             request_metadata["block_count"] = block_count
 
-            assert request_to_send["hash_count"] >= block_count, f"Hash count {request_to_send['hash_count']} cannot be less than block count {block_count}"
+            assert len(request_to_send["hash_ids"]) >= block_count, f"Hash count {len(request_to_send['hash_ids'])} cannot be less than block count {block_count}"
 
-        prompt = '"""'
+        prompt = ""
         remaining_prompt_tokens = request_to_send["input_length"]
         if self.config.use_trace_prefix_hash_ids:
             for hash_id in request_to_send["hash_ids"]:
@@ -150,16 +161,10 @@ class TraceRequestGenerator(BaseRequestGenerator):
         else:
             # todo input text
             raise NotImplementedError("to be implemented")
-        prompt += '"""'
-
-        prompt += (
-            '\n\nINSTRUCTION: Mimic above text enclosed in """ quotes and generate '
-            f"long text of at least {request_to_send['output_length']} tokens."
-        )
 
         final_token_count = len(self.encode(prompt))
 
-        default_sampling_params = {"max_tokens": self.config.max_tokens}
+        default_sampling_params = {"min_tokens": int(request_to_send['output_length']), "max_tokens": int(request_to_send['output_length'])}
         default_sampling_params.update(
             self.client_config.additional_sampling_params_dict
         )

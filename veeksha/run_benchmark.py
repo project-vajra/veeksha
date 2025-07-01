@@ -49,7 +49,6 @@ def should_send_new_request(
 def dispatch_requests(
     input_queue: Queue,
     service_metrics: ServiceMetrics,
-    requests_interval_generator: BaseRequestIntervalGenerator,
     request_generator: BaseRequestGenerator,
     stop_event: threading.Event,
 ) -> None:
@@ -65,24 +64,31 @@ def dispatch_requests(
                 num_errored_requests_handled += 1
 
             # Get next request and its dispatch time
-            next_request_interval = requests_interval_generator.get_next_inter_request_time()
-            service_metrics.register_launched_request()
             request_config = request_generator.get_request()
+            request_dispatch_interval = request_config.metadata["request_dispatch_interval"]
+            service_metrics.register_launched_request()
 
-            if next_request_interval < 0:
+            if request_dispatch_interval < 0:
                 logger.warning(
-                    f"Invalid interval {next_request_interval} (potentially from trace interval generator). Stopping the main loop."
+                    f"Invalid interval {request_dispatch_interval} (potentially from trace interval generator). Stopping the main loop."
                 )
                 break
 
             # Wait for dispatch time
             while not stop_event.is_set():
-                if time.monotonic() - request_start_time >= next_request_interval:
+                elapsed_time = time.monotonic() - request_start_time
+                if elapsed_time >= request_dispatch_interval:
                     break
-                time.sleep(0.01)
+                # remaining sleep time to avoid drift
+                remaining_time = request_dispatch_interval - elapsed_time
+                if remaining_time > 0:
+                    # capped sleep at 100ms
+                    sleep_duration = min(remaining_time, 0.1)
+                    time.sleep(sleep_duration)
 
             # Dispatch request
             input_queue.put(request_config)
+            logger.info(f"Dispatched request {request_config.id}: {request_config.metadata['input_length']} prefill, {request_config.metadata['output_length']} decode")
         else:
             time.sleep(0.01)
 
@@ -110,7 +116,6 @@ def process_results(
 
 def run_main_loop(
     benchmark_config: BenchmarkConfig,
-    requests_interval_generator: BaseRequestIntervalGenerator,
     request_generator: BaseRequestGenerator,
     service_metrics: ServiceMetrics,
     generated_responses: List[Response],
@@ -141,7 +146,6 @@ def run_main_loop(
         args=(
             input_queue,
             service_metrics,
-            requests_interval_generator,
             request_generator,
             stop_event,
         ),
@@ -195,14 +199,6 @@ def run_benchmark(
 
     generated_responses: List[Response] = []
 
-    if benchmark_config.request_generator_config.get_type() != RequestGeneratorType.TRACE:
-        requests_interval_generator = RequestIntervalGeneratorRegistry.get(
-            benchmark_config.request_generator_config.interval_generator_config.get_type(),
-            benchmark_config.request_generator_config.interval_generator_config,
-        )
-    else:
-        requests_interval_generator = None
-
     assert (
         benchmark_config.client_config.tokenizer is not None
     ), "Tokenizer is required."
@@ -248,7 +244,6 @@ def run_benchmark(
 
     run_main_loop(
         benchmark_config=benchmark_config,
-        requests_interval_generator=requests_interval_generator,
         request_generator=request_generator,
         service_metrics=service_metrics,
         generated_responses=generated_responses,
