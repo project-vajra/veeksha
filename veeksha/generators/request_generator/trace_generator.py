@@ -63,8 +63,8 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     )
 
         if self.config.use_trace_sessions:
-            # TODO: implement
-            raise NotImplementedError("to be implemented")
+            if "session_id" not in self.trace_df.columns:
+                raise ValueError("Trace file does not contain session_id of requests")
         elif self.config.session_generator_config is not None:
             self.session_generator = SessionGeneratorRegistry.get(
                 self.config.session_generator_config.get_type(),
@@ -136,7 +136,8 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         if self.config.use_trace_sessions or self.config.session_generator_config is not None:
             request_metadata["session_id"] = request_to_send["session_id"]
-            request_metadata["session_size"] = request_to_send["num_requests_in_session"]
+            if "num_requests_in_session" in request_to_send:
+                request_metadata["session_size"] = request_to_send["num_requests_in_session"]
 
         if self.config.use_trace_prefix_hash_ids:
             block_count = (
