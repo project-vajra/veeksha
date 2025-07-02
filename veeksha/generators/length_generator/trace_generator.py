@@ -30,7 +30,7 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
 
         self.next_request_idx = 0
 
-    def get_next_num_tokens(self) -> Tuple[float, float]:
+    def get_next_num_tokens(self) -> Tuple[int, int]:
         if self.next_request_idx >= len(self.trace_df):
             return -1, -1
 
@@ -38,18 +38,7 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
         self.next_request_idx += 1
 
         return (
-            row["input_length"],
-            row["output_length"],
+            int(row["input_length"]),
+            int(row["output_length"]),
         )
 
-    def get_next_request_params(self) -> Tuple[int, int]:
-        if self.next_request_idx >= len(self.trace_df):
-            return -1, -1
-
-        row = self.trace_df.iloc[self.next_request_idx]
-        self.next_request_idx += 1
-
-        input_length = row["input_length"]
-        output_length = row["output_length"]
-        
-        return int(input_length), int(output_length)
