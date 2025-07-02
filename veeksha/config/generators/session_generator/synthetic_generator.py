@@ -36,7 +36,7 @@ class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
         metadata={"help": "Maximum number of requests per session."},
     )
     max_request_interval: float = field(
-        default=1.0,
+        default=600.0,
         metadata={
             "help": "Maximum time interval between consecutive requests in a session, in seconds."
         },
