@@ -1,6 +1,8 @@
 from typing import Tuple
 
-from veeksha.config.generators.length_generator.fixed_generator import FixedRequestLengthGeneratorConfig
+from veeksha.config.generators.length_generator.fixed_generator import (
+    FixedRequestLengthGeneratorConfig,
+)
 from veeksha.generators.length_generator.base_generator import (
     BaseRequestLengthGenerator,
 )

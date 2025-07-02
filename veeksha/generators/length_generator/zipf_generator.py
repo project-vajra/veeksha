@@ -2,7 +2,9 @@ from typing import Tuple
 
 import numpy as np
 
-from veeksha.config.generators.length_generator.zipf_generator import ZipfRequestLengthGeneratorConfig
+from veeksha.config.generators.length_generator.zipf_generator import (
+    ZipfRequestLengthGeneratorConfig,
+)
 from veeksha.constants.configuration_constants import ZIPF_REQUEST_GENERATOR_EPS
 from veeksha.generators.length_generator.base_generator import (
     BaseRequestLengthGenerator,

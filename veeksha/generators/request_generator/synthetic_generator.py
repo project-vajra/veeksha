@@ -4,17 +4,19 @@ from typing import List, Optional, Tuple, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
-from veeksha.config.generators.request_generator.synthetic_generator import SyntheticRequestGeneratorConfig
 from veeksha.config.client import ClientConfig
-from veeksha.core.request_config import RequestConfig
-from veeksha.logger import init_logger
-from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
-from veeksha.generators.length_generator.generator_registry import (
-    RequestLengthGeneratorRegistry,
+from veeksha.config.generators.request_generator.synthetic_generator import (
+    SyntheticRequestGeneratorConfig,
 )
+from veeksha.core.request_config import RequestConfig
 from veeksha.generators.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
 )
+from veeksha.generators.length_generator.generator_registry import (
+    RequestLengthGeneratorRegistry,
+)
+from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
+from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
 
@@ -99,7 +101,9 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             num_prompt_tokens,
             num_output_tokens,
         ) = self.request_length_generator.get_next_num_tokens()
-        request_dispatch_interval = self.requests_interval_generator.get_next_inter_request_time()
+        request_dispatch_interval = (
+            self.requests_interval_generator.get_next_inter_request_time()
+        )
         metadata = {
             "num_prompt_tokens": num_prompt_tokens,
             "num_output_tokens": num_output_tokens,
@@ -117,7 +121,10 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             num_output_tokens=num_output_tokens,
             corpus_lines=self.corpus_lines,
         )
-        default_sampling_params = {"min_tokens": num_output_tokens, "max_tokens": num_output_tokens}
+        default_sampling_params = {
+            "min_tokens": num_output_tokens,
+            "max_tokens": num_output_tokens,
+        }
         default_sampling_params.update(
             self.client_config.additional_sampling_params_dict
         )

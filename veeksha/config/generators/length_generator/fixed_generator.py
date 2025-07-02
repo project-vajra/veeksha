@@ -1,7 +1,9 @@
 from dataclasses import field
 
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
-from veeksha.config.generators.length_generator.base_generator import BaseRequestLengthGeneratorConfig
+from veeksha.config.generators.length_generator.base_generator import (
+    BaseRequestLengthGeneratorConfig,
+)
 from veeksha.types import RequestLengthGeneratorType
 
 

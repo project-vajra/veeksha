@@ -1,7 +1,9 @@
 import math
 import random
 
-from veeksha.config.generators.interval_generator.poisson_generator import PoissonRequestIntervalGeneratorConfig
+from veeksha.config.generators.interval_generator.poisson_generator import (
+    PoissonRequestIntervalGeneratorConfig,
+)
 from veeksha.generators.interval_generator.base_generator import (
     BaseRequestIntervalGenerator,
 )

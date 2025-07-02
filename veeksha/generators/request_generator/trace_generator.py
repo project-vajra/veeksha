@@ -1,14 +1,20 @@
-from typing import Dict, List, Union
 import ast
+from typing import Dict, List, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
-from veeksha.config.generators.request_generator.trace_generator import TraceRequestGeneratorConfig
 from veeksha.config.client import ClientConfig
+from veeksha.config.generators.request_generator.trace_generator import (
+    TraceRequestGeneratorConfig,
+)
 from veeksha.core.request_config import RequestConfig
-from veeksha.logger import init_logger
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
-from veeksha.generators.utils import process_request_length_trace, process_request_interval_trace, load_trace
+from veeksha.generators.utils import (
+    load_trace,
+    process_request_interval_trace,
+    process_request_length_trace,
+)
+from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
 
@@ -134,10 +140,15 @@ class TraceRequestGenerator(BaseRequestGenerator):
             "request_dispatch_interval": request_to_send["inter_request_time"],
         }
 
-        if self.config.use_trace_sessions or self.config.session_generator_config is not None:
+        if (
+            self.config.use_trace_sessions
+            or self.config.session_generator_config is not None
+        ):
             request_metadata["session_id"] = request_to_send["session_id"]
             if "num_requests_in_session" in request_to_send:
-                request_metadata["session_size"] = request_to_send["num_requests_in_session"]
+                request_metadata["session_size"] = request_to_send[
+                    "num_requests_in_session"
+                ]
 
         if self.config.use_trace_prefix_hash_ids:
             block_count = (
@@ -146,7 +157,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
             request_metadata["block_count"] = block_count
 
-            assert len(request_to_send["hash_ids"]) >= block_count, f"Hash count {len(request_to_send['hash_ids'])} cannot be less than block count {block_count}"
+            assert (
+                len(request_to_send["hash_ids"]) >= block_count
+            ), f"Hash count {len(request_to_send['hash_ids'])} cannot be less than block count {block_count}"
 
         prompt = ""
         remaining_prompt_tokens = request_to_send["input_length"]
@@ -165,7 +178,10 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         final_token_count = len(self.encode(prompt))
 
-        default_sampling_params = {"min_tokens": int(request_to_send['output_length']), "max_tokens": int(request_to_send['output_length'])}
+        default_sampling_params = {
+            "min_tokens": int(request_to_send["output_length"]),
+            "max_tokens": int(request_to_send["output_length"]),
+        }
         default_sampling_params.update(
             self.client_config.additional_sampling_params_dict
         )

@@ -1,7 +1,7 @@
-from veeksha.logger import init_logger
-
-import pandas as pd
 import numpy as np
+import pandas as pd
+
+from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
 
@@ -20,7 +20,13 @@ def load_trace(trace_file: str) -> pd.DataFrame:
     return trace_df
 
 
-def process_request_length_trace(trace_df: pd.DataFrame, trace_file: str, prefill_scale_factor: float = 1., decode_scale_factor: float = 1., max_tokens: int = -1) -> pd.DataFrame:
+def process_request_length_trace(
+    trace_df: pd.DataFrame,
+    trace_file: str,
+    prefill_scale_factor: float = 1.0,
+    decode_scale_factor: float = 1.0,
+    max_tokens: int = -1,
+) -> pd.DataFrame:
     """
     Postprocess a trace file containing request input_length and output_length.
 
@@ -38,26 +44,16 @@ def process_request_length_trace(trace_df: pd.DataFrame, trace_file: str, prefil
             raise ValueError(f"Trace file must have column '{col}'")
 
     # scale prefill and decode tokens
-    trace_df["input_length"] = (
-        trace_df["input_length"] * prefill_scale_factor
-    )
-    trace_df["output_length"] = (
-        trace_df["output_length"] * decode_scale_factor
-    )
+    trace_df["input_length"] = trace_df["input_length"] * prefill_scale_factor
+    trace_df["output_length"] = trace_df["output_length"] * decode_scale_factor
 
     # make sure all the prefill and decode counts are integers
-    trace_df["input_length"] = trace_df[
-        "input_length"
-    ].astype(int)
-    trace_df["output_length"] = trace_df["output_length"].astype(
-        int
-    )
+    trace_df["input_length"] = trace_df["input_length"].astype(int)
+    trace_df["output_length"] = trace_df["output_length"].astype(int)
 
     if max_tokens != -1:
         # make sure the total does not exceed the max tokens, adjust the prefill tokens if needed
-        total_tokens = (
-            trace_df["input_length"] + trace_df["output_length"]
-        )
+        total_tokens = trace_df["input_length"] + trace_df["output_length"]
         diff_tokens = total_tokens - max_tokens
         diff_tokens = diff_tokens.clip(lower=0)
 
@@ -65,35 +61,32 @@ def process_request_length_trace(trace_df: pd.DataFrame, trace_file: str, prefil
         input_length_ratio = trace_df["input_length"] / total_tokens
         output_length_ratio = trace_df["output_length"] / total_tokens
 
-        trace_df["input_length"] -= (
-            np.ceil(diff_tokens * input_length_ratio)
-        ).astype(int)
+        trace_df["input_length"] -= (np.ceil(diff_tokens * input_length_ratio)).astype(
+            int
+        )
 
         trace_df["output_length"] -= (
             np.ceil(diff_tokens * output_length_ratio)
         ).astype(int)
 
         # make sure that there is at least one prefill and decode token
-        trace_df["input_length"] = trace_df["input_length"].clip(
-            lower=1
-        )
-        trace_df["output_length"] = trace_df["output_length"].clip(
-            lower=1
-        )
+        trace_df["input_length"] = trace_df["input_length"].clip(lower=1)
+        trace_df["output_length"] = trace_df["output_length"].clip(lower=1)
 
         assert all(
-            trace_df["input_length"] + trace_df["output_length"]
-            <= max_tokens
+            trace_df["input_length"] + trace_df["output_length"] <= max_tokens
         ), f"Total tokens after clipping must be less than or equal to {max_tokens}"
 
-    assert all(trace_df["input_length"] > 0), f"All prefill tokens in trace file {trace_file} must be greater than 0"
+    assert all(
+        trace_df["input_length"] > 0
+    ), f"All prefill tokens in trace file {trace_file} must be greater than 0"
 
-    assert all(trace_df["output_length"] > 0), f"All decode tokens in trace file {trace_file} must be greater than 0"
+    assert all(
+        trace_df["output_length"] > 0
+    ), f"All decode tokens in trace file {trace_file} must be greater than 0"
 
     # compute pd ratio and log the 25, 50, 75, 90, 95, 99 percentiles
-    pd_ratio = (
-        trace_df["input_length"] / trace_df["output_length"]
-    )
+    pd_ratio = trace_df["input_length"] / trace_df["output_length"]
 
     logger.info(
         f"Prompt/decode token ratio stats\n:{pd_ratio.describe(percentiles=[0.25, 0.5, 0.75, 0.9, 0.95, 0.99])}"
@@ -102,7 +95,12 @@ def process_request_length_trace(trace_df: pd.DataFrame, trace_file: str, prefil
     return trace_df
 
 
-def process_request_interval_trace(trace_df: pd.DataFrame, trace_file: str, time_scale_factor: float = 1., ms_to_s: bool = True) -> pd.DataFrame:
+def process_request_interval_trace(
+    trace_df: pd.DataFrame,
+    trace_file: str,
+    time_scale_factor: float = 1.0,
+    ms_to_s: bool = True,
+) -> pd.DataFrame:
     """
     Postprocess a trace file containing request timestamps `timestamp` and computes `inter_request_time`.
 
@@ -112,7 +110,7 @@ def process_request_interval_trace(trace_df: pd.DataFrame, trace_file: str, time
         time_scale_factor: Factor to scale the time intervals in the trace. By default no scaling is applied.
     """
 
-    if "timestamp" not in trace_df.columns: 
+    if "timestamp" not in trace_df.columns:
         raise ValueError(f"Trace file '{trace_file}' must have column 'timestamp' (ms)")
 
     if ms_to_s:

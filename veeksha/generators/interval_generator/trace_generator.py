@@ -1,9 +1,11 @@
-from veeksha.config.generators.interval_generator.trace_generator import TraceRequestIntervalGeneratorConfig
-from veeksha.logger import init_logger
+from veeksha.config.generators.interval_generator.trace_generator import (
+    TraceRequestIntervalGeneratorConfig,
+)
 from veeksha.generators.interval_generator.base_generator import (
     BaseRequestIntervalGenerator,
 )
-from veeksha.generators.utils import process_request_interval_trace, load_trace
+from veeksha.generators.utils import load_trace, process_request_interval_trace
+from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
 

@@ -1,7 +1,9 @@
 import random
 from typing import Tuple
 
-from veeksha.config.generators.length_generator.uniform_generator import UniformRequestLengthGeneratorConfig
+from veeksha.config.generators.length_generator.uniform_generator import (
+    UniformRequestLengthGeneratorConfig,
+)
 from veeksha.generators.length_generator.base_generator import (
     BaseRequestLengthGenerator,
 )

@@ -1,1 +1,0 @@
-from veeksha.config.generators.session_generator.synthetic_generator import SyntheticSessionGeneratorConfig

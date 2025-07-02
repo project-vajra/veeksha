@@ -184,7 +184,9 @@ def _match_subclass_by_type(parent: type, type_val: Any) -> type:
         if isinstance(subtype, str) and isinstance(type_val, str):
             if subtype.lower() == type_val.lower():
                 return subclass
-    raise ValueError(f"No subclass of '{parent.__name__}' matches type value '{type_val}'.")
+    raise ValueError(
+        f"No subclass of '{parent.__name__}' matches type value '{type_val}'."
+    )
 
 
 def create_class_from_dict(cls: type, config_dict: dict | None):

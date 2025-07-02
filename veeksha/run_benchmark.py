@@ -19,18 +19,12 @@ from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.core.hf_utils import get_tokenizer
 from veeksha.core.requests_launcher import RequestsLauncher
 from veeksha.core.response import Response
-from veeksha.logger import init_logger
-from veeksha.metrics.service_metrics import ServiceMetrics
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
-from veeksha.generators.interval_generator.base_generator import (
-    BaseRequestIntervalGenerator,
-)
-from veeksha.generators.interval_generator.generator_registry import (
-    RequestIntervalGeneratorRegistry,
-)
 from veeksha.generators.request_generator.generator_registry import (
     RequestGeneratorRegistry,
 )
+from veeksha.logger import init_logger
+from veeksha.metrics.service_metrics import ServiceMetrics
 from veeksha.types import RequestGeneratorType
 
 logger = init_logger(__name__)
@@ -65,7 +59,9 @@ def dispatch_requests(
 
             # Get next request and its dispatch time
             request_config = request_generator.get_request()
-            request_dispatch_interval = request_config.metadata["request_dispatch_interval"]
+            request_dispatch_interval = request_config.metadata[
+                "request_dispatch_interval"
+            ]
             service_metrics.register_launched_request()
 
             if request_dispatch_interval < 0:
@@ -88,7 +84,9 @@ def dispatch_requests(
 
             # Dispatch request
             input_queue.put(request_config)
-            logger.info(f"Dispatched request {request_config.id}: {request_config.metadata['input_length']} prefill, {request_config.metadata['output_length']} decode")
+            logger.info(
+                f"Dispatched request {request_config.id}: {request_config.metadata['input_length']} prefill, {request_config.metadata['output_length']} decode"
+            )
         else:
             time.sleep(0.01)
 

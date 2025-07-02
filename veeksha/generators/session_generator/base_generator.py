@@ -1,7 +1,10 @@
 import pandas as pd
 
-from veeksha.config.generators.session_generator.base_generator import BaseSessionGeneratorConfig
 from veeksha.config.core.base_poly_config import BasePolyConfig
+from veeksha.config.generators.session_generator.base_generator import (
+    BaseSessionGeneratorConfig,
+)
+
 
 class BaseSessionGenerator(BasePolyConfig):
     def __init__(self, config: BaseSessionGeneratorConfig):
@@ -9,4 +12,3 @@ class BaseSessionGenerator(BasePolyConfig):
 
     def generate_sessions(self, requests_df: pd.DataFrame) -> pd.DataFrame:
         raise NotImplementedError
-        

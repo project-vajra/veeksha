@@ -1,8 +1,11 @@
 from dataclasses import field
 
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
-from veeksha.config.generators.length_generator.base_generator import BaseRequestLengthGeneratorConfig
+from veeksha.config.generators.length_generator.base_generator import (
+    BaseRequestLengthGeneratorConfig,
+)
 from veeksha.types import RequestLengthGeneratorType
+
 
 @frozen_dataclass
 class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
@@ -11,7 +14,10 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
         metadata={"help": "Path to the trace file for request lengths."},
     )
     max_tokens: int = field(
-        default=-1, metadata={"help": "Maximum number of tokens allowed in a request. -1 for following the trace file."}
+        default=-1,
+        metadata={
+            "help": "Maximum number of tokens allowed in a request. -1 for following the trace file."
+        },
     )
     prefill_scale_factor: float = field(
         default=1, metadata={"help": "Scale factor for prefill tokens."}

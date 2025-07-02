@@ -1,11 +1,13 @@
 from typing import Tuple
 
-from veeksha.config.generators.length_generator.trace_generator import TraceRequestLengthGeneratorConfig
-from veeksha.logger import init_logger
+from veeksha.config.generators.length_generator.trace_generator import (
+    TraceRequestLengthGeneratorConfig,
+)
 from veeksha.generators.length_generator.base_generator import (
     BaseRequestLengthGenerator,
 )
-from veeksha.generators.utils import process_request_length_trace, load_trace
+from veeksha.generators.utils import load_trace, process_request_length_trace
+from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
 
@@ -41,4 +43,3 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
             int(row["input_length"]),
             int(row["output_length"]),
         )
-

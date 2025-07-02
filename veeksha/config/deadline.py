@@ -1,6 +1,7 @@
+from dataclasses import field
 
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
-from dataclasses import field
+
 
 @frozen_dataclass
 class DeadlineConfig:

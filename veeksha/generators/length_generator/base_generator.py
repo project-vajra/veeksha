@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import Tuple
 
-from veeksha.config.generators.length_generator.base_generator import BaseRequestLengthGeneratorConfig
+from veeksha.config.generators.length_generator.base_generator import (
+    BaseRequestLengthGeneratorConfig,
+)
 
 
 class BaseRequestLengthGenerator(ABC):

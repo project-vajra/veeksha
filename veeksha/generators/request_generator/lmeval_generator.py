@@ -15,14 +15,16 @@ from lm_eval.tasks import Task, TaskManager, get_task_dict
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 from veeksha.config.client import ClientConfig
-from veeksha.config.generators.request_generator.lmeval_generator import LmevalRequestGeneratorConfig
+from veeksha.config.generators.request_generator.lmeval_generator import (
+    LmevalRequestGeneratorConfig,
+)
 from veeksha.core.request_config import RequestConfig
 from veeksha.core.response import Response
-from veeksha.logger import init_logger
-from veeksha.types import LMEvalOutputType
 from veeksha.generators.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
 )
+from veeksha.logger import init_logger
+from veeksha.types import LMEvalOutputType
 
 logger = init_logger(__name__)
 
@@ -153,7 +155,9 @@ class LMEvalRequestGenerator:
         if self.req_idx >= len(self.cloned_requests):
             return None  # type: ignore
         req: Instance = self.cloned_requests[self.req_idx]
-        request_dispatch_interval = self.requests_interval_generator.get_next_inter_request_time()
+        request_dispatch_interval = (
+            self.requests_interval_generator.get_next_inter_request_time()
+        )
         self.req_idx += 1
 
         metadata = {

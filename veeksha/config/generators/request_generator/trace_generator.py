@@ -2,10 +2,13 @@ from dataclasses import field
 from typing import Optional
 
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
-
-from veeksha.config.generators.request_generator.base_generator import BaseRequestGeneratorConfig
+from veeksha.config.generators.request_generator.base_generator import (
+    BaseRequestGeneratorConfig,
+)
+from veeksha.config.generators.session_generator.base_generator import (
+    BaseSessionGeneratorConfig,
+)
 from veeksha.types.request_generator_type import RequestGeneratorType
-from veeksha.config.generators.session_generator.base_generator import BaseSessionGeneratorConfig
 
 
 @frozen_dataclass
@@ -28,15 +31,21 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     )
     use_trace_prefix_hash_ids: Optional[bool] = field(
         default=False,
-        metadata={"help": "If True, veeksha will use prefix hash IDs of requests to generate request inputs. Trace file specified by interval or/and length generator must include hash_ids: list[int]."}
+        metadata={
+            "help": "If True, veeksha will use prefix hash IDs of requests to generate request inputs. Trace file specified by interval or/and length generator must include hash_ids: list[int]."
+        },
     )
     use_trace_sessions: Optional[bool] = field(
         default=False,
-        metadata={"help": "If True, veeksha will use sessions provided in the trace file (session_id: int)."}
+        metadata={
+            "help": "If True, veeksha will use sessions provided in the trace file (session_id: int)."
+        },
     )
     session_generator_config: Optional[BaseSessionGeneratorConfig] = field(
         default=None,
-        metadata={"help": "If not None, it will synthesize sessions based on the trace file and prefix hash IDs of requests (requires use_prefix_hash_ids to be True)."}
+        metadata={
+            "help": "If not None, it will synthesize sessions based on the trace file and prefix hash IDs of requests (requires use_prefix_hash_ids to be True)."
+        },
     )
 
     @classmethod
