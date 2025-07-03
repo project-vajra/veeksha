@@ -273,6 +273,19 @@ if __name__ == "__main__":
     if platform.system() == "Darwin":
         multiprocessing.set_start_method("fork", force=True)
 
-    benchmark_config: BenchmarkConfig = BenchmarkConfig.create_from_cli_args()
-    random.seed(benchmark_config.seed)
-    run_benchmark(benchmark_config=benchmark_config)
+    benchmark_configs = BenchmarkConfig.create_from_cli_args()
+    
+    if len(benchmark_configs) > 1:
+        logger.info(f"Running {len(benchmark_configs)} benchmark configurations sequentially.")
+    
+    for i, benchmark_config in enumerate(benchmark_configs):
+        if len(benchmark_configs) > 1:
+            logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
+        
+        random.seed(benchmark_config.seed)
+        run_benchmark(benchmark_config=benchmark_config)
+        
+        if len(benchmark_configs) > 1:
+            logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")
+    
+    logger.info("All benchmarks completed.")

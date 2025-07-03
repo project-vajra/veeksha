@@ -3,6 +3,8 @@ import os
 from dataclasses import field
 from typing import Optional
 
+import yaml  # type: ignore
+
 from veeksha.config.client import ClientConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
@@ -18,7 +20,7 @@ from veeksha.config.generators.request_generator.synthetic_generator import (
 )
 from veeksha.config.metrics import MetricsConfig
 from veeksha.config.prefill_profiler import PrefillProfilerConfig
-from veeksha.config.utils import dataclass_to_dict
+from veeksha.config.utils import dataclass_to_dict, expand_dict, create_class_from_dict
 from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
 from veeksha.types import RequestGeneratorType
@@ -51,6 +53,10 @@ class BenchmarkConfig:
     api_key: Optional[str] = field(
         default="token-abc123",
         metadata={"help": "The API key for the benchmark."},
+    )
+    config_file: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path to YAML configuration file for the benchmark."},
     )
     client_config: ClientConfig = field(
         default_factory=ClientConfig,
@@ -103,10 +109,50 @@ class BenchmarkConfig:
 
     @classmethod
     def create_from_cli_args(cls):
+        """Create BenchmarkConfig instances from CLI args or YAML file.
+        
+        Returns:
+            List of BenchmarkConfig instances (single config for CLI args, 
+            multiple configs if YAML expands to multiple configurations)
+        """
+        import argparse
+        parser = argparse.ArgumentParser(add_help=False)
+        parser.add_argument('--config-file', type=str, default=None)
+        known_args, _ = parser.parse_known_args()
+        
+        # If config_file is specified, load from YAML instead
+        if known_args.config_file:
+            logger.info(f"Loading configuration from YAML file: {known_args.config_file}")
+            return cls.create_from_yaml_file(known_args.config_file)
+        
+        # Otherwise, use normal CLI args parsing and return as single-item list
         flat_config = create_flat_dataclass(cls).create_from_cli_args()
         instance = flat_config.reconstruct_original_dataclass()
         instance.__flat_config__ = flat_config
-        return instance
+        return [instance]
+
+    @classmethod
+    def create_from_yaml_file(cls, config_file_path: str):
+        """Create BenchmarkConfig instances from a YAML configuration file.
+        
+        Returns:
+            List of BenchmarkConfig instances (one for each expanded configuration)
+        """
+        with open(config_file_path, 'r') as f:
+            yaml_config = yaml.safe_load(f)
+        
+        expanded_configs = expand_dict(yaml_config)
+        
+        logger.info(f"YAML config expanded to {len(expanded_configs)} configuration(s).")
+        
+        instances = []
+        for i, config_dict in enumerate(expanded_configs):
+            instance = create_class_from_dict(cls, config_dict)
+            # Use object.__setattr__ because this is a frozen dataclass
+            object.__setattr__(instance, '__flat_config__', None)
+            instances.append(instance)
+        
+        return instances
 
     @classmethod
     def create_flat_config(cls):
@@ -116,9 +162,9 @@ class BenchmarkConfig:
         return
 
     def to_dict(self):
-        if not hasattr(self, "__flat_config__"):
-            logger.warning("Flat config not found. Returning the original config.")
-            return self.__dict__
+        if not hasattr(self, "__flat_config__") or self.__flat_config__ is None:
+            logger.debug("Flat config not found or is None. Using dataclass_to_dict.")
+            return dataclass_to_dict(self)
 
         return self.__flat_config__.__dict__  # type: ignore
 
