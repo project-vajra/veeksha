@@ -45,11 +45,15 @@ class CapacitySearchConfig:
     )
     capsearch_config_file: Optional[str] = field(
         default=None,
-        metadata={"help": "Path to YAML configuration file for the capacity search. If provided, no other parameters will be used."},
+        metadata={
+            "help": "Path to YAML configuration file for the capacity search. If provided, no other parameters will be used."
+        },
     )
     benchmark_config_file: str = field(
         default="./veeksha/capacity_search/config/default_config.yml",
-        metadata={"help": "Path to benchmark config file. Benchmark config files can be expanded to multiple configurations."},
+        metadata={
+            "help": "Path to benchmark config file. Benchmark config files can be expanded to multiple configurations."
+        },
     )
     slo_type: str = field(
         default="deadline",

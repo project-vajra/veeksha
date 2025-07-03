@@ -56,7 +56,9 @@ class BenchmarkConfig:
     )
     benchmark_config_file: Optional[str] = field(
         default=None,
-        metadata={"help": "Path to YAML configuration file for the benchmark. If it's provided, no other parameters will be used."},
+        metadata={
+            "help": "Path to YAML configuration file for the benchmark. If it's provided, no other parameters will be used."
+        },
     )
     client_config: ClientConfig = field(
         default_factory=ClientConfig,
