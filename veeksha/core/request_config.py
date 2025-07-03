@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional, Tuple
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RequestConfig(BaseModel):
@@ -12,14 +12,14 @@ class RequestConfig(BaseModel):
         sampling_params: Additional sampling parameters to send with the request.
             For more information see the Router app's documentation for the completions
         llm_api: The name of the LLM API to send the request to.
-        metadata: Additional metadata to attach to the request for logging or validation purposes.
+        metadata: Additional metadata to attach to the request (i.e. block count, hash ids, etc.).
     """
 
     model: str
     prompt: Tuple[str, int]
     sampling_params: Optional[Dict[str, Any]] = None
     llm_api: Optional[str] = None
-    metadata: Dict[str, Any] = {}
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     address_append_value: Optional[str] = None
     id: Optional[int] = None
 

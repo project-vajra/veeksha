@@ -100,6 +100,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
         return self.encode(self.decode(tokens)) == tokens
 
     def encode_value_as_base_52(self, value: int) -> List[int]:
+        if value <= 0:
+            raise ValueError(f"Value must be a positive integer for base-52 encoding, got: {value}")
+        
         base_52 = []
         while value > 0:
             mod = value % 52
@@ -114,6 +117,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
         return encoding
 
     def encode_value_as_digits(self, value: int) -> List[int]:
+        if value <= 0:
+            raise ValueError(f"Value must be a positive integer for digits encoding, got: {value}")
+        
         digits = list(str(value))
         space_separated = " " + " ".join(digits)
         encoding = self.encode(space_separated)
@@ -176,7 +182,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     self.past_prompts[hash_id] = prompt_segment
                 prompt += self.past_prompts[hash_id]
         else:
-            # todo input text
+            # todo generate input random text
             raise NotImplementedError("to be implemented")
 
         final_token_count = len(self.encode(prompt))

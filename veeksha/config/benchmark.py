@@ -30,7 +30,6 @@ logger = init_logger(__name__)
 
 @frozen_dataclass
 class BenchmarkConfig:
-    # TODO seed is set once in the benchmarkconfig and propagated to all nested configs
     seed: int = field(
         default=DEFAULT_SEED,
         metadata={"help": "Seed for the random number generator."},
@@ -133,7 +132,7 @@ class BenchmarkConfig:
         # Otherwise, use normal CLI args parsing and return as single-item list
         flat_config = create_flat_dataclass(cls).create_from_cli_args()
         instance = flat_config.reconstruct_original_dataclass()
-        instance.__flat_config__ = flat_config
+        object.__setattr__(instance, "__flat_config__", flat_config)
         return [instance]
 
     @classmethod
@@ -162,11 +161,29 @@ class BenchmarkConfig:
         return instances
 
     @classmethod
-    def create_flat_config(cls):
-        instance = create_flat_dataclass(cls)
-        instance.reconstruct_original_dataclass()
-        instance.__flat_config__ = instance
-        return
+    def create_from_yaml_file(cls, config_file_path: str):
+        """Create BenchmarkConfig instances from a YAML configuration file.
+
+        Returns:
+            List of BenchmarkConfig instances (one for each expanded configuration)
+        """
+        with open(config_file_path, "r") as f:
+            yaml_config = yaml.safe_load(f)
+
+        expanded_configs = expand_dict(yaml_config)
+
+        logger.info(
+            f"YAML config expanded to {len(expanded_configs)} configuration(s)."
+        )
+
+        instances = []
+        for i, config_dict in enumerate(expanded_configs):
+            instance = create_class_from_dict(cls, config_dict)
+            # Use object.__setattr__ because this is a frozen dataclass
+            object.__setattr__(instance, "__flat_config__", None)
+            instances.append(instance)
+
+        return instances
 
     def to_dict(self):
         if not hasattr(self, "__flat_config__") or self.__flat_config__ is None:

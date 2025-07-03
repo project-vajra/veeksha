@@ -57,7 +57,7 @@ def process_request_length_trace(
         diff_tokens = total_tokens - max_tokens
         diff_tokens = diff_tokens.clip(lower=0)
 
-        # dedcut the diff tokens from the prefill and decode tokens proportionally
+        # deduct the diff tokens from the prefill and decode tokens proportionally
         input_length_ratio = trace_df["input_length"] / total_tokens
         output_length_ratio = trace_df["output_length"] / total_tokens
 

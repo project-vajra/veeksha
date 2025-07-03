@@ -167,5 +167,10 @@ class CapacitySearchConfig:
 
     def write_config_to_file(self):
         config_dict = self.to_dict()
-        with open(os.path.join(f"{self.output_dir}", "config.json"), "w") as f:
-            json.dump(config_dict, f, indent=4)
+        output_path = os.path.join(self.output_dir, "config.json")
+        try:
+            os.makedirs(self.output_dir, exist_ok=True)
+            with open(output_path, "w") as f:
+                json.dump(config_dict, f, indent=4)
+        except (OSError, IOError) as e:
+            raise RuntimeError(f"Failed to write config to {output_path}: {e}")

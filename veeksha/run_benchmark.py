@@ -66,7 +66,7 @@ def dispatch_requests(
 
             if request_dispatch_interval < 0:
                 logger.warning(
-                    f"Invalid interval {request_dispatch_interval} (potentially from trace interval generator). Stopping the main loop."
+                    f"Invalid request dispatch interval '{request_dispatch_interval}' from request metadata. Stopping the main loop."
                 )
                 break
 
