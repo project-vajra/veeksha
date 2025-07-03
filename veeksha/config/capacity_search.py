@@ -41,10 +41,6 @@ class CapacitySearchConfig:
         default="./veeksha/capacity_search/config/default_config.yml",
         metadata={"help": "Path to benchmark config file."},
     )
-    server_config_file: Optional[str] = field(
-        default=None,
-        metadata={"help": "Path to server launch command file"},
-    )
     slo_type: str = field(
         default="deadline",
         metadata={"help": "Type of SLO to use for capacity search"},

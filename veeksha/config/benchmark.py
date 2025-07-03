@@ -54,9 +54,9 @@ class BenchmarkConfig:
         default="token-abc123",
         metadata={"help": "The API key for the benchmark."},
     )
-    config_file: Optional[str] = field(
+    benchmark_config_file: Optional[str] = field(
         default=None,
-        metadata={"help": "Path to YAML configuration file for the benchmark."},
+        metadata={"help": "Path to YAML configuration file for the benchmark. If it's provided, no other parameters will be used."},
     )
     client_config: ClientConfig = field(
         default_factory=ClientConfig,
@@ -118,15 +118,15 @@ class BenchmarkConfig:
         import argparse
 
         parser = argparse.ArgumentParser(add_help=False)
-        parser.add_argument("--config-file", type=str, default=None)
+        parser.add_argument("--benchmark-config-file", type=str, default=None)
         known_args, _ = parser.parse_known_args()
 
         # If config_file is specified, load from YAML instead
-        if known_args.config_file:
+        if known_args.benchmark_config_file:
             logger.info(
-                f"Loading configuration from YAML file: {known_args.config_file}"
+                f"Loading configuration from YAML file: {known_args.benchmark_config_file}"
             )
-            return cls.create_from_yaml_file(known_args.config_file)
+            return cls.create_from_yaml_file(known_args.benchmark_config_file)
 
         # Otherwise, use normal CLI args parsing and return as single-item list
         flat_config = create_flat_dataclass(cls).create_from_cli_args()
