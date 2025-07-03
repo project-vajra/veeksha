@@ -83,10 +83,13 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 self.trace_df,
                 self.config.trace_file,
                 self.config.time_scale_factor,
-                ms_to_s=False,
+                ms_to_s=False,  # timestamps are already in seconds
             )
 
-            self.session_generator.save_requests_as_trace(self.trace_df)
+            # convert timestamps to milliseconds for saving (as expected by trace format)
+            trace_df_for_saving = self.trace_df.copy()
+            trace_df_for_saving["timestamp"] = trace_df_for_saving["timestamp"] * 1000
+            self.session_generator.save_requests_as_trace(trace_df_for_saving)
 
         self.request_idx = 0
 

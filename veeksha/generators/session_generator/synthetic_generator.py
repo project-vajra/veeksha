@@ -82,14 +82,12 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
 
         Args:
             remaining_sessions: List of remaining sessions to sample from
-            current_timestamp: Current timestamp
+            current_timestamp: Current timestamp in seconds
         """
         # Create a local random number generator with the provided seed
         rng = random.Random(seed)
 
-        next_interval = (
-            self.session_interval_generator.get_next_inter_request_time() * 1000
-        )  # todo: ms or s?
+        next_interval = self.session_interval_generator.get_next_inter_request_time()
 
         # Rejection sampling to bias towards sessions with more requests
         while True:
@@ -118,7 +116,11 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
         return session, current_timestamp
 
     def save_requests_as_trace(self, requests_df: pd.DataFrame):
-        """Save the trace to a jsonl trace file."""
+        """Save the trace to a jsonl trace file.
+
+        Args:
+            requests_df: DataFrame with timestamps in milliseconds (trace file format)
+        """
 
         # append config params to file name
         def create_clean_filename():
@@ -145,8 +147,10 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
 
             if isinstance(
                 interval_config,
-                PoissonRequestIntervalGeneratorConfig
-                or GammaRequestIntervalGeneratorConfig,
+                (
+                    PoissonRequestIntervalGeneratorConfig,
+                    GammaRequestIntervalGeneratorConfig,
+                ),
             ):
                 params.append(f"qps-{interval_config.qps}")
 
@@ -212,9 +216,7 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
                 hash_to_length[hash_id] = prefix_len + 1
 
         # Enforce maximum time between requests in a session
-        MAX_SESSION_GAP = (
-            self.config.max_request_interval * 1000
-        )  # Convert to milliseconds
+        MAX_SESSION_GAP = self.config.max_request_interval  # Keep in seconds
 
         new_sessions = {}
         next_session_id = 0
@@ -264,7 +266,7 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
         # List to track which sessions have been sampled
         remaining_sessions = sessions_list.copy()
 
-        timestamp = 0
+        timestamp = 0  # Start at time 0 (in seconds)
         sampled_sessions = []
 
         # Create a deterministic seed sequence for all sampling operations
@@ -297,7 +299,10 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
         Generate sessions, creating a column `session_id` in the input DataFrame.
 
         Args:
-            requests_df: DataFrame containing the requests
+            requests_df: DataFrame containing the requests with timestamps in seconds
+
+        Returns:
+            DataFrame with sessions and timestamps in seconds
         """
         # Store the original hash IDs before replacing them
         requests_df["original_hash_ids"] = requests_df["hash_ids"]
