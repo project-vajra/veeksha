@@ -3,9 +3,15 @@ import os
 from dataclasses import field
 from typing import Optional
 
+import yaml  # type: ignore
+
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from veeksha.config.utils import create_class_from_dict
 from veeksha.constants.configuration_constants import DEFAULT_SEED
+from veeksha.logger import init_logger
+
+logger = init_logger(__name__)
 
 
 @frozen_dataclass
@@ -37,9 +43,13 @@ class CapacitySearchConfig:
         default="./veeksha/capacity_search/output",
         metadata={"help": "Output directory for capacity search."},
     )
+    capsearch_config_file: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path to YAML configuration file for the capacity search. If provided, no other parameters will be used."},
+    )
     benchmark_config_file: str = field(
         default="./veeksha/capacity_search/config/default_config.yml",
-        metadata={"help": "Path to benchmark config file."},
+        metadata={"help": "Path to benchmark config file. Benchmark config files can be expanded to multiple configurations."},
     )
     slo_type: str = field(
         default="deadline",
@@ -109,10 +119,44 @@ class CapacitySearchConfig:
 
     @classmethod
     def create_from_cli_args(cls):
+        """Create CapacitySearchConfig instance from CLI args or YAML file.
+
+        Returns:
+            CapacitySearchConfig instance
+        """
+        import argparse
+
+        parser = argparse.ArgumentParser(add_help=False)
+        parser.add_argument("--capsearch-config-file", type=str, default=None)
+        known_args, _ = parser.parse_known_args()
+
+        # If config_file is specified, load from YAML instead
+        if known_args.capsearch_config_file:
+            logger.info(
+                f"Loading configuration from YAML file: {known_args.capsearch_config_file}"
+            )
+            return cls.create_from_yaml_file(known_args.capsearch_config_file)
+
+        # Otherwise, use normal CLI args parsing
         flat_config = create_flat_dataclass(cls).create_from_cli_args()
         instance = flat_config.reconstruct_original_dataclass()
         object.__setattr__(instance, "__flat_config__", flat_config)
-        return flat_config.reconstruct_original_dataclass()
+        return instance
+
+    @classmethod
+    def create_from_yaml_file(cls, config_file_path: str):
+        """Create CapacitySearchConfig instance from a YAML configuration file.
+
+        Returns:
+            CapacitySearchConfig instance
+        """
+        with open(config_file_path, "r") as f:
+            yaml_config = yaml.safe_load(f)
+
+        instance = create_class_from_dict(cls, yaml_config)
+        # Use object.__setattr__ because this is a frozen dataclass
+        object.__setattr__(instance, "__flat_config__", None)
+        return instance
 
     def to_dict(self):
         return self.__dict__
