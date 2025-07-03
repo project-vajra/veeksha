@@ -104,14 +104,7 @@ class BenchmarkConfig:
     def create_from_cli_args(cls):
         flat_config = create_flat_dataclass(cls).create_from_cli_args()
         instance = flat_config.reconstruct_original_dataclass()
-        instance.__flat_config__ = flat_config
-        return instance
-
-    @classmethod
-    def create_flat_config(cls):
-        instance = create_flat_dataclass(cls)
-        instance.reconstruct_original_dataclass()
-        instance.__flat_config__ = instance
+        object.__setattr__(instance, "__flat_config__", flat_config)
         return instance
 
     def to_dict(self):

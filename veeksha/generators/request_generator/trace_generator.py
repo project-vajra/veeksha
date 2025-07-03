@@ -100,6 +100,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
         return self.encode(self.decode(tokens)) == tokens
 
     def encode_value_as_base_52(self, value: int) -> List[int]:
+        if value <= 0:
+            raise ValueError(f"Value must be a positive integer for base-52 encoding, got: {value}")
+        
         base_52 = []
         while value > 0:
             mod = value % 52
@@ -114,6 +117,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
         return encoding
 
     def encode_value_as_digits(self, value: int) -> List[int]:
+        if value <= 0:
+            raise ValueError(f"Value must be a positive integer for digits encoding, got: {value}")
+        
         digits = list(str(value))
         space_separated = " " + " ".join(digits)
         encoding = self.encode(space_separated)
@@ -124,9 +130,6 @@ class TraceRequestGenerator(BaseRequestGenerator):
         return final_chunk[:block_size]
 
     def generate_unique_encoding(self, value: int) -> List[int]:
-        if value <= 0:
-            raise ValueError(f"Hash ID must be a positive integer, got: {value}")
-
         encoding = self.encode_value_as_base_52(value)
         if self.is_stable_encoding(encoding + encoding):
             return encoding
