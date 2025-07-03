@@ -28,7 +28,6 @@ logger = init_logger(__name__)
 
 @frozen_dataclass
 class BenchmarkConfig:
-    # TODO seed is set once in the benchmarkconfig and propagated to all nested configs
     seed: int = field(
         default=DEFAULT_SEED,
         metadata={"help": "Seed for the random number generator."},
@@ -113,7 +112,7 @@ class BenchmarkConfig:
         instance = create_flat_dataclass(cls)
         instance.reconstruct_original_dataclass()
         instance.__flat_config__ = instance
-        return
+        return instance
 
     def to_dict(self):
         if not hasattr(self, "__flat_config__"):

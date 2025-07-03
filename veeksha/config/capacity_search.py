@@ -116,7 +116,7 @@ class CapacitySearchConfig:
         flat_config = create_flat_dataclass(cls).create_from_cli_args()
         instance = flat_config.reconstruct_original_dataclass()
         object.__setattr__(instance, "__flat_config__", flat_config)
-        return flat_config.reconstruct_original_dataclass()
+        return instance
 
     def to_dict(self):
         return self.__dict__

@@ -84,24 +84,30 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
             remaining_sessions: List of remaining sessions to sample from
             current_timestamp: Current timestamp in seconds
         """
-        # Create a local random number generator with the provided seed
         rng = random.Random(seed)
 
         next_interval = self.session_interval_generator.get_next_inter_request_time()
 
         # Rejection sampling to bias towards sessions with more requests
-        while True:
+        max_iterations = 1000  # prevent infinite loops
+        iteration_count = 0
+
+        while iteration_count < max_iterations:
             # Propose a session randomly from remaining sessions
             proposed_idx = rng.randint(0, len(remaining_sessions) - 1)
             proposed_session = remaining_sessions[proposed_idx]
 
-            # Acceptance probability proportional to number of requests
             acceptance_prob = len(proposed_session) / self.config.max_session_size
-
-            # Accept or reject based on the computed probability
             if rng.random() < acceptance_prob:
                 session = remaining_sessions.pop(proposed_idx)
                 break
+
+            iteration_count += 1
+
+        # fallback: take a random session if max iterations reached
+        if iteration_count >= max_iterations:
+            proposed_idx = rng.randint(0, len(remaining_sessions) - 1)
+            session = remaining_sessions.pop(proposed_idx)
 
         session_original_timestamp = None
         for request in session:

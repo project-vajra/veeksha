@@ -124,6 +124,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
         return final_chunk[:block_size]
 
     def generate_unique_encoding(self, value: int) -> List[int]:
+        if value <= 0:
+            raise ValueError(f"Hash ID must be a positive integer, got: {value}")
+
         encoding = self.encode_value_as_base_52(value)
         if self.is_stable_encoding(encoding + encoding):
             return encoding
@@ -176,7 +179,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     self.past_prompts[hash_id] = prompt_segment
                 prompt += self.past_prompts[hash_id]
         else:
-            # todo input text
+            # todo generate input random text
             raise NotImplementedError("to be implemented")
 
         final_token_count = len(self.encode(prompt))
