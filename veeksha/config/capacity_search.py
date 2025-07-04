@@ -1,7 +1,7 @@
 import json
 import os
 from dataclasses import field
-from typing import Optional
+from typing import Optional, Any
 
 import yaml  # type: ignore
 
@@ -10,6 +10,7 @@ from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.utils import create_class_from_dict
 from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
+from veeksha.config.slo import ComposableSLOConfig, BaseSLO
 
 logger = init_logger(__name__)
 
@@ -55,9 +56,17 @@ class CapacitySearchConfig:
             "help": "Path to benchmark config file. Benchmark config files can be expanded to multiple configurations."
         },
     )
+    # New composable SLO configuration
+    composable_slo_config_file: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Path to composable SLO configuration file (JSON or YAML). If provided, overrides legacy SLO settings."
+        }
+    )
+    # Legacy SLO configuration (kept for backward compatibility)
     slo_type: str = field(
         default="deadline",
-        metadata={"help": "Type of SLO to use for capacity search"},
+        metadata={"help": "Type of SLO to use for capacity search (legacy)"},
     )
     tbt_slo: float = field(
         default=0.03,
@@ -121,10 +130,44 @@ class CapacitySearchConfig:
         metadata={"help": "Wandb sweep id for capacity search"},
     )
 
+    def get_composable_slo_config(self) -> ComposableSLOConfig:
+        """Get or create ComposableSLOConfig from this config."""
+
+        if self.composable_slo_config_file:
+            # Load from external file
+            if self.composable_slo_config_file.endswith(
+                ".json"
+            ) or self.composable_slo_config_file.endswith(".yaml"):
+                with open(self.composable_slo_config_file, "r") as f:
+                    slo_dict = yaml.safe_load(f)
+            else:
+                raise ValueError(
+                    f"Unsupported config file format: {self.composable_slo_config_file}"
+                )
+
+            # Handle polymorphic deserialization for slos
+            slo_definitions = []
+            for slo_def_dict in slo_dict.get("slos", []):
+                slo_type_str = slo_def_dict.pop("type", None)
+                if not slo_type_str:
+                    raise ValueError(
+                        "Each SLO definition in config file must have a 'type'"
+                    )
+
+                # Create the specific SLO definition class instance
+                slo_class = BaseSLO.create_from_type(slo_type_str)
+                slo_definitions.append(create_class_from_dict(slo_class, slo_def_dict))
+
+            return ComposableSLOConfig(
+                slos=slo_definitions, require_all=slo_dict.get("require_all", True)
+            )
+        else:
+            # Create from legacy config
+            return ComposableSLOConfig.from_capacity_search_config(self)
+
     @classmethod
     def create_from_cli_args(cls):
         """Create CapacitySearchConfig instance from CLI args or YAML file.
-
         Returns:
             CapacitySearchConfig instance
         """
@@ -150,7 +193,6 @@ class CapacitySearchConfig:
     @classmethod
     def create_from_yaml_file(cls, config_file_path: str):
         """Create CapacitySearchConfig instance from a YAML configuration file.
-
         Returns:
             CapacitySearchConfig instance
         """
