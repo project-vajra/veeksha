@@ -10,7 +10,7 @@ from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.utils import create_class_from_dict
 from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
-from veeksha.config.slo import ComposableSLOConfig, BaseSLO
+from veeksha.config.slo import SLOSet, BaseSLO
 
 logger = init_logger(__name__)
 
@@ -56,63 +56,12 @@ class CapacitySearchConfig:
             "help": "Path to benchmark config file. Benchmark config files can be expanded to multiple configurations."
         },
     )
-    # New composable SLO configuration
-    composable_slo_config_file: Optional[str] = field(
+    slos_config_file: Optional[str] = field(
         default=None,
         metadata={
-            "help": "Path to composable SLO configuration file (JSON or YAML). If provided, overrides legacy SLO settings."
+            "help": "Path to SLOs configuration file (JSON or YAML). If provided, overrides legacy SLO settings."
         }
     )
-    # Legacy SLO configuration (kept for backward compatibility)
-    slo_type: str = field(
-        default="deadline",
-        metadata={"help": "Type of SLO to use for capacity search (legacy)"},
-    )
-    tbt_slo: float = field(
-        default=0.03,
-        metadata={"help": "TBT SLO for capacity search"},
-    )
-    tbt_percentile: float = field(
-        default=0.99,
-        metadata={"help": "TBT percentile for capacity search"},
-    )
-    ttft_slo: float = field(
-        default=0.1,
-        metadata={"help": "TTFT SLO for capacity search"},
-    )
-    ttft_percentile: float = field(
-        default=0.9,
-        metadata={"help": "TTFT percentile for capacity search"},
-    )
-    tpot_slo: float = field(
-        default=0.1,
-        metadata={"help": "TPOT SLO for capacity search"},
-    )
-    tpot_percentile: float = field(
-        default=0.9,
-        metadata={"help": "TPOT percentile for capacity search"},
-    )
-    ttft_slack_slo: float = field(
-        default=0.3,
-        metadata={"help": "TTFT slack SLO for capacity search"},
-    )
-    deadline_miss_rate_slo: float = field(
-        default=0.1,
-        metadata={"help": "Deadline miss rate SLO for capacity search"},
-    )
-    deadline_miss_rate_percentile: float = field(
-        default=0.99,
-        metadata={"help": "Deadline miss rate percentile for capacity search"},
-    )
-    dynamic_ttft_slo: bool = field(
-        default=True,
-        metadata={"help": "Dynamic TTFT SLO for capacity search"},
-    )
-    # # TODO: remove from arg, move to trace config or similar
-    # trace_session_match_threshold: float = field(
-    #     default=0.9,
-    #     metadata={"help": "Trace session match threshold for capacity search"},
-    # )
     wandb_project: Optional[str] = field(
         default=None,
         metadata={"help": "Wandb project for capacity search"},
@@ -130,19 +79,19 @@ class CapacitySearchConfig:
         metadata={"help": "Wandb sweep id for capacity search"},
     )
 
-    def get_composable_slo_config(self) -> ComposableSLOConfig:
-        """Get or create ComposableSLOConfig from this config."""
+    def get_slos(self) -> SLOSet:
+        """Get or create SLOSet from this config."""
 
-        if self.composable_slo_config_file:
+        if self.slos_config_file:
             # Load from external file
-            if self.composable_slo_config_file.endswith(
+            if self.slos_config_file.endswith(
                 ".json"
-            ) or self.composable_slo_config_file.endswith(".yaml"):
-                with open(self.composable_slo_config_file, "r") as f:
+            ) or self.slos_config_file.endswith(".yaml"):
+                with open(self.slos_config_file, "r") as f:
                     slo_dict = yaml.safe_load(f)
             else:
                 raise ValueError(
-                    f"Unsupported config file format: {self.composable_slo_config_file}"
+                    f"Unsupported config file format: {self.slos_config_file}"
                 )
 
             # Handle polymorphic deserialization for slos
@@ -158,12 +107,12 @@ class CapacitySearchConfig:
                 slo_class = BaseSLO.create_from_type(slo_type_str)
                 slo_definitions.append(create_class_from_dict(slo_class, slo_def_dict))
 
-            return ComposableSLOConfig(
+            return SLOSet(
                 slos=slo_definitions, require_all=slo_dict.get("require_all", True)
             )
         else:
             # Create from legacy config
-            return ComposableSLOConfig.from_capacity_search_config(self)
+            return SLOSet.from_capacity_search_config(self)
 
     @classmethod
     def create_from_cli_args(cls):

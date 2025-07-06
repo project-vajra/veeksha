@@ -4,7 +4,7 @@ import json
 from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 
-from veeksha.config.slo import ComposableSLOConfig, BaseSLODefinition, SLOMetric
+from veeksha.config.slo import SLOSet, BaseSLO, SLOMetric
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
@@ -14,7 +14,7 @@ class SLOEvaluator:
     """Evaluates SLOs against request-level metrics."""
     
     def __init__(self, 
-                 slo_config: ComposableSLOConfig,
+                 slo_set: SLOSet,
                  predictions: Optional[Dict[int, float]] = None):
         """Initialize SLO evaluator.
         
@@ -22,7 +22,7 @@ class SLOEvaluator:
             slo_config: Composable SLO configuration
             predictions: Optional predictions for dynamic SLOs
         """
-        self.slo_config = slo_config
+        self.slo_set = slo_set
         self.predictions = predictions or {}
         
     def evaluate_request_metrics(self, 
@@ -43,7 +43,7 @@ class SLOEvaluator:
         slo_results: List[bool] = []
         metrics_dict: Dict[str, Any] = {}
         
-        for slo in self.slo_config.slos:
+        for slo in self.slo_set.slos:
             is_met, metric_value, threshold = self._evaluate_single_slo(slo, request_level_metrics)
             slo_results.append(is_met)
             
@@ -60,7 +60,7 @@ class SLOEvaluator:
                         f"(value={metric_value:.4f}, threshold={threshold:.4f})")
         
         # Apply composition logic
-        if self.slo_config.require_all:
+        if self.slo_set.require_all:
             is_under_sla = all(slo_results)
         else:
             is_under_sla = any(slo_results)
@@ -68,7 +68,7 @@ class SLOEvaluator:
         return is_under_sla, metrics_dict
     
     def _evaluate_single_slo(self, 
-                           slo: BaseSLODefinition, 
+                           slo: BaseSLO, 
                            request_metrics: Dict[str, Any]) -> Tuple[bool, float, float]:
         """Evaluate a single SLO.
         

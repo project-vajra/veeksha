@@ -1,4 +1,3 @@
-from abc import ABC
 from dataclasses import field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Literal
@@ -45,7 +44,18 @@ class BaseSLO(BasePolyConfig):
 class ConstantSLO(BaseSLO):
     """SLO with a fixed constant value threshold."""
 
-    value: float = field(metadata={"help": "The constant value for the SLO"})
+    value: float = field(
+        default=-1.0,
+        metadata={
+            "help": "The constant value for the SLO. If a percentage, from 0 to 1. If a time, in seconds."
+        }
+    )
+
+    def __post_init__(self):
+        """Validate SLO definition."""
+        super().__post_init__()
+        if self.value <= 0.0:
+            raise ValueError("Value must be specified and must be > 0")
 
     @classmethod
     def get_type(cls) -> str:
@@ -88,7 +98,10 @@ class PredictionSLO(BaseSLO):
 class PredictionMultiplierSLO(PredictionSLO):
     """SLO threshold is a multiplier of a predicted value."""
 
-    value: float = field(metadata={"help": "The multiplier for the SLO"})
+    value: float = field(
+        default=-1.0,
+        metadata={"help": "The multiplier for the SLO"},
+    )
 
     @classmethod
     def get_type(cls) -> str:
@@ -101,13 +114,22 @@ class PredictionMultiplierSLO(PredictionSLO):
         base_prediction = predictions.get(int(request_value), 0.0)
         threshold = base_prediction * self.value
         return self._get_clamped_threshold(threshold)
+    
+    def __post_init__(self):
+        """Validate SLO definition."""
+        super().__post_init__()
+        if self.value <= 0.0:
+            raise ValueError("Value must be specified and must be > 0")
 
 
 @frozen_dataclass
 class PredictionOffsetSLO(PredictionSLO):
     """SLO threshold is a predicted value plus an offset."""
 
-    value: float = field(metadata={"help": "The offset (slack) for the SLO"})
+    value: float = field(
+        default=-1.0,
+        metadata={"help": "The offset (slack) for the SLO"},
+    )
 
     @classmethod
     def get_type(cls) -> str:
@@ -120,11 +142,17 @@ class PredictionOffsetSLO(PredictionSLO):
         base_prediction = predictions.get(int(request_value), 0.0)
         threshold = base_prediction + self.value
         return self._get_clamped_threshold(threshold)
+    
+    def __post_init__(self):
+        """Validate SLO definition."""
+        super().__post_init__()
+        if self.value < 0.0:
+            raise ValueError("Value must be specified and must be >= 0")
 
 
 @frozen_dataclass
 class SLOSet:
-    """Composable set of SLOs."""
+    """Composable set of SLOs for a benchmark to meet."""
 
     slos: List[BaseSLO] = field(
         default_factory=list,
