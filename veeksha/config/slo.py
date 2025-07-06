@@ -1,7 +1,7 @@
 from abc import ABC
 from dataclasses import field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
@@ -59,6 +59,11 @@ class ConstantSLO(BaseSLO):
 class PredictionSLO(BaseSLO):
     """Base class for SLOs based on predictions."""
 
+    metric: Literal[SLOMetric.TTFT] = field(
+        default=SLOMetric.TTFT,
+        init=False,
+        metadata={"help": "The metric this SLO applies to. Always TTFT."},
+    )
     predictor_field: str = field(
         default="num_total_tokens",
         metadata={"help": "Field name to use for prediction lookup"},
@@ -69,13 +74,6 @@ class PredictionSLO(BaseSLO):
     max_value: Optional[float] = field(
         default=None, metadata={"help": "Maximum value for the SLO (for clamping)"}
     )
-
-    def __post_init__(self):
-        super().__post_init__()
-        if self.metric != SLOMetric.TTFT:
-            raise ValueError(
-                f"Prediction-based SLOs are only supported for TTFT, but got {self.metric.value}"
-            )
 
     def _get_clamped_threshold(self, threshold: float) -> float:
         """Apply min/max clamping to the threshold."""
@@ -125,8 +123,8 @@ class PredictionOffsetSLO(PredictionSLO):
 
 
 @frozen_dataclass
-class ComposableSLOConfig:
-    """Composable SLO configuration supporting multiple SLOs."""
+class SLOSet:
+    """Composable set of SLOs."""
 
     slos: List[BaseSLO] = field(
         default_factory=list,
@@ -138,8 +136,8 @@ class ComposableSLOConfig:
     )
 
     @classmethod
-    def from_capacity_search_config(cls, capacity_config: Any) -> "ComposableSLOConfig":
-        """Create ComposableSLOConfig from legacy CapacitySearchConfig."""
+    def from_capacity_search_config(cls, capacity_config: Any) -> "SLOSet":
+        """Create SLOSet from legacy CapacitySearchConfig."""
         slos: List[BaseSLO] = []
 
         if capacity_config.slo_type == "deadline":
