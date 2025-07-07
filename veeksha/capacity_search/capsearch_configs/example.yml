@@ -1,11 +1,6 @@
 # this will run capsearch for benchmark/s specified in benchmark_config_file
 seed: 88
 max_iterations: 10
-slo_type: "tbt_ttft"
-tbt_slo: 0.05
-tbt_percentile: 0.5
-ttft_slo: 0.5
-ttft_percentile: 0.5
 output_dir: "./cap_experiments/example_capsearch_run/"
 benchmark_config_file: ./veeksha/benchmark_configs/example.yml
 

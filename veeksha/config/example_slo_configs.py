@@ -1,25 +1,26 @@
 """Example configurations for the composable SLO system."""
 
 from veeksha.config.slo import (
-    ComposableSLOConfig,
-    ConstantSLODefinition,
-    PredictionMultiplierSLODefinition,
-    PredictionOffsetSLODefinition,
+    SLOSet,
+    ConstantSLO,
+    TTFTPredictionMultiplierSLO,
+    TTFTPredictionOffsetSLO,
+    DeadlineSLO,
     SLOMetric,
 )
 
 
 def create_basic_latency_slos():
     """Create basic latency SLOs with constant thresholds."""
-    return ComposableSLOConfig(
+    return SLOSet(
         slos=[
-            ConstantSLODefinition(
+            ConstantSLO(
                 metric=SLOMetric.TTFT,
                 value=0.3,  # 300ms
                 percentile=0.9,
                 name="P90 TTFT",
             ),
-            ConstantSLODefinition(
+            ConstantSLO(
                 metric=SLOMetric.TBT,
                 value=0.05,  # 50ms
                 percentile=0.99,
@@ -32,15 +33,14 @@ def create_basic_latency_slos():
 
 def create_dynamic_ttft_slo():
     """Create dynamic TTFT SLO based on predictions."""
-    return ComposableSLOConfig(
+    return SLOSet(
         slos=[
-            PredictionOffsetSLODefinition(
-                metric=SLOMetric.TTFT,
+            TTFTPredictionOffsetSLO(
                 value=0.3,  # 300ms slack added to prediction
                 percentile=0.9,
                 name="Dynamic TTFT with 300ms slack",
             ),
-            ConstantSLODefinition(
+            ConstantSLO(
                 metric=SLOMetric.TBT, value=0.05, percentile=0.99, name="P99 TBT"
             ),
         ],
@@ -50,17 +50,16 @@ def create_dynamic_ttft_slo():
 
 def create_proportional_slos():
     """Create SLOs with prediction multipliers."""
-    return ComposableSLOConfig(
+    return SLOSet(
         slos=[
-            PredictionMultiplierSLODefinition(
-                metric=SLOMetric.TTFT,
+            TTFTPredictionMultiplierSLO(
                 value=1.5,  # 1.5x the predicted time
                 percentile=0.95,
                 min_value=0.1,  # At least 100ms
                 max_value=2.0,  # At most 2s
                 name="TTFT within 1.5x prediction",
             ),
-            ConstantSLODefinition(
+            ConstantSLO(
                 metric=SLOMetric.TPOT, value=0.1, percentile=0.9, name="P90 TPOT"
             ),
         ],
@@ -70,17 +69,17 @@ def create_proportional_slos():
 
 def create_mixed_percentile_slos():
     """Create SLOs with different percentiles for different metrics."""
-    return ComposableSLOConfig(
+    return SLOSet(
         slos=[
             # Tight SLO for median latency
-            ConstantSLODefinition(
+            ConstantSLO(
                 metric=SLOMetric.TTFT,
                 value=0.2,
                 percentile=0.5,  # Median
                 name="Median TTFT",
             ),
             # Looser SLO for tail latency
-            ConstantSLODefinition(
+            ConstantSLO(
                 metric=SLOMetric.TTFT,
                 value=1.0,
                 percentile=0.99,  # P99
@@ -93,20 +92,20 @@ def create_mixed_percentile_slos():
 
 def create_any_of_slos():
     """Create SLOs where any one needs to be satisfied."""
-    return ComposableSLOConfig(
+    return SLOSet(
         slos=[
             # Either fast TTFT
-            ConstantSLODefinition(
+            ConstantSLO(
                 metric=SLOMetric.TTFT,
                 value=0.1,
                 percentile=0.9,
                 name="Fast TTFT option",
             ),
             # OR low deadline miss rate
-            ConstantSLODefinition(
-                metric=SLOMetric.DEADLINE_MISS_RATE,
-                value=0.05,  # 5% miss rate
-                percentile=0.99,
+            DeadlineSLO(
+                ttft_threshold=2.0,  # 2s TTFT deadline
+                tbt_threshold=0.05,  # 50ms TBT deadline
+                percentile=0.05,  # 5% miss rate
                 name="Low deadline miss rate option",
             ),
         ],
@@ -116,31 +115,30 @@ def create_any_of_slos():
 
 def create_comprehensive_slos():
     """Create a comprehensive set of SLOs for production use."""
-    return ComposableSLOConfig(
+    return SLOSet(
         slos=[
-            PredictionOffsetSLODefinition(
-                metric=SLOMetric.TTFT,
+            TTFTPredictionOffsetSLO(
                 value=0.2,  # 200ms slack
                 percentile=0.9,
                 name="P90 Dynamic TTFT",
             ),
-            ConstantSLODefinition(
+            ConstantSLO(
                 metric=SLOMetric.TBT,
                 value=0.03,  # 30ms
                 percentile=0.95,
                 name="P95 TBT",
             ),
-            ConstantSLODefinition(
+            ConstantSLO(
                 metric=SLOMetric.TPOT,
                 value=0.05,  # 50ms
                 percentile=0.9,
                 name="P90 TPOT",
             ),
-            ConstantSLODefinition(
-                metric=SLOMetric.DEADLINE_MISS_RATE,
-                value=0.1,  # 10% miss rate
-                percentile=0.99,
-                name="P99 Deadline miss rate",
+            DeadlineSLO(
+                ttft_threshold=2.0,  # 2s TTFT deadline
+                tbt_threshold=0.05,  # 50ms TBT deadline
+                percentile=0.1,  # 10% miss rate
+                name="Deadline miss rate SLO",
             ),
         ],
         require_all=True,

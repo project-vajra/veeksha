@@ -41,11 +41,6 @@ def run():
     #     server_config = None
     #     logger.info("Server config not provided. Will not launch server.")
 
-    assert (
-        capacity_search_config.deadline_miss_rate_slo >= 0
-        and capacity_search_config.deadline_miss_rate_slo <= 1
-    )
-
     os.makedirs(capacity_search_config.output_dir, exist_ok=True)
 
     if (

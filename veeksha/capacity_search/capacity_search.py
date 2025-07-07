@@ -13,8 +13,8 @@ from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.config.utils import create_class_from_dict, dataclass_to_dict
 from veeksha.logger import init_logger
-from veeksha.metrics.slo_evaluator import SLOEvaluator, DeadlineBasedSLOEvaluator
-from veeksha.run_benchmark import run
+from veeksha.metrics.slo_evaluator import SLOEvaluator
+from veeksha.run_benchmark import run_benchmark
 
 logger = init_logger(__name__)
 
@@ -52,7 +52,7 @@ class CapacitySearch:
             json.dump(self.full_config, f, indent=4)
 
         # Create composable SLO config from capacity search config
-        self.slo_config = self.capacity_search_config.get_composable_slo_config()
+        self.slo_set = self.capacity_search_config.get_slos()
         
         # Initialize SLO evaluator with predictions if needed
         predictions = None
@@ -68,10 +68,7 @@ class CapacitySearch:
             predictions = self.default_benchmark_config.prefill_profiler_config.predictions
         
         # Create appropriate evaluator
-        if self.capacity_search_config.slo_type == "deadline" and self.slo_config.use_deadline_slos:
-            self.slo_evaluator = DeadlineBasedSLOEvaluator(self.slo_config, predictions)
-        else:
-            self.slo_evaluator = SLOEvaluator(self.slo_config, predictions)
+        self.slo_evaluator = SLOEvaluator(self.slo_set, predictions)
 
     def _run_capacity_search_benchmark(
         self, qps: float

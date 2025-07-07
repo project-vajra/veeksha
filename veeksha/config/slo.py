@@ -1,9 +1,13 @@
 from dataclasses import field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal, Tuple
+import numpy as np
 
+from veeksha.logger import init_logger
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
+
+logger = init_logger(__name__)
 
 
 class SLOMetric(str, Enum):
@@ -12,14 +16,13 @@ class SLOMetric(str, Enum):
     TTFT = "ttft"
     TBT = "tbt"
     TPOT = "tpot"
-    DEADLINE_MISS_RATE = "deadline_miss_rate"
+
 
 
 @frozen_dataclass
 class BaseSLO(BasePolyConfig):
     """Base class for a single SLO definition."""
 
-    metric: SLOMetric = field(metadata={"help": "The metric this SLO applies to"})
     percentile: float = field(
         default=0.99,
         metadata={"help": "Percentile at which to evaluate the SLO (0.0-1.0)"},
@@ -38,10 +41,45 @@ class BaseSLO(BasePolyConfig):
     def get_threshold(self, **kwargs: Any) -> float:
         """Get the threshold value for this SLO."""
         raise NotImplementedError
+    
+    def evaluate(self, request_metrics: Dict[str, Any], predictions: Optional[Dict[int, float]] = None) -> Tuple[bool, float]:
+        """Evaluate this SLO against request metrics."""
+        raise NotImplementedError
 
 
 @frozen_dataclass
-class ConstantSLO(BaseSLO):
+class SimpleMetricSLO(BaseSLO):
+    """Base class for SLOs that evaluate a single metric."""
+    
+    metric: SLOMetric = field(default=SLOMetric.TTFT, metadata={"help": "The metric this SLO applies to"})
+    
+    def _extract_metric_values(self, request_metrics: Dict[str, Any]) -> List[float]:
+        """Extract metric values from request metrics."""
+        values = request_metrics.get(self.metric.value, [])
+        if self.metric == SLOMetric.TBT and values and isinstance(values[0], list):
+            # flatten the list of lists for TBT
+            return [item for sublist in values for item in sublist]
+        return values
+    
+    def evaluate(self, request_metrics: Dict[str, Any], predictions: Optional[Dict[int, float]] = None) -> Tuple[bool, float]:
+        """Evaluate this simple metric SLO."""
+        values = self._extract_metric_values(request_metrics)
+        if not values:
+            logger.warning(f"No values found for metric {self.metric.value}")
+            return False, float('inf')
+        
+        # Calculate percentile
+        metric_value = float(np.percentile(values, self.percentile * 100))
+        threshold = self.get_threshold(predictions=predictions, request_metrics=request_metrics)
+        
+        return metric_value <= threshold, metric_value
+    
+    def get_type(self) -> str:
+        return "simple_metric"
+
+
+@frozen_dataclass
+class ConstantSLO(SimpleMetricSLO):
     """SLO with a fixed constant value threshold."""
 
     value: float = field(
@@ -66,8 +104,10 @@ class ConstantSLO(BaseSLO):
 
 
 @frozen_dataclass
-class PredictionSLO(BaseSLO):
+class PredictionBasedSLO(SimpleMetricSLO):
     """Base class for SLOs based on predictions."""
+    
+    # TODO: def evaluate
 
     metric: Literal[SLOMetric.TTFT] = field(
         default=SLOMetric.TTFT,
@@ -85,6 +125,9 @@ class PredictionSLO(BaseSLO):
         default=None, metadata={"help": "Maximum value for the SLO (for clamping)"}
     )
 
+    def get_type(self) -> str:
+        return "prediction_based"
+
     def _get_clamped_threshold(self, threshold: float) -> float:
         """Apply min/max clamping to the threshold."""
         if self.min_value is not None:
@@ -93,10 +136,31 @@ class PredictionSLO(BaseSLO):
             threshold = min(threshold, self.max_value)
         return threshold
 
+    def get_threshold(self, **kwargs: Any) -> float:
+        """Get threshold for prediction-based SLO."""
+        predictions = kwargs.get('predictions')
+        request_metrics = kwargs.get('request_metrics')
+        
+        if not predictions or not request_metrics:
+            raise ValueError("Prediction-based SLOs require both predictions and request_metrics")
+        
+        # Get the predictor field value (e.g., num_total_tokens)
+        predictor_values = request_metrics.get(self.predictor_field, [])
+        if not predictor_values:
+            raise ValueError(f"No values found for predictor field {self.predictor_field}")
+        
+        # For now, use the first value - this could be extended to handle multiple values
+        request_value = predictor_values[0] if isinstance(predictor_values, list) else predictor_values
+        return self._calculate_threshold(predictions, request_value)
+    
+    def _calculate_threshold(self, predictions: Dict[int, float], request_value: float) -> float:
+        """Calculate threshold based on prediction. To be implemented by subclasses."""
+        raise NotImplementedError
+
 
 @frozen_dataclass
-class PredictionMultiplierSLO(PredictionSLO):
-    """SLO threshold is a multiplier of a predicted value."""
+class TTFTPredictionMultiplierSLO(PredictionBasedSLO):
+    """SLO threshold is a multiplier of a predicted TTFT value."""
 
     value: float = field(
         default=-1.0,
@@ -105,11 +169,9 @@ class PredictionMultiplierSLO(PredictionSLO):
 
     @classmethod
     def get_type(cls) -> str:
-        return "prediction_multiplier"
+        return "ttft_prediction_multiplier"
 
-    def get_threshold(
-        self, predictions: Dict[int, float], request_value: float, **kwargs: Any
-    ) -> float:
+    def _calculate_threshold(self, predictions: Dict[int, float], request_value: float) -> float:
         """Calculate threshold based on prediction multiplier."""
         base_prediction = predictions.get(int(request_value), 0.0)
         threshold = base_prediction * self.value
@@ -123,8 +185,8 @@ class PredictionMultiplierSLO(PredictionSLO):
 
 
 @frozen_dataclass
-class PredictionOffsetSLO(PredictionSLO):
-    """SLO threshold is a predicted value plus an offset."""
+class TTFTPredictionOffsetSLO(PredictionBasedSLO):
+    """SLO threshold is a predicted TTFT value plus an offset."""
 
     value: float = field(
         default=-1.0,
@@ -133,11 +195,9 @@ class PredictionOffsetSLO(PredictionSLO):
 
     @classmethod
     def get_type(cls) -> str:
-        return "prediction_offset"
+        return "ttft_prediction_offset"
 
-    def get_threshold(
-        self, predictions: Dict[int, float], request_value: float, **kwargs: Any
-    ) -> float:
+    def _calculate_threshold(self, predictions: Dict[int, float], request_value: float) -> float:
         """Calculate threshold based on prediction offset."""
         base_prediction = predictions.get(int(request_value), 0.0)
         threshold = base_prediction + self.value
@@ -148,6 +208,147 @@ class PredictionOffsetSLO(PredictionSLO):
         super().__post_init__()
         if self.value < 0.0:
             raise ValueError("Value must be specified and must be >= 0")
+
+
+@frozen_dataclass
+class DeadlineSLO(BaseSLO):
+    """SLO that evaluates deadline miss rate based on both TTFT and TBT thresholds."""
+    
+    # todo check bounds for fluidity index target threshold
+    
+    ttft_threshold: Optional[float] = field(
+        default=None,
+        metadata={"help": "Fixed TTFT threshold in seconds. If None, uses prediction-based threshold."}
+    )
+    tbt_threshold: float = field(
+        default=-1.0,
+        metadata={"help": "TBT threshold in seconds"}
+    )
+    ttft_prediction_type: Optional[Literal["offset", "multiplier"]] = field(
+        default=None,
+        metadata={"help": "Type of prediction-based TTFT threshold. If None, uses ttft_threshold."}
+    )
+    ttft_prediction_value: Optional[float] = field(
+        default=None,
+        metadata={"help": "Value for prediction-based TTFT threshold (offset or multiplier)"}
+    )
+    # TODO: This should not be here. Will use a hardcoded value.
+    ttft_predictor_field: str = field(
+        default="num_total_tokens",
+        metadata={"help": "Field name to use for TTFT prediction lookup"}
+    )
+    ttft_min_value: Optional[float] = field(
+        default=None, metadata={"help": "Minimum value for TTFT threshold (for clamping)"}
+    )
+    ttft_max_value: Optional[float] = field(
+        default=None, metadata={"help": "Maximum value for TTFT threshold (for clamping)"}
+    )
+    
+    def __post_init__(self):
+        """Validate DeadlineSLO definition."""
+        super().__post_init__()
+        
+        if self.ttft_threshold is None and self.ttft_prediction_type is None:
+            raise ValueError("Must specify either ttft_threshold or ttft_prediction_type")
+        
+        if self.ttft_threshold is not None and self.ttft_prediction_type is not None:
+            raise ValueError("Cannot specify both ttft_threshold and ttft_prediction_type")
+        
+        if self.ttft_prediction_type is not None and self.ttft_prediction_value is None:
+            raise ValueError("Must specify ttft_prediction_value when using ttft_prediction_type")
+        
+        if self.ttft_prediction_type == "offset" and self.ttft_prediction_value < 0:
+            raise ValueError("ttft_prediction_value must be >= 0 for offset type")
+        
+        if self.ttft_prediction_type == "multiplier" and self.ttft_prediction_value <= 0:
+            raise ValueError("ttft_prediction_value must be > 0 for multiplier type")
+        
+        if self.tbt_threshold <= 0:
+            raise ValueError("tbt_threshold must be specified and > 0")
+
+    @classmethod
+    def get_type(cls) -> str:
+        return "deadline"
+
+    def get_threshold(self, **kwargs: Any) -> float:
+        """For deadline SLO, threshold is the deadline miss rate threshold (not used in typical evaluation)."""
+        # This is not typically used since deadline evaluation is different
+        return 0.0
+    
+    # TODO: implement or mark as not implemented.
+    def _get_ttft_threshold(self, predictions: Optional[Dict[int, float]], request_metrics: Dict[str, Any]) -> float:
+        """Get the TTFT threshold (either fixed or prediction-based)."""
+        if self.ttft_threshold is not None:
+            return self.ttft_threshold
+        
+        # Prediction-based threshold
+        if not predictions:
+            raise ValueError("Prediction-based TTFT threshold requires predictions")
+        
+        # Get the predictor field value
+        predictor_values = request_metrics.get(self.ttft_predictor_field, [])
+        if not predictor_values:
+            logger.warning(f"No values found for predictor field {self.ttft_predictor_field}")
+            return 0.0
+        
+        # Use first value for now
+        request_value = predictor_values[0] if isinstance(predictor_values, list) else predictor_values
+        base_prediction = predictions.get(int(request_value), 0.0)
+        
+        if self.ttft_prediction_type == "offset":
+            threshold = base_prediction + self.ttft_prediction_value
+        else:  # multiplier
+            threshold = base_prediction * self.ttft_prediction_value
+        
+        # Apply clamping
+        if self.ttft_min_value is not None:
+            threshold = max(threshold, self.ttft_min_value)
+        if self.ttft_max_value is not None:
+            threshold = min(threshold, self.ttft_max_value)
+        
+        return threshold
+    
+    def evaluate(self, request_metrics: Dict[str, Any], predictions: Optional[Dict[int, float]] = None) -> Tuple[bool, float]:
+        """Evaluate deadline miss rate."""
+        ttft_values = request_metrics.get("ttft", [])
+        tbt_values = request_metrics.get("tbt", [])
+        
+        if not ttft_values or not tbt_values:
+            logger.warning("No values found for TTFT or TBT")
+            return False, 1.0
+        
+        # Get TTFT threshold
+        ttft_threshold = self._get_ttft_threshold(predictions, request_metrics)
+        
+        # Flatten TBT values if needed
+        if tbt_values and isinstance(tbt_values[0], list):
+            tbt_flat = [item for sublist in tbt_values for item in sublist]
+        else:
+            tbt_flat = tbt_values
+        
+        # Calculate deadline misses
+        total_requests = len(ttft_values)
+        missed_deadlines = 0
+        
+        for i, ttft in enumerate(ttft_values):
+            # Check if TTFT exceeds threshold
+            if ttft > ttft_threshold:
+                missed_deadlines += 1
+                continue
+                
+            # Check if any TBT value for this request exceeds threshold
+            # Assume TBT values are grouped by request (this may need adjustment based on actual data structure)
+            request_tbt_start = i * (len(tbt_flat) // total_requests) if total_requests > 0 else 0
+            request_tbt_end = (i + 1) * (len(tbt_flat) // total_requests) if total_requests > 0 else len(tbt_flat)
+            
+            request_tbt_values = tbt_flat[request_tbt_start:request_tbt_end] if request_tbt_start < len(tbt_flat) else []
+            
+            if any(tbt > self.tbt_threshold for tbt in request_tbt_values):
+                missed_deadlines += 1
+        
+        deadline_miss_rate = missed_deadlines / total_requests if total_requests > 0 else 1.0
+        
+        return deadline_miss_rate <= self.percentile, deadline_miss_rate
 
 
 @frozen_dataclass
@@ -162,70 +363,3 @@ class SLOSet:
         default=True,
         metadata={"help": "If True, all SLOs must be met. If False, any SLO can be met."},
     )
-
-    @classmethod
-    def from_capacity_search_config(cls, capacity_config: Any) -> "SLOSet":
-        """Create SLOSet from legacy CapacitySearchConfig."""
-        slos: List[BaseSLO] = []
-
-        if capacity_config.slo_type == "deadline":
-            if capacity_config.dynamic_ttft_slo:
-                slos.append(
-                    PredictionOffsetSLO(
-                        metric=SLOMetric.TTFT,
-                        value=capacity_config.ttft_slack_slo,
-                        percentile=0.99,  # default percentile
-                        name="Dynamic TTFT with slack",
-                    )
-                )
-            slos.append(
-                ConstantSLO(
-                    metric=SLOMetric.TBT,
-                    value=capacity_config.tbt_slo,
-                    percentile=capacity_config.tbt_percentile,
-                    name="TBT",
-                )
-            )
-            slos.append(
-                ConstantSLO(
-                    metric=SLOMetric.DEADLINE_MISS_RATE,
-                    value=capacity_config.deadline_miss_rate_slo,
-                    percentile=capacity_config.deadline_miss_rate_percentile,
-                    name="Deadline miss rate",
-                )
-            )
-        elif capacity_config.slo_type == "tbt_ttft":
-            slos.extend(
-                [
-                    ConstantSLO(
-                        metric=SLOMetric.TBT,
-                        value=capacity_config.tbt_slo,
-                        percentile=capacity_config.tbt_percentile,
-                        name="TBT",
-                    ),
-                    ConstantSLO(
-                        metric=SLOMetric.TTFT,
-                        value=capacity_config.ttft_slo,
-                        percentile=capacity_config.ttft_percentile,
-                        name="TTFT",
-                    ),
-                ]
-            )
-        elif capacity_config.slo_type == "ttft_tpot":
-            slos.extend(
-                [
-                    ConstantSLO(
-                        metric=SLOMetric.TTFT,
-                        value=capacity_config.ttft_slo,
-                        percentile=capacity_config.ttft_percentile,
-                        name="TTFT",
-                    ),
-                    ConstantSLO(
-                        metric=SLOMetric.TPOT,
-                        value=capacity_config.tpot_slo,
-                        percentile=capacity_config.tpot_percentile,
-                        name="TPOT",
-                    ),
-                ]
-            )
-        return cls(slos=slos)

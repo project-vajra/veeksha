@@ -18,7 +18,7 @@ Each SLO is defined as a dictionary in a YAML or JSON file. The `type` field det
 
 ```yaml
 # Basic structure
-- type: "constant" # or "prediction_multiplier", "prediction_offset"
+- type: "constant" # or "ttft_prediction_multiplier", "ttft_prediction_offset", "deadline"
   metric: "ttft"
   value: 0.3
   percentile: 0.9
@@ -26,8 +26,8 @@ Each SLO is defined as a dictionary in a YAML or JSON file. The `type` field det
 ```
 
 ### Common Properties
-- `type` (string, required): The type of SLO. Must be one of `constant`, `prediction_multiplier`, `prediction_offset`
-- `metric` (string, required): The metric to evaluate. Must be one of `ttft`, `tbt`, `tpot`, `deadline_miss_rate`
+- `type` (string, required): The type of SLO. Must be one of `constant`, `ttft_prediction_multiplier`, `ttft_prediction_offset`, `deadline`
+- `metric` (string, required): The metric to evaluate. Must be one of `ttft`, `tbt`, `tpot` (for constant SLOs only)
 - `percentile` (float): The percentile at which to evaluate the metric (e.g., 0.9 for P90). Defaults to `0.99`
 - `name` (string): A human-readable name for the SLO
 
@@ -57,7 +57,7 @@ Prediction-based SLOs derive their threshold from a pre-trained performance mode
 #### Prediction Multiplier
 The threshold is the predicted TTFT multiplied by a factor
 
-**Type:** `prediction_multiplier`
+**Type:** `ttft_prediction_multiplier`
 
 **Required property:**
 - `value` (float): The multiplier
@@ -69,8 +69,7 @@ The threshold is the predicted TTFT multiplied by a factor
 
 **Example:**
 ```yaml
-- type: "prediction_multiplier"
-  metric: "ttft"
+- type: "ttft_prediction_multiplier"
   value: 1.5  # Threshold is 1.5x the prediction
   percentile: 0.95
 ```
@@ -78,7 +77,7 @@ The threshold is the predicted TTFT multiplied by a factor
 #### Prediction Offset
 The threshold is the predicted TTFT plus a fixed offset (slack)
 
-**Type:** `prediction_offset`
+**Type:** `ttft_prediction_offset`
 
 **Required property:**
 - `value` (float): The offset value to add to the prediction
@@ -87,8 +86,7 @@ The threshold is the predicted TTFT plus a fixed offset (slack)
 
 **Example:**
 ```yaml
-- type: "prediction_offset"
-  metric: "ttft"
+- type: "ttft_prediction_offset"
   value: 0.3  # Threshold is prediction + 300ms
   percentile: 0.9
 ```
@@ -109,8 +107,7 @@ slos:
     value: 0.05
     percentile: 0.99
     name: "P99 TBT"
-  - type: "prediction_offset"
-    metric: "ttft"
+  - type: "ttft_prediction_offset"
     value: 0.3
     percentile: 0.9
     name: "P90 Dynamic TTFT"
