@@ -82,9 +82,7 @@ def dispatch_requests(
 
             # Dispatch request
             input_queue.put(request_config)
-            logger.info(
-                f"Dispatched request {request_config.id}"
-            )
+            logger.info(f"Dispatched request {request_config.id}")
         else:
             time.sleep(0.01)
 

@@ -18,7 +18,7 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
 
         trace_df = load_trace(self.config.trace_file)
 
-        self.trace_df = process_request_length_trace(
+        process_request_length_trace(
             trace_df,
             self.config.trace_file,
             self.config.prefill_scale_factor,

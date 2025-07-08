@@ -155,9 +155,7 @@ class LMEvalRequestGenerator:
         if self.req_idx >= len(self.cloned_requests):
             return None  # type: ignore
         req: Instance = self.cloned_requests[self.req_idx]
-        dispatch_delay = (
-            self.requests_interval_generator.get_next_inter_request_time()
-        )
+        dispatch_delay = self.requests_interval_generator.get_next_inter_request_time()
         self.req_idx += 1
 
         # just need context to send to the model

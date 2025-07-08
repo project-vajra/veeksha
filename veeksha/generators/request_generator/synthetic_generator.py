@@ -85,9 +85,7 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             num_prompt_tokens,
             num_output_tokens,
         ) = self.request_length_generator.get_next_num_tokens()
-        dispatch_delay = (
-            self.requests_interval_generator.get_next_inter_request_time()
-        )
+        dispatch_delay = self.requests_interval_generator.get_next_inter_request_time()
         if num_prompt_tokens < 0 or num_output_tokens < 0:
             logger.error(
                 f"Invalid number of tokens generated: prompt={num_prompt_tokens}, output={num_output_tokens} (potentially from trace request length generator)."

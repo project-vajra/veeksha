@@ -26,9 +26,17 @@ def process_request_length_trace(
     prefill_scale_factor: float = 1.0,
     decode_scale_factor: float = 1.0,
     max_tokens: int = -1,
-) -> pd.DataFrame:
+) -> None:
     """
-    Postprocess a trace file containing request input_length and output_length.
+    Postprocess a trace dataframe containing request input_length and output_length:
+
+    - The input_length and output_length are scaled by `prefill_scale_factor` and `decode_scale_factor` respectively.
+    - If `max_tokens` is provided, the input_length and output_length are adjusted to ensure the total number of tokens does not exceed `max_tokens`.
+    - The input_length and output_length are converted to integers.
+    - The input_length and output_length are clipped to be greater than 0.
+    - The input_length and output_length are clipped to be less than or equal to `max_tokens`.
+
+    Trace dataframe is modified in place.
 
     Args:
         trace_df: DataFrame containing the trace file.
@@ -92,7 +100,7 @@ def process_request_length_trace(
         f"Prompt/decode token ratio stats\n:{pd_ratio.describe(percentiles=[0.25, 0.5, 0.75, 0.9, 0.95, 0.99])}"
     )
 
-    return trace_df
+    return None
 
 
 def process_request_interval_trace(
@@ -100,14 +108,21 @@ def process_request_interval_trace(
     trace_file: str,
     time_scale_factor: float = 1.0,
     ms_to_s: bool = True,
-) -> pd.DataFrame:
+) -> None:
     """
-    Postprocess a trace file containing request timestamps `timestamp` and computes `inter_request_time`.
+    Postprocess a trace dataframe containing request timestamps `timestamp`:
+
+    - If `ms_to_s` is True, the timestamps are converted to seconds.
+    - `inter_request_time` is created as the time difference between consecutive requests.
+    - `inter_request_time` is scaled by `time_scale_factor`.
+
+    Trace dataframe is modified in place.
 
     Args:
         trace_df: DataFrame containing the trace file.
         trace_file: Path to the trace file, only used for logging.
         time_scale_factor: Factor to scale the time intervals in the trace. By default no scaling is applied.
+        ms_to_s: If True, the timestamps are converted to seconds.
     """
 
     if "timestamp" not in trace_df.columns:
@@ -126,4 +141,4 @@ def process_request_interval_trace(
     # scale the interval times
     trace_df["inter_request_time"] *= time_scale_factor
 
-    return trace_df
+    return None

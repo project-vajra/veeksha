@@ -38,7 +38,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         self.trace_df = load_trace(self.config.trace_file)
 
-        self.trace_df = process_request_length_trace(
+        process_request_length_trace(
             self.trace_df,
             self.config.trace_file,
             self.config.prefill_scale_factor,
@@ -46,7 +46,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
             self.config.max_tokens,
         )
 
-        self.trace_df = process_request_interval_trace(
+        process_request_interval_trace(
             self.trace_df,
             self.config.trace_file,
             self.config.time_scale_factor,
@@ -76,14 +76,16 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 self.config.session_generator_config.get_type(),
                 self.config.session_generator_config,
             )
-            self.trace_df = self.session_generator.generate_sessions(self.trace_df)
+            self.trace_df_with_sessions = self.session_generator.generate_sessions(
+                self.trace_df
+            )
 
-            # get next request intervals again, because session sampling might shuffle requests
-            self.trace_df = process_request_interval_trace(
-                self.trace_df,
+            # get next request intervals again because session sampling shuffles sessions
+            process_request_interval_trace(
+                self.trace_df_with_sessions,
                 self.config.trace_file,
                 self.config.time_scale_factor,
-                ms_to_s=False,  # timestamps are already in seconds
+                ms_to_s=False,
             )
 
             # convert timestamps to milliseconds for saving (as expected by trace format)
@@ -101,8 +103,10 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
     def encode_value_as_base_52(self, value: int) -> List[int]:
         if value <= 0:
-            raise ValueError(f"Value must be a positive integer for base-52 encoding, got: {value}")
-        
+            raise ValueError(
+                f"Value must be a positive integer for base-52 encoding, got: {value}"
+            )
+
         base_52 = []
         while value > 0:
             mod = value % 52
@@ -118,8 +122,10 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
     def encode_value_as_digits(self, value: int) -> List[int]:
         if value <= 0:
-            raise ValueError(f"Value must be a positive integer for digits encoding, got: {value}")
-        
+            raise ValueError(
+                f"Value must be a positive integer for digits encoding, got: {value}"
+            )
+
         digits = list(str(value))
         space_separated = " " + " ".join(digits)
         encoding = self.encode(space_separated)
