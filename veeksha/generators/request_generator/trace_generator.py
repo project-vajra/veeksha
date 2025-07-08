@@ -175,10 +175,12 @@ class TraceRequestGenerator(BaseRequestGenerator):
             # todo generate input random text
             raise NotImplementedError("to be implemented")
 
+        instruction = f"Generate at least {int(request_to_send['output_length'])} tokens repeating the following text:\n"
+        prompt = instruction + prompt
+
         final_token_count = len(self.encode(prompt))
 
         default_sampling_params = {
-            "min_tokens": int(request_to_send["output_length"]),
             "max_tokens": int(request_to_send["output_length"]),
         }
         default_sampling_params.update(

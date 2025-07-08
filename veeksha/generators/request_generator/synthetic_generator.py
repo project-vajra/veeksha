@@ -49,19 +49,11 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         self,
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         num_prompt_tokens: int = 1024,
-        num_output_tokens: int = 128,
         corpus_lines: Union[List[str], None] = None,
-        add_instruction: bool = True,
     ) -> Tuple[str, int]:
         """Generate a random prompt with a given number of tokens.
-
         Args:
             num_prompt_tokens: The number of tokens to generate in the prompt.
-            num_output_tokens: The number of tokens to expect in the output.
-
-            The prompt will be generated such that the output
-            will be approximately this many tokens.
-
         Returns:
             A random prompt with the given number of tokens.
         """
@@ -69,16 +61,10 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
 
         get_token_length = lambda text: len(tokenizer.encode(text))
 
-        instruction = (
-            'INSTRUCTION: Mimic below text enclosed in """ quotes and generate '
-            f"long text of at least {num_output_tokens} tokens.\n\n"
-        )
-
-        remaining_prompt_tokens = num_prompt_tokens - get_token_length(instruction)
+        remaining_prompt_tokens = num_prompt_tokens
         random.shuffle(corpus_lines)
         sampling_lines = True
-        prompt = (instruction + '"""') if add_instruction else ""
-        remaining_prompt_tokens -= get_token_length(prompt) * 2
+        prompt = ""
         while sampling_lines:
             for line in corpus_lines:
                 line_to_add = line
@@ -92,8 +78,6 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
                 prompt += line_to_add
                 remaining_prompt_tokens -= get_token_length(line_to_add)
 
-        if add_instruction:
-            prompt += '"""'
         return (prompt, num_prompt_tokens)
 
     def get_request(self) -> RequestConfig:
@@ -110,14 +94,16 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             )
         num_prompt_tokens = int(num_prompt_tokens)
         num_output_tokens = int(num_output_tokens)
-        prompt = self.generate_random_prompt(
+        prompt_body, _ = self.generate_random_prompt(
             tokenizer=self.tokenizer,
             num_prompt_tokens=num_prompt_tokens,
-            num_output_tokens=num_output_tokens,
             corpus_lines=self.corpus_lines,
         )
+
+        instruction = f"Generate at least {num_output_tokens} tokens repeating the following text:\n"
+        prompt = instruction + prompt_body
+
         default_sampling_params = {
-            "min_tokens": num_output_tokens,
             "max_tokens": num_output_tokens,
         }
         default_sampling_params.update(
