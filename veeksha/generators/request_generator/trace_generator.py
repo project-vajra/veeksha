@@ -143,28 +143,18 @@ class TraceRequestGenerator(BaseRequestGenerator):
     def get_request(self) -> RequestConfig:
         request_to_send = self.trace_df.iloc[self.request_idx]
 
-        request_metadata = {
-            "input_length": request_to_send["input_length"],
-            "output_length": request_to_send["output_length"],
-            "request_dispatch_interval": request_to_send["inter_request_time"],
-        }
+        dispatch_delay = request_to_send["inter_request_time"]
 
         if (
             self.config.use_trace_sessions
             or self.config.session_generator_config is not None
         ):
-            request_metadata["session_id"] = request_to_send["session_id"]
-            if "num_requests_in_session" in request_to_send:
-                request_metadata["session_size"] = request_to_send[
-                    "num_requests_in_session"
-                ]
+            dispatch_delay = request_to_send["session_id"]
 
         if self.config.use_trace_prefix_hash_ids:
             block_count = (
                 request_to_send["input_length"] + self.config.block_size - 1
             ) // self.config.block_size
-
-            request_metadata["block_count"] = block_count
 
             assert (
                 len(request_to_send["hash_ids"]) >= block_count
@@ -198,11 +188,11 @@ class TraceRequestGenerator(BaseRequestGenerator):
         request_config = RequestConfig(
             model=self.client_config.model,
             prompt=(prompt, final_token_count),
+            dispatch_delay=dispatch_delay,
             sampling_params=default_sampling_params,
             llm_api=self.client_config.llm_api,
             address_append_value=self.client_config.address_append_value,
             id=self.request_idx,
-            metadata=request_metadata,
         )
 
         self.request_idx += 1

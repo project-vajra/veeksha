@@ -101,14 +101,9 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             num_prompt_tokens,
             num_output_tokens,
         ) = self.request_length_generator.get_next_num_tokens()
-        request_dispatch_interval = (
+        dispatch_delay = (
             self.requests_interval_generator.get_next_inter_request_time()
         )
-        metadata = {
-            "num_prompt_tokens": num_prompt_tokens,
-            "num_output_tokens": num_output_tokens,
-            "request_dispatch_interval": request_dispatch_interval,
-        }
         if num_prompt_tokens < 0 or num_output_tokens < 0:
             logger.error(
                 f"Invalid number of tokens generated: prompt={num_prompt_tokens}, output={num_output_tokens} (potentially from trace request length generator)."
@@ -131,11 +126,11 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         request_config = RequestConfig(
             model=self.client_config.model,
             prompt=prompt,
+            dispatch_delay=dispatch_delay,
             sampling_params=default_sampling_params,
             llm_api=self.client_config.llm_api,
             address_append_value=self.client_config.address_append_value,
             id=self.request_id,
-            metadata=metadata,
         )
 
         self.request_id += 1

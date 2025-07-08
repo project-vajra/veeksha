@@ -59,24 +59,22 @@ def dispatch_requests(
 
             # Get next request and its dispatch time
             request_config = request_generator.get_request()
-            request_dispatch_interval = request_config.metadata[
-                "request_dispatch_interval"
-            ]
+            request_dispatch_delay = request_config.dispatch_delay
             service_metrics.register_launched_request()
 
-            if request_dispatch_interval < 0:
+            if request_dispatch_delay < 0:
                 logger.warning(
-                    f"Invalid request dispatch interval '{request_dispatch_interval}' from request metadata. Stopping the main loop."
+                    f"Invalid request dispatch delay '{request_dispatch_delay}' from request metadata. Stopping the main loop."
                 )
                 break
 
             # Wait for dispatch time
             while not stop_event.is_set():
                 elapsed_time = time.monotonic() - request_start_time
-                if elapsed_time >= request_dispatch_interval:
+                if elapsed_time >= request_dispatch_delay:
                     break
                 # remaining sleep time to avoid drift
-                remaining_time = request_dispatch_interval - elapsed_time
+                remaining_time = request_dispatch_delay - elapsed_time
                 if remaining_time > 0:
                     # capped sleep at 100ms
                     sleep_duration = min(remaining_time, 0.1)
@@ -85,7 +83,7 @@ def dispatch_requests(
             # Dispatch request
             input_queue.put(request_config)
             logger.info(
-                f"Dispatched request {request_config.id}: {request_config.metadata['input_length']} prefill, {request_config.metadata['output_length']} decode"
+                f"Dispatched request {request_config.id}"
             )
         else:
             time.sleep(0.01)
