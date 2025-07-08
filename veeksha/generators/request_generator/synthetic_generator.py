@@ -103,6 +103,8 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         instruction = f"Generate at least {num_output_tokens} tokens repeating the following text:\n"
         prompt = instruction + prompt_body
 
+        prompt_token_count = len(self.tokenizer.encode(prompt))
+
         default_sampling_params = {
             "max_tokens": num_output_tokens,
         }
@@ -111,7 +113,7 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         )
         request_config = RequestConfig(
             model=self.client_config.model,
-            prompt=prompt,
+            prompt=(prompt, prompt_token_count),
             dispatch_delay=dispatch_delay,
             sampling_params=default_sampling_params,
             llm_api=self.client_config.llm_api,

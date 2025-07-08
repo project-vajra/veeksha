@@ -9,6 +9,12 @@ import pandas as pd
 from veeksha.config.generators.session_generator.synthetic_generator import (
     SyntheticSessionGeneratorConfig,
 )
+from veeksha.config.generators.interval_generator.gamma_generator import (
+    GammaRequestIntervalGeneratorConfig,
+)
+from veeksha.config.generators.interval_generator.poisson_generator import (
+    PoissonRequestIntervalGeneratorConfig,
+)
 from veeksha.generators.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
 )
@@ -144,12 +150,6 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
             ]
 
             interval_config = self.config.session_interval_generator_config
-            from veeksha.config.generators.interval_generator.gamma_generator import (
-                GammaRequestIntervalGeneratorConfig,
-            )
-            from veeksha.config.generators.interval_generator.poisson_generator import (
-                PoissonRequestIntervalGeneratorConfig,
-            )
 
             if isinstance(
                 interval_config,
