@@ -5,15 +5,15 @@ import os
 import threading
 from typing import Dict, Optional, Tuple
 
-import numpy as np
 import wandb
 
 from veeksha.capacity_search.constants import VICINITY_THRESHOLD, QPS_INCREASE_SCALE
 from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.config.capacity_search import CapacitySearchConfig
+from veeksha.config.capacity_search import CapacitySearchConfig 
+from veeksha.capacity_search.slo import get_slos_from_config
 from veeksha.config.utils import create_class_from_dict, dataclass_to_dict
 from veeksha.logger import init_logger
-from veeksha.metrics.slo_evaluator import SLOEvaluator
+from veeksha.capacity_search.slo_evaluator import SLOEvaluator
 from veeksha.run_benchmark import run_benchmark
 
 logger = init_logger(__name__)
@@ -51,24 +51,8 @@ class CapacitySearch:
         with open(os.path.join(self.job_output_dir, "config.json"), "w") as f:
             json.dump(self.full_config, f, indent=4)
 
-        # Create composable SLO config from capacity search config
-        self.slo_set = self.capacity_search_config.get_slos()
-        
-        # Initialize SLO evaluator with predictions if needed
-        predictions = None
-        if (
-            (self.capacity_search_config.slo_type == "deadline")
-            and self.capacity_search_config.dynamic_ttft_slo
-            and self.default_benchmark_config.prefill_profiler_config.use_predictions_for_ttft
-        ):
-            assert (
-                self.default_benchmark_config.prefill_profiler_config.predictor_dir
-                is not None
-            ), "Deadline SLO needs predictor directory"
-            predictions = self.default_benchmark_config.prefill_profiler_config.predictions
-        
-        # Create appropriate evaluator
-        self.slo_evaluator = SLOEvaluator(self.slo_set, predictions)
+        self.slo_set = get_slos_from_config(self.capacity_search_config.slos_config_file)
+        self.slo_evaluator = SLOEvaluator(self.slo_set)
 
     def _run_capacity_search_benchmark(
         self, qps: float
@@ -99,7 +83,7 @@ class CapacitySearch:
             logger.info(f"Cached results found for {qps}")
             return self._is_under_sla(cached_request_level_metrics_file, qps)
 
-        run(benchmark_config)
+        run_benchmark(benchmark_config)
 
         request_level_metrics_file = self._get_request_level_metrics(qps_run_dir)
 
@@ -137,47 +121,18 @@ class CapacitySearch:
     ) -> Tuple[
         bool, Optional[float], Optional[float], Optional[float], Optional[float], str
     ]:
-        # Use new SLO evaluator
-        if isinstance(self.slo_evaluator, DeadlineBasedSLOEvaluator) and self.slo_config.use_deadline_slos:
-            # Special handling for deadline-based SLOs for backward compatibility
-            is_under_sla, deadline_miss_rate = self.slo_evaluator.evaluate_deadline_slos(
-                request_level_metrics_file,
-                ttft_deadline=self.capacity_search_config.ttft_slo,
-                tbt_deadline=self.capacity_search_config.tbt_slo,
-                use_predictions=self.capacity_search_config.dynamic_ttft_slo
-            )
-            tbt = None
-            ttft = None
-            tpot = None
-        else:
-            # General SLO evaluation
-            is_under_sla, metrics_dict = self.slo_evaluator.evaluate_request_metrics(
-                request_level_metrics_file
-            )
-            
-            # Extract specific metrics for logging (maintain backward compatibility)
-            tbt = metrics_dict.get(f"tbt_p{int(self.capacity_search_config.tbt_percentile * 100)}")
-            ttft = metrics_dict.get(f"ttft_p{int(self.capacity_search_config.ttft_percentile * 100)}")
-            tpot = metrics_dict.get(f"tpot_p{int(self.capacity_search_config.tpot_percentile * 100)}")
-            deadline_miss_rate = metrics_dict.get(f"deadline_miss_rate_p{int(self.capacity_search_config.deadline_miss_rate_percentile * 100)}")
-            
-            # Log detailed metrics
-            logger.info(f"QPS: {qps} - {self.slo_evaluator.get_metrics_summary(metrics_dict)}")
-
-        # Maintain backward compatibility with existing logging
-        logger.info(
-            f"QPS: {qps}"
-            f" - TBT P{self.capacity_search_config.tbt_percentile * 100} Tokens: {tbt}"
-            f" - TTFT P{self.capacity_search_config.ttft_percentile * 100} Tokens: {ttft}"
-            f" - TPOT P{self.capacity_search_config.tpot_percentile * 100} Requests: {tpot}"
-            f" - Deadline Miss Rate P{self.capacity_search_config.deadline_miss_rate_percentile * 100} Requests: {deadline_miss_rate}",
+        is_under_sla, metrics_dict = self.slo_evaluator.evaluate_request_metrics(
+            request_level_metrics_file
         )
+            
+        # Log detailed metrics
+        logger.info(f"QPS: {qps} - {self.slo_evaluator.get_metrics_summary(metrics_dict)}")
         return (
             is_under_sla,
-            tbt,
-            ttft,
-            tpot,
-            deadline_miss_rate,
+            metrics_dict.get(f"tbt_p{int(self.capacity_search_config.tbt_percentile * 100)}"),
+            metrics_dict.get(f"ttft_p{int(self.capacity_search_config.ttft_percentile * 100)}"),
+            metrics_dict.get(f"tpot_p{int(self.capacity_search_config.tpot_percentile * 100)}"),
+            metrics_dict.get(f"deadline_miss_rate_p{int(self.capacity_search_config.deadline_miss_rate_percentile * 100)}"),
             str(qps),
         )
 
@@ -213,9 +168,7 @@ class CapacitySearch:
             ):
                 break
 
-            qps = (left + right) / 2
-            # round to 2 decimal places
-            qps = round(qps, 2)
+            qps = round((left + right) / 2, 2)
 
             if qps == last_qps:
                 break

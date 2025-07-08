@@ -1,6 +1,6 @@
 """Example configurations for the composable SLO system."""
 
-from veeksha.config.slo import (
+from veeksha.capacity_search.slo import (
     SLOSet,
     ConstantSLO,
     TTFTPredictionMultiplierSLO,

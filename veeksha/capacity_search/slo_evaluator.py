@@ -3,7 +3,7 @@
 import json
 from typing import Dict, List, Optional, Tuple, Any
 
-from veeksha.config.slo import SLOSet
+from veeksha.capacity_search.slo import SLOSet
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
@@ -24,8 +24,8 @@ class SLOEvaluator:
         self.slo_set = slo_set
         self.predictions = predictions or {}
         
-    def check_is_under_sla(self, 
-                     request_metrics_file: str) -> Tuple[bool, Dict[str, Any]]:
+    def evaluate_request_metrics(self, 
+                                 request_metrics_file: str) -> Tuple[bool, Dict[str, Any]]:
         """Evaluate SLOs against request-level metrics.
         
         Args:
@@ -45,7 +45,7 @@ class SLOEvaluator:
         for slo in self.slo_set.slos:
             # Use the SLO's own evaluation method
             result = slo.evaluate(request_level_metrics, self.predictions)
-            slo_results.append(result.is_met)
+            slo_results.append(result[0])
             
             # Store metric value with descriptive key
             if hasattr(slo, 'metric'):
@@ -57,14 +57,14 @@ class SLOEvaluator:
             
             if slo.name:
                 metric_key = f"{slo.name.replace(' ', '_')}_{metric_key}"
-            metrics_dict[metric_key] = result.metric_value
+            metrics_dict[metric_key] = result[1]
             
             # Log individual SLO result
             slo_identifier = slo.name or (slo.metric.value if hasattr(slo, 'metric') else slo.get_type())
             logger.debug(f"SLO '{slo_identifier}' "
                         f"(P{slo.percentile * 100}): "
-                        f"{'MET' if result.is_met else 'MISSED'} "
-                        f"(value={result.metric_value:.4f}, threshold={result.threshold:.4f})")
+                        f"{'MET' if result[0] else 'MISSED'} "
+                        f"(value={result[1]:.4f})")
         
         # Apply composition logic
         if self.slo_set.require_all:

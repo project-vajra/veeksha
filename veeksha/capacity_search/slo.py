@@ -2,6 +2,7 @@ from dataclasses import field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Literal, Tuple
 import numpy as np
+import yaml
 
 from veeksha.logger import init_logger
 from veeksha.config.core.base_poly_config import BasePolyConfig
@@ -16,7 +17,6 @@ class SLOMetric(str, Enum):
     TTFT = "ttft"
     TBT = "tbt"
     TPOT = "tpot"
-
 
 
 @frozen_dataclass
@@ -74,7 +74,8 @@ class SimpleMetricSLO(BaseSLO):
         
         return metric_value <= threshold, metric_value
     
-    def get_type(self) -> str:
+    @classmethod
+    def get_type(cls) -> str:
         return "simple_metric"
 
 
@@ -93,7 +94,7 @@ class ConstantSLO(SimpleMetricSLO):
         """Validate SLO definition."""
         super().__post_init__()
         if self.value <= 0.0:
-            raise ValueError("Value must be specified and must be > 0")
+            raise ValueError("ConstantSLO: value must be specified and must be > 0")
 
     @classmethod
     def get_type(cls) -> str:
@@ -107,8 +108,6 @@ class ConstantSLO(SimpleMetricSLO):
 class PredictionBasedSLO(SimpleMetricSLO):
     """Base class for SLOs based on predictions."""
     
-    # TODO: def evaluate
-
     metric: Literal[SLOMetric.TTFT] = field(
         default=SLOMetric.TTFT,
         init=False,
@@ -125,7 +124,8 @@ class PredictionBasedSLO(SimpleMetricSLO):
         default=None, metadata={"help": "Maximum value for the SLO (for clamping)"}
     )
 
-    def get_type(self) -> str:
+    @classmethod
+    def get_type(cls) -> str:
         return "prediction_based"
 
     def _get_clamped_threshold(self, threshold: float) -> float:
@@ -180,8 +180,9 @@ class TTFTPredictionMultiplierSLO(PredictionBasedSLO):
     def __post_init__(self):
         """Validate SLO definition."""
         super().__post_init__()
+        raise NotImplementedError("TTFTPredictionMultiplierSLO is not implemented")
         if self.value <= 0.0:
-            raise ValueError("Value must be specified and must be > 0")
+            raise ValueError("TTFTPredictionMultiplierSLO: value must be specified and must be > 0")
 
 
 @frozen_dataclass
@@ -206,8 +207,9 @@ class TTFTPredictionOffsetSLO(PredictionBasedSLO):
     def __post_init__(self):
         """Validate SLO definition."""
         super().__post_init__()
+        raise NotImplementedError("TTFTPredictionOffsetSLO is not implemented")
         if self.value < 0.0:
-            raise ValueError("Value must be specified and must be >= 0")
+            raise ValueError("TTFTPredictionOffsetSLO: value must be specified and must be >= 0")
 
 
 @frozen_dataclass
@@ -232,11 +234,6 @@ class DeadlineSLO(BaseSLO):
         default=None,
         metadata={"help": "Value for prediction-based TTFT threshold (offset or multiplier)"}
     )
-    # TODO: This should not be here. Will use a hardcoded value.
-    ttft_predictor_field: str = field(
-        default="num_total_tokens",
-        metadata={"help": "Field name to use for TTFT prediction lookup"}
-    )
     ttft_min_value: Optional[float] = field(
         default=None, metadata={"help": "Minimum value for TTFT threshold (for clamping)"}
     )
@@ -248,23 +245,26 @@ class DeadlineSLO(BaseSLO):
         """Validate DeadlineSLO definition."""
         super().__post_init__()
         
+        if self.ttft_prediction_type is not None:
+            raise NotImplementedError("Prediction-based TTFT threshold is not implemented")
+        
         if self.ttft_threshold is None and self.ttft_prediction_type is None:
-            raise ValueError("Must specify either ttft_threshold or ttft_prediction_type")
+            raise ValueError("DeadlineSLO: Must specify either ttft_threshold or ttft_prediction_type")
         
         if self.ttft_threshold is not None and self.ttft_prediction_type is not None:
-            raise ValueError("Cannot specify both ttft_threshold and ttft_prediction_type")
+            raise ValueError("DeadlineSLO: Cannot specify both ttft_threshold and ttft_prediction_type")
         
         if self.ttft_prediction_type is not None and self.ttft_prediction_value is None:
-            raise ValueError("Must specify ttft_prediction_value when using ttft_prediction_type")
+            raise ValueError("DeadlineSLO: Must specify ttft_prediction_value when using ttft_prediction_type")
         
         if self.ttft_prediction_type == "offset" and self.ttft_prediction_value < 0:
-            raise ValueError("ttft_prediction_value must be >= 0 for offset type")
+            raise ValueError("DeadlineSLO: ttft_prediction_value must be >= 0 for offset type")
         
         if self.ttft_prediction_type == "multiplier" and self.ttft_prediction_value <= 0:
-            raise ValueError("ttft_prediction_value must be > 0 for multiplier type")
+            raise ValueError("DeadlineSLO: ttft_prediction_value must be > 0 for multiplier type")
         
         if self.tbt_threshold <= 0:
-            raise ValueError("tbt_threshold must be specified and > 0")
+            raise ValueError("DeadlineSLO: tbt_threshold must be specified and > 0")
 
     @classmethod
     def get_type(cls) -> str:
@@ -275,46 +275,20 @@ class DeadlineSLO(BaseSLO):
         # This is not typically used since deadline evaluation is different
         return 0.0
     
-    # TODO: implement or mark as not implemented.
     def _get_ttft_threshold(self, predictions: Optional[Dict[int, float]], request_metrics: Dict[str, Any]) -> float:
         """Get the TTFT threshold (either fixed or prediction-based)."""
         if self.ttft_threshold is not None:
             return self.ttft_threshold
-        
-        # Prediction-based threshold
-        if not predictions:
-            raise ValueError("Prediction-based TTFT threshold requires predictions")
-        
-        # Get the predictor field value
-        predictor_values = request_metrics.get(self.ttft_predictor_field, [])
-        if not predictor_values:
-            logger.warning(f"No values found for predictor field {self.ttft_predictor_field}")
-            return 0.0
-        
-        # Use first value for now
-        request_value = predictor_values[0] if isinstance(predictor_values, list) else predictor_values
-        base_prediction = predictions.get(int(request_value), 0.0)
-        
-        if self.ttft_prediction_type == "offset":
-            threshold = base_prediction + self.ttft_prediction_value
-        else:  # multiplier
-            threshold = base_prediction * self.ttft_prediction_value
-        
-        # Apply clamping
-        if self.ttft_min_value is not None:
-            threshold = max(threshold, self.ttft_min_value)
-        if self.ttft_max_value is not None:
-            threshold = min(threshold, self.ttft_max_value)
-        
-        return threshold
-    
+        else:
+            raise NotImplementedError("Prediction-based TTFT threshold is not implemented")
+            
     def evaluate(self, request_metrics: Dict[str, Any], predictions: Optional[Dict[int, float]] = None) -> Tuple[bool, float]:
         """Evaluate deadline miss rate."""
         ttft_values = request_metrics.get("ttft", [])
         tbt_values = request_metrics.get("tbt", [])
         
         if not ttft_values or not tbt_values:
-            logger.warning("No values found for TTFT or TBT")
+            logger.warning("DeadlineSLO: No values found for TTFT or TBT")
             return False, 1.0
         
         # Get TTFT threshold
@@ -363,3 +337,40 @@ class SLOSet:
         default=True,
         metadata={"help": "If True, all SLOs must be met. If False, any SLO can be met."},
     )
+
+
+def get_slos_from_config(slos_config_file: str) -> SLOSet:
+    """Get or create SLOSet from a config file."""
+
+    # Load from external file
+    if slos_config_file.endswith(
+        ".json"
+    ) or slos_config_file.endswith(".yaml"):
+        with open(slos_config_file, "r") as f:
+            slo_dict = yaml.safe_load(f)
+    else:
+        raise ValueError(
+            f"Unsupported config file format: {slos_config_file}"
+        )
+
+    # Handle polymorphic deserialization for slos
+    slo_definitions = []
+    for slo_def_dict in slo_dict.get("slos", []):
+        slo_type_str = slo_def_dict.pop("type", None)
+        if not slo_type_str:
+            raise ValueError(
+                "Each SLO definition in config file must have a 'type'"
+            )
+        from veeksha.capacity_search.slo_registry import SLORegistry
+        slo_instance = SLORegistry.get_from_str(slo_type_str, **slo_def_dict)
+        slo_definitions.append(slo_instance)
+        
+    slos = SLOSet(
+        slos=slo_definitions, require_all=slo_dict.get("require_all", True)
+    )
+    logger.info(f"Loaded {len(slos.slos)} SLOs from {slos_config_file}")
+    
+    for slo in slos.slos:
+        logger.info(f"SLO: {slo}")
+    
+    return slos
