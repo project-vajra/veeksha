@@ -155,14 +155,8 @@ class LMEvalRequestGenerator:
         if self.req_idx >= len(self.cloned_requests):
             return None  # type: ignore
         req: Instance = self.cloned_requests[self.req_idx]
-        request_dispatch_interval = (
-            self.requests_interval_generator.get_next_inter_request_time()
-        )
+        dispatch_delay = self.requests_interval_generator.get_next_inter_request_time()
         self.req_idx += 1
-
-        metadata = {
-            "request_dispatch_interval": request_dispatch_interval,
-        }
 
         # just need context to send to the model
         if req.request_type == str(LMEvalOutputType.GENERATE_UNTIL):
@@ -183,11 +177,11 @@ class LMEvalRequestGenerator:
             return RequestConfig(
                 model=self.client_config.model,
                 prompt=(context, context_length),
+                dispatch_delay=dispatch_delay,
                 sampling_params=all_gen_kwargs,
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
                 id=self.req_idx - 1,
-                metadata=metadata,
             )
         elif req.request_type == str(LMEvalOutputType.LOGLIKELIHOOD):
             context, target = req.args  # type: ignore
@@ -197,6 +191,7 @@ class LMEvalRequestGenerator:
             return RequestConfig(
                 model=self.client_config.model,
                 prompt=(context, len(self.tokenizer.encode(context))),
+                dispatch_delay=dispatch_delay,
                 sampling_params={
                     "stream": False,
                     "logprobs": True,
@@ -207,7 +202,6 @@ class LMEvalRequestGenerator:
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
                 id=self.req_idx - 1,
-                metadata=metadata,
             )
         else:
             raise NotImplementedError(

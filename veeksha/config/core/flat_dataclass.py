@@ -179,8 +179,20 @@ def create_flat_dataclass(input_dataclass: Any) -> Any:
                     (field.name, field.name, field_type)
                 )
 
-                type_field_name = f"{field.name}_type"
-                default_value = str(field.default_factory().get_type())  # type: ignore
+                type_field_name = f"{prefixed_name}_type"
+
+                if field.default_factory is not MISSING:
+                    default_value = str(field.default_factory().get_type())  # type: ignore
+                elif field.default is not MISSING:
+                    if field.default is None:
+                        default_value = "None"
+                    else:
+                        default_value = str(field.default.get_type())  # type: ignore
+                else:
+                    raise ValueError(
+                        f"Field {field.name} of type {field_type} must have a default or default_factory"
+                    )
+
                 meta_fields_with_defaults.append(
                     (type_field_name, type(default_value), default_value)
                 )

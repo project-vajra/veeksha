@@ -21,7 +21,7 @@ class TraceRequestIntervalGenerator(BaseRequestIntervalGenerator):
 
         self.trace_df = load_trace(self.config.trace_file)
 
-        self.trace_df = process_request_interval_trace(
+        process_request_interval_trace(
             self.trace_df,
             self.config.trace_file,
             self.config.time_scale_factor,
