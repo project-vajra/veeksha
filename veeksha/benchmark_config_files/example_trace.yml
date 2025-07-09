@@ -1,0 +1,23 @@
+timeout: 10000
+max_completed_requests: 5
+api_url: "http://localhost:30000/v1"
+api_key: "token-abc123"
+
+client_config:
+  - model: "meta-llama/Meta-Llama-3-8B-Instruct"
+    num_clients: 15
+    num_concurrent_requests_per_client: 10
+    llm_api: "openai_chat"
+    
+request_generator_config:
+  - type: "trace"
+    trace_file: "data/processed_traces/swe_agent_trace_short.jsonl"
+    use_trace_prefix_hash_ids: true
+    session_generator_config:
+      - type: "synthetic"
+        minimum_prefix_match: 0.25
+        max_session_size: 50
+        min_session_size: 5
+        save_as_trace_file: true
+
+    

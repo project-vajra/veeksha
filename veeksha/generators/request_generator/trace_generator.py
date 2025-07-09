@@ -89,9 +89,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
             )
 
             # convert timestamps to milliseconds for saving (as expected by trace format)
-            trace_df_for_saving = self.trace_df.copy()
-            trace_df_for_saving["timestamp"] = trace_df_for_saving["timestamp"] * 1000
-            self.session_generator.save_requests_as_trace(trace_df_for_saving)
+            session_df_for_saving = self.trace_df_with_sessions.copy()
+            session_df_for_saving["timestamp"] = session_df_for_saving["timestamp"] * 1000
+            self.session_generator.save_requests_as_trace(session_df_for_saving)
 
         self.request_idx = 0
 
@@ -147,15 +147,12 @@ class TraceRequestGenerator(BaseRequestGenerator):
         raise Exception(f"Could not generate stable encoding for value {value}")
 
     def get_request(self) -> RequestConfig:
-        request_to_send = self.trace_df.iloc[self.request_idx]
+        if self.config.use_trace_sessions or self.config.session_generator_config is not None:
+            request_to_send = self.trace_df_with_sessions.iloc[self.request_idx]
+        else:
+            request_to_send = self.trace_df.iloc[self.request_idx]
 
         dispatch_delay = request_to_send["inter_request_time"]
-
-        if (
-            self.config.use_trace_sessions
-            or self.config.session_generator_config is not None
-        ):
-            dispatch_delay = request_to_send["session_id"]
 
         if self.config.use_trace_prefix_hash_ids:
             block_count = (
