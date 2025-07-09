@@ -78,7 +78,7 @@ def dispatch_requests(
                     # capped sleep at 100ms
                     sleep_duration = min(remaining_time, 0.1)
                     time.sleep(sleep_duration)
-                    
+
             # if another thread has set the stop event we don't send the request
             if stop_event.is_set():
                 continue

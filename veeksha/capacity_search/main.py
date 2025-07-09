@@ -34,12 +34,6 @@ def run():
         open(capacity_search_config.benchmark_config_file)
     )
     benchmark_configs_params = expand_dict(benchmark_configs_yaml)
-    # TODO(chus): launch server support
-    # if capacity_search_config.server_config_file:
-    #     server_config = yaml.safe_load(open(capacity_search_config.server_config_file))
-    # else:
-    #     server_config = None
-    #     logger.info("Server config not provided. Will not launch server.")
 
     assert (
         capacity_search_config.deadline_miss_rate_slo >= 0
