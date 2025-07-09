@@ -26,8 +26,8 @@ class TraceRequestGenerator(BaseRequestGenerator):
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         client_config: ClientConfig,
     ):
-        from veeksha.generators.session_generator.generator_registry import (
-            SessionGeneratorRegistry,
+        from veeksha.generators.synthetic_session_generator import (
+            SyntheticSessionGenerator,
         )
 
         self.config = config
@@ -72,9 +72,8 @@ class TraceRequestGenerator(BaseRequestGenerator):
             if "session_id" not in self.trace_df.columns:
                 raise ValueError("Trace file does not contain session_id of requests")
         elif self.config.session_generator_config is not None:
-            self.session_generator = SessionGeneratorRegistry.get(
-                self.config.session_generator_config.get_type(),
-                self.config.session_generator_config,
+            self.session_generator = SyntheticSessionGenerator(
+                self.config.session_generator_config
             )
             self.trace_df_with_sessions = self.session_generator.generate_sessions(
                 self.trace_df
@@ -90,7 +89,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
             # convert timestamps to milliseconds for saving (as expected by trace format)
             session_df_for_saving = self.trace_df_with_sessions.copy()
-            session_df_for_saving["timestamp"] = session_df_for_saving["timestamp"] * 1000
+            session_df_for_saving["timestamp"] = (
+                session_df_for_saving["timestamp"] * 1000
+            )
             self.session_generator.save_requests_as_trace(session_df_for_saving)
 
         self.request_idx = 0
@@ -147,7 +148,10 @@ class TraceRequestGenerator(BaseRequestGenerator):
         raise Exception(f"Could not generate stable encoding for value {value}")
 
     def get_request(self) -> RequestConfig:
-        if self.config.use_trace_sessions or self.config.session_generator_config is not None:
+        if (
+            self.config.use_trace_sessions
+            or self.config.session_generator_config is not None
+        ):
             request_to_send = self.trace_df_with_sessions.iloc[self.request_idx]
         else:
             request_to_send = self.trace_df.iloc[self.request_idx]

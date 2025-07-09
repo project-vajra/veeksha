@@ -6,19 +6,18 @@ from typing import Dict, List
 import numpy as np
 import pandas as pd
 
+from veeksha.config.generators.synthetic_session_generator import (
+    SyntheticSessionGeneratorConfig,
+)
 from veeksha.config.generators.interval_generator.gamma_generator import (
     GammaRequestIntervalGeneratorConfig,
 )
 from veeksha.config.generators.interval_generator.poisson_generator import (
     PoissonRequestIntervalGeneratorConfig,
 )
-from veeksha.config.generators.session_generator.synthetic_generator import (
-    SyntheticSessionGeneratorConfig,
-)
 from veeksha.generators.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
 )
-from veeksha.generators.session_generator.base_generator import BaseSessionGenerator
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
@@ -54,7 +53,7 @@ class PrefixCache:
         return length
 
 
-class SyntheticSessionGenerator(BaseSessionGenerator):
+class SyntheticSessionGenerator:
     def __init__(
         self,
         config: SyntheticSessionGeneratorConfig,

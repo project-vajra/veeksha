@@ -7,14 +7,14 @@ from veeksha.config.generators.interval_generator.base_generator import (
 from veeksha.config.generators.interval_generator.poisson_generator import (
     PoissonRequestIntervalGeneratorConfig,
 )
-from veeksha.config.generators.session_generator.base_generator import (
-    BaseSessionGeneratorConfig,
-)
-from veeksha.types.session_generator_type import SessionGeneratorType
 
 
 @frozen_dataclass
-class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
+class SyntheticSessionGeneratorConfig:
+    seed: int = field(
+        default=42,
+        metadata={"help": "Seed for the random number generator."},
+    )
     session_interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
         default_factory=PoissonRequestIntervalGeneratorConfig,
         metadata={
@@ -53,7 +53,3 @@ class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
             "help": "If save_as_trace_file is true, this is the name of the trace file, without the extension. Config params will be appended to the file name."
         },
     )
-
-    @classmethod
-    def get_type(cls):
-        return SessionGeneratorType.SYNTHETIC
