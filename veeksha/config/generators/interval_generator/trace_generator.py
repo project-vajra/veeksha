@@ -1,3 +1,4 @@
+import os
 from dataclasses import field
 
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
@@ -19,6 +20,18 @@ class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
         default=0.3,
         metadata={"help": "Factor to scale the time intervals in the trace."},
     )
+
+    def __post_init__(self):
+        # check if trace file exists
+        if not os.path.exists(self.trace_file):
+            raise FileNotFoundError(
+                f"{self.__class__.__name__}: Trace file not found: {self.trace_file}"
+            )
+        # time_scale_factor cannot be negative
+        if self.time_scale_factor < 0:
+            raise ValueError(
+                f"{self.__class__.__name__}: time_scale_factor cannot be negative"
+            )
 
     @classmethod
     def get_type(cls):

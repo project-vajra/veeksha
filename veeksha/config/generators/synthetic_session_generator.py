@@ -7,6 +7,9 @@ from veeksha.config.generators.interval_generator.base_generator import (
 from veeksha.config.generators.interval_generator.poisson_generator import (
     PoissonRequestIntervalGeneratorConfig,
 )
+from veeksha.logger import init_logger
+
+logger = init_logger(__name__)
 
 
 @frozen_dataclass
@@ -53,3 +56,9 @@ class SyntheticSessionGeneratorConfig:
             "help": "If save_as_trace_file is true, this is the name of the trace file, without the extension. Config params will be appended to the file name."
         },
     )
+
+    def __post_init__(self):
+        if self.trace_file_name != "" and not self.save_as_trace_file:
+            logger.warning(
+                "trace_file_name is provided but save_as_trace_file is false. trace_file_name will be ignored."
+            )

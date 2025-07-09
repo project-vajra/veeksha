@@ -59,31 +59,28 @@ def process_request_length_trace(
     trace_df["input_length"] = trace_df["input_length"].astype(int)
     trace_df["output_length"] = trace_df["output_length"].astype(int)
 
-    if max_tokens != -1:
-        # make sure the total does not exceed the max tokens, adjust the prefill tokens if needed
-        total_tokens = trace_df["input_length"] + trace_df["output_length"]
-        diff_tokens = total_tokens - max_tokens
-        diff_tokens = diff_tokens.clip(lower=0)
+    # make sure the total does not exceed the max tokens, adjust the prefill tokens if needed
+    total_tokens = trace_df["input_length"] + trace_df["output_length"]
+    diff_tokens = total_tokens - max_tokens
+    diff_tokens = diff_tokens.clip(lower=0)
 
-        # deduct the diff tokens from the prefill and decode tokens proportionally
-        input_length_ratio = trace_df["input_length"] / total_tokens
-        output_length_ratio = trace_df["output_length"] / total_tokens
+    # deduct the diff tokens from the prefill and decode tokens proportionally
+    input_length_ratio = trace_df["input_length"] / total_tokens
+    output_length_ratio = trace_df["output_length"] / total_tokens
 
-        trace_df["input_length"] -= (np.ceil(diff_tokens * input_length_ratio)).astype(
-            int
-        )
+    trace_df["input_length"] -= (np.ceil(diff_tokens * input_length_ratio)).astype(int)
 
-        trace_df["output_length"] -= (
-            np.ceil(diff_tokens * output_length_ratio)
-        ).astype(int)
+    trace_df["output_length"] -= (np.ceil(diff_tokens * output_length_ratio)).astype(
+        int
+    )
 
-        # make sure that there is at least one prefill and decode token
-        trace_df["input_length"] = trace_df["input_length"].clip(lower=1)
-        trace_df["output_length"] = trace_df["output_length"].clip(lower=1)
+    # make sure that there is at least one prefill and decode token
+    trace_df["input_length"] = trace_df["input_length"].clip(lower=1)
+    trace_df["output_length"] = trace_df["output_length"].clip(lower=1)
 
-        assert all(
-            trace_df["input_length"] + trace_df["output_length"] <= max_tokens
-        ), f"Total tokens after clipping must be less than or equal to {max_tokens}"
+    assert all(
+        trace_df["input_length"] + trace_df["output_length"] <= max_tokens
+    ), f"Total tokens after clipping must be less than or equal to {max_tokens}"
 
     assert all(
         trace_df["input_length"] > 0

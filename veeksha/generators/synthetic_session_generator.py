@@ -6,14 +6,14 @@ from typing import Dict, List
 import numpy as np
 import pandas as pd
 
-from veeksha.config.generators.synthetic_session_generator import (
-    SyntheticSessionGeneratorConfig,
-)
 from veeksha.config.generators.interval_generator.gamma_generator import (
     GammaRequestIntervalGeneratorConfig,
 )
 from veeksha.config.generators.interval_generator.poisson_generator import (
     PoissonRequestIntervalGeneratorConfig,
+)
+from veeksha.config.generators.synthetic_session_generator import (
+    SyntheticSessionGeneratorConfig,
 )
 from veeksha.generators.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
