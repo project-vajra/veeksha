@@ -159,8 +159,8 @@ class SyntheticSessionGenerator:
             ):
                 params.append(f"qps-{interval_config.qps}")
 
-            if "seed" in interval_config.__dict__:
-                params.append(f"seed-{interval_config.__dict__['seed']}")
+            if hasattr(interval_config, "seed"):
+                params.append(f"seed-{interval_config.seed}")
 
             return f"{base_name}_{'_'.join(params)}.jsonl"
 

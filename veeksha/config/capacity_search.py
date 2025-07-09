@@ -33,7 +33,7 @@ class CapacitySearchConfig:
     )
     min_search_granularity: float = field(
         default=2.5,
-        metadata={"help": "Minimum search granularity for capacity (%)"},
+        metadata={"help": "Minimum search granularity for capacity (%%)"},
     )
     max_iterations: int = field(
         default=20,

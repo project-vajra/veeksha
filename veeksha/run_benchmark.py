@@ -53,14 +53,13 @@ def dispatch_requests(
         if should_send_new_request(service_metrics, num_errored_requests_handled):
             request_start_time = time.monotonic()
 
-            # Check if we should handle error request
+            # check if we should handle error request
             if service_metrics.num_requests >= service_metrics.max_requests:
                 num_errored_requests_handled += 1
 
-            # Get next request and its dispatch time
+            # get next request and its dispatch time
             request_config = request_generator.get_request()
             request_dispatch_delay = request_config.dispatch_delay
-            service_metrics.register_launched_request()
 
             if request_dispatch_delay < 0:
                 logger.warning(
@@ -68,7 +67,7 @@ def dispatch_requests(
                 )
                 break
 
-            # Wait for dispatch time
+            # wait for dispatch time
             while not stop_event.is_set():
                 elapsed_time = time.monotonic() - request_start_time
                 if elapsed_time >= request_dispatch_delay:
@@ -79,8 +78,13 @@ def dispatch_requests(
                     # capped sleep at 100ms
                     sleep_duration = min(remaining_time, 0.1)
                     time.sleep(sleep_duration)
+                    
+            # if another thread has set the stop event we don't send the request
+            if stop_event.is_set():
+                continue
 
-            # Dispatch request
+            # dispatch
+            service_metrics.register_launched_request()
             input_queue.put(request_config)
             logger.info(f"Dispatched request {request_config.id}")
         else:
