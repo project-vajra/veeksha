@@ -1,0 +1,124 @@
+import math
+import random
+from typing import List, Optional, Tuple, Union
+
+from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
+
+from veeksha.config.client import ClientConfig
+from veeksha.config.generators.request_generator.synthetic_generator import (
+    SyntheticRequestGeneratorConfig,
+)
+from veeksha.core.request_config import RequestConfig
+from veeksha.generators.interval_generator.generator_registry import (
+    RequestIntervalGeneratorRegistry,
+)
+from veeksha.generators.length_generator.generator_registry import (
+    RequestLengthGeneratorRegistry,
+)
+from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
+from veeksha.logger import init_logger
+
+logger = init_logger(__name__)
+
+
+class SyntheticRequestGenerator(BaseRequestGenerator):
+    def __init__(
+        self,
+        config: SyntheticRequestGeneratorConfig,
+        tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+        client_config: ClientConfig,
+        corpus_lines: Optional[List[str]] = None,
+    ):
+        self.config = config
+        self.tokenizer = tokenizer
+
+        self.client_config = client_config
+        self.request_length_generator = RequestLengthGeneratorRegistry.get(
+            self.config.length_generator_config.get_type(),
+            self.config.length_generator_config,
+        )
+        self.requests_interval_generator = RequestIntervalGeneratorRegistry.get(
+            self.config.interval_generator_config.get_type(),
+            self.config.interval_generator_config,
+        )
+        self.corpus_lines = corpus_lines
+
+        self.request_id = 0
+
+    def generate_random_prompt(
+        self,
+        tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+        num_prompt_tokens: int = 1024,
+        corpus_lines: Union[List[str], None] = None,
+    ) -> Tuple[str, int]:
+        """Generate a random prompt with a given number of tokens.
+        Args:
+            num_prompt_tokens: The number of tokens to generate in the prompt.
+        Returns:
+            A random prompt with the given number of tokens.
+        """
+        assert corpus_lines is not None, "corpus_lines must be provided"
+
+        get_token_length = lambda text: len(tokenizer.encode(text))
+
+        remaining_prompt_tokens = num_prompt_tokens
+        random.shuffle(corpus_lines)
+        sampling_lines = True
+        prompt = ""
+        while sampling_lines:
+            for line in corpus_lines:
+                line_to_add = line
+                if remaining_prompt_tokens - get_token_length(line_to_add) < 0:
+                    # This will cut off a line in the middle of a word, but that's ok since an
+                    # llm should be able to handle that.
+                    line_to_add = line_to_add[: int(math.ceil(remaining_prompt_tokens))]
+                    sampling_lines = False
+                    prompt += line_to_add
+                    break
+                prompt += line_to_add
+                remaining_prompt_tokens -= get_token_length(line_to_add)
+
+        return (prompt, num_prompt_tokens)
+
+    def get_request(self) -> RequestConfig:
+        (
+            num_prompt_tokens,
+            num_output_tokens,
+        ) = self.request_length_generator.get_next_num_tokens()
+        dispatch_delay = self.requests_interval_generator.get_next_inter_request_time()
+        if num_prompt_tokens < 0 or num_output_tokens < 0:
+            logger.error(
+                f"Invalid number of tokens generated: prompt={num_prompt_tokens}, output={num_output_tokens} (potentially from trace request length generator)."
+            )
+        num_prompt_tokens = int(num_prompt_tokens)
+        num_output_tokens = int(num_output_tokens)
+        prompt_body, _ = self.generate_random_prompt(
+            tokenizer=self.tokenizer,
+            num_prompt_tokens=num_prompt_tokens,
+            corpus_lines=self.corpus_lines,
+        )
+
+        instruction = f"Generate at least {num_output_tokens} tokens repeating the following text:\n"
+        prompt = instruction + prompt_body
+
+        prompt_token_count = len(self.tokenizer.encode(prompt))
+
+        default_sampling_params = {
+            "max_tokens": num_output_tokens,
+        }
+        default_sampling_params.update(
+            self.client_config.additional_sampling_params_dict
+        )
+        request_config = RequestConfig(
+            model=self.client_config.model,
+            prompt=(prompt, prompt_token_count),
+            dispatch_delay=dispatch_delay,
+            sampling_params=default_sampling_params,
+            llm_api=self.client_config.llm_api,
+            address_append_value=self.client_config.address_append_value,
+            id=self.request_id,
+        )
+
+        self.request_id += 1
+
+        return request_config

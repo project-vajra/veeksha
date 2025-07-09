@@ -1,7 +1,9 @@
 import time
 from typing import Dict
 
-from veeksha.config.config import DeadlineConfig, MetricsConfig, PrefillProfilerConfig
+from veeksha.config.deadline import DeadlineConfig
+from veeksha.config.metrics import MetricsConfig
+from veeksha.config.prefill_profiler import PrefillProfilerConfig
 from veeksha.metrics.metric_store import MetricStore
 from veeksha.metrics.request_metrics import RequestMetrics
 

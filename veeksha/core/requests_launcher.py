@@ -3,7 +3,7 @@ from multiprocessing import Queue as MPQueue
 from threading import Thread
 from typing import Dict
 
-from veeksha.config.config import ClientConfig
+from veeksha.config.client import ClientConfig
 from veeksha.core.llm_clients import construct_client
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
 

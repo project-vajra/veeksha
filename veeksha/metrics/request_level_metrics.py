@@ -2,7 +2,8 @@ import json
 import os
 from typing import List
 
-from veeksha.config.config import DeadlineConfig, PrefillProfilerConfig
+from veeksha.config.deadline import DeadlineConfig
+from veeksha.config.prefill_profiler import PrefillProfilerConfig
 from veeksha.metrics.metric_utils import (
     find_min_tbt_deadline_to_meet,
     get_request_level_deadline_miss_rate,

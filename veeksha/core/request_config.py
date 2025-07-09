@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional, Tuple
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RequestConfig(BaseModel):
@@ -10,16 +10,17 @@ class RequestConfig(BaseModel):
         model: The model to use.
         prompt: The prompt to provide to the LLM API.
         sampling_params: Additional sampling parameters to send with the request.
-            For more information see the Router app's documentation for the completions
+            For more information see the Router app's documentation for the completions endpoint.
+        dispatch_delay: The delay in seconds before dispatching the request to the LLM API.
         llm_api: The name of the LLM API to send the request to.
-        metadata: Additional metadata to attach to the request for logging or validation purposes.
     """
 
     model: str
     prompt: Tuple[str, int]
+    dispatch_delay: float = 0.0
     sampling_params: Optional[Dict[str, Any]] = None
     llm_api: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     address_append_value: Optional[str] = None
     id: Optional[int] = None
 
