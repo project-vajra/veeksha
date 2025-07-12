@@ -6,9 +6,10 @@ from argparse import (
 )
 from collections import defaultdict, deque
 from dataclasses import MISSING, fields, make_dataclass
-from typing import Any, get_args
+from typing import Any, Optional, get_args
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
+from veeksha.config.core.decorators import has_allow_from_file_decorator
 from veeksha.config.utils import (
     get_all_subclasses,
     get_inner_type,
@@ -96,20 +97,22 @@ def create_from_cli_args(cls) -> Any:
         action = None
         field_type = field.type
         help_text = cls.metadata_mapping[field.name].get("help", None)
+        is_field_optional = is_optional(field.type)
 
-        assert isinstance(field.type, type)
+        if is_field_optional:
+            field_type = get_inner_type(field.type)
 
-        if is_list(field.type):
-            assert is_composed_of_primitives(field.type)
-            field_type = get_args(field.type)[0]
+        if is_list(field_type):
+            assert is_composed_of_primitives(field_type)
+            field_type = get_args(field_type)[0]
             if is_primitive_type(field_type):
                 nargs = "+"
             else:
                 field_type = json.loads
-        elif is_dict(field.type):
-            assert is_composed_of_primitives(field.type)
+        elif is_dict(field_type):
+            assert is_composed_of_primitives(field_type)
             field_type = json.loads
-        elif is_bool(field.type):
+        elif is_bool(field_type):
             action = BooleanOptionalAction
 
         arg_params = {
@@ -126,6 +129,8 @@ def create_from_cli_args(cls) -> Any:
             arg_params["default"] = value
         elif field.default_factory is not MISSING:
             arg_params["default"] = field.default_factory()
+        elif is_field_optional:
+            arg_params["default"] = None
         else:
             arg_params["required"] = True
 
@@ -135,7 +140,13 @@ def create_from_cli_args(cls) -> Any:
 
     args = parser.parse_args()
 
-    return cls(**vars(args))
+    instance = cls(**vars(args))
+
+    # inspect instance
+    for field in fields(cls):
+        print(field.name, getattr(instance, field.name))
+
+    return instance
 
 
 def get_config_class_by_type_name(config_class: Any, type_name: str) -> Any:
@@ -157,6 +168,15 @@ def create_flat_dataclass(input_dataclass: Any) -> Any:
     dataclass_args = defaultdict(list)
     dataclass_dependencies = defaultdict(set)
     metadata_mapping = {}
+    dataclass_file_fields = {}  # Maps dataclass to its file field name
+
+    def add_file_arg(target_cls, file_field_name: str):
+        # adding the implicit "<prefix>_from_file" CLI flag.
+        meta_fields_with_defaults.append((file_field_name, Optional[str], None))
+        metadata_mapping[file_field_name] = {
+            "help": f"Path to YAML/JSON configuration file for {target_cls.__name__}."
+        }
+        dataclass_file_fields[target_cls] = file_field_name
 
     def process_dataclass(_input_dataclass, prefix=""):
         if _input_dataclass in processed_classes:
@@ -164,6 +184,15 @@ def create_flat_dataclass(input_dataclass: Any) -> Any:
 
         processed_classes.add(_input_dataclass)
         _ = dataclass_dependencies[_input_dataclass]
+
+        # add _from_file to non-poly or children of poly dataclasses with explicit @allow_from_file
+        if has_allow_from_file_decorator(_input_dataclass):
+            file_field_name = (
+                f"{prefix}from_file"
+                if prefix
+                else f"{to_snake_case(_input_dataclass.__name__)}_from_file"
+            )
+            add_file_arg(_input_dataclass, file_field_name)
 
         for field in fields(_input_dataclass):
             prefixed_name = f"{prefix}{field.name}"
@@ -173,10 +202,10 @@ def create_flat_dataclass(input_dataclass: Any) -> Any:
             else:
                 field_type = field.type
 
-            # # if field is a BasePolyConfig, add a type argument and process it as a dataclass
+            # if field is a BasePolyConfig, add a type argument and process it as a dataclass
             if is_subclass(field_type, BasePolyConfig):
                 dataclass_args[_input_dataclass].append(
-                    (field.name, field.name, field_type)
+                    (prefixed_name, field.name, field_type)
                 )
 
                 type_field_name = f"{prefixed_name}_type"
@@ -198,17 +227,21 @@ def create_flat_dataclass(input_dataclass: Any) -> Any:
                 )
                 metadata_mapping[type_field_name] = field.metadata
 
+                # add _from_file to base poly config with explicit @allow_from_file
+                if has_allow_from_file_decorator(field_type):
+                    file_field_name = f"{prefixed_name}_from_file"
+                    add_file_arg(field_type, file_field_name)
+
                 assert hasattr(field_type, "__dataclass_fields__")
                 for subclass in get_all_subclasses(field_type):
                     dataclass_dependencies[_input_dataclass].add(subclass)
                     process_dataclass(subclass, f"{to_snake_case(subclass.__name__)}_")
                 continue
-
             # if field is a dataclass, recursively process it
             if hasattr(field_type, "__dataclass_fields__"):
                 dataclass_dependencies[_input_dataclass].add(field_type)
                 dataclass_args[_input_dataclass].append(
-                    (field.name, field.name, field_type)
+                    (prefixed_name, field.name, field_type)
                 )
                 process_dataclass(field_type, f"{to_snake_case(field_type.__name__)}_")  # type: ignore
                 continue
@@ -245,6 +278,7 @@ def create_flat_dataclass(input_dataclass: Any) -> Any:
     FlatClass.dataclass_args = dataclass_args
     FlatClass.dataclass_dependencies = dataclass_dependencies
     FlatClass.metadata_mapping = metadata_mapping
+    FlatClass.dataclass_file_fields = dataclass_file_fields
 
     # Helper methods
     FlatClass.reconstruct_original_dataclass = reconstruct_original_dataclass

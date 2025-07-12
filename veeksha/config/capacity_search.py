@@ -6,6 +6,7 @@ from typing import Optional
 import yaml  # type: ignore
 
 from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.core.decorators import allow_from_file
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.utils import create_class_from_dict
@@ -15,6 +16,7 @@ from veeksha.logger import init_logger
 logger = init_logger(__name__)
 
 
+@allow_from_file
 @frozen_dataclass
 class CapacitySearchConfig:
     """Configuration for capacity search benchmark. This is a special benchmark that runs multiple benchmarks with different QPS and
@@ -44,22 +46,11 @@ class CapacitySearchConfig:
         default="./veeksha/capacity_search/output",
         metadata={"help": "Output directory for capacity search."},
     )
-    capsearch_config_file: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": "Path to YAML configuration file for the capacity search. If provided, no other parameters will be used."
-        },
-    )
+
     benchmark_config: BenchmarkConfig = field(
         default_factory=BenchmarkConfig,
         metadata={"help": "Benchmark config for capacity search."},
     )
-    # benchmark_config_file: str = field(
-    #     default="./veeksha/capacity_search/config/default_config.yml",
-    #     metadata={
-    #         "help": "Path to benchmark config file. Benchmark config files can be expanded to multiple configurations."
-    #     },
-    # )
     slo_type: str = field(
         default="deadline",
         metadata={"help": "Type of SLO to use for capacity search"},

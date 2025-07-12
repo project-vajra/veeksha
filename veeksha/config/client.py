@@ -2,10 +2,12 @@ import json
 from dataclasses import field
 from typing import Optional
 
+from veeksha.config.core.decorators import allow_from_file
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.core.llm_clients import SUPPORTED_APIS
 
 
+@allow_from_file
 @frozen_dataclass
 class ClientConfig:
     model: str = field(

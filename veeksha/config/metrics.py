@@ -1,9 +1,11 @@
 from dataclasses import field
 from typing import Optional
 
+from veeksha.config.core.decorators import allow_from_file
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 
 
+@allow_from_file
 @frozen_dataclass
 class MetricsConfig:
     output_dir: str = field(

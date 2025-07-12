@@ -1,8 +1,10 @@
 from dataclasses import field
 
+from veeksha.config.core.decorators import allow_from_file
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 
 
+@allow_from_file
 @frozen_dataclass
 class DeadlineConfig:
     ttft_deadline: float = field(

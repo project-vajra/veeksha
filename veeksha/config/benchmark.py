@@ -6,6 +6,7 @@ from typing import Optional
 import yaml  # type: ignore
 
 from veeksha.config.client import ClientConfig
+from veeksha.config.core.decorators import allow_from_file
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.deadline import DeadlineConfig
@@ -28,6 +29,7 @@ from veeksha.types import RequestGeneratorType
 logger = init_logger(__name__)
 
 
+@allow_from_file
 @frozen_dataclass
 class BenchmarkConfig:
     seed: int = field(
@@ -52,12 +54,6 @@ class BenchmarkConfig:
     api_key: Optional[str] = field(
         default="token-abc123",
         metadata={"help": "The API key for the benchmark."},
-    )
-    benchmark_config_file: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": "Path to YAML configuration file for the benchmark. If it's provided, no other parameters will be used."
-        },
     )
     client_config: ClientConfig = field(
         default_factory=ClientConfig,
