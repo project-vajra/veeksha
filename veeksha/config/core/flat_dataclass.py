@@ -49,16 +49,24 @@ def topological_sort(dataclass_dependencies: dict) -> list:
 def reconstruct_original_dataclass(self) -> Any:
     """
     This function is dynamically mapped to FlatClass as an instance method.
+    Reconstructs the original dataclass from the flattened representation.
     """
+    # list of classes, from the most dependent to the least dependent
     sorted_classes = topological_sort(self.dataclass_dependencies)
+    for cls in sorted_classes:
+        print(cls.__name__)
+
     instances = {}
 
+    # iter over classes from least dependent to most
     for _cls in reversed(sorted_classes):
         args = {}
 
+        # instantiate current class fields
         for prefixed_field_name, original_field_name, field_type in self.dataclass_args[
             _cls
         ]:
+            # if poly, find the subclass of field_type that matches the provided type
             if is_subclass(field_type, BasePolyConfig):
                 config_type = getattr(self, f"{original_field_name}_type")
                 # find all subclasses of field_type and check which one matches the config_type
@@ -71,8 +79,10 @@ def reconstruct_original_dataclass(self) -> Any:
                 assert (
                     config_type_matched
                 ), f"Invalid type {config_type} for {prefixed_field_name}_type. Valid types: {[str(subclass.get_type()) for subclass in get_all_subclasses(field_type)]}"
+            # child dataclass has already been instantiated, so just assign it
             elif hasattr(field_type, "__dataclass_fields__"):
                 args[original_field_name] = instances[field_type]
+            # primitive type
             else:
                 value = getattr(self, prefixed_field_name)
                 if value is not MISSING and callable(value):
@@ -136,7 +146,8 @@ def create_from_cli_args(cls) -> Any:
 
         if nargs:
             arg_params["nargs"] = nargs
-        parser.add_argument(f"--{field.name}", **arg_params)
+        cli_arg_name = field.name.replace("_", "-")
+        parser.add_argument(f"--{cli_arg_name}", dest=field.name, **arg_params)
 
     args = parser.parse_args()
 
