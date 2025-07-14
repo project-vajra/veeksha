@@ -306,3 +306,95 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
             e,
         )
         raise
+    
+
+def load_yaml_config(file_path: str):
+    """Load a YAML configuration file and return its contents as a mapping.
+
+    The function performs a series of robustness checks and provides
+    informative log messages for each failure mode.
+
+    1. Verifies the file exists and is readable.
+    2. Attempts to parse using ``yaml.safe_load``.
+    3. On YAML parse errors, falls back to ``json.loads`` (helpful when the
+       file is actually JSON or a subset thereof).
+    4. Ensures the resulting object is a dictionary (mapping) – required by
+       the rest of the configuration machinery.
+
+    Parameters
+    ----------
+    file_path : str
+        Path to the YAML/JSON configuration file.
+
+    Returns
+    -------
+    dict
+        Parsed configuration mapping.
+
+    Raises
+    ------
+    FileNotFoundError
+        If *file_path* does not exist.
+    PermissionError
+        If the file cannot be read.
+    yaml.YAMLError | json.JSONDecodeError
+        If the file cannot be parsed as YAML or JSON.
+    ValueError
+        If the top-level parsed object is not a mapping.
+    """
+
+    import os
+    import json
+    import yaml
+
+    # check file
+    if not os.path.exists(file_path):
+        logger.error("Configuration file '%s' does not exist.", file_path)
+        raise FileNotFoundError(f"Configuration file '{file_path}' not found.")
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            raw_content = f.read()
+    except Exception as exc:
+        logger.error("Failed to read configuration file '%s': %s", file_path, exc)
+        raise
+
+    # try yaml first
+    try:
+        data = yaml.safe_load(raw_content)
+    except yaml.YAMLError as yaml_err:
+        logger.warning(
+            "YAML parsing error in '%s': %s – attempting JSON fallback.",
+            file_path,
+            yaml_err,
+        )
+        # json fallback
+        try:
+            data = json.loads(raw_content)
+            logger.info("File '%s' parsed successfully as JSON.", file_path)
+        except json.JSONDecodeError as json_err:
+            logger.error(
+                "Failed to parse '%s' as either YAML or JSON: %s", file_path, json_err
+            )
+            # original YAML error for clarity
+            raise yaml_err from None
+
+    # handle empty file (safe_load returns None)
+    if data is None:
+        logger.warning(
+            "Configuration file '%s' is empty. Treating as an empty mapping.",
+            file_path,
+        )
+        data = {}
+
+    # ensure the loaded data is a mapping
+    if not isinstance(data, dict):
+        logger.error(
+            "Configuration file '%s' must contain a mapping at the top level (got %s).",
+            file_path,
+            type(data).__name__,
+        )
+        raise ValueError(
+            f"Configuration file {file_path} must contain a mapping at the top level."
+        )
+    return data

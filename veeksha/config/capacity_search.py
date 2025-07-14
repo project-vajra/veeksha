@@ -46,7 +46,6 @@ class CapacitySearchConfig:
         default="./veeksha/capacity_search/output",
         metadata={"help": "Output directory for capacity search."},
     )
-
     benchmark_config: BenchmarkConfig = field(
         default_factory=BenchmarkConfig,
         metadata={"help": "Benchmark config for capacity search."},

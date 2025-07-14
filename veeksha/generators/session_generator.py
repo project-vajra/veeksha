@@ -12,8 +12,8 @@ from veeksha.config.generators.interval_generator.gamma_generator import (
 from veeksha.config.generators.interval_generator.poisson_generator import (
     PoissonRequestIntervalGeneratorConfig,
 )
-from veeksha.config.generators.synthetic_session_generator import (
-    SyntheticSessionGeneratorConfig,
+from veeksha.config.generators.session_generator import (
+    SessionGeneratorConfig,
 )
 from veeksha.generators.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
@@ -53,10 +53,10 @@ class PrefixCache:
         return length
 
 
-class SyntheticSessionGenerator:
+class SessionGenerator:
     def __init__(
         self,
-        config: SyntheticSessionGeneratorConfig,
+        config: SessionGeneratorConfig,
     ):
         self.config = config
         self.session_interval_generator = RequestIntervalGeneratorRegistry.get(

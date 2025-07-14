@@ -1,4 +1,5 @@
 import multiprocessing
+import os
 import platform
 import random
 import threading
@@ -28,6 +29,17 @@ from veeksha.metrics.service_metrics import ServiceMetrics
 from veeksha.types import RequestGeneratorType
 
 logger = init_logger(__name__)
+
+
+def setup_api_environment(
+    api_key=None,
+    api_url=None,
+):
+    """Set up environment variables for OpenAI API"""
+    assert api_key is not None, "API key is required"
+    assert api_url is not None, "API port is required"
+    os.environ["OPENAI_API_KEY"] = api_key
+    os.environ["OPENAI_API_BASE"] = api_url
 
 
 def should_send_new_request(
@@ -194,6 +206,11 @@ def run_benchmark(
         (e.g. throughput, latencies, etc.)
         The individual metrics for each request.
     """
+    
+    setup_api_environment(
+        api_key=benchmark_config.api_key,
+        api_url=benchmark_config.api_url,
+    )
 
     generated_responses: List[Response] = []
 
@@ -281,6 +298,7 @@ if __name__ == "__main__":
         )
 
     for i, benchmark_config in enumerate(benchmark_configs):
+        print(f"Running benchmark config: {benchmark_config}")
         if len(benchmark_configs) > 1:
             logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
 

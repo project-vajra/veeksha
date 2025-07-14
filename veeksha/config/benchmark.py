@@ -112,49 +112,10 @@ class BenchmarkConfig:
             List of BenchmarkConfig instances (single config for CLI args,
             multiple configs if YAML expands to multiple configurations)
         """
-        import argparse
-
-        parser = argparse.ArgumentParser(add_help=False)
-        parser.add_argument("--benchmark-config-file", type=str, default=None)
-        known_args, _ = parser.parse_known_args()
-
-        # If config_file is specified, load from YAML instead
-        if known_args.benchmark_config_file:
-            logger.info(
-                f"Loading configuration from YAML file: {known_args.benchmark_config_file}"
-            )
-            return cls.create_from_yaml_file(known_args.benchmark_config_file)
-
-        # Otherwise, use normal CLI args parsing and return as single-item list
         flat_config = create_flat_dataclass(cls).create_from_cli_args()
         instance = flat_config.reconstruct_original_dataclass()
         object.__setattr__(instance, "__flat_config__", flat_config)
         return [instance]
-
-    @classmethod
-    def create_from_yaml_file(cls, config_file_path: str):
-        """Create BenchmarkConfig instances from a YAML configuration file.
-
-        Returns:
-            List of BenchmarkConfig instances (one for each expanded configuration)
-        """
-        with open(config_file_path, "r") as f:
-            yaml_config = yaml.safe_load(f)
-
-        expanded_configs = expand_dict(yaml_config)
-
-        logger.info(
-            f"YAML config expanded to {len(expanded_configs)} configuration(s)."
-        )
-
-        instances = []
-        for i, config_dict in enumerate(expanded_configs):
-            instance = create_class_from_dict(cls, config_dict)
-            # Use object.__setattr__ because this is a frozen dataclass
-            object.__setattr__(instance, "__flat_config__", None)
-            instances.append(instance)
-
-        return instances
 
     @classmethod
     def create_from_yaml_file(cls, config_file_path: str):
