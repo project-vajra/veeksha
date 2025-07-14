@@ -51,7 +51,7 @@ def topological_sort(dataclass_dependencies: dict) -> list:
     return sorted_classes
 
 
-def overwrite_args_with_file_config(args: dict, file_config: dict, file_field_name: str, default_values: dict, prefix: str = ""):
+def overwrite_args_with_file_config(args: dict, file_config: dict, file_field_name: str, default_values: dict, cli_provided_args: set, prefix: str = ""):
     """ Overwrite args with values from file_config in a DFS manner """
         
     for key, value in file_config.items():
@@ -64,7 +64,7 @@ def overwrite_args_with_file_config(args: dict, file_config: dict, file_field_na
         if isinstance(value, dict):
             # a nested config object
             # Pass the already-composed key as the new prefix to avoid duplicating the old prefix.
-            overwrite_args_with_file_config(args, value, file_field_name, default_values, f"{key}_")
+            overwrite_args_with_file_config(args, value, file_field_name, default_values, cli_provided_args, f"{key}_")
             continue
         
         # Ignore keys that are not recognised by the FlatClass.
@@ -72,7 +72,7 @@ def overwrite_args_with_file_config(args: dict, file_config: dict, file_field_na
             logger.warning(f"Arg {key} provided by {file_field_name} not found in supported args.")
             continue
         
-        if getattr(args, key) == default_values.get(key):
+        if key not in cli_provided_args:
             print(f"Overwriting {key} with {value}")
             setattr(args, key, value)
         else:
@@ -217,8 +217,32 @@ def create_from_cli_args(cls) -> Any:
         parser.add_argument(f"--{cli_arg_name}", dest=field.name, **arg_params)
 
     args = parser.parse_args()
-
+    
+    import sys
+    cli_provided_args = set()
+    
+    # parse sys.argv to find which arguments were explicitly provided
+    for i, arg in enumerate(sys.argv[1:]):
+        if arg.startswith('--'):
+            # remove --
+            arg_name = arg[2:].split('=')[0]
+            
+            # check if this maps to a field name via argname mapping
+            if arg_name in argnames_to_field_names:
+                cli_provided_args.add(argnames_to_field_names[arg_name])
+            else:
+                # convert - to _
+                field_name = arg_name.replace('-', '_')
+                if hasattr(args, field_name):
+                    cli_provided_args.add(field_name)
+    
+    print("--------------------------------")
+    print(f"cli_provided_args: {cli_provided_args}")
+    print("--------------------------------")
     print(f"default_values: {all_default_values}")
+    print("--------------------------------")
+
+    
 
     # load config files and overwrite fields not set via CLI
     for file_field_name in cls.dataclass_file_fields.values():
@@ -232,7 +256,7 @@ def create_from_cli_args(cls) -> Any:
         # todo handle collisions for:
         # - multiple configs are provided
         # - CLI args and file args are provided for the same field
-        overwrite_args_with_file_config(args, file_config, file_field_name, all_default_values)
+        overwrite_args_with_file_config(args, file_config, file_field_name, all_default_values, cli_provided_args)
 
     # # inspect args
     # print("--------------------------------")
