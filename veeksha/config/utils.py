@@ -306,7 +306,7 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
             e,
         )
         raise
-    
+
 
 def load_yaml_config(file_path: str):
     """Load a YAML configuration file and return its contents as a mapping.
@@ -343,8 +343,9 @@ def load_yaml_config(file_path: str):
         If the top-level parsed object is not a mapping.
     """
 
-    import os
     import json
+    import os
+
     import yaml
 
     # check file

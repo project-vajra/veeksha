@@ -206,7 +206,7 @@ def run_benchmark(
         (e.g. throughput, latencies, etc.)
         The individual metrics for each request.
     """
-    
+
     setup_api_environment(
         api_key=benchmark_config.api_key,
         api_url=benchmark_config.api_url,
@@ -298,7 +298,7 @@ if __name__ == "__main__":
         )
 
     for i, benchmark_config in enumerate(benchmark_configs):
-        print(f"Running benchmark config: {benchmark_config}")
+        print(f"Running benchmark with config: {benchmark_config}")
         if len(benchmark_configs) > 1:
             logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
 

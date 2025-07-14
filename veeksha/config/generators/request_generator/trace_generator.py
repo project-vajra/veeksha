@@ -2,6 +2,7 @@ import os
 from dataclasses import field
 from typing import Optional
 
+from veeksha.config.core.decorators import allow_from_file
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.generators.request_generator.base_generator import (
     BaseRequestGeneratorConfig,
@@ -12,6 +13,7 @@ from veeksha.config.generators.session_generator import (
 from veeksha.types.request_generator_type import RequestGeneratorType
 
 
+@allow_from_file
 @frozen_dataclass
 class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     trace_file: str = field(
