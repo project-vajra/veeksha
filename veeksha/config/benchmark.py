@@ -21,7 +21,7 @@ from veeksha.config.generators.request_generator.synthetic_generator import (
 )
 from veeksha.config.metrics import MetricsConfig
 from veeksha.config.prefill_profiler import PrefillProfilerConfig
-from veeksha.config.utils import create_class_from_dict, dataclass_to_dict, expand_dict
+from veeksha.config.utils import dataclass_to_dict
 from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
 from veeksha.types import RequestGeneratorType

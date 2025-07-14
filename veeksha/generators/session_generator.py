@@ -164,9 +164,7 @@ class SessionGenerator:
 
             return f"{base_name}_{'_'.join(params)}.jsonl"
 
-        project_root = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "../..")
-        )
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
         file_name = os.path.join(
             project_root, "data", "generated_traces", create_clean_filename()
         )

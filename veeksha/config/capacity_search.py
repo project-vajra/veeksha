@@ -9,7 +9,6 @@ from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.core.decorators import allow_from_file
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
-from veeksha.config.utils import create_class_from_dict
 from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
 

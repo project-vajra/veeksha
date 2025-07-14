@@ -319,7 +319,7 @@ def load_yaml_config(file_path: str):
     3. On YAML parse errors, falls back to ``json.loads`` (helpful when the
        file is actually JSON or a subset thereof).
     4. Returns the parsed content, which can be either a dictionary (mapping)
-       or a list. Lists are automatically wrapped in a dictionary with a 
+       or a list. Lists are automatically wrapped in a dictionary with a
        special key to maintain compatibility with the configuration machinery.
 
     Parameters
@@ -398,7 +398,7 @@ def load_yaml_config(file_path: str):
             file_path,
         )
         return {"_list": data}
-    
+
     # ensure the loaded data is a mapping
     if not isinstance(data, dict):
         logger.error(
