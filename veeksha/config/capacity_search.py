@@ -118,44 +118,19 @@ class CapacitySearchConfig:
 
     @classmethod
     def create_from_cli_args(cls):
-        """Create CapacitySearchConfig instance from CLI args or YAML file.
+        """Create CapacitySearchConfig instances from CLI
 
         Returns:
-            CapacitySearchConfig instance
+            List of CapacitySearchConfig instances (single or
+            multiple configs if YAML expands to multiple configurations)
         """
-        import argparse
-
-        parser = argparse.ArgumentParser(add_help=False)
-        parser.add_argument("--capsearch-config-file", type=str, default=None)
-        known_args, _ = parser.parse_known_args()
-
-        # If config_file is specified, load from YAML instead
-        if known_args.capsearch_config_file:
-            logger.info(
-                f"Loading configuration from YAML file: {known_args.capsearch_config_file}"
-            )
-            return cls.create_from_yaml_file(known_args.capsearch_config_file)
-
-        # Otherwise, use normal CLI args parsing
-        flat_config = create_flat_dataclass(cls).create_from_cli_args()
-        instance = flat_config.reconstruct_original_dataclass()
-        object.__setattr__(instance, "__flat_config__", flat_config)
-        return instance
-
-    @classmethod
-    def create_from_yaml_file(cls, config_file_path: str):
-        """Create CapacitySearchConfig instance from a YAML configuration file.
-
-        Returns:
-            CapacitySearchConfig instance
-        """
-        with open(config_file_path, "r") as f:
-            yaml_config = yaml.safe_load(f)
-
-        instance = create_class_from_dict(cls, yaml_config)
-        # Use object.__setattr__ because this is a frozen dataclass
-        object.__setattr__(instance, "__flat_config__", None)
-        return instance
+        flat_configs = create_flat_dataclass(cls).create_from_cli_args()
+        instances = []
+        for flat_config in flat_configs:
+            instance = flat_config.reconstruct_original_dataclass()
+            object.__setattr__(instance, "__flat_config__", flat_config)
+            instances.append(instance)
+        return instances
 
     def to_dict(self):
         return self.__dict__

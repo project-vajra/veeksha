@@ -1,5 +1,6 @@
 import json
 import sys
+import copy
 from argparse import (
     ArgumentDefaultsHelpFormatter,
     ArgumentParser,
@@ -7,7 +8,8 @@ from argparse import (
 )
 from collections import defaultdict, deque
 from dataclasses import MISSING, fields, make_dataclass
-from typing import Any, Dict, Optional, get_args
+from itertools import product
+from typing import Any, Dict, List, Optional, get_args
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.core.decorators import has_allow_from_file_decorator
@@ -27,6 +29,125 @@ from veeksha.config.utils import (
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
+
+
+def explode_dict(config: Dict[str, Any], prefix: str = "") -> List[Dict[str, Any]]:
+    """
+    Recursively explode a dictionary containing lists of values into a list of dictionaries
+    representing all combinations (cartesian product), with optional prefix applied to keys.
+    
+    Args:
+        config: Dictionary potentially containing lists to explode
+        prefix: Prefix to apply to all top-level keys
+    
+    Example:
+        Input: {'a': [1, 2], 'b': [3, 4]}, prefix='test_'
+        Output: [{'test_a': 1, 'test_b': 3}, {'test_a': 1, 'test_b': 4}, 
+                 {'test_a': 2, 'test_b': 3}, {'test_a': 2, 'test_b': 4}]
+    """
+    def _explode_dict_recursive(d: Dict[str, Any], level: int = 0) -> List[Dict[str, Any]]:
+        list_keys = []
+        list_values = []
+        non_list_items = {}
+        dict_items = {}
+        
+        for key, value in d.items():
+            if isinstance(value, list) and len(value) > 0:
+                # Check if it's a list of configs (dicts) or primitive values
+                if isinstance(value[0], dict):
+                    # List of configs - need to recursively explode each one
+                    exploded_configs = []
+                    for config in value:
+                        exploded = _explode_dict_recursive(config, level + 1)
+                        exploded_configs.extend(exploded)
+                    list_keys.append(key)
+                    list_values.append(exploded_configs)
+                else:
+                    # List of primitive values - create combinations
+                    list_keys.append(key)
+                    list_values.append(value)
+            elif isinstance(value, dict):
+                # Recursively handle nested dictionaries
+                dict_items[key] = value
+            else:
+                non_list_items[key] = value
+        
+        # First, handle dict items recursively
+        dict_combinations = [{}]
+        
+        for key, nested_dict in dict_items.items():
+            exploded_nested = _explode_dict_recursive(nested_dict, level + 1)
+            new_combinations = []
+            for base_combo in dict_combinations:
+                for nested_combo in exploded_nested:
+                    new_combo = base_combo.copy()
+                    new_combo[key] = nested_combo
+                    new_combinations.append(new_combo)
+            dict_combinations = new_combinations
+        
+        # If no lists found at this level, combine with dict combinations
+        if not list_keys:
+            result = []
+            for dict_combo in dict_combinations:
+                combined = non_list_items.copy()
+                combined.update(dict_combo)
+                result.append(combined)
+            return result
+        
+        # Generate all combinations including lists
+        result = []
+        for combination in product(*list_values):
+            for dict_combo in dict_combinations:
+                new_config = non_list_items.copy()
+                new_config.update(dict_combo)
+                for key, value in zip(list_keys, combination):
+                    new_config[key] = value
+                result.append(new_config)
+        
+        return result
+    
+    def add_prefix_to_dict(d: Dict[str, Any], prefix: str) -> Dict[str, Any]:
+        """Add prefix to all keys in a dictionary """
+        def _add_prefix_recursive(data: Dict[str, Any], current_prefix: str = "") -> Dict[str, Any]:
+            result = {}
+            
+            for key, value in data.items():
+                # TODO: this is a hack to handle the case where the config has a 'type' key
+                # for robustness, we should fetch the actual name of the class of this particular type
+                if "type" in data and key != "type":
+                    # i.e. request_generator_config -> trace_request_generator_config
+                    prefixed_key = f"{data['type']}_{current_prefix}{key}"
+                else:
+                    prefixed_key = f"{current_prefix}{key}"
+                
+                if isinstance(value, dict):
+                    # For nested dicts, recursively process with composed prefix
+                    flattened = _add_prefix_recursive(value, f"{prefixed_key}_")
+                    result.update(flattened)
+                else:
+                    # Leaf value - add it with the full prefix
+                    result[prefixed_key] = value
+                    
+            return result
+            
+        return _add_prefix_recursive(d, prefix)
+    
+    # Handle special case where config has a '_list' key (from load_yaml_config)
+    if isinstance(config, dict) and len(config) == 1 and '_list' in config:
+        list_data = config['_list']
+        if isinstance(list_data, list):
+            # Treat each item in the list as a separate config
+            all_exploded = []
+            for item in list_data:
+                if isinstance(item, dict):
+                    exploded = _explode_dict_recursive(item)
+                    all_exploded.extend(exploded)
+                else:
+                    # Non-dict items are wrapped
+                    all_exploded.append({'_value': item})
+            return [add_prefix_to_dict(cfg, prefix) for cfg in all_exploded]
+    
+    return [add_prefix_to_dict(config, prefix) for config in _explode_dict_recursive(config)]
 
 
 def topological_sort(dataclass_dependencies: dict) -> list:
@@ -51,55 +172,40 @@ def topological_sort(dataclass_dependencies: dict) -> list:
     return sorted_classes
 
 
-def overwrite_args_with_file_config(
+def overwrite_args_with_config(
     args: dict,
-    file_config: dict,
-    file_field_name: str,
+    config: dict,
+    keys_to_file_field_names: Dict[str, str],
     default_values: dict,
-    cli_provided_args: set,
-    params_overwritten_by_file: Dict[str, str],
-    prefix: str = "",
+    cli_provided_args: set
 ):
     """Overwrite args with values from file_config in a DFS manner"""
 
-    for key, value in file_config.items():
-        if "type" in file_config and key != "type":
-            # i.e. request_generator_config -> trace_request_generator_config
-            key = f"{file_config['type']}_{prefix}{key}"
-        else:
-            key = f"{prefix}{key}"
-
+    for key, value in config.items():
         if isinstance(value, dict):
             # a nested config object: we compose the prefix
-            overwrite_args_with_file_config(
+            overwrite_args_with_config(
                 args,
                 value,
-                file_field_name,
+                keys_to_file_field_names,
                 default_values,
-                cli_provided_args,
-                params_overwritten_by_file,
-                f"{key}_",
+                cli_provided_args
             )
             continue
 
         # Ignore keys that are not recognised by the FlatClass.
         if not hasattr(args, key):
             logger.warning(
-                f"Arg {key} provided by {file_field_name} not found in supported args."
+                f"Arg {key} provided by {keys_to_file_field_names[key]} not found in supported args."
             )
             continue
 
-        if key in params_overwritten_by_file:
-            raise ValueError(
-                f"Arg {key} provided by {file_field_name} is also set by file {params_overwritten_by_file[key]}."
-            )
-        elif key not in cli_provided_args:
-            params_overwritten_by_file[key] = file_field_name
-            print(f"Overwriting {key} with {value}")
+        if key not in cli_provided_args:
+            # TODO: verbosity level for this (f"Overwriting {key} with {value}")
             setattr(args, key, value)
         else:
             logger.warning(
-                f"Arg {key} provided by {file_field_name} set via CLI. Skipped overwrite."
+                f"Arg {key} provided by {keys_to_file_field_names[key]} set via CLI. Skipped overwrite."
             )
 
 
@@ -111,36 +217,15 @@ def reconstruct_original_dataclass(self) -> Any:
     # list of classes, from the most dependent to the least dependent
     sorted_classes = topological_sort(self.dataclass_dependencies)
 
-    # print("--------------------------------")
-    # print("Dataclass dependencies")
-    # print("--------------------------------")
-    # for cls, dependencies in self.dataclass_dependencies.items():
-    #     print(cls, [dep for dep in dependencies])
-    # print("END DATACLASS DEPENDENCIES--------------------------------")
-
-    # print(sorted_classes)
-    # print("--------------------------------")
-    # print("Sorted classes")
-    # print("--------------------------------")
-    # for cls in sorted_classes:
-    #     print(cls)
-    # print("END SORTED CLASSES--------------------------------")
-
     instances = {}
 
     # iter over classes from least dependent to most
     for _cls in reversed(sorted_classes):
         args = {}
-        # print(f"Instantiating {_cls}")
-
         # instantiate current class fields
         for prefixed_field_name, original_field_name, field_type in self.dataclass_args[
             _cls
         ]:
-            # print("prefixed_field_name", prefixed_field_name)
-            # print("original_field_name", original_field_name)
-            # print("field_type", field_type)
-            # print("--------------------------------")
             if is_subclass(field_type, BasePolyConfig):
                 config_type = getattr(self, f"{prefixed_field_name}_type")
                 # find all subclasses of field_type and check which one matches the config_type
@@ -149,11 +234,9 @@ def reconstruct_original_dataclass(self) -> Any:
                 for child_name, child_cls in self.base_poly_children[
                     prefixed_field_name
                 ].items():
-                    # print(f"Checking {child_name} with type {child_cls.get_type()}")
                     if str(child_cls.get_type()) == config_type:
                         config_type_matched = True
                         args[original_field_name] = instances[child_name]
-                        # print(f"Assigned {original_field_name} to {instances[child_name]}")
                         break
                 assert (
                     config_type_matched
@@ -171,8 +254,6 @@ def reconstruct_original_dataclass(self) -> Any:
 
         instances[_cls] = self.dataclass_names_to_classes[_cls](**args)
 
-    # print("--------------------------------")
-    # print(f"Root: {instances[sorted_classes[0]]}")
     return instances[sorted_classes[0]]
 
 
@@ -180,6 +261,9 @@ def reconstruct_original_dataclass(self) -> Any:
 def create_from_cli_args(cls) -> Any:
     """
     This function is dynamically mapped to FlatClass as a class method.
+    
+    Returns:
+        List[cls]: A list of instances of the dataclass, one for each combination of configs created.
     """
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
     all_default_values = {}
@@ -260,26 +344,17 @@ def create_from_cli_args(cls) -> Any:
                 if hasattr(args, field_name):
                     cli_provided_args.add(field_name)
 
-    # print("--------------------------------")
-    # print(f"cli_provided_args: {cli_provided_args}")
-    # print("--------------------------------")
-    # print(f"default_values: {all_default_values}")
-    # print("--------------------------------")
+    loaded_configs: Dict[str, List[Dict[str, Any]]] = {}  # maps file arg name to list of configs
 
-    params_overwritten_by_file: Dict[str, str] = {}  # maps param name to file name
-
-    print("--------------------------------")
-    print("BEGIN LOADING ARGS FROM FILES")
-    print("--------------------------------")
+    logger.info("--------------------------------")
+    logger.info("BEGIN LOADING ARGS FROM FILES")
+    logger.info("--------------------------------")
     # load config files and overwrite fields not set via CLI
     for file_field_name in cls.dataclass_file_fields.values():
         file_path = getattr(args, file_field_name, None)
         if not file_path:
             continue
         file_config = load_yaml_config(file_path)
-
-        # print(f"file_config for {file_field_name}: {file_config}")
-
         # we want relative file arg names to be mapped to the absolute field names
         # CLI args are provided without the root class prefix except for the root _from_file arg,
         name_of_class_for_file = file_field_name.replace("_from_file", "").replace(
@@ -289,36 +364,63 @@ def create_from_cli_args(cls) -> Any:
             prefix = ""
         else:
             prefix = f"{name_of_class_for_file}_"
-        overwrite_args_with_file_config(
-            args,
-            file_config,
-            file_field_name,
-            all_default_values,
-            cli_provided_args,
-            params_overwritten_by_file,
-            prefix,
-        )
-    print("--------------------------------")
-    print("END LOADING ARGS FROM FILES")
-    print("--------------------------------")
+            
+        loaded_configs[file_field_name] = explode_dict(file_config, prefix)
+        
+    total_configs = 0
+    for file_field_name, configs in loaded_configs.items():
+        n_configs = len(configs)
+        logger.info(f"File field name: {file_field_name}. Expanded to {n_configs} configs.")
+        total_configs += n_configs
+    
+    # cartesian product of all configs in loaded_configs. 
+    # loaded config dicts are already flattened, so we just need to combine them
+    # i.e. {a: [1, 2], b: [3, 4]} -> [{1, 3}, {1, 4}, {2, 3}, {2, 4}] (numbers represent flat dicts)
+    all_config_combinations = []
+    all_keys_to_file_field_names: List[Dict[str, str]] = []
+    
+    if loaded_configs:
+        # Get config lists for cartesian product
+        config_lists, file_field_names = list(loaded_configs.values()), list(loaded_configs.keys())
+        
+        # Generate all combinations using itertools.product
+        for combination in product(*config_lists):
+            # Combine all configs in this combination into a single dict
+            combined_config = {}
+            params_to_files = {}
+            for i, config in enumerate(combination):
+                current_file_field_name = file_field_names[i]
+                # Check for conflicts between configs
+                for key, value in config.items():
+                    if key in combined_config:
+                        raise ValueError(f"Arg {key} provided by {current_file_field_name} is also set by {params_to_files[key]}.")
+                    combined_config[key] = value
+                    params_to_files[key] = current_file_field_name
+            all_config_combinations.append(combined_config)
+            all_keys_to_file_field_names.append(params_to_files)
+        
+        logger.info(f"Created {len(all_config_combinations)} total config combinations")
+        logger.info("--------------------------------")
+        logger.info("END LOADING ARGS FROM FILES")
+        logger.info("--------------------------------")
+        
+        # Now, we overwrite args with all combinations, returning a list of full configs
+        final_args = []
+        for i, config in enumerate(all_config_combinations):
+            keys_to_file_field_names = all_keys_to_file_field_names[i]
+            args_copy = copy.deepcopy(args)
+            overwrite_args_with_config(
+                args_copy,
+                config,
+                keys_to_file_field_names,
+                all_default_values,
+                cli_provided_args
+            )
+            final_args.append(args_copy)
+    else:
+        final_args = [args]
 
-    # # inspect args
-    # print("--------------------------------")
-    # print("CLI arguments (after merging *_from_file)")
-    # print("--------------------------------")
-    # for arg_name, arg_value in vars(args).items():
-    #     print(arg_name, arg_value)
-
-    instance = cls(**vars(args))
-
-    # # inspect instance 2
-    # print("--------------------------------")
-    # print("FlatClass 2")
-    # print("--------------------------------")
-    # for field in fields(instance):
-    #     print(field.name, getattr(instance, field.name))
-
-    return instance
+    return [cls(**vars(arg_instance)) for arg_instance in final_args]
 
 
 def get_config_class_by_type_name(config_class: Any, type_name: str) -> Any:
@@ -461,57 +563,7 @@ def create_flat_dataclass(input_dataclass: Any) -> Any:
 
     process_dataclass(input_dataclass)
 
-    # print("--------------------------------")
-    # print("Dataclass args")
-    # print("--------------------------------")
-    # for cls, args in dataclass_args.items():
-    #     print(cls, [arg for arg in args])
-    # print("END DATACLASS ARGS--------------------------------")
-
-    # print("--------------------------------")
-    # print("Dataclass names to classes")
-    # print("--------------------------------")
-    # for cls_name, cls in dataclass_names_to_classes.items():
-    #     print(cls_name, cls)
-    # print("END DATACLASS NAMES TO CLASSES--------------------------------")
-
-    # print("--------------------------------")
-    # print("Dataclass names to classes")
-    # print("--------------------------------")
-    # for cls_name, cls in dataclass_names_to_classes.items():
-    #     print(cls_name, cls)
-    # print("END DATACLASS NAMES TO CLASSES--------------------------------")
-
-    # # inspect dataclass dependencies
-    # print("--------------------------------")
-    # print("Dataclass dependencies")
-    # print("--------------------------------")
-    # for cls, dependencies in dataclass_dependencies.items():
-    #     print(cls, [dep for dep in dependencies])
-    # print("--------------------------------")
-    # print("Dataclass args")
-    # print("--------------------------------")
-    # for cls, args in dataclass_args.items():
-    #     print(cls, [arg for arg in args])
-
-    # print("END DATACLASS ARGS--------------------------------")
-
     meta_fields = meta_fields_without_defaults + meta_fields_with_defaults
-
-    # print("--------------------------------")
-    # print("Base poly children")
-    # print("--------------------------------")
-    # for cls, children in base_poly_children.items():
-    #     print(cls, [f"{child_name}: {child_class}" for child_name, child_class in children.items()])
-    # print("END BASE POLY CHILDREN--------------------------------")
-
-    # # inspect meta fields
-    # print("--------------------------------")
-    # print("Meta fields")
-    # print("--------------------------------")
-    # for field in meta_fields:
-    #     print(field)
-    # print("END META FIELDS--------------------------------")
 
     # Flat dataclass with all default values (unitialized)
     FlatClass = make_dataclass("FlatClass", meta_fields)

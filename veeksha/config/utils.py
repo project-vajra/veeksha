@@ -309,7 +309,7 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
 
 
 def load_yaml_config(file_path: str):
-    """Load a YAML configuration file and return its contents as a mapping.
+    """Load a YAML configuration file and return its contents.
 
     The function performs a series of robustness checks and provides
     informative log messages for each failure mode.
@@ -318,8 +318,9 @@ def load_yaml_config(file_path: str):
     2. Attempts to parse using ``yaml.safe_load``.
     3. On YAML parse errors, falls back to ``json.loads`` (helpful when the
        file is actually JSON or a subset thereof).
-    4. Ensures the resulting object is a dictionary (mapping) – required by
-       the rest of the configuration machinery.
+    4. Returns the parsed content, which can be either a dictionary (mapping)
+       or a list. Lists are automatically wrapped in a dictionary with a 
+       special key to maintain compatibility with the configuration machinery.
 
     Parameters
     ----------
@@ -329,7 +330,8 @@ def load_yaml_config(file_path: str):
     Returns
     -------
     dict
-        Parsed configuration mapping.
+        Parsed configuration. If the top-level is a list, it's wrapped
+        as {'_list': <the_list>}.
 
     Raises
     ------
@@ -340,7 +342,7 @@ def load_yaml_config(file_path: str):
     yaml.YAMLError | json.JSONDecodeError
         If the file cannot be parsed as YAML or JSON.
     ValueError
-        If the top-level parsed object is not a mapping.
+        If the top-level parsed object is neither a mapping nor a list.
     """
 
     import json
@@ -388,14 +390,25 @@ def load_yaml_config(file_path: str):
         )
         data = {}
 
+    # handle list at top level by wrapping it
+    if isinstance(data, list):
+        logger.info(
+            "Configuration file '%s' contains a list at the top level. "
+            "Wrapping it with '_list' key.",
+            file_path,
+        )
+        return {"_list": data}
+    
     # ensure the loaded data is a mapping
     if not isinstance(data, dict):
         logger.error(
-            "Configuration file '%s' must contain a mapping at the top level (got %s).",
+            "Configuration file '%s' must contain either a mapping or a list "
+            "at the top level (got %s).",
             file_path,
             type(data).__name__,
         )
         raise ValueError(
-            f"Configuration file {file_path} must contain a mapping at the top level."
+            f"Configuration file {file_path} must contain either a mapping "
+            f"or a list at the top level, got {type(data).__name__}."
         )
     return data

@@ -18,7 +18,7 @@ from veeksha.types.request_generator_type import RequestGeneratorType
 class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     trace_file: str = field(
         default="data/processed_traces/swe_agent_trace_short.jsonl",
-        metadata={"help": "Path to the trace file for request generation."},
+        metadata={"help": "Path to the trace file for request generation.", "argname": "trace-file"},
     )
     prefill_scale_factor: float = field(
         default=1, metadata={"help": "Scale factor for prefill tokens."}
