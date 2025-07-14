@@ -157,12 +157,19 @@ def create_from_cli_args(cls) -> Any:
     """
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
     all_default_values = {}
+    argnames_to_field_names = {}
 
     for field in fields(cls):
         nargs = None
         action = None
         field_type = field.type
         help_text = cls.metadata_mapping[field.name].get("help", None)
+        argname = cls.metadata_mapping[field.name].get("argname", None)
+        if argname in argnames_to_field_names:
+            raise ValueError(f"Cannot have multiple fields with the same argname: {argname} already exists for field {argnames_to_field_names[argname]}")
+        elif argname is not None:
+            argnames_to_field_names[argname] = field.name
+
         is_field_optional = is_optional(field.type)
 
         if is_field_optional:
@@ -206,7 +213,7 @@ def create_from_cli_args(cls) -> Any:
 
         if nargs:
             arg_params["nargs"] = nargs
-        cli_arg_name = field.name.replace("_", "-")
+        cli_arg_name = field.name.replace("_", "-") if argname is None else argname
         parser.add_argument(f"--{cli_arg_name}", dest=field.name, **arg_params)
 
     args = parser.parse_args()
