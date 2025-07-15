@@ -1,12 +1,10 @@
 from dataclasses import field
 from typing import Optional
 
-from veeksha.config.core.decorators import allow_from_file
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 
 
-@allow_from_file
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)
 class MetricsConfig:
     output_dir: str = field(
         default="benchmark_results",

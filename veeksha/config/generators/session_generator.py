@@ -1,6 +1,5 @@
 from dataclasses import field
 
-from veeksha.config.core.decorators import allow_from_file
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.generators.interval_generator.base_generator import (
     BaseRequestIntervalGeneratorConfig,
@@ -13,8 +12,7 @@ from veeksha.logger import init_logger
 logger = init_logger(__name__)
 
 
-@allow_from_file
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)  # either dataclass or frozen dataclass
 class SessionGeneratorConfig:
     seed: int = field(
         default=42,

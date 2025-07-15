@@ -6,7 +6,6 @@ import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import PolynomialFeatures
 
-from veeksha.config.core.decorators import allow_from_file
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.constants.prefill_constants import PREFILL_POLYNOMIAL_DEGREE
 from veeksha.logger import init_logger
@@ -14,8 +13,7 @@ from veeksha.logger import init_logger
 logger = init_logger(__name__)
 
 
-@allow_from_file
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)
 class PrefillProfilerConfig:
     prefill_lengths: list = field(
         default_factory=lambda: [],

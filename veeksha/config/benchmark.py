@@ -3,10 +3,7 @@ import os
 from dataclasses import field
 from typing import Optional
 
-import yaml  # type: ignore
-
 from veeksha.config.client import ClientConfig
-from veeksha.config.core.decorators import allow_from_file
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.deadline import DeadlineConfig
@@ -29,8 +26,7 @@ from veeksha.types import RequestGeneratorType
 logger = init_logger(__name__)
 
 
-@allow_from_file
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)
 class BenchmarkConfig:
     seed: int = field(
         default=DEFAULT_SEED,
@@ -76,7 +72,7 @@ class BenchmarkConfig:
         metadata={"help": "The request generator configuration for the benchmark."},
     )
 
-    # TODO move this away
+    # TODO mv
     def __post_init__(self):
         if not os.path.exists(self.metrics_config.output_dir):
             os.makedirs(self.metrics_config.output_dir)
