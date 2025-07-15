@@ -31,7 +31,7 @@ from veeksha.logger import init_logger
 logger = init_logger(__name__)
 
 
-def explode_dict(config: Dict[str, Any], prefix: str = "") -> List[Dict[str, Any]]:
+def explode_dict(cls, config: Dict[str, Any], prefix: str = "") -> List[Dict[str, Any]]:
     """
     Recursively explode a dictionary containing lists of values into a list of dictionaries
     representing all combinations (cartesian product), with optional prefix applied to keys.
@@ -160,26 +160,36 @@ def explode_dict(config: Dict[str, Any], prefix: str = "") -> List[Dict[str, Any
             list_keys, list_values, non_list_items, dict_combinations, level
         )
 
-    def _add_prefix_to_dict(d: Dict[str, Any], prefix: str) -> Dict[str, Any]:
+    def _add_prefix_to_dict(cls, d: Dict[str, Any], prefix: str) -> Dict[str, Any]:
         """Add prefix to all keys in a dictionary."""
 
         def _add_prefix_recursive(
-            data: Dict[str, Any], current_prefix: str = ""
+            cls, data: Dict[str, Any], current_prefix: str = ""
         ) -> Dict[str, Any]:
             result = {}
 
             for key, value in data.items():
-                # TODO: this is a hack to handle the case where the config has a 'type' key
-                # for robustness, we should fetch the actual name of the class of this particular type
                 if "type" in data and key != "type":
-                    # i.e. request_generator_config -> trace_request_generator_config
-                    prefixed_key = f"{data['type']}_{current_prefix}{key}"
+                    # simply appending prefix is not enough
+                    # we fetch actual type name from base poly children
+                    stripped_prefix = (
+                        current_prefix[:-1]
+                        if current_prefix[-1] == "_"
+                        else current_prefix
+                    )
+                    try:
+                        typed_child_name = cls.base_poly_children_types[
+                            stripped_prefix
+                        ][data["type"]]
+                        prefixed_key = f"{typed_child_name}_{key}"
+                    except KeyError:
+                        prefixed_key = f"Cannot find type {data['type']} in {cls.base_poly_children_types[stripped_prefix]}"
                 else:
                     prefixed_key = f"{current_prefix}{key}"
 
                 if isinstance(value, dict):
                     # for nested dicts, recursively process with composed prefix
-                    flattened = _add_prefix_recursive(value, f"{prefixed_key}_")
+                    flattened = _add_prefix_recursive(cls, value, f"{prefixed_key}_")
                     result.update(flattened)
                 else:
                     # leaf value - add it with the full prefix
@@ -187,7 +197,7 @@ def explode_dict(config: Dict[str, Any], prefix: str = "") -> List[Dict[str, Any
 
             return result
 
-        return _add_prefix_recursive(d, prefix)
+        return _add_prefix_recursive(cls, d, prefix)
 
     def _handle_list_config(
         config: Dict[str, Any], prefix: str
@@ -206,7 +216,7 @@ def explode_dict(config: Dict[str, Any], prefix: str = "") -> List[Dict[str, Any
                 # non-dict items are wrapped
                 all_exploded.append({"_value": item})
 
-        return [_add_prefix_to_dict(cfg, prefix) for cfg in all_exploded]
+        return [_add_prefix_to_dict(cls, cfg, prefix) for cfg in all_exploded]
 
     # handle special case where config has a '_list' key (from load_yaml_config)
     if isinstance(config, dict) and len(config) == 1 and "_list" in config:
@@ -214,7 +224,7 @@ def explode_dict(config: Dict[str, Any], prefix: str = "") -> List[Dict[str, Any
 
     # standard case: explode the config and add prefixes
     exploded_configs = _explode_dict_recursive(config)
-    return [_add_prefix_to_dict(cfg, prefix) for cfg in exploded_configs]
+    return [_add_prefix_to_dict(cls, cfg, prefix) for cfg in exploded_configs]
 
 
 def topological_sort(dataclass_dependencies: dict) -> list:
@@ -490,7 +500,7 @@ def _load_config_files(cls, args):
         else:
             prefix = f"{name_of_class_for_file}_"
 
-        loaded_configs[file_field_name] = explode_dict(file_config, prefix)
+        loaded_configs[file_field_name] = explode_dict(cls, file_config, prefix)
 
     # log config loading summary
     total_configs = 0
@@ -598,7 +608,8 @@ def _initialize_dataclass_state():
         "metadata_mapping": {},
         "file_fields": {},  # maps dataclass to its file field name
         "names_to_classes": {},  # maps unique nested dataclass names to their corresponding dataclass class
-        "base_poly_children": {},  # maps unique (by name) base poly configs to their children
+        "base_poly_children": {},  # maps unique (by name) base poly configs to {children names: children classes} (Dict[str, Dict[str, Any]])
+        "base_poly_children_types": {},  # maps unique (by name) base poly configs to {children types: children names} (Dict[str, Dict[str, str]])
     }
 
 
@@ -640,6 +651,7 @@ def _handle_polymorphic_config_field(
         (prefixed_name, field.name, field_type)
     )
     state["base_poly_children"][prefixed_name] = {}
+    state["base_poly_children_types"][prefixed_name] = {}
 
     type_field_name = f"{prefixed_name}_type"
     default_value = _get_default_value_for_poly_field(field, field_type)
@@ -659,6 +671,9 @@ def _handle_polymorphic_config_field(
     for subclass in get_all_subclasses(field_type):
         child_name = prefix + to_snake_case(subclass.__name__)
         state["base_poly_children"][prefixed_name][child_name] = subclass
+        state["base_poly_children_types"][prefixed_name][
+            subclass.get_type().name.lower()
+        ] = child_name
         state["dataclass_dependencies"][prefixed_input_dataclass].append(child_name)
 
         _process_single_dataclass(
@@ -754,7 +769,7 @@ def _create_flat_class_type(state):
     flat_class.metadata_mapping = state["metadata_mapping"]
     flat_class.dataclass_file_fields = state["file_fields"]
     flat_class.base_poly_children = state["base_poly_children"]
-
+    flat_class.base_poly_children_types = state["base_poly_children_types"]
     return flat_class
 
 
