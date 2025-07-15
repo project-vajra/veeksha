@@ -9,7 +9,7 @@ from argparse import (
 from collections import defaultdict, deque
 from dataclasses import MISSING, fields, make_dataclass
 from itertools import product
-from typing import Any, Dict, List, Optional, get_args
+from typing import Any, Dict, List, Set, Tuple, Optional, get_args
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.core.decorators import has_allow_from_file_decorator
@@ -300,11 +300,25 @@ def reconstruct_original_dataclass(self) -> Any:
     This function is dynamically mapped to FlatClass as an instance method.
     Reconstructs the original dataclass from the flattened representation.
     """
+    # skip all classes with default None and that have not been provided by the user
+    classes_to_skip = set()
+    for cls, dependencies in self.dataclass_dependencies.items():
+        cls_type_arg = cls + "_type" # to specify a class, one provides the type
+        if cls in self.args_with_default_none and cls_type_arg not in self.provided_args:
+            classes_to_skip.add(cls)
+            for dependency in dependencies:
+                classes_to_skip.add(dependency)
+
+    filtered_dependencies = {}
+    for cls, dependencies in self.dataclass_dependencies.items():
+        if cls not in classes_to_skip:
+            filtered_dependencies[cls] = [dep for dep in dependencies if dep not in classes_to_skip]
+    
     # list of classes, from the most dependent to the least dependent
-    sorted_classes = topological_sort(self.dataclass_dependencies)
+    sorted_classes = topological_sort(filtered_dependencies)
 
     instances = {}
-
+    
     # iter over classes from least dependent to most
     for _cls in reversed(sorted_classes):
         args = {}
@@ -329,7 +343,11 @@ def reconstruct_original_dataclass(self) -> Any:
                 ), f"Invalid type {config_type} for {prefixed_field_name}_type. Valid types: {[str(subclass.get_type()) for subclass in get_all_subclasses(field_type)]}"
             # child dataclass has already been instantiated, so just assign it
             elif hasattr(field_type, "__dataclass_fields__"):
-                args[original_field_name] = instances[prefixed_field_name]
+                if prefixed_field_name in instances:
+                    args[original_field_name] = instances[prefixed_field_name]
+                else:
+                    # if not found in instances, the class has not been provided by the user and is None by default
+                    args[original_field_name] = None
             # primitive type
             else:
                 value = getattr(self, prefixed_field_name)
@@ -363,7 +381,7 @@ def create_from_cli_args(cls) -> Any:
 
     args = parser.parse_args()
     cli_provided_args = _get_cli_provided_args(argnames_to_field_names)
-
+    
     # load and process config files
     loaded_configs = _load_config_files(cls, args)
 
@@ -373,15 +391,21 @@ def create_from_cli_args(cls) -> Any:
     )
 
     # merge cli args with config combinations
-    final_args = _merge_args_with_configs(
+    final_args, all_provided_args = _merge_args_with_configs(
         args,
         all_config_combinations,
         all_keys_to_file_field_names,
         all_default_values,
         cli_provided_args,
     )
+    
+    return_clss = []
+    for i, arg_instance in enumerate(final_args):
+        _return_cls = cls(**vars(arg_instance))
+        _return_cls.provided_args = all_provided_args[i]
+        return_clss.append(_return_cls)
 
-    return [cls(**vars(arg_instance)) for arg_instance in final_args]
+    return return_clss
 
 
 def _add_field_to_parser(
@@ -455,22 +479,53 @@ def _add_field_to_parser(
     parser.add_argument(f"--{cli_arg_name}", dest=field.name, **arg_params)
 
 
-def _get_cli_provided_args(argnames_to_field_names):
-    """Determine which arguments were explicitly provided via cli."""
-    cli_provided_args = set()
+def _get_cli_provided_args(argnames_to_field_names) -> Dict[str, Any]:
+    """Determine which arguments were explicitly provided via CLI and capture their values.
 
-    for arg in sys.argv[1:]:
-        if arg.startswith("--"):
-            # remove -- prefix and handle = format
-            arg_name = arg[2:].split("=")[0]
+    Supports the following forms:
+        1. --arg=value         -> value is "value"
+        2. --arg value         -> value is "value"
+        3. --flag              -> value is True (boolean flag)
+    """
 
-            # check if this maps to a field name via argname mapping
-            if arg_name in argnames_to_field_names:
-                cli_provided_args.add(argnames_to_field_names[arg_name])
+    cli_provided_args: Dict[str, Any] = {}
+
+    argv = sys.argv
+    idx = 1  # skip program name
+    while idx < len(argv):
+        token = argv[idx]
+
+        # we only care about long-form options that start with "--"
+        if not token.startswith("--"):
+            idx += 1
+            continue
+
+        # strip leading dashes
+        option = token[2:]
+
+        # Case 1: --arg=value
+        if "=" in option:
+            arg_name, arg_value = option.split("=", 1)
+        else:
+            arg_name = option
+            # Case 2 or 3: value may be the next token unless it's another flag
+            if idx + 1 < len(argv) and not argv[idx + 1].startswith("--"):
+                arg_value = argv[idx + 1]
+                idx += 1  # skip the value token on next iteration
             else:
-                # convert - to _ for standard field names
-                field_name = arg_name.replace("-", "_")
-                cli_provided_args.add(field_name)
+                # Case 3: boolean flag with no explicit value
+                arg_value = True
+
+        # Map to dataclass field name if argname alias is present
+        if arg_name in argnames_to_field_names:
+            field_key = argnames_to_field_names[arg_name]
+        else:
+            # standard conversion: kebab-case -> snake_case
+            field_key = arg_name.replace("-", "_")
+
+        cli_provided_args[field_key] = arg_value
+
+        idx += 1
 
     return cli_provided_args
 
@@ -560,21 +615,29 @@ def _merge_args_with_configs(
     all_keys_to_file_field_names,
     all_default_values,
     cli_provided_args,
-):
+) -> Tuple[List[Any], List[Dict[str, Any]]]:
     """Merge cli arguments with all config combinations.
+    
+    Returns:
+        list of all flatclass args and list of user-provided args for each config combination
 
     Args:
         args: The dictionary of arguments to overwrite. Must be flat.
         all_config_combinations: A list of all combinations of configs.
         all_keys_to_file_field_names: A list of dictionaries mapping keys to the file field names that provided them.
     """
+    all_provided_args: List[Dict[str, Any]] = []
+
     if not all_config_combinations:
-        return [args]
+        return [args], all_provided_args
 
     final_args = []
     for config, keys_to_file_field_names in zip(
         all_config_combinations, all_keys_to_file_field_names
     ):
+        _provided_args_in_config = {**config, **cli_provided_args} # collision prevention is done prior to this
+        all_provided_args.append(_provided_args_in_config)
+        
         args_copy = copy.deepcopy(args)
         overwrite_args_with_config(
             args_copy,
@@ -585,7 +648,7 @@ def _merge_args_with_configs(
         )
         final_args.append(args_copy)
 
-    return final_args
+    return final_args, all_provided_args
 
 
 def get_config_class_by_type_name(config_class: Any, type_name: str) -> Any:
@@ -610,6 +673,8 @@ def _initialize_dataclass_state():
         "names_to_classes": {},  # maps unique nested dataclass names to their corresponding dataclass class
         "base_poly_children": {},  # maps unique (by name) base poly configs to {children names: children classes} (Dict[str, Dict[str, Any]])
         "base_poly_children_types": {},  # maps unique (by name) base poly configs to {children types: children names} (Dict[str, Dict[str, str]])
+        "provided_args": set(),  # set of args that were provided by user, be it via CLI or config files
+        "args_with_default_none": set(),  # the set of args that have a default value of None
     }
 
 
@@ -743,6 +808,9 @@ def _process_single_dataclass(state, input_dataclass, prefix=""):
         prefixed_name = f"{prefix}{field.name}"
         field_type, _ = _get_field_type_info(field)
 
+        if field.default is None:
+            state["args_with_default_none"].add(prefixed_name)
+
         if is_subclass(field_type, BasePolyConfig):
             _handle_polymorphic_config_field(
                 state, field, field_type, prefixed_name, prefixed_class_name, prefix
@@ -770,6 +838,8 @@ def _create_flat_class_type(state):
     flat_class.dataclass_file_fields = state["file_fields"]
     flat_class.base_poly_children = state["base_poly_children"]
     flat_class.base_poly_children_types = state["base_poly_children_types"]
+    flat_class.provided_args = state["provided_args"]
+    flat_class.args_with_default_none = state["args_with_default_none"]
     return flat_class
 
 
