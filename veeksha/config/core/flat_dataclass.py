@@ -9,7 +9,7 @@ from argparse import (
 from collections import defaultdict, deque
 from dataclasses import MISSING, fields, make_dataclass
 from itertools import product
-from typing import Any, Dict, List, Set, Tuple, Optional, get_args
+from typing import Any, Dict, List, Optional, Tuple, get_args
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.core.decorators import has_allow_from_file_decorator
@@ -303,8 +303,11 @@ def reconstruct_original_dataclass(self) -> Any:
     # skip all classes with default None and that have not been provided by the user
     classes_to_skip = set()
     for cls, dependencies in self.dataclass_dependencies.items():
-        cls_type_arg = cls + "_type" # to specify a class, one provides the type
-        if cls in self.args_with_default_none and cls_type_arg not in self.provided_args:
+        cls_type_arg = cls + "_type"  # to specify a class, one provides the type
+        if (
+            cls in self.args_with_default_none
+            and cls_type_arg not in self.provided_args
+        ):
             classes_to_skip.add(cls)
             for dependency in dependencies:
                 classes_to_skip.add(dependency)
@@ -312,13 +315,15 @@ def reconstruct_original_dataclass(self) -> Any:
     filtered_dependencies = {}
     for cls, dependencies in self.dataclass_dependencies.items():
         if cls not in classes_to_skip:
-            filtered_dependencies[cls] = [dep for dep in dependencies if dep not in classes_to_skip]
-    
+            filtered_dependencies[cls] = [
+                dep for dep in dependencies if dep not in classes_to_skip
+            ]
+
     # list of classes, from the most dependent to the least dependent
     sorted_classes = topological_sort(filtered_dependencies)
 
     instances = {}
-    
+
     # iter over classes from least dependent to most
     for _cls in reversed(sorted_classes):
         args = {}
@@ -381,7 +386,7 @@ def create_from_cli_args(cls) -> Any:
 
     args = parser.parse_args()
     cli_provided_args = _get_cli_provided_args(argnames_to_field_names)
-    
+
     # load and process config files
     loaded_configs = _load_config_files(cls, args)
 
@@ -398,7 +403,7 @@ def create_from_cli_args(cls) -> Any:
         all_default_values,
         cli_provided_args,
     )
-    
+
     return_clss = []
     for i, arg_instance in enumerate(final_args):
         _return_cls = cls(**vars(arg_instance))
@@ -617,7 +622,7 @@ def _merge_args_with_configs(
     cli_provided_args,
 ) -> Tuple[List[Any], List[Dict[str, Any]]]:
     """Merge cli arguments with all config combinations.
-    
+
     Returns:
         list of all flatclass args and list of user-provided args for each config combination
 
@@ -635,9 +640,12 @@ def _merge_args_with_configs(
     for config, keys_to_file_field_names in zip(
         all_config_combinations, all_keys_to_file_field_names
     ):
-        _provided_args_in_config = {**config, **cli_provided_args} # collision prevention is done prior to this
+        _provided_args_in_config = {
+            **config,
+            **cli_provided_args,
+        }  # collision prevention is done prior to this
         all_provided_args.append(_provided_args_in_config)
-        
+
         args_copy = copy.deepcopy(args)
         overwrite_args_with_config(
             args_copy,
@@ -673,7 +681,6 @@ def _initialize_dataclass_state():
         "names_to_classes": {},  # maps unique nested dataclass names to their corresponding dataclass class
         "base_poly_children": {},  # maps unique (by name) base poly configs to {children names: children classes} (Dict[str, Dict[str, Any]])
         "base_poly_children_types": {},  # maps unique (by name) base poly configs to {children types: children names} (Dict[str, Dict[str, str]])
-        "provided_args": set(),  # set of args that were provided by user, be it via CLI or config files
         "args_with_default_none": set(),  # the set of args that have a default value of None
     }
 
@@ -838,7 +845,6 @@ def _create_flat_class_type(state):
     flat_class.dataclass_file_fields = state["file_fields"]
     flat_class.base_poly_children = state["base_poly_children"]
     flat_class.base_poly_children_types = state["base_poly_children_types"]
-    flat_class.provided_args = state["provided_args"]
     flat_class.args_with_default_none = state["args_with_default_none"]
     return flat_class
 
