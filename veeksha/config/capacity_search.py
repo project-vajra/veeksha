@@ -3,8 +3,6 @@ import os
 from dataclasses import field
 from typing import Optional
 
-import yaml  # type: ignore
-
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
