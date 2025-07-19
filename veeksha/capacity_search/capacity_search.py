@@ -13,14 +13,13 @@ from veeksha.capacity_search.benchmark_wrapper import run
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.config.utils import dataclass_to_dict
+from veeksha.constants.capacity_search_constants import (
+    QPS_INCREASE_SCALE,
+    VICINITY_THRESHOLD,
+)
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
-
-# Increase upper bound of QPS by this scale during binary search
-QPS_INCREASE_SCALE = 2
-# Threshold to increase the upper bound of QPS during binary search
-VICINITY_THRESHOLD = 0.8
 
 
 class CapacitySearch:
