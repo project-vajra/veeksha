@@ -36,7 +36,7 @@ def explode_dict(
     config: Dict[str, Any],
     prefix: str = "",
     *,
-    max_combinations: int = 5,
+    max_combinations: int = 10_000,
 ) -> List[Dict[str, Any]]:
     """
     Recursively explode a dictionary containing lists of values into a list of dictionaries
