@@ -26,8 +26,8 @@ class TraceRequestGenerator(BaseRequestGenerator):
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         client_config: ClientConfig,
     ):
-        from veeksha.generators.synthetic_session_generator import (
-            SyntheticSessionGenerator,
+        from veeksha.generators.session_generator import (
+            SessionGenerator,
         )
 
         self.config = config
@@ -72,7 +72,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
             if "session_id" not in self.trace_df.columns:
                 raise ValueError("Trace file does not contain session_id of requests")
         elif self.config.session_generator_config is not None:
-            self.session_generator = SyntheticSessionGenerator(
+            self.session_generator = SessionGenerator(
                 self.config.session_generator_config
             )
             self.trace_df_with_sessions = self.session_generator.generate_sessions(

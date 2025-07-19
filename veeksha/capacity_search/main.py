@@ -1,15 +1,10 @@
 import multiprocessing
-import os
 import platform
-import random
 import time
-
-import wandb
-import yaml  # type: ignore
+from typing import List
 
 from veeksha.capacity_search.search_manager import SearchManager
 from veeksha.config.capacity_search import CapacitySearchConfig
-from veeksha.config.utils import expand_dict
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
@@ -17,50 +12,11 @@ logger = init_logger(__name__)
 
 def run():
     logger.info("Starting capacity search")
-    capacity_search_config: CapacitySearchConfig = (
+    capacity_search_configs: List[CapacitySearchConfig] = (
         CapacitySearchConfig.create_from_cli_args()
     )
-    random.seed(capacity_search_config.seed)
-    if (
-        capacity_search_config.wandb_project
-        and capacity_search_config.enable_wandb_sweep
-    ):
-        assert (
-            capacity_search_config.wandb_sweep_id
-            or capacity_search_config.wandb_sweep_name
-        ), "wandb-sweep-name/id is required with wandb-project"
 
-    benchmark_configs_yaml = yaml.safe_load(
-        open(capacity_search_config.benchmark_config_file)
-    )
-    benchmark_configs_params = expand_dict(benchmark_configs_yaml)
-    # TODO(chus): launch server support
-    # if capacity_search_config.server_config_file:
-    #     server_config = yaml.safe_load(open(capacity_search_config.server_config_file))
-    # else:
-    #     server_config = None
-    #     logger.info("Server config not provided. Will not launch server.")
-
-    assert (
-        capacity_search_config.deadline_miss_rate_slo >= 0
-        and capacity_search_config.deadline_miss_rate_slo <= 1
-    )
-
-    os.makedirs(capacity_search_config.output_dir, exist_ok=True)
-
-    if (
-        capacity_search_config.wandb_project
-        and capacity_search_config.enable_wandb_sweep
-        and not capacity_search_config.wandb_sweep_id
-    ):
-        capacity_search_config.wandb_sweep_id = wandb.sweep(
-            capacity_search_config.to_dict(),
-            project=capacity_search_config.wandb_project,
-        )
-        # required so that wandb doesn't delay flush of child logs
-        wandb.finish(quiet=True)
-
-    search_manager = SearchManager(capacity_search_config, benchmark_configs_params)
+    search_manager = SearchManager(capacity_search_configs)
     start_time = time.time()
     all_results = search_manager.run()
     end_time = time.time()

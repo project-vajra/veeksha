@@ -12,8 +12,8 @@ from veeksha.config.generators.interval_generator.gamma_generator import (
 from veeksha.config.generators.interval_generator.poisson_generator import (
     PoissonRequestIntervalGeneratorConfig,
 )
-from veeksha.config.generators.synthetic_session_generator import (
-    SyntheticSessionGeneratorConfig,
+from veeksha.config.generators.session_generator import (
+    SessionGeneratorConfig,
 )
 from veeksha.generators.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
@@ -53,10 +53,10 @@ class PrefixCache:
         return length
 
 
-class SyntheticSessionGenerator:
+class SessionGenerator:
     def __init__(
         self,
-        config: SyntheticSessionGeneratorConfig,
+        config: SessionGeneratorConfig,
     ):
         self.config = config
         self.session_interval_generator = RequestIntervalGeneratorRegistry.get(
@@ -159,14 +159,12 @@ class SyntheticSessionGenerator:
             ):
                 params.append(f"qps-{interval_config.qps}")
 
-            if "seed" in interval_config.__dict__:
-                params.append(f"seed-{interval_config.__dict__['seed']}")
+            if hasattr(interval_config, "seed"):
+                params.append(f"seed-{interval_config.seed}")
 
             return f"{base_name}_{'_'.join(params)}.jsonl"
 
-        project_root = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "../../..")
-        )
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
         file_name = os.path.join(
             project_root, "data", "generated_traces", create_clean_filename()
         )

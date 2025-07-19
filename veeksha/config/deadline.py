@@ -3,7 +3,7 @@ from dataclasses import field
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 
 
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)
 class DeadlineConfig:
     ttft_deadline: float = field(
         default=0.1,

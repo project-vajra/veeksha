@@ -5,7 +5,7 @@ from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.constants.configuration_constants import DEFAULT_SEED
 
 
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)
 class BaseRequestGeneratorConfig(BasePolyConfig):
     seed: int = field(
         default=DEFAULT_SEED,

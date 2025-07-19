@@ -11,7 +11,7 @@ from veeksha.types.request_interval_generator_type import RequestIntervalGenerat
 @frozen_dataclass
 class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
     trace_file: str = field(
-        default="data/processed_traces/AzureFunctionsInvocationTraceForTwoWeeksJan2021Processed.csv",
+        default="data/processed_traces/swe_agent_trace_short.jsonl",
         metadata={
             "help": "Path to the trace file for request intervals. Should be a csv or jsonl file."
         },

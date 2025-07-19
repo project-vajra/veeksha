@@ -6,13 +6,13 @@ from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.generators.request_generator.base_generator import (
     BaseRequestGeneratorConfig,
 )
-from veeksha.config.generators.synthetic_session_generator import (
-    SyntheticSessionGeneratorConfig,
+from veeksha.config.generators.session_generator import (
+    SessionGeneratorConfig,
 )
 from veeksha.types.request_generator_type import RequestGeneratorType
 
 
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)
 class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     trace_file: str = field(
         default="data/processed_traces/swe_agent_trace_short.jsonl",
@@ -42,7 +42,7 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
             "help": "If True, veeksha will use sessions provided in the trace file (session_id: int)."
         },
     )
-    session_generator_config: Optional[SyntheticSessionGeneratorConfig] = field(
+    session_generator_config: Optional[SessionGeneratorConfig] = field(
         default=None,
         metadata={
             "help": "If not None, it will synthesize sessions based on the trace file and prefix hash IDs of requests (requires use_prefix_hash_ids to be True)."

@@ -12,8 +12,8 @@ from veeksha.logger import init_logger
 logger = init_logger(__name__)
 
 
-@frozen_dataclass
-class SyntheticSessionGeneratorConfig:
+@frozen_dataclass(allow_from_file=True)  # either dataclass or frozen dataclass
+class SessionGeneratorConfig:
     seed: int = field(
         default=42,
         metadata={"help": "Seed for the random number generator."},

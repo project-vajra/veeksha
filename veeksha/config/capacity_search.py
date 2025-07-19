@@ -3,12 +3,16 @@ import os
 from dataclasses import field
 from typing import Optional
 
+from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.constants.configuration_constants import DEFAULT_SEED
+from veeksha.logger import init_logger
+
+logger = init_logger(__name__)
 
 
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)
 class CapacitySearchConfig:
     """Configuration for capacity search benchmark. This is a special benchmark that runs multiple benchmarks with different QPS and
     finds the maximum QPS that can be sustained given the deadline constraints."""
@@ -37,13 +41,9 @@ class CapacitySearchConfig:
         default="./veeksha/capacity_search/output",
         metadata={"help": "Output directory for capacity search."},
     )
-    benchmark_config_file: str = field(
-        default="./veeksha/capacity_search/config/default_config.yml",
-        metadata={"help": "Path to benchmark config file."},
-    )
-    server_config_file: Optional[str] = field(
-        default=None,
-        metadata={"help": "Path to server launch command file"},
+    benchmark_config: BenchmarkConfig = field(
+        default_factory=BenchmarkConfig,
+        metadata={"help": "Benchmark config for capacity search."},
     )
     slo_type: str = field(
         default="deadline",
@@ -113,10 +113,19 @@ class CapacitySearchConfig:
 
     @classmethod
     def create_from_cli_args(cls):
-        flat_config = create_flat_dataclass(cls).create_from_cli_args()
-        instance = flat_config.reconstruct_original_dataclass()
-        object.__setattr__(instance, "__flat_config__", flat_config)
-        return instance
+        """Create CapacitySearchConfig instances from CLI
+
+        Returns:
+            List of CapacitySearchConfig instances (single or
+            multiple configs if YAML expands to multiple configurations)
+        """
+        flat_configs = create_flat_dataclass(cls).create_from_cli_args()
+        instances = []
+        for flat_config in flat_configs:
+            instance = flat_config.reconstruct_original_dataclass()
+            object.__setattr__(instance, "__flat_config__", flat_config)
+            instances.append(instance)
+        return instances
 
     def to_dict(self):
         return self.__dict__

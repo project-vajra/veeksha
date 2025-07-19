@@ -26,7 +26,7 @@ from veeksha.types import RequestGeneratorType
 logger = init_logger(__name__)
 
 
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)
 class BenchmarkConfig:
     seed: int = field(
         default=DEFAULT_SEED,
@@ -72,7 +72,7 @@ class BenchmarkConfig:
         metadata={"help": "The request generator configuration for the benchmark."},
     )
 
-    # TODO move this away
+    # TODO mv
     def __post_init__(self):
         if not os.path.exists(self.metrics_config.output_dir):
             os.makedirs(self.metrics_config.output_dir)
@@ -102,15 +102,24 @@ class BenchmarkConfig:
 
     @classmethod
     def create_from_cli_args(cls):
-        flat_config = create_flat_dataclass(cls).create_from_cli_args()
-        instance = flat_config.reconstruct_original_dataclass()
-        object.__setattr__(instance, "__flat_config__", flat_config)
-        return instance
+        """Create BenchmarkConfig instances from CLI
+
+        Returns:
+            List of BenchmarkConfig instances (single or
+            multiple configs if YAML expands to multiple configurations)
+        """
+        flat_configs = create_flat_dataclass(cls).create_from_cli_args()
+        instances = []
+        for flat_config in flat_configs:
+            instance = flat_config.reconstruct_original_dataclass()
+            object.__setattr__(instance, "__flat_config__", flat_config)
+            instances.append(instance)
+        return instances
 
     def to_dict(self):
-        if not hasattr(self, "__flat_config__"):
-            logger.warning("Flat config not found. Returning the original config.")
-            return self.__dict__
+        if not hasattr(self, "__flat_config__") or self.__flat_config__ is None:
+            logger.debug("Flat config not found or is None. Using dataclass_to_dict.")
+            return dataclass_to_dict(self)
 
         return self.__flat_config__.__dict__  # type: ignore
 

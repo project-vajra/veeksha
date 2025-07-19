@@ -260,4 +260,5 @@ experiments_*
 results*
 .qodo
 data/generated_traces
-veeksha/capacity_search/config_files
+veeksha/benchmark_config_files/
+veeksha/capacity_search/capsearch_config_files/
