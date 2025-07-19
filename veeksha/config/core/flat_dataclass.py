@@ -31,7 +31,13 @@ from veeksha.logger import init_logger
 logger = init_logger(__name__)
 
 
-def explode_dict(cls, config: Dict[str, Any], prefix: str = "") -> List[Dict[str, Any]]:
+def explode_dict(
+    cls,
+    config: Dict[str, Any],
+    prefix: str = "",
+    *,
+    max_combinations: int = 5,
+) -> List[Dict[str, Any]]:
     """
     Recursively explode a dictionary containing lists of values into a list of dictionaries
     representing all combinations (cartesian product), with optional prefix applied to keys.
@@ -44,7 +50,28 @@ def explode_dict(cls, config: Dict[str, Any], prefix: str = "") -> List[Dict[str
         Input: {'a': [1, 2], 'b': [3, 4]}, prefix='test_'
         Output: [{'test_a': 1, 'test_b': 3}, {'test_a': 1, 'test_b': 4},
                  {'test_a': 2, 'test_b': 3}, {'test_a': 2, 'test_b': 4}]
+
+    NOTE:
+        In deeply–nested configs with many lists, the number of combinations can grow
+        exponentially. This method raises a ``ValueError`` if the number of combinations
+        exceeds ``max_combinations``. Pass ``float('inf')`` to disable the limit.
     """
+
+    # for guarding against combinatorial explosion
+    combination_counter = [0]  # mutable counter in a closure
+
+    def _increment_counter(n: int):
+        """Increment the global combination counter and enforce the max limit."""
+        if n == 0:
+            return
+        combination_counter[0] += n
+        if combination_counter[0] > max_combinations:
+            raise ValueError(
+                "The number of generated configuration combinations ("
+                f"{combination_counter[0]}) exceeds the allowed maximum of "
+                f"{max_combinations}. Reduce list sizes or increase the limit "
+                "to avoid combinatorial explosion."
+            )
 
     def _categorize_dict_items(d: Dict[str, Any]) -> tuple:
         """Categorize dictionary items into lists, dicts, and primitives."""
@@ -109,6 +136,7 @@ def explode_dict(cls, config: Dict[str, Any], prefix: str = "") -> List[Dict[str
             combined = non_list_items.copy()
             combined.update(dict_combo)
             result.append(combined)
+        _increment_counter(len(result))
         return result
 
     def _generate_all_combinations(
@@ -140,6 +168,7 @@ def explode_dict(cls, config: Dict[str, Any], prefix: str = "") -> List[Dict[str
 
                 result.append(new_config)
 
+        _increment_counter(len(result))
         return result
 
     def _explode_dict_recursive(
@@ -216,7 +245,9 @@ def explode_dict(cls, config: Dict[str, Any], prefix: str = "") -> List[Dict[str
                 # non-dict items are wrapped
                 all_exploded.append({"_value": item})
 
-        return [_add_prefix_to_dict(cls, cfg, prefix) for cfg in all_exploded]
+        prefixed = [_add_prefix_to_dict(cls, cfg, prefix) for cfg in all_exploded]
+        _increment_counter(len(prefixed))
+        return prefixed
 
     # handle special case where config has a '_list' key (from load_yaml_config)
     if isinstance(config, dict) and len(config) == 1 and "_list" in config:
@@ -224,6 +255,7 @@ def explode_dict(cls, config: Dict[str, Any], prefix: str = "") -> List[Dict[str
 
     # standard case: explode the config and add prefixes
     exploded_configs = _explode_dict_recursive(config)
+    _increment_counter(len(exploded_configs))
     return [_add_prefix_to_dict(cls, cfg, prefix) for cfg in exploded_configs]
 
 
@@ -282,7 +314,7 @@ def overwrite_args_with_config(
         # Ignore keys that are not recognised by the FlatClass.
         if not hasattr(args, key):
             logger.warning(
-                f"Arg {key} provided by {keys_to_file_field_names[key]} not found in supported args."
+                f"Arg {key} provided by {keys_to_file_field_names.get(key, 'unknown')} not found in supported args."
             )
             continue
 
