@@ -414,7 +414,7 @@ def load_yaml_config(file_path: str):
     return data
 
 
-def has_allow_from_file_attribute(cls) -> bool:
+def has_allow_from_file_attribute(cls: type) -> bool:
     """
     Check if a class has the _allow_from_file attribute set to True.
     Only return True if the attribute is defined directly on cls (i.e. not inherited)
