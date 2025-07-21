@@ -15,6 +15,7 @@ from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.utils import (
     get_all_subclasses,
     get_inner_type,
+    has_allow_from_file_attribute,
     is_bool,
     is_composed_of_primitives,
     is_dict,
@@ -24,7 +25,6 @@ from veeksha.config.utils import (
     is_subclass,
     load_yaml_config,
     to_snake_case,
-    has_allow_from_file_attribute,
 )
 from veeksha.logger import init_logger
 
@@ -367,7 +367,7 @@ def reconstruct_original_dataclass(self) -> Any:
                 config_type = getattr(self, f"{prefixed_field_name}_type")
                 # find all subclasses of field_type and check which one matches the config_type
                 config_type_matched = False
-                # base poly children cointains all subclasses of the base poly config
+                # base poly children contains all subclasses of the base poly config
                 for child_name, child_cls in self.base_poly_children[
                     prefixed_field_name
                 ].items():
