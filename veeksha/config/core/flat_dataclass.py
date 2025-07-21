@@ -12,7 +12,7 @@ from itertools import product
 from typing import Any, Dict, List, Optional, Tuple, get_args
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
-from veeksha.config.core.decorators import has_allow_from_file_decorator
+from veeksha.config.core.decorators import has_allow_from_file_attribute
 from veeksha.config.utils import (
     get_all_subclasses,
     get_inner_type,
@@ -765,8 +765,8 @@ def _handle_polymorphic_config_field(
     )
     state["metadata_mapping"][type_field_name] = field.metadata
 
-    # add _from_file to base poly config with explicit @allow_from_file
-    if has_allow_from_file_decorator(field_type):
+    # add _from_file to base poly config if attribute is set
+    if has_allow_from_file_attribute(field_type):
         file_field_name = f"{prefixed_name}_from_file"
         _add_file_argument(state, field_type, file_field_name)
 
@@ -833,8 +833,8 @@ def _process_single_dataclass(state, input_dataclass, prefix=""):
     _ = state["dataclass_dependencies"][prefixed_class_name]
     state["names_to_classes"][prefixed_class_name] = input_dataclass
 
-    # add _from_file argument if decorator is present
-    if has_allow_from_file_decorator(input_dataclass):
+    # add _from_file argument if attribute is set
+    if has_allow_from_file_attribute(input_dataclass):
         file_field_name = (
             f"{prefix}from_file"
             if prefix

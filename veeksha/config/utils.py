@@ -412,3 +412,17 @@ def load_yaml_config(file_path: str):
             f"or a list at the top level, got {type(data).__name__}."
         )
     return data
+
+
+def has_allow_from_file_attribute(cls) -> bool:
+    """
+    Check if a class has the _allow_from_file attribute set to True.
+    Only return True if the attribute is defined directly on cls (i.e. not inherited)
+
+    Args:
+        cls: The class to check
+
+    Returns:
+        True if the class has the _allow_from_file attribute set to True, False otherwise
+    """
+    return vars(cls).get("_allow_from_file", False)
