@@ -12,7 +12,6 @@ from itertools import product
 from typing import Any, Dict, List, Optional, Tuple, get_args
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
-from veeksha.config.core.decorators import has_allow_from_file_attribute
 from veeksha.config.utils import (
     get_all_subclasses,
     get_inner_type,
@@ -25,6 +24,7 @@ from veeksha.config.utils import (
     is_subclass,
     load_yaml_config,
     to_snake_case,
+    has_allow_from_file_attribute,
 )
 from veeksha.logger import init_logger
 
