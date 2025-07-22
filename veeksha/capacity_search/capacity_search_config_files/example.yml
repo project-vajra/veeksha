@@ -1,0 +1,4 @@
+output_dir: "cap_experiments/example_capsearch"
+
+benchmark_config:
+  file: "veeksha/benchmark_config_files/example_trace.yml"

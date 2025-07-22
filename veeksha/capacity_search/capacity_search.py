@@ -8,9 +8,10 @@ from typing import Optional, Tuple
 
 import wandb
 
-from veeksha.capacity_search.benchmark_wrapper import run
-from veeksha.config.config import BenchmarkConfig, CapacitySearchConfig
-from veeksha.config.utils import create_class_from_dict, dataclass_to_dict
+from veeksha.capacity_search.benchmark_wrapper import run_benchmark_wrapped
+from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.capacity_search import CapacitySearchConfig
+from veeksha.config.utils import dataclass_to_dict
 from veeksha.capacity_search.slo import get_slos_from_config
 from veeksha.constants.capacity_search_constants import (
     QPS_INCREASE_SCALE,
@@ -18,7 +19,6 @@ from veeksha.constants.capacity_search_constants import (
 )
 from veeksha.logger import init_logger
 from veeksha.capacity_search.slo_evaluator import SLOEvaluator
-from veeksha.run_benchmark import run_benchmark
 
 logger = init_logger(__name__)
 
@@ -89,7 +89,7 @@ class CapacitySearch:
             logger.info(f"Cached results found for {qps}")
             return self._is_under_sla(cached_request_level_metrics_file, qps)
 
-        run_benchmark(benchmark_config)
+        run_benchmark_wrapped(benchmark_config)
 
         request_level_metrics_file = self._get_request_level_metrics(qps_run_dir)
 

@@ -22,7 +22,7 @@ def setup_api_environment(
     os.environ["OPENAI_API_BASE"] = api_url
 
 
-def run(
+def run_benchmark_wrapped(
     benchmark_config: BenchmarkConfig,
 ):
     """Main function to run benchmark"""
