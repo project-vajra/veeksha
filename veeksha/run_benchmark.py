@@ -1,4 +1,5 @@
 import multiprocessing
+import os
 import platform
 import random
 import threading
@@ -30,6 +31,17 @@ from veeksha.types import RequestGeneratorType
 logger = init_logger(__name__)
 
 
+def setup_api_environment(
+    api_key=None,
+    api_url=None,
+):
+    """Set up environment variables for OpenAI API"""
+    assert api_key is not None, "API key is required"
+    assert api_url is not None, "API port is required"
+    os.environ["OPENAI_API_KEY"] = api_key
+    os.environ["OPENAI_API_BASE"] = api_url
+
+
 def should_send_new_request(
     service_metrics: ServiceMetrics, num_errored_requests_handled: int
 ) -> bool:
@@ -53,40 +65,40 @@ def dispatch_requests(
         if should_send_new_request(service_metrics, num_errored_requests_handled):
             request_start_time = time.monotonic()
 
-            # Check if we should handle error request
+            # check if we should handle error request
             if service_metrics.num_requests >= service_metrics.max_requests:
                 num_errored_requests_handled += 1
 
-            # Get next request and its dispatch time
+            # get next request and its dispatch time
             request_config = request_generator.get_request()
-            request_dispatch_interval = request_config.metadata[
-                "request_dispatch_interval"
-            ]
-            service_metrics.register_launched_request()
+            request_dispatch_delay = request_config.dispatch_delay
 
-            if request_dispatch_interval < 0:
+            if request_dispatch_delay < 0:
                 logger.warning(
-                    f"Invalid request dispatch interval '{request_dispatch_interval}' from request metadata. Stopping the main loop."
+                    f"Invalid request dispatch delay '{request_dispatch_delay}' from request metadata. Stopping the main loop."
                 )
                 break
 
-            # Wait for dispatch time
+            # wait for dispatch time
             while not stop_event.is_set():
                 elapsed_time = time.monotonic() - request_start_time
-                if elapsed_time >= request_dispatch_interval:
+                if elapsed_time >= request_dispatch_delay:
                     break
                 # remaining sleep time to avoid drift
-                remaining_time = request_dispatch_interval - elapsed_time
+                remaining_time = request_dispatch_delay - elapsed_time
                 if remaining_time > 0:
                     # capped sleep at 100ms
                     sleep_duration = min(remaining_time, 0.1)
                     time.sleep(sleep_duration)
 
-            # Dispatch request
+            # if another thread has set the stop event we don't send the request
+            if stop_event.is_set():
+                continue
+
+            # dispatch
+            service_metrics.register_launched_request()
             input_queue.put(request_config)
-            logger.info(
-                f"Dispatched request {request_config.id}: {request_config.metadata['input_length']} prefill, {request_config.metadata['output_length']} decode"
-            )
+            logger.info(f"Dispatched request {request_config.id}")
         else:
             time.sleep(0.01)
 
@@ -195,6 +207,11 @@ def run_benchmark(
         The individual metrics for each request.
     """
 
+    setup_api_environment(
+        api_key=benchmark_config.api_key,
+        api_url=benchmark_config.api_url,
+    )
+
     generated_responses: List[Response] = []
 
     assert (
@@ -281,6 +298,7 @@ if __name__ == "__main__":
         )
 
     for i, benchmark_config in enumerate(benchmark_configs):
+        print(f"Running benchmark with config: {benchmark_config}")
         if len(benchmark_configs) > 1:
             logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
 

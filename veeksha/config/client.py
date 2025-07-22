@@ -6,7 +6,7 @@ from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.core.llm_clients import SUPPORTED_APIS
 
 
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)
 class ClientConfig:
     model: str = field(
         default="meta-llama/Meta-Llama-3-8B-Instruct",

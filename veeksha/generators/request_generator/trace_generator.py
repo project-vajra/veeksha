@@ -26,8 +26,8 @@ class TraceRequestGenerator(BaseRequestGenerator):
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         client_config: ClientConfig,
     ):
-        from veeksha.generators.session_generator.generator_registry import (
-            SessionGeneratorRegistry,
+        from veeksha.generators.session_generator import (
+            SessionGenerator,
         )
 
         self.config = config
@@ -38,7 +38,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         self.trace_df = load_trace(self.config.trace_file)
 
-        self.trace_df = process_request_length_trace(
+        process_request_length_trace(
             self.trace_df,
             self.config.trace_file,
             self.config.prefill_scale_factor,
@@ -46,7 +46,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
             self.config.max_tokens,
         )
 
-        self.trace_df = process_request_interval_trace(
+        process_request_interval_trace(
             self.trace_df,
             self.config.trace_file,
             self.config.time_scale_factor,
@@ -72,24 +72,27 @@ class TraceRequestGenerator(BaseRequestGenerator):
             if "session_id" not in self.trace_df.columns:
                 raise ValueError("Trace file does not contain session_id of requests")
         elif self.config.session_generator_config is not None:
-            self.session_generator = SessionGeneratorRegistry.get(
-                self.config.session_generator_config.get_type(),
-                self.config.session_generator_config,
+            self.session_generator = SessionGenerator(
+                self.config.session_generator_config
             )
-            self.trace_df = self.session_generator.generate_sessions(self.trace_df)
+            self.trace_df_with_sessions = self.session_generator.generate_sessions(
+                self.trace_df
+            )
 
-            # get next request intervals again, because session sampling might shuffle requests
-            self.trace_df = process_request_interval_trace(
-                self.trace_df,
+            # get next request intervals again because session sampling shuffles sessions
+            process_request_interval_trace(
+                self.trace_df_with_sessions,
                 self.config.trace_file,
                 self.config.time_scale_factor,
-                ms_to_s=False,  # timestamps are already in seconds
+                ms_to_s=False,
             )
 
             # convert timestamps to milliseconds for saving (as expected by trace format)
-            trace_df_for_saving = self.trace_df.copy()
-            trace_df_for_saving["timestamp"] = trace_df_for_saving["timestamp"] * 1000
-            self.session_generator.save_requests_as_trace(trace_df_for_saving)
+            session_df_for_saving = self.trace_df_with_sessions.copy()
+            session_df_for_saving["timestamp"] = (
+                session_df_for_saving["timestamp"] * 1000
+            )
+            self.session_generator.save_requests_as_trace(session_df_for_saving)
 
         self.request_idx = 0
 
@@ -101,8 +104,10 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
     def encode_value_as_base_52(self, value: int) -> List[int]:
         if value <= 0:
-            raise ValueError(f"Value must be a positive integer for base-52 encoding, got: {value}")
-        
+            raise ValueError(
+                f"Value must be a positive integer for base-52 encoding, got: {value}"
+            )
+
         base_52 = []
         while value > 0:
             mod = value % 52
@@ -118,8 +123,10 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
     def encode_value_as_digits(self, value: int) -> List[int]:
         if value <= 0:
-            raise ValueError(f"Value must be a positive integer for digits encoding, got: {value}")
-        
+            raise ValueError(
+                f"Value must be a positive integer for digits encoding, got: {value}"
+            )
+
         digits = list(str(value))
         space_separated = " " + " ".join(digits)
         encoding = self.encode(space_separated)
@@ -141,30 +148,20 @@ class TraceRequestGenerator(BaseRequestGenerator):
         raise Exception(f"Could not generate stable encoding for value {value}")
 
     def get_request(self) -> RequestConfig:
-        request_to_send = self.trace_df.iloc[self.request_idx]
-
-        request_metadata = {
-            "input_length": request_to_send["input_length"],
-            "output_length": request_to_send["output_length"],
-            "request_dispatch_interval": request_to_send["inter_request_time"],
-        }
-
         if (
             self.config.use_trace_sessions
             or self.config.session_generator_config is not None
         ):
-            request_metadata["session_id"] = request_to_send["session_id"]
-            if "num_requests_in_session" in request_to_send:
-                request_metadata["session_size"] = request_to_send[
-                    "num_requests_in_session"
-                ]
+            request_to_send = self.trace_df_with_sessions.iloc[self.request_idx]
+        else:
+            request_to_send = self.trace_df.iloc[self.request_idx]
+
+        dispatch_delay = request_to_send["inter_request_time"]
 
         if self.config.use_trace_prefix_hash_ids:
             block_count = (
                 request_to_send["input_length"] + self.config.block_size - 1
             ) // self.config.block_size
-
-            request_metadata["block_count"] = block_count
 
             assert (
                 len(request_to_send["hash_ids"]) >= block_count
@@ -185,10 +182,12 @@ class TraceRequestGenerator(BaseRequestGenerator):
             # todo generate input random text
             raise NotImplementedError("to be implemented")
 
+        instruction = f"Generate at least {int(request_to_send['output_length'])} tokens repeating the following text:\n"
+        prompt = instruction + prompt
+
         final_token_count = len(self.encode(prompt))
 
         default_sampling_params = {
-            "min_tokens": int(request_to_send["output_length"]),
             "max_tokens": int(request_to_send["output_length"]),
         }
         default_sampling_params.update(
@@ -198,11 +197,11 @@ class TraceRequestGenerator(BaseRequestGenerator):
         request_config = RequestConfig(
             model=self.client_config.model,
             prompt=(prompt, final_token_count),
+            dispatch_delay=dispatch_delay,
             sampling_params=default_sampling_params,
             llm_api=self.client_config.llm_api,
             address_append_value=self.client_config.address_append_value,
             id=self.request_idx,
-            metadata=request_metadata,
         )
 
         self.request_idx += 1

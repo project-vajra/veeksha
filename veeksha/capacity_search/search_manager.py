@@ -1,5 +1,8 @@
-from functools import partial
-from typing import Dict, List
+import os
+import random
+from typing import List
+
+import wandb
 
 from veeksha.capacity_search.capacity_search import CapacitySearch
 from veeksha.config.capacity_search import CapacitySearchConfig
@@ -9,13 +12,38 @@ logger = init_logger(__name__)
 
 
 def run_search(
-    benchmark_config_params: Dict,
     capacity_search_config: CapacitySearchConfig,
 ):
-    capacity_search = CapacitySearch(
-        capacity_search_config,
-        benchmark_config_params,
+    random.seed(capacity_search_config.seed)
+    if (
+        capacity_search_config.wandb_project
+        and capacity_search_config.enable_wandb_sweep
+    ):
+        assert (
+            capacity_search_config.wandb_sweep_id
+            or capacity_search_config.wandb_sweep_name
+        ), "wandb-sweep-name/id is required with wandb-project"
+
+    assert (
+        capacity_search_config.deadline_miss_rate_slo >= 0
+        and capacity_search_config.deadline_miss_rate_slo <= 1
     )
+
+    os.makedirs(capacity_search_config.output_dir, exist_ok=True)
+
+    if (
+        capacity_search_config.wandb_project
+        and capacity_search_config.enable_wandb_sweep
+        and not capacity_search_config.wandb_sweep_id
+    ):
+        capacity_search_config.wandb_sweep_id = wandb.sweep(
+            capacity_search_config.to_dict(),
+            project=capacity_search_config.wandb_project,
+        )
+        # required so that wandb doesn't delay flush of child logs
+        wandb.finish(quiet=True)
+
+    capacity_search = CapacitySearch(capacity_search_config)
     return capacity_search.search()
 
 
@@ -23,23 +51,16 @@ def run_search(
 class SearchManager:
     def __init__(
         self,
-        capacity_search_config: CapacitySearchConfig,
-        benchmark_configs_params: List[Dict],
+        capacity_search_configs: List[CapacitySearchConfig],
     ):
-        self.capacity_search_config = capacity_search_config
-        self.benchmark_configs_params = benchmark_configs_params
+        self.capacity_search_configs = capacity_search_configs
 
     def run(self):
-        num_jobs = len(self.benchmark_configs_params)
+        num_jobs = len(self.capacity_search_configs)
         logger.info(f"Running {num_jobs} jobs sequentially")
 
-        run_search_partial = partial(
-            run_search,
-            capacity_search_config=self.capacity_search_config,
-        )
         all_results = [
-            run_search_partial(cfg_params)
-            for cfg_params in self.benchmark_configs_params
+            run_search(cfg_params) for cfg_params in self.capacity_search_configs
         ]
 
         return all_results

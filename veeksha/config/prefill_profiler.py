@@ -13,7 +13,7 @@ from veeksha.logger import init_logger
 logger = init_logger(__name__)
 
 
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)
 class PrefillProfilerConfig:
     prefill_lengths: list = field(
         default_factory=lambda: [],

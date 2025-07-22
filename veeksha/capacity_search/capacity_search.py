@@ -3,15 +3,19 @@ import hashlib
 import json
 import os
 import threading
-from typing import Dict, Optional, Tuple
+from dataclasses import replace
+from typing import Optional, Tuple
 
 import wandb
 
-from veeksha.capacity_search.constants import VICINITY_THRESHOLD, QPS_INCREASE_SCALE
-from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.config.capacity_search import CapacitySearchConfig 
-from veeksha.capacity_search.slo import get_slos_from_config
+from veeksha.capacity_search.benchmark_wrapper import run
+from veeksha.config.config import BenchmarkConfig, CapacitySearchConfig
 from veeksha.config.utils import create_class_from_dict, dataclass_to_dict
+from veeksha.capacity_search.slo import get_slos_from_config
+from veeksha.constants.capacity_search_constants import (
+    QPS_INCREASE_SCALE,
+    VICINITY_THRESHOLD,
+)
 from veeksha.logger import init_logger
 from veeksha.capacity_search.slo_evaluator import SLOEvaluator
 from veeksha.run_benchmark import run_benchmark
@@ -23,24 +27,22 @@ class CapacitySearch:
     def __init__(
         self,
         capacity_search_config: CapacitySearchConfig,
-        benchmark_config_params: Dict,
     ) -> None:
         self.capacity_search_config = capacity_search_config
-        self.benchmark_config_params = benchmark_config_params
-        
-        # we would like to invoke this to get the default params
-        self.default_benchmark_config = create_class_from_dict(
-            BenchmarkConfig, self.benchmark_config_params
+
+        # will be cloned for each QPS attempt (changing output_dir, wandb_run_name)
+        self.base_benchmark_config: BenchmarkConfig = (
+            self.capacity_search_config.benchmark_config
         )
 
         self.stop_event = threading.Event()
 
         self.full_config = {
             "capacity_search_config": dataclass_to_dict(self.capacity_search_config),
-            "benchmark_config": dataclass_to_dict(self.default_benchmark_config),
+            "benchmark_config": dataclass_to_dict(self.base_benchmark_config),
         }
 
-        model_name = self.default_benchmark_config.client_config.model.split("/")[-1]
+        model_name = self.base_benchmark_config.client_config.model.split("/")[-1]
         config_hash = hashlib.md5(str(self.full_config).encode()).hexdigest()[:8]
 
         self.job_output_dir = os.path.join(
@@ -54,6 +56,23 @@ class CapacitySearch:
         self.slo_set = get_slos_from_config(self.capacity_search_config.slos_config_file)
         self.slo_evaluator = SLOEvaluator(self.slo_set)
 
+    def _build_benchmark_config_for_qps(
+        self, qps: float, run_dir: str
+    ) -> BenchmarkConfig:
+        """Return a new BenchmarkConfig with metrics_config pointing to run_dir and
+        wandb_run_name encoding QPS.
+        """
+
+        # copy of metric_config with updated output_dir and wandb_run_name
+        new_metrics_cfg = replace(
+            self.base_benchmark_config.metrics_config,
+            output_dir=run_dir,
+            wandb_run_name=f"qps_{qps}_model_{self.base_benchmark_config.client_config.model}",
+        )
+
+        # copy of benchmark_config with updated metrics_config
+        return replace(self.base_benchmark_config, metrics_config=new_metrics_cfg)
+
     def _run_capacity_search_benchmark(
         self, qps: float
     ) -> Tuple[
@@ -61,21 +80,8 @@ class CapacitySearch:
     ]:
         qps_run_dir = os.path.join(self.job_output_dir, str(qps))
 
-        # each run has a different qps, which must be reflected both in the wandb run name and the metrics output directory
-        if self.benchmark_config_params.get("metrics_config"):
-            self.benchmark_config_params["metrics_config"][
-                "wandb_run_name"
-            ] = f"qps_{qps}_model_{self.default_benchmark_config.client_config.model}"
-            self.benchmark_config_params["metrics_config"]["output_dir"] = qps_run_dir
-        else:
-            self.benchmark_config_params["metrics_config"] = {
-                "wandb_run_name": f"qps_{qps}_model_{self.default_benchmark_config.client_config.model}",
-                "output_dir": qps_run_dir,
-            }
-
-        benchmark_config = create_class_from_dict(
-            BenchmarkConfig, self.benchmark_config_params
-        )
+        # isolated benchmark config for this QPS
+        benchmark_config = self._build_benchmark_config_for_qps(qps, qps_run_dir)
 
         cached_request_level_metrics_file = self._get_request_level_metrics(qps_run_dir)
 

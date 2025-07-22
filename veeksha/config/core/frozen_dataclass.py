@@ -11,11 +11,20 @@ def frozen_dataclass(_cls=None, **kwargs):
     Args:
         _cls: The class to decorate (for decorator syntax handling).
         **kwargs: Additional keyword arguments to pass to dataclasses.dataclass.
+        allow_from_file (bool): If True, mark the dataclass as allowing configuration
+            to be loaded from a file.
     """
+
+    # Extract custom keyword arguments handled by this decorator
+    allow_from_file = kwargs.pop("allow_from_file", False)
 
     def wrap(cls):
         # Apply dataclass with frozen=True
         datacls = dataclasses.dataclass(cls, frozen=True, **kwargs)  # type: ignore
+
+        # Mark as allowing file-based configuration if requested
+        if allow_from_file:
+            setattr(datacls, "_allow_from_file", True)
 
         # Store the original __post_init__ if it exists
         original_post_init = getattr(cls, "__post_init__", None)
