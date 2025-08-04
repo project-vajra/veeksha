@@ -12,13 +12,12 @@ from veeksha.capacity_search.benchmark_wrapper import run_benchmark_wrapped
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.config.utils import dataclass_to_dict
-from veeksha.capacity_search.slo import get_slos_from_config
 from veeksha.constants.capacity_search_constants import (
     QPS_INCREASE_SCALE,
     VICINITY_THRESHOLD,
 )
 from veeksha.logger import init_logger
-from veeksha.capacity_search.slo_evaluator import SLOEvaluator
+from veeksha.capacity_search.slo_evaluator import SloEvaluator
 
 logger = init_logger(__name__)
 
@@ -52,9 +51,13 @@ class CapacitySearch:
 
         with open(os.path.join(self.job_output_dir, "config.json"), "w") as f:
             json.dump(self.full_config, f, indent=4)
+            
+        # TODO:
+        # init SLOs from their configs in "slos"
+        # init SloEvaluator with the SLOs
 
-        self.slo_set = get_slos_from_config(self.capacity_search_config.slos_config_file)
-        self.slo_evaluator = SLOEvaluator(self.slo_set)
+        #self.slo_set = get_slos_from_config(self.capacity_search_config.slos_config_file)
+        #self.slo_evaluator = SloEvaluator(self.slo_set)
 
     def _build_benchmark_config_for_qps(
         self, qps: float, run_dir: str
@@ -130,8 +133,9 @@ class CapacitySearch:
         is_under_sla, metrics_dict = self.slo_evaluator.evaluate_request_metrics(
             request_level_metrics_file
         )
+        
+        print("METRICS_DICT------------------------", metrics_dict)
             
-        # Log detailed metrics
         logger.info(f"QPS: {qps} - {self.slo_evaluator.get_metrics_summary(metrics_dict)}")
         return (
             is_under_sla,

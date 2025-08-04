@@ -3,22 +3,22 @@
 import json
 from typing import Dict, List, Optional, Tuple, Any
 
-from veeksha.capacity_search.slo import SLOSet
+from veeksha.capacity_search.slo import SloSet
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
 
 
-class SLOEvaluator:
-    """Evaluates SLOs in a SLOSet against request-level metrics."""
+class SloEvaluator:
+    """Evaluates SLOs in a SloSet against request-level metrics."""
     
     def __init__(self, 
-                 slo_set: SLOSet,
+                 slo_set: SloSet,
                  predictions: Optional[Dict[int, float]] = None):
         """Initialize SLO evaluator.
         
         Args:
-            slo_set: SLOSet containing SLOs to evaluate
+            slo_set: SloSet containing SLOs to evaluate
             predictions: Optional predictions for dynamic SLOs
         """
         self.slo_set = slo_set
@@ -50,7 +50,7 @@ class SLOEvaluator:
             # Store metric value with descriptive key
             if hasattr(slo, 'metric'):
                 # Simple metric SLO
-                metric_key = f"{slo.metric.value}_p{int(slo.percentile * 100)}"
+                metric_key = f"{slo.metric}_*p{int(slo.percentile * 100)}"
             else:
                 # Composite SLO (like DeadlineSLO)
                 metric_key = f"{slo.get_type()}_p{int(slo.percentile * 100)}"
@@ -60,7 +60,7 @@ class SLOEvaluator:
             metrics_dict[metric_key] = result[1]
             
             # Log individual SLO result
-            slo_identifier = slo.name or (slo.metric.value if hasattr(slo, 'metric') else slo.get_type())
+            slo_identifier = slo.name or (slo.metric if hasattr(slo, 'metric') else slo.get_type())
             logger.debug(f"SLO '{slo_identifier}' "
                         f"(P{slo.percentile * 100}): "
                         f"{'MET' if result[0] else 'MISSED'} "

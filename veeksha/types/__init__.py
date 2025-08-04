@@ -3,7 +3,7 @@ from veeksha.types.request_generator_type import RequestGeneratorType
 from veeksha.types.request_interval_generator_type import RequestIntervalGeneratorType
 from veeksha.types.request_length_generator_type import RequestLengthGeneratorType
 from veeksha.types.session_generator_type import SessionGeneratorType
-from veeksha.types.slo_type import SLOType
+from veeksha.types.slo_type import SloType
 
 __all__ = [  # type: ignore
     "LMEvalOutputType",
@@ -11,5 +11,5 @@ __all__ = [  # type: ignore
     "RequestIntervalGeneratorType",
     "RequestLengthGeneratorType",
     "SessionGeneratorType",
-    "SLOType",
+    "SloType",
 ]

@@ -1,7 +1,7 @@
 from veeksha.types.base_int_enum import BaseIntEnum
 
 
-class SLOType(BaseIntEnum):
+class SloType(BaseIntEnum):
     """Enum for different SLO types."""
     
     CONSTANT = 1
