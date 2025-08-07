@@ -5,7 +5,7 @@ import numpy as np
 import yaml
 
 from veeksha.logger import init_logger
-from veeksha.config.slo import BaseSloConfig, ConstantSloConfig, TtftPredictionMultiplierSloConfig, TtftPredictionOffsetSloConfig, DeadlineSloConfig, SloSetConfig, PredictionBasedSloConfig
+from veeksha.config.slo import BaseSloConfig, ConstantSloConfig, TtftPredictionMultiplierSloConfig, TtftPredictionOffsetSloConfig, DeadlineSloConfig, PredictionBasedSloConfig
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 
 logger = init_logger(__name__)
@@ -19,7 +19,6 @@ class SloMetric(str, Enum):
     TPOT = "tpot"
 
 
-@frozen_dataclass
 class BaseSlo:
     """Base class for a single SLO definition."""
 
@@ -59,7 +58,6 @@ class SimpleMetricSlo:
         
         return metric_value <= threshold, metric_value
 
-@frozen_dataclass
 class ConstantSlo(SimpleMetricSlo):
     """SLO with a fixed constant value threshold."""
 
@@ -68,9 +66,11 @@ class ConstantSlo(SimpleMetricSlo):
 
     def get_threshold(self, **kwargs: Any) -> float:
         return self.config.value
+    
+    def __str__(self) -> str:
+        return f"ConstantSlo(metric={self.config.metric}, p{self.config.percentile*100:.0f} <= {self.config.value})"
 
 
-@frozen_dataclass
 class PredictionBasedSlo(SimpleMetricSlo):
     """Base class for SLOs based on predictions."""
 
@@ -107,7 +107,6 @@ class PredictionBasedSlo(SimpleMetricSlo):
         raise NotImplementedError
 
 
-@frozen_dataclass
 class TtftPredictionMultiplierSlo(PredictionBasedSlo):
     """SLO threshold is a multiplier of a predicted TTFT value."""
 
@@ -120,8 +119,18 @@ class TtftPredictionMultiplierSlo(PredictionBasedSlo):
         threshold = base_prediction * self.config.value
         return self._get_clamped_threshold(threshold)
     
+    def __str__(self) -> str:
+        bounds_str = ""
+        if self.config.min_value is not None or self.config.max_value is not None:
+            bounds_parts = []
+            if self.config.min_value is not None:
+                bounds_parts.append(f"min={self.config.min_value}")
+            if self.config.max_value is not None:
+                bounds_parts.append(f"max={self.config.max_value}")
+            bounds_str = f", bounds=[{', '.join(bounds_parts)}]"
+        return f"TtftPredictionMultiplierSlo(metric={self.config.metric}, p{self.config.percentile*100:.0f} <= {self.config.value}x * prediction[{self.config.predictor_field}]{bounds_str})"
+    
 
-@frozen_dataclass
 class TtftPredictionOffsetSlo(PredictionBasedSlo):
     """SLO threshold is a predicted TTFT value plus an offset."""
 
@@ -133,9 +142,19 @@ class TtftPredictionOffsetSlo(PredictionBasedSlo):
         base_prediction = predictions.get(int(request_value), 0.0)
         threshold = base_prediction + self.config.value
         return self._get_clamped_threshold(threshold)
+    
+    def __str__(self) -> str:
+        bounds_str = ""
+        if self.config.min_value is not None or self.config.max_value is not None:
+            bounds_parts = []
+            if self.config.min_value is not None:
+                bounds_parts.append(f"min={self.config.min_value}")
+            if self.config.max_value is not None:
+                bounds_parts.append(f"max={self.config.max_value}")
+            bounds_str = f", bounds=[{', '.join(bounds_parts)}]"
+        return f"TtftPredictionOffsetSlo(metric={self.config.metric}, p{self.config.percentile*100:.0f} <= prediction[{self.config.predictor_field}] + {self.config.value}{bounds_str})"
 
 
-@frozen_dataclass
 class DeadlineSlo:
     """SLO that evaluates deadline miss rate based on both TTFT and TBT thresholds."""
     
@@ -148,6 +167,10 @@ class DeadlineSlo:
         """For deadline SLO, threshold is the deadline miss rate threshold (not used in typical evaluation)."""
         # This is not typically used since deadline evaluation is different
         return 0.0
+    
+    def __str__(self) -> str:
+        ttft_desc = f"ttft <= {self.config.ttft_threshold}" if self.config.ttft_threshold is not None else "ttft <= prediction"
+        return f"DeadlineSlo(deadline_miss_rate <= {self.config.percentile}, constraints=[{ttft_desc}, tbt <= {self.config.tbt_threshold}])"
     
     def _get_ttft_threshold(self, predictions: Optional[Dict[int, float]], request_metrics: Dict[str, Any]) -> float:
         """Get the TTFT threshold (either fixed or prediction-based)."""
@@ -199,9 +222,19 @@ class DeadlineSlo:
         return deadline_miss_rate <= self.config.percentile, deadline_miss_rate
 
 
-@frozen_dataclass
 class SloSet:
-    """Composable set of SLOs for a benchmark to meet."""
-
-    def __init__(self, config: SloSetConfig):
-        self.config = config
+    """Set of SLOs for a benchmark to meet."""
+    
+    def __init__(self, slos: List[BaseSloConfig]):
+        from veeksha.capacity_search.slo_registry import SloRegistry
+        self.slos = [SloRegistry.get(slo_config.get_type(), config=slo_config) for slo_config in slos]
+    
+    def __str__(self) -> str:
+        if not self.slos:
+            return "SloSet(empty)"
+        
+        slo_descriptions = []
+        for i, slo in enumerate(self.slos, 1):
+            slo_descriptions.append(f"  {i}. {str(slo)}")
+        
+        return f"SloSet({len(self.slos)} SLOs):\n" + "\n".join(slo_descriptions)

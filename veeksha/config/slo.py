@@ -186,16 +186,3 @@ class DeadlineSloConfig(BaseSloConfig):
     def get_type(cls) -> str:
         return SloType.DEADLINE
 
-
-@frozen_dataclass
-class SloSetConfig:
-    """Composable set of SLOs for a benchmark to meet."""
-
-    slos: List[BaseSloConfig] = field(
-        default_factory=list,
-        metadata={"help": "List of SLO definitions to evaluate"},
-    )
-    require_all: bool = field(
-        default=True,
-        metadata={"help": "If True, all SLOs must be met. If False, any SLO can be met."},
-    )

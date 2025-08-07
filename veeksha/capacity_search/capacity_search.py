@@ -18,6 +18,7 @@ from veeksha.constants.capacity_search_constants import (
 )
 from veeksha.logger import init_logger
 from veeksha.capacity_search.slo_evaluator import SloEvaluator
+from veeksha.capacity_search.slo import SloSet
 
 logger = init_logger(__name__)
 
@@ -51,13 +52,10 @@ class CapacitySearch:
 
         with open(os.path.join(self.job_output_dir, "config.json"), "w") as f:
             json.dump(self.full_config, f, indent=4)
-            
-        # TODO:
-        # init SLOs from their configs in "slos"
-        # init SloEvaluator with the SLOs
-
-        #self.slo_set = get_slos_from_config(self.capacity_search_config.slos_config_file)
-        #self.slo_evaluator = SloEvaluator(self.slo_set)
+        
+        
+        self.slo_set = SloSet(slos=self.capacity_search_config.slos)
+        self.slo_evaluator = SloEvaluator(self.slo_set)
 
     def _build_benchmark_config_for_qps(
         self, qps: float, run_dir: str
@@ -152,8 +150,9 @@ class CapacitySearch:
         """
 
         logger.info(
-            f"Starting search. SLO type: {self.capacity_search_config.slo_type}, start QPS: {self.capacity_search_config.start_qps}",
+            f"Starting search. Start QPS: {self.capacity_search_config.start_qps}",
         )
+        logger.info(f"SLOs: {self.slo_evaluator.slo_set}")
 
         left = 0
         right = self.capacity_search_config.start_qps * 2

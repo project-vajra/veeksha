@@ -66,11 +66,7 @@ class SloEvaluator:
                         f"{'MET' if result[0] else 'MISSED'} "
                         f"(value={result[1]:.4f})")
         
-        # Apply composition logic
-        if self.slo_set.require_all:
-            is_under_sla = all(slo_results)
-        else:
-            is_under_sla = any(slo_results)
+        is_under_sla = all(slo_results)
             
         return is_under_sla, metrics_dict
     
