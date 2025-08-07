@@ -117,7 +117,6 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             llm_api=self.client_config.llm_api,
             address_append_value=self.client_config.address_append_value,
             id=self.request_id,
-            metadata=metadata,
         )
 
         self.request_id += 1

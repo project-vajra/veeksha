@@ -2,7 +2,6 @@ from dataclasses import field
 from enum import Enum
 from typing import Literal, Optional
 
-
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.logger import init_logger
@@ -103,10 +102,10 @@ class TtftPredictionMultiplierSloConfig(PredictionBasedSloConfig, BaseSloConfig)
         """Validate SLO definition."""
         super().__post_init__()
         raise NotImplementedError("TTFTPredictionMultiplierSLO is not implemented")
-        if self.value <= 0.0:
-            raise ValueError(
-                "TTFTPredictionMultiplierSLO: value must be specified and must be > 0"
-            )
+        # if self.value <= 0.0:
+        #     raise ValueError(
+        #         "TTFTPredictionMultiplierSLO: value must be specified and must be > 0"
+        #     )
 
 
 @frozen_dataclass
@@ -126,10 +125,10 @@ class TtftPredictionOffsetSloConfig(PredictionBasedSloConfig, BaseSloConfig):
         """Validate SLO definition."""
         super().__post_init__()
         raise NotImplementedError("TTFTPredictionOffsetSLO is not implemented")
-        if self.value < 0.0:
-            raise ValueError(
-                "TTFTPredictionOffsetSLO: value must be specified and must be >= 0"
-            )
+        # if self.value < 0.0:
+        #     raise ValueError(
+        #         "TTFTPredictionOffsetSLO: value must be specified and must be >= 0"
+        #     )
 
 
 @frozen_dataclass
@@ -172,41 +171,43 @@ class DeadlineSloConfig(BaseSloConfig):
         """Validate DeadlineSLO definition."""
         super().__post_init__()
 
-        if self.ttft_prediction_type is not None:
-            raise NotImplementedError(
-                "Prediction-based TTFT threshold is not implemented"
-            )
+        raise NotImplementedError("DeadlineSLO is not implemented")
 
-        if self.ttft_threshold is None and self.ttft_prediction_type is None:
-            raise ValueError(
-                "DeadlineSLO: Must specify either ttft_threshold or ttft_prediction_type"
-            )
+        # if self.ttft_prediction_type is not None:
+        #     raise NotImplementedError(
+        #         "Prediction-based TTFT threshold is not implemented"
+        #     )
 
-        if self.ttft_threshold is not None and self.ttft_prediction_type is not None:
-            raise ValueError(
-                "DeadlineSLO: Cannot specify both ttft_threshold and ttft_prediction_type"
-            )
+        # if self.ttft_threshold is None and self.ttft_prediction_type is None:
+        #     raise ValueError(
+        #         "DeadlineSLO: Must specify either ttft_threshold or ttft_prediction_type"
+        #     )
 
-        if self.ttft_prediction_type is not None and self.ttft_prediction_value is None:
-            raise ValueError(
-                "DeadlineSLO: Must specify ttft_prediction_value when using ttft_prediction_type"
-            )
+        # if self.ttft_threshold is not None and self.ttft_prediction_type is not None:
+        #     raise ValueError(
+        #         "DeadlineSLO: Cannot specify both ttft_threshold and ttft_prediction_type"
+        #     )
 
-        if self.ttft_prediction_type == "offset" and self.ttft_prediction_value < 0:
-            raise ValueError(
-                "DeadlineSLO: ttft_prediction_value must be >= 0 for offset type"
-            )
+        # if self.ttft_prediction_type is not None and self.ttft_prediction_value is None:
+        #     raise ValueError(
+        #         "DeadlineSLO: Must specify ttft_prediction_value when using ttft_prediction_type"
+        #     )
 
-        if (
-            self.ttft_prediction_type == "multiplier"
-            and self.ttft_prediction_value <= 0
-        ):
-            raise ValueError(
-                "DeadlineSLO: ttft_prediction_value must be > 0 for multiplier type"
-            )
+        # if self.ttft_prediction_type == "offset" and self.ttft_prediction_value < 0:
+        #     raise ValueError(
+        #         "DeadlineSLO: ttft_prediction_value must be >= 0 for offset type"
+        #     )
 
-        if self.tbt_threshold <= 0:
-            raise ValueError("DeadlineSLO: tbt_threshold must be specified and > 0")
+        # if (
+        #     self.ttft_prediction_type == "multiplier"
+        #     and self.ttft_prediction_value <= 0
+        # ):
+        #     raise ValueError(
+        #         "DeadlineSLO: ttft_prediction_value must be > 0 for multiplier type"
+        #     )
+
+        # if self.tbt_threshold <= 0:
+        #     raise ValueError("DeadlineSLO: tbt_threshold must be specified and > 0")
 
     @classmethod
     def get_type(cls) -> str:

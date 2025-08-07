@@ -42,6 +42,10 @@ class BaseSlo:
         """Evaluate this SLO against request metrics."""
         raise NotImplementedError
 
+    def get_slo_metric_key(self) -> str:
+        """Get the metric key for this SLO."""
+        raise NotImplementedError
+
 
 class SimpleMetricSlo:
     """Base class for SLOs that evaluate a single metric."""
@@ -287,6 +291,9 @@ class DeadlineSlo:
         )
 
         return deadline_miss_rate <= self.config.percentile, deadline_miss_rate
+
+    def get_slo_metric_key(self) -> str:
+        return f"deadline_miss_rate_p{self.config.percentile*100:.0f}"
 
 
 class SloSet:
