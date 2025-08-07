@@ -1,12 +1,12 @@
 """Example configurations for the composable SLO system."""
 
 from veeksha.capacity_search.slo import (
-    SLOSet,
     ConstantSLO,
-    TTFTPredictionMultiplierSLO,
-    TTFTPredictionOffsetSLO,
     DeadlineSLO,
     SLOMetric,
+    SLOSet,
+    TTFTPredictionMultiplierSLO,
+    TTFTPredictionOffsetSLO,
 )
 
 
@@ -150,4 +150,3 @@ def create_custom_metric_slo():
     """Example of how to use custom metrics (requires extending SLOMetric enum)."""
     # This would require adding new metrics to SLOMetric enum
     # For example: SLOMetric.GPU_UTILIZATION, SLOMetric.MEMORY_USAGE, etc.
-    pass 

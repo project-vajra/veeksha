@@ -15,7 +15,7 @@ logger = init_logger(__name__)
 class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
     def __init__(self, config: TraceRequestLengthGeneratorConfig):
         self.config = config
-        
+
         trace_df = load_trace(self.config.trace_file)
 
         self.trace_df = process_request_length_trace(

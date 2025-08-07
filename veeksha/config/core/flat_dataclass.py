@@ -420,7 +420,7 @@ def instantiate_from_args(cls, args, provided_args):
 
 def init_iterable_args(loaded_configs, cli_provided_args, list_fields):
     """Initialize iterable args."""
-    
+
     def _init_iterable_args(arg_map, list_fields):
         return_map = {}
         for arg_name, arg_value in arg_map.items():
@@ -430,20 +430,29 @@ def init_iterable_args(loaded_configs, cli_provided_args, list_fields):
                 return_iterable = []
                 target_type = list_fields[arg_name]
                 # we assume each raw value is a dict with config values
-                if isinstance(target_type, type) and issubclass(target_type, BasePolyConfig):
+                if isinstance(target_type, type) and issubclass(
+                    target_type, BasePolyConfig
+                ):
                     # get all subclasses of the target type
                     subclasses = get_all_subclasses(target_type)
                     for raw_value in arg_value:
-                        assert "type" in raw_value, f"Each raw value in an iterable of BasePolyConfigs must contain a 'type' key. Obtained '{raw_value}'"
+                        assert (
+                            "type" in raw_value
+                        ), f"Each raw value in an iterable of BasePolyConfigs must contain a 'type' key. Obtained '{raw_value}'"
                         is_match = False
                         # linear matching... do we assume there is a registry?
                         for subclass in subclasses:
-                            if subclass.get_type().name.upper() == raw_value["type"].upper():
+                            if (
+                                subclass.get_type().name.upper()
+                                == raw_value["type"].upper()
+                            ):
                                 raw_value.pop("type")
                                 return_iterable.append(subclass(**raw_value))
                                 is_match = True
                                 break
-                        assert is_match, f"No class found for type {raw_value['type']} in children of {target_type}"
+                        assert (
+                            is_match
+                        ), f"No class found for type {raw_value['type']} in children of {target_type}"
                 elif hasattr(target_type, "__dataclass_fields__"):
                     for raw_value in arg_value:
                         return_iterable.append(target_type(**raw_value))
@@ -456,19 +465,19 @@ def init_iterable_args(loaded_configs, cli_provided_args, list_fields):
             else:
                 return_map[arg_name] = arg_value
         return return_map
-    
+
     # loaded_configs is a dict of file_field_name -> list of configs
-    final_loaded_configs = {}    
+    final_loaded_configs = {}
     for file_field_name, configs in loaded_configs.items():
         tmp_configs = []
         for config in configs:
             tmp_config = _init_iterable_args(config, list_fields)
             tmp_configs.append(tmp_config)
         final_loaded_configs[file_field_name] = tmp_configs
-            
+
     # cli_provided_args is a dict of arg_name -> value
     final_cli_args = _init_iterable_args(cli_provided_args, list_fields)
-    
+
     return final_loaded_configs, final_cli_args
 
 
@@ -495,12 +504,14 @@ def create_from_cli_args(cls) -> Any:
 
     # load and process config files
     loaded_configs = _load_config_files(cls, args)
-    final_loaded_configs, final_cli_args = init_iterable_args(loaded_configs, cli_provided_args, cls.list_fields)
+    final_loaded_configs, final_cli_args = init_iterable_args(
+        loaded_configs, cli_provided_args, cls.list_fields
+    )
 
     # update args with processed CLI values
     for key, value in final_cli_args.items():
         setattr(args, key, value)
-    
+
     # create all combinations of configs
     all_config_combinations, all_keys_to_file_field_names = _create_config_combinations(
         final_loaded_configs
@@ -514,7 +525,7 @@ def create_from_cli_args(cls) -> Any:
         all_default_values,
         final_cli_args,
     )
-    
+
     return_clss = instantiate_from_args(cls, final_args, all_provided_args)
 
     return return_clss
@@ -524,10 +535,10 @@ def _add_field_to_parser(
     cls, field, parser, all_default_values, argnames_to_field_names
 ):
     """Add a single dataclass field as an argument to the parser."""
-    
+
     if not field.init:
         return
-    
+
     nargs = None
     action = None
     field_type = field.type
@@ -557,7 +568,9 @@ def _add_field_to_parser(
             nargs = "+"
             # inner primitive for conversion
             field_type = inner_type
-        elif is_subclass(inner_type, BasePolyConfig) or hasattr(inner_type, "__dataclass_fields__"):
+        elif is_subclass(inner_type, BasePolyConfig) or hasattr(
+            inner_type, "__dataclass_fields__"
+        ):
             # --layers '[{"type": "conv", "kernel": 3}, {"type": "relu"}]'
             field_type = json.loads
         else:
@@ -910,7 +923,7 @@ def _handle_primitive_field(
         (prefixed_name, field.name, field_type)
     )
     state["metadata_mapping"][prefixed_name] = field.metadata
-    
+
     # a list can contain poly configs or nested dataclasses
     if is_list(field_type):
         inner_type = get_args(field_type)[0]

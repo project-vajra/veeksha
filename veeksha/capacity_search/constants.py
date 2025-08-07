@@ -4,4 +4,4 @@
 QPS_INCREASE_SCALE = 2
 
 # Threshold to increase the upper bound of QPS during binary search
-VICINITY_THRESHOLD = 0.8 
+VICINITY_THRESHOLD = 0.8

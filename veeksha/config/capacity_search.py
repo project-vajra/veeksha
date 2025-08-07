@@ -1,12 +1,12 @@
 import json
 import os
 from dataclasses import field
-from typing import Optional, List
+from typing import List, Optional
 
 from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.config.slo import BaseSloConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from veeksha.config.slo import BaseSloConfig
 from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
 

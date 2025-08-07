@@ -1,12 +1,11 @@
-from veeksha.types import SloType
-from veeksha.types.base_registry import BaseRegistry
-
 from veeksha.capacity_search.slo import (
     ConstantSlo,
+    DeadlineSlo,
     TtftPredictionMultiplierSlo,
     TtftPredictionOffsetSlo,
-    DeadlineSlo,
 )
+from veeksha.types import SloType
+from veeksha.types.base_registry import BaseRegistry
 
 
 class SloRegistry(BaseRegistry):
@@ -18,4 +17,4 @@ class SloRegistry(BaseRegistry):
 SloRegistry.register(SloType.CONSTANT, ConstantSlo)
 SloRegistry.register(SloType.TTFT_PREDICTION_MULTIPLIER, TtftPredictionMultiplierSlo)
 SloRegistry.register(SloType.TTFT_PREDICTION_OFFSET, TtftPredictionOffsetSlo)
-SloRegistry.register(SloType.DEADLINE, DeadlineSlo) 
+SloRegistry.register(SloType.DEADLINE, DeadlineSlo)

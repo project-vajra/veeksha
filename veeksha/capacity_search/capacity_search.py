@@ -9,6 +9,8 @@ from typing import Dict, Optional, Tuple
 import wandb
 
 from veeksha.capacity_search.benchmark_wrapper import run_benchmark_wrapped
+from veeksha.capacity_search.slo import SloSet
+from veeksha.capacity_search.slo_evaluator import SloEvaluator
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.config.utils import dataclass_to_dict
@@ -17,8 +19,6 @@ from veeksha.constants.capacity_search_constants import (
     VICINITY_THRESHOLD,
 )
 from veeksha.logger import init_logger
-from veeksha.capacity_search.slo_evaluator import SloEvaluator
-from veeksha.capacity_search.slo import SloSet
 
 logger = init_logger(__name__)
 
@@ -52,7 +52,7 @@ class CapacitySearch:
 
         with open(os.path.join(self.job_output_dir, "config.json"), "w") as f:
             json.dump(self.full_config, f, indent=4)
-        
+
         self.slo_set = SloSet(slos=self.capacity_search_config.slos)
         self.slo_evaluator = SloEvaluator(self.slo_set)
 
@@ -75,9 +75,7 @@ class CapacitySearch:
 
     def _run_capacity_search_benchmark(
         self, qps: float
-    ) -> Tuple[
-        bool, Optional[Dict[str, float]], str
-    ]:
+    ) -> Tuple[bool, Optional[Dict[str, float]], str]:
         qps_run_dir = os.path.join(self.job_output_dir, str(qps))
 
         # isolated benchmark config for this QPS
@@ -124,14 +122,12 @@ class CapacitySearch:
         self,
         request_level_metrics_file: str,
         qps: float,
-    ) -> Tuple[
-        bool, Optional[Dict[str, float]], str
-    ]:
+    ) -> Tuple[bool, Optional[Dict[str, float]], str]:
         # user provided slos, percentiles and thresholds
-        is_under_sla, slo_metrics_dict = self.slo_evaluator.evaluate_slo_request_metrics(
-            request_level_metrics_file
+        is_under_sla, slo_metrics_dict = (
+            self.slo_evaluator.evaluate_slo_request_metrics(request_level_metrics_file)
         )
-                                
+
         return (
             is_under_sla,
             slo_metrics_dict,

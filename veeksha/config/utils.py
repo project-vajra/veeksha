@@ -76,6 +76,7 @@ def is_subclass(cls, parent: type) -> bool:
 
 from enum import Enum
 
+
 def dataclass_to_dict(obj):
     """
     Recursively convert a dataclass (or any nested structure containing
@@ -97,7 +98,11 @@ def dataclass_to_dict(obj):
 
     # enums
     if isinstance(obj, Enum):
-        return obj.value if isinstance(obj.value, (str, int, float, bool, type(None))) else obj.name
+        return (
+            obj.value
+            if isinstance(obj.value, (str, int, float, bool, type(None)))
+            else obj.name
+        )
 
     # dataclasses
     if is_dataclass(obj):
