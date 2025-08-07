@@ -24,8 +24,8 @@ class SloEvaluator:
         self.slo_set = slo_set
         self.predictions = predictions or {}
         
-    def evaluate_request_metrics(self, 
-                                 request_metrics_file: str) -> Tuple[bool, Dict[str, Any]]:
+    def evaluate_slo_request_metrics(self, 
+                                 request_metrics_file: str) -> Tuple[bool, Dict[str, float]]:
         """Evaluate SLOs against request-level metrics.
         
         Args:
@@ -40,29 +40,14 @@ class SloEvaluator:
             request_level_metrics = json.load(f)
         
         slo_results: List[bool] = []
-        metrics_dict: Dict[str, Any] = {}
+        metrics_dict: Dict[str, float] = {}
         
         for slo in self.slo_set.slos:
-            # Use the SLO's own evaluation method
             result = slo.evaluate(request_level_metrics, self.predictions)
             slo_results.append(result[0])
+            metrics_dict[slo.get_slo_metric_key()] = result[1]
             
-            # Store metric value with descriptive key
-            if hasattr(slo, 'metric'):
-                # Simple metric SLO
-                metric_key = f"{slo.metric}_*p{int(slo.percentile * 100)}"
-            else:
-                # Composite SLO (like DeadlineSLO)
-                metric_key = f"{slo.get_type()}_p{int(slo.percentile * 100)}"
-            
-            if slo.name:
-                metric_key = f"{slo.name.replace(' ', '_')}_{metric_key}"
-            metrics_dict[metric_key] = result[1]
-            
-            # Log individual SLO result
-            slo_identifier = slo.name or (slo.metric if hasattr(slo, 'metric') else slo.get_type())
-            logger.debug(f"SLO '{slo_identifier}' "
-                        f"(P{slo.percentile * 100}): "
+            logger.info(f"SLO '{slo}' "
                         f"{'MET' if result[0] else 'MISSED'} "
                         f"(value={result[1]:.4f})")
         

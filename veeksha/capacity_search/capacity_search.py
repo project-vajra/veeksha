@@ -4,7 +4,7 @@ import json
 import os
 import threading
 from dataclasses import replace
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import wandb
 
@@ -53,7 +53,6 @@ class CapacitySearch:
         with open(os.path.join(self.job_output_dir, "config.json"), "w") as f:
             json.dump(self.full_config, f, indent=4)
         
-        
         self.slo_set = SloSet(slos=self.capacity_search_config.slos)
         self.slo_evaluator = SloEvaluator(self.slo_set)
 
@@ -77,7 +76,7 @@ class CapacitySearch:
     def _run_capacity_search_benchmark(
         self, qps: float
     ) -> Tuple[
-        bool, Optional[float], Optional[float], Optional[float], Optional[float], str
+        bool, Optional[Dict[str, float]], str
     ]:
         qps_run_dir = os.path.join(self.job_output_dir, str(qps))
 
@@ -87,7 +86,7 @@ class CapacitySearch:
         cached_request_level_metrics_file = self._get_request_level_metrics(qps_run_dir)
 
         if cached_request_level_metrics_file is not None:
-            logger.info(f"Cached results found for {qps}")
+            logger.info(f"Cached results found for QPS {qps}")
             return self._is_under_sla(cached_request_level_metrics_file, qps)
 
         run_benchmark_wrapped(benchmark_config)
@@ -96,7 +95,7 @@ class CapacitySearch:
 
         assert (
             request_level_metrics_file is not None
-        ), f"Service-level metrics file not found for QPS: {qps}"
+        ), f"Service-level metrics file not found for QPS {qps}"
 
         return self._is_under_sla(request_level_metrics_file, qps)
 
@@ -126,21 +125,16 @@ class CapacitySearch:
         request_level_metrics_file: str,
         qps: float,
     ) -> Tuple[
-        bool, Optional[float], Optional[float], Optional[float], Optional[float], str
+        bool, Optional[Dict[str, float]], str
     ]:
-        is_under_sla, metrics_dict = self.slo_evaluator.evaluate_request_metrics(
+        # user provided slos, percentiles and thresholds
+        is_under_sla, slo_metrics_dict = self.slo_evaluator.evaluate_slo_request_metrics(
             request_level_metrics_file
         )
-        
-        print("METRICS_DICT------------------------", metrics_dict)
-            
-        logger.info(f"QPS: {qps} - {self.slo_evaluator.get_metrics_summary(metrics_dict)}")
+                                
         return (
             is_under_sla,
-            metrics_dict.get(f"tbt_p{int(self.capacity_search_config.tbt_percentile * 100)}"),
-            metrics_dict.get(f"ttft_p{int(self.capacity_search_config.ttft_percentile * 100)}"),
-            metrics_dict.get(f"tpot_p{int(self.capacity_search_config.tpot_percentile * 100)}"),
-            metrics_dict.get(f"deadline_miss_rate_p{int(self.capacity_search_config.deadline_miss_rate_percentile * 100)}"),
+            slo_metrics_dict,
             str(qps),
         )
 
@@ -161,10 +155,7 @@ class CapacitySearch:
         max_qps_under_sla = None
         min_qps_over_sla = 2**32
 
-        tbt_at_max_qps = None
-        ttft_at_max_qps = None
-        tpot_at_max_qps = None
-        deadline_miss_rate_at_max_qps = None
+        slo_metrics_at_max_qps = None
         best_run_id = None
         found_valid_qps = False
 
@@ -186,20 +177,14 @@ class CapacitySearch:
 
             (
                 is_under_sla,
-                tbt,
-                ttft,
-                tpot,
-                deadline_miss_rate,
+                metrics_dict,
                 run_id,
             ) = self._run_capacity_search_benchmark(qps)
 
             if is_under_sla:
                 found_valid_qps = True
                 max_qps_under_sla = qps
-                tbt_at_max_qps = tbt
-                ttft_at_max_qps = ttft
-                tpot_at_max_qps = tpot
-                deadline_miss_rate_at_max_qps = deadline_miss_rate
+                slo_metrics_at_max_qps = metrics_dict
                 best_run_id = run_id
 
                 if qps > VICINITY_THRESHOLD * right:
@@ -217,13 +202,13 @@ class CapacitySearch:
             return {}
 
         logger.info(
-            f"Max QPS under SLO: "
-            f"QPS: {max_qps_under_sla}, "
-            f"TBT P{self.capacity_search_config.tbt_percentile * 100}: {tbt_at_max_qps}, "
-            f"TTFT P{self.capacity_search_config.ttft_percentile * 100}: {ttft_at_max_qps}, "
-            f"TPOT P{self.capacity_search_config.tpot_percentile * 100}: {tpot_at_max_qps}, "
-            f"Deadline Miss Rate P{self.capacity_search_config.deadline_miss_rate_percentile * 100}: {deadline_miss_rate_at_max_qps}"
-            f"Best Run ID: {best_run_id} \n",
+            f"{'-'*100}\n"
+            f"Max QPS found by Capacity Search with: \n"
+            f"    * SLOs: {self.slo_evaluator.slo_set} \n"
+            f"    * SLO Metrics: {slo_metrics_at_max_qps} \n"
+            f"    * Best Run ID: {best_run_id} \n"
+            f"is {max_qps_under_sla} \n"
+            f"{'-'*100}\n"
         )
 
         if (
@@ -239,5 +224,5 @@ class CapacitySearch:
         return {
             **self.capacity_search_config.to_dict(),
             "max_qps_under_sla": max_qps_under_sla,
-            "deadline_miss_rate_at_max_qps": deadline_miss_rate_at_max_qps,
+            "slo_metrics_at_max_qps": slo_metrics_at_max_qps,
         }

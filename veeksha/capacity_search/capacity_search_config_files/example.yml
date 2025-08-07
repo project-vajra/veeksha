@@ -1,4 +1,5 @@
 output_dir: "cap_experiments/example_capsearch"
+max_iterations: 5
 slos:
   - type: "constant"
     metric: "tbt"

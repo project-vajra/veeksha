@@ -69,6 +69,9 @@ class ConstantSlo(SimpleMetricSlo):
     
     def __str__(self) -> str:
         return f"ConstantSlo(metric={self.config.metric}, p{self.config.percentile*100:.0f} <= {self.config.value})"
+    
+    def get_slo_metric_key(self) -> str:
+        return f"{self.config.metric}_p{self.config.percentile*100:.0f}"
 
 
 class PredictionBasedSlo(SimpleMetricSlo):
@@ -130,6 +133,8 @@ class TtftPredictionMultiplierSlo(PredictionBasedSlo):
             bounds_str = f", bounds=[{', '.join(bounds_parts)}]"
         return f"TtftPredictionMultiplierSlo(metric={self.config.metric}, p{self.config.percentile*100:.0f} <= {self.config.value}x * prediction[{self.config.predictor_field}]{bounds_str})"
     
+    def get_slo_metric_key(self) -> str:
+        return f"ttft_p{self.config.percentile*100:.0f}"
 
 class TtftPredictionOffsetSlo(PredictionBasedSlo):
     """SLO threshold is a predicted TTFT value plus an offset."""
@@ -154,6 +159,8 @@ class TtftPredictionOffsetSlo(PredictionBasedSlo):
             bounds_str = f", bounds=[{', '.join(bounds_parts)}]"
         return f"TtftPredictionOffsetSlo(metric={self.config.metric}, p{self.config.percentile*100:.0f} <= prediction[{self.config.predictor_field}] + {self.config.value}{bounds_str})"
 
+    def get_slo_metric_key(self) -> str:
+        return f"ttft_p{self.config.percentile*100:.0f}"
 
 class DeadlineSlo:
     """SLO that evaluates deadline miss rate based on both TTFT and TBT thresholds."""
