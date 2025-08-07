@@ -1,4 +1,3 @@
-from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -8,20 +7,13 @@ from veeksha.config.slo import (
     ConstantSloConfig,
     DeadlineSloConfig,
     PredictionBasedSloConfig,
+    SloMetric,
     TtftPredictionMultiplierSloConfig,
     TtftPredictionOffsetSloConfig,
 )
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
-
-
-class SloMetric(str, Enum):
-    """Available metrics for SLO evaluation."""
-
-    TTFT = "ttft"
-    TBT = "tbt"
-    TPOT = "tpot"
 
 
 class BaseSlo:
@@ -70,7 +62,7 @@ class SimpleMetricSlo:
         """Evaluate this simple metric SLO."""
         values = self._extract_metric_values(request_metrics)
         if not values:
-            logger.warning(f"No values found for metric {self.metric}")
+            logger.warning(f"No values found for metric {self.config.metric}")
             return False, float("inf")
 
         # Calculate percentile
