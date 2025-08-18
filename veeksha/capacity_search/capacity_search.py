@@ -4,7 +4,7 @@ import json
 import os
 import threading
 from dataclasses import replace
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import wandb
 
@@ -55,6 +55,10 @@ class CapacitySearch:
 
         self.slo_set = SloSet(slos=self.capacity_search_config.slos)
         self.slo_evaluator = SloEvaluator(self.slo_set)
+        self._capsearch_cache_file = os.path.join(
+            self.job_output_dir, "_capsearch_cache.json"
+        )
+        self._capsearch_cache = self._load_cache()
 
     def _build_benchmark_config_for_qps(
         self, qps: float, run_dir: str
@@ -77,25 +81,34 @@ class CapacitySearch:
         self, qps: float
     ) -> Tuple[bool, Optional[Dict[str, float]], str]:
         qps_run_dir = os.path.join(self.job_output_dir, str(qps))
+        qps_key = str(qps)
+
+        cached_iter = self._capsearch_cache.get("iterations", {}).get(qps_key)
+        if cached_iter is not None:
+            logger.info(f"Using capacity search cache for QPS {qps}")
+            return (
+                bool(cached_iter.get("is_under_sla", False)),
+                cached_iter.get("slo_metrics", {}),
+                qps_key,
+            )
 
         # isolated benchmark config for this QPS
         benchmark_config = self._build_benchmark_config_for_qps(qps, qps_run_dir)
 
-        cached_request_level_metrics_file = self._get_request_level_metrics(qps_run_dir)
+        service_metrics = run_benchmark_wrapped(benchmark_config)
 
-        if cached_request_level_metrics_file is not None:
-            logger.info(f"Cached results found for QPS {qps}")
-            return self._is_under_sla(cached_request_level_metrics_file, qps)
+        is_under_sla, slo_metrics_dict = self.slo_evaluator.evaluate_slo(
+            service_metrics.metric_store
+        )
 
-        run_benchmark_wrapped(benchmark_config)
+        self._cache_iteration(
+            qps=qps_key,
+            is_under_sla=is_under_sla,
+            slo_metrics=slo_metrics_dict,
+            run_id=qps_key,
+        )
 
-        request_level_metrics_file = self._get_request_level_metrics(qps_run_dir)
-
-        assert (
-            request_level_metrics_file is not None
-        ), f"Service-level metrics file not found for QPS {qps}"
-
-        return self._is_under_sla(request_level_metrics_file, qps)
+        return is_under_sla, slo_metrics_dict, qps_key
 
     def _get_result_file(self, run_dir: str, metric_name: str) -> Optional[str]:
         files = glob.glob(os.path.join(run_dir, f"{metric_name}.csv"))
@@ -217,8 +230,64 @@ class CapacitySearch:
             best_run.tags.append("BEST_CONFIG")
             best_run.update()
 
+        self._cache_final(
+            max_qps_under_sla=max_qps_under_sla,
+            slo_metrics_at_max_qps=slo_metrics_at_max_qps,
+            best_run_id=best_run_id,
+        )
+
         return {
-            **self.capacity_search_config.to_dict(),
             "max_qps_under_sla": max_qps_under_sla,
             "slo_metrics_at_max_qps": slo_metrics_at_max_qps,
         }
+
+    def _load_cache(self) -> Dict[str, Any]:
+        try:
+            if os.path.exists(self._capsearch_cache_file):
+                with open(self._capsearch_cache_file, "r") as f:
+                    cache = json.load(f)
+                    return cache
+        except Exception as e:
+            logger.warning(f"Failed to read capsearch cache: {e}")
+        return {
+            "slos": str(self.slo_evaluator.slo_set),
+            "iterations": {},
+            "final": None,
+        }
+
+    def _save_cache(self) -> None:
+        try:
+            with open(self._capsearch_cache_file, "w") as f:
+                json.dump(self._capsearch_cache, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Failed to write capsearch cache: {e}")
+
+    def _cache_iteration(
+        self,
+        qps: str,
+        is_under_sla: bool,
+        slo_metrics: Dict[str, float],
+        run_id: str,
+    ) -> None:
+        if "iterations" not in self._capsearch_cache:
+            self._capsearch_cache["iterations"] = {}
+        self._capsearch_cache["iterations"][qps] = {
+            "is_under_sla": is_under_sla,
+            "slo_metrics": slo_metrics,
+            "run_id": run_id,
+        }
+        self._save_cache()
+
+    def _cache_final(
+        self,
+        max_qps_under_sla: Optional[float],
+        slo_metrics_at_max_qps: Optional[Dict[str, float]],
+        best_run_id: Optional[str],
+    ) -> None:
+        self._capsearch_cache["final"] = {
+            "max_qps_under_sla": max_qps_under_sla,
+            "slo_metrics_at_max_qps": slo_metrics_at_max_qps,
+            "best_run_id": best_run_id,
+            "slos": str(self.slo_evaluator.slo_set),
+        }
+        self._save_cache()

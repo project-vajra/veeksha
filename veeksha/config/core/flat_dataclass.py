@@ -452,7 +452,7 @@ def init_iterable_args(loaded_configs, cli_provided_args, list_fields):
                                 break
                         assert (
                             is_match
-                        ), f"No class found for type {raw_value['type']} in children of {target_type}"
+                        ), f"No class found for type '{raw_value['type']}' in children of {target_type}"
                 elif hasattr(target_type, "__dataclass_fields__"):
                     for raw_value in arg_value:
                         return_iterable.append(target_type(**raw_value))

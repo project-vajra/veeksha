@@ -2,15 +2,15 @@ output_dir: "cap_experiments/example_capsearch"
 max_iterations: 5
 slos:
   - type: "constant"
-    metric: "tbt"
-    value: 0.05
-    percentile: 0.99
-    name: "P99 TBT"
-  - type: "constant"
     metric: "ttft"
     value: 5
     percentile: 0.5
     name: "P50 TTFT"
+  - type: "constant"
+    metric: "tbt"
+    value: 0.05
+    percentile: 0.9
+    name: "P90 TBT"
 
 benchmark_config:
   timeout: 10000

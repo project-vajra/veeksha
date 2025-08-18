@@ -1,10 +1,10 @@
 """SLO Evaluator for flexible SLO evaluation."""
 
-import json
 from typing import Any, Dict, List, Optional, Tuple
 
 from veeksha.capacity_search.slo import SloSet
 from veeksha.logger import init_logger
+from veeksha.metrics.metric_store import MetricStore
 
 logger = init_logger(__name__)
 
@@ -22,27 +22,16 @@ class SloEvaluator:
         self.slo_set = slo_set
         self.predictions = predictions or {}
 
-    def evaluate_slo_request_metrics(
-        self, request_metrics_file: str
-    ) -> Tuple[bool, Dict[str, float]]:
-        """Evaluate SLOs against request-level metrics.
+    def evaluate_slo(self, metric_store: MetricStore) -> Tuple[bool, Dict[str, float]]:
+        """Evaluate SLOs.
 
-        Args:
-            request_metrics_file: Path to request-level metrics JSON file
-
-        Returns:
-            Tuple of (is_under_sla, metrics_dict) where:
-                - is_under_sla: True if SLOs are met based on composition logic
-                - metrics_dict: Dictionary of evaluated metrics and their values
+        The provided object must expose `.request_level_metrics.to_dict()`.
         """
-        with open(request_metrics_file, "r") as f:
-            request_level_metrics = json.load(f)
-
         slo_results: List[bool] = []
         metrics_dict: Dict[str, float] = {}
 
         for slo in self.slo_set.slos:
-            result = slo.evaluate(request_level_metrics, self.predictions)
+            result = slo.evaluate(metric_store)
             slo_results.append(result[0])
             metrics_dict[slo.get_slo_metric_key()] = result[1]
 
@@ -53,7 +42,7 @@ class SloEvaluator:
             )
 
         is_under_sla = all(slo_results)
-
+        logger.info(f"Is under SLA: {is_under_sla}")
         return is_under_sla, metrics_dict
 
     def get_metrics_summary(self, metrics_dict: Dict[str, Any]) -> str:
