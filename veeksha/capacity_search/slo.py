@@ -37,7 +37,7 @@ class ConstantSlo(BaseSlo):
 
     def __init__(self, config: ConstantSloConfig):
         super().__init__(config)
-        
+
     def evaluate(
         self,
         metric_store: MetricStore,
@@ -52,8 +52,8 @@ class ConstantSlo(BaseSlo):
         metric_value = float(np.percentile(values, self.config.percentile * 100))
         threshold = self.get_threshold()
 
-        return metric_value <= threshold, metric_value    
-    
+        return metric_value <= threshold, metric_value
+
     def _extract_metric_values(self, metric_store: MetricStore) -> List[float]:
         """Extract metric values from the in-memory metric store."""
         spec = MetricRegistry.get(self.config.metric)

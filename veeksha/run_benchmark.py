@@ -303,7 +303,7 @@ if __name__ == "__main__":
             logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
 
         random.seed(benchmark_config.seed)
-        run_benchmark(benchmark_config=benchmark_config)
+        service_metrics = run_benchmark(benchmark_config=benchmark_config)
 
         if len(benchmark_configs) > 1:
             logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")
