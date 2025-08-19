@@ -32,15 +32,12 @@ class BaseSlo:
         raise NotImplementedError
 
 
-class SimpleMetricSlo:
-    """Base class for SLOs that evaluate a single metric."""
+class ConstantSlo(BaseSlo):
+    """SLO with a fixed constant value threshold."""
 
-    def _extract_metric_values(self, metric_store: MetricStore) -> List[float]:
-        """Extract metric values from the in-memory metric store."""
-        spec = MetricRegistry.get(self.config.metric)
-        # Use request-level metrics as the source of values
-        return spec.extract(metric_store.request_level_metrics.to_dict())
-
+    def __init__(self, config: ConstantSloConfig):
+        super().__init__(config)
+        
     def evaluate(
         self,
         metric_store: MetricStore,
@@ -55,14 +52,13 @@ class SimpleMetricSlo:
         metric_value = float(np.percentile(values, self.config.percentile * 100))
         threshold = self.get_threshold()
 
-        return metric_value <= threshold, metric_value
-
-
-class ConstantSlo(SimpleMetricSlo):
-    """SLO with a fixed constant value threshold."""
-
-    def __init__(self, config: ConstantSloConfig):
-        self.config = config
+        return metric_value <= threshold, metric_value    
+    
+    def _extract_metric_values(self, metric_store: MetricStore) -> List[float]:
+        """Extract metric values from the in-memory metric store."""
+        spec = MetricRegistry.get(self.config.metric)
+        # Use request-level metrics as the source of values
+        return spec.extract(metric_store.request_level_metrics.to_dict())
 
     def get_threshold(self) -> float:
         return self.config.value
