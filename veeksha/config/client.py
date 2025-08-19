@@ -44,7 +44,6 @@ class ClientConfig:
         metadata={"help": "The address append value for OpenAI API."},
     )
 
-    # TODO rm
     def __post_init__(self):
         self.additional_sampling_params_dict = {}
 

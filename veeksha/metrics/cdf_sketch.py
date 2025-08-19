@@ -123,8 +123,6 @@ class CDFSketch:
 
         df = self._to_df()
 
-        self.print_distribution_stats(plot_name)
-
         fig = px.line(
             df, x=self.metric_name, y="cdf", markers=True, labels={"x": x_axis_label}
         )

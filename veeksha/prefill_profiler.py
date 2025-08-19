@@ -112,7 +112,7 @@ class PrefillProfiler:
                 self.config.metrics_config.output_dir = run_dir
                 os.makedirs(run_dir, exist_ok=True)
                 logger.info(f"Running profiling for prefill value = {prefill_value}...")
-                run_benchmark(self.config)
+                service_metrics = run_benchmark(self.config)
                 logger.info(f"Run benchmark done")
                 if wandb.run:
                     wandb.finish()

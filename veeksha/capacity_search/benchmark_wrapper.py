@@ -22,10 +22,10 @@ def setup_api_environment(
     os.environ["OPENAI_API_BASE"] = api_url
 
 
-def run(
+def run_benchmark_wrapped(
     benchmark_config: BenchmarkConfig,
 ):
-    """Main function to run benchmark"""
+    """Main function to run benchmark and return in-memory ServiceMetrics."""
 
     setup_api_environment(
         api_key=benchmark_config.api_key,
@@ -33,5 +33,6 @@ def run(
     )
 
     logger.info(f"Running benchmark with config: {benchmark_config}")
-    run_benchmark(benchmark_config)
+    service_metrics = run_benchmark(benchmark_config)
     logger.info("Benchmark finished")
+    return service_metrics

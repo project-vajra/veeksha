@@ -1,11 +1,12 @@
 import json
 import os
 from dataclasses import field
-from typing import Optional
+from typing import List, Optional
 
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from veeksha.config.slo import BaseSloConfig
 from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
 
@@ -45,55 +46,10 @@ class CapacitySearchConfig:
         default_factory=BenchmarkConfig,
         metadata={"help": "Benchmark config for capacity search."},
     )
-    slo_type: str = field(
-        default="deadline",
-        metadata={"help": "Type of SLO to use for capacity search"},
+    slos: List[BaseSloConfig] = field(
+        default_factory=list,
+        metadata={"help": "List of SLO definitions to evaluate"},
     )
-    tbt_slo: float = field(
-        default=0.03,
-        metadata={"help": "TBT SLO for capacity search"},
-    )
-    tbt_percentile: float = field(
-        default=0.99,
-        metadata={"help": "TBT percentile for capacity search"},
-    )
-    ttft_slo: float = field(
-        default=0.1,
-        metadata={"help": "TTFT SLO for capacity search"},
-    )
-    ttft_percentile: float = field(
-        default=0.9,
-        metadata={"help": "TTFT percentile for capacity search"},
-    )
-    tpot_slo: float = field(
-        default=0.1,
-        metadata={"help": "TPOT SLO for capacity search"},
-    )
-    tpot_percentile: float = field(
-        default=0.9,
-        metadata={"help": "TPOT percentile for capacity search"},
-    )
-    ttft_slack_slo: float = field(
-        default=0.3,
-        metadata={"help": "TTFT slack SLO for capacity search"},
-    )
-    deadline_miss_rate_slo: float = field(
-        default=0.1,
-        metadata={"help": "Deadline miss rate SLO for capacity search"},
-    )
-    deadline_miss_rate_percentile: float = field(
-        default=0.99,
-        metadata={"help": "Deadline miss rate percentile for capacity search"},
-    )
-    dynamic_ttft_slo: bool = field(
-        default=True,
-        metadata={"help": "Dynamic TTFT SLO for capacity search"},
-    )
-    # # TODO: remove from arg, move to trace config or similar
-    # trace_session_match_threshold: float = field(
-    #     default=0.9,
-    #     metadata={"help": "Trace session match threshold for capacity search"},
-    # )
     wandb_project: Optional[str] = field(
         default=None,
         metadata={"help": "Wandb project for capacity search"},

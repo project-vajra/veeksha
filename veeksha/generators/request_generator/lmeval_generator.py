@@ -158,6 +158,10 @@ class LMEvalRequestGenerator:
         dispatch_delay = self.requests_interval_generator.get_next_inter_request_time()
         self.req_idx += 1
 
+        metadata = {
+            "request_dispatch_interval": dispatch_delay,
+        }
+
         # just need context to send to the model
         if req.request_type == str(LMEvalOutputType.GENERATE_UNTIL):
             context, all_gen_kwargs = req.args  # type: ignore
@@ -182,6 +186,7 @@ class LMEvalRequestGenerator:
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
                 id=self.req_idx - 1,
+                metadata=metadata,
             )
         elif req.request_type == str(LMEvalOutputType.LOGLIKELIHOOD):
             context, target = req.args  # type: ignore
@@ -202,6 +207,7 @@ class LMEvalRequestGenerator:
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
                 id=self.req_idx - 1,
+                metadata=metadata,
             )
         else:
             raise NotImplementedError(

@@ -4,12 +4,13 @@ import json
 import os
 import threading
 from dataclasses import replace
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
-import numpy as np
 import wandb
 
-from veeksha.capacity_search.benchmark_wrapper import run
+from veeksha.capacity_search.benchmark_wrapper import run_benchmark_wrapped
+from veeksha.capacity_search.slo import SloSet
+from veeksha.capacity_search.slo_evaluator import SloEvaluator
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.config.utils import dataclass_to_dict
@@ -44,16 +45,6 @@ class CapacitySearch:
         model_name = self.base_benchmark_config.client_config.model.split("/")[-1]
         config_hash = hashlib.md5(str(self.full_config).encode()).hexdigest()[:8]
 
-        # TODO add params
-        # for example
-        # output_dir=os.path.join(
-        #         self.args.output_dir,
-        #         str(self.job_config.server_config.openai_server_engine),
-        #         self.job_config.model_config.name,
-        #         # f"ttft_slack_{self.args.ttft_slack_slo}_tbt_{self.args.tbt_slo}",
-        #         str(self.job_config.request_generator_config.trace_file_name),
-        #         f"{hash_key}_q{qps}",
-        #     )
         self.job_output_dir = os.path.join(
             self.capacity_search_config.output_dir, f"{model_name}_{config_hash}"
         )
@@ -62,15 +53,12 @@ class CapacitySearch:
         with open(os.path.join(self.job_output_dir, "config.json"), "w") as f:
             json.dump(self.full_config, f, indent=4)
 
-        if (
-            (self.capacity_search_config.slo_type == "deadline")
-            and self.capacity_search_config.dynamic_ttft_slo
-            and self.base_benchmark_config.prefill_profiler_config.use_predictions_for_ttft
-        ):
-            assert (
-                self.base_benchmark_config.prefill_profiler_config.predictor_dir
-                is not None
-            ), "Deadline SLO needs predictor directory"
+        self.slo_set = SloSet(slos=self.capacity_search_config.slos)
+        self.slo_evaluator = SloEvaluator(self.slo_set)
+        self._capsearch_cache_file = os.path.join(
+            self.job_output_dir, "_capsearch_cache.json"
+        )
+        self._capsearch_cache = self._load_cache()
 
     def _build_benchmark_config_for_qps(
         self, qps: float, run_dir: str
@@ -91,29 +79,36 @@ class CapacitySearch:
 
     def _run_capacity_search_benchmark(
         self, qps: float
-    ) -> Tuple[
-        bool, Optional[float], Optional[float], Optional[float], Optional[float], str
-    ]:
+    ) -> Tuple[bool, Optional[Dict[str, float]], str]:
         qps_run_dir = os.path.join(self.job_output_dir, str(qps))
+        qps_key = str(qps)
+
+        cached_iter = self._capsearch_cache.get("iterations", {}).get(qps_key)
+        if cached_iter is not None:
+            logger.info(f"Using capacity search cache for QPS {qps}")
+            return (
+                bool(cached_iter.get("is_under_sla", False)),
+                cached_iter.get("slo_metrics", {}),
+                qps_key,
+            )
 
         # isolated benchmark config for this QPS
         benchmark_config = self._build_benchmark_config_for_qps(qps, qps_run_dir)
 
-        cached_request_level_metrics_file = self._get_request_level_metrics(qps_run_dir)
+        service_metrics = run_benchmark_wrapped(benchmark_config)
 
-        if cached_request_level_metrics_file is not None:
-            logger.info(f"Cached results found for {qps}")
-            return self._is_under_sla(cached_request_level_metrics_file, qps)
+        is_under_sla, slo_metrics_dict = self.slo_evaluator.evaluate_slo(
+            service_metrics.metric_store
+        )
 
-        run(benchmark_config)
+        self._cache_iteration(
+            qps=qps_key,
+            is_under_sla=is_under_sla,
+            slo_metrics=slo_metrics_dict,
+            run_id=qps_key,
+        )
 
-        request_level_metrics_file = self._get_request_level_metrics(qps_run_dir)
-
-        assert (
-            request_level_metrics_file is not None
-        ), f"Service-level metrics file not found for QPS: {qps}"
-
-        return self._is_under_sla(request_level_metrics_file, qps)
+        return is_under_sla, slo_metrics_dict, qps_key
 
     def _get_result_file(self, run_dir: str, metric_name: str) -> Optional[str]:
         files = glob.glob(os.path.join(run_dir, f"{metric_name}.csv"))
@@ -136,120 +131,19 @@ class CapacitySearch:
 
         return files[0]
 
-    def _use_deadline_based_slo(
-        self, request_level_metrics_file: str
-    ) -> Tuple[bool, float]:
-        with open(request_level_metrics_file, "r") as f:
-            request_level_metrics = json.load(f)
-
-        deadline_miss_rate_array = request_level_metrics["deadline_miss_rate"]
-
-        # Calculate percentile values of deadline miss rate
-        deadline_miss_rate = np.quantile(
-            deadline_miss_rate_array,
-            self.capacity_search_config.deadline_miss_rate_percentile,
-        )
-
-        is_under_sla = (
-            deadline_miss_rate <= self.capacity_search_config.deadline_miss_rate_slo
-        )
-
-        return is_under_sla, deadline_miss_rate
-
-    def _use_tbt_and_ttft_slo(
-        self,
-        request_level_metrics_file: str,
-    ) -> Tuple[bool, float, float]:
-        with open(request_level_metrics_file, "r") as f:
-            request_level_metrics = json.load(f)
-
-        # Get TTFT, TBT request level
-        ttft_array = request_level_metrics["ttft"]
-        tbt_array = request_level_metrics["tbt"]
-
-        # Merge TBT arrays of each request to make it service level
-        combined_tbt_array = []
-        for i in range(len(tbt_array)):
-            combined_tbt_array.extend(tbt_array[i])
-
-        # Calculate percentile values of TBT, TTFT
-        tbt = np.quantile(
-            combined_tbt_array, self.capacity_search_config.tbt_percentile
-        )
-        ttft = np.quantile(ttft_array, self.capacity_search_config.ttft_percentile)
-
-        is_under_sla = (
-            tbt <= self.capacity_search_config.tbt_slo
-            and ttft <= self.capacity_search_config.ttft_slo
-        )
-
-        return is_under_sla, tbt, ttft
-
-    def _use_ttft_and_tpot_slo(
-        self,
-        request_level_metrics_file: str,
-    ) -> Tuple[bool, float, float]:
-        with open(request_level_metrics_file, "r") as f:
-            request_level_metrics = json.load(f)
-
-        # Get TTFT, TPOT at request level
-        ttft_array = request_level_metrics["ttft"]
-        tpot_array = request_level_metrics["tpot"]
-
-        # Calculate percentile values of TTFT, TPOT
-        ttft = np.quantile(ttft_array, self.capacity_search_config.ttft_percentile)
-        tpot = np.quantile(tpot_array, self.capacity_search_config.tpot_percentile)
-
-        is_under_sla = (
-            ttft <= self.capacity_search_config.ttft_slo
-            and tpot <= self.capacity_search_config.tpot_slo
-        )
-
-        return is_under_sla, ttft, tpot
-
     def _is_under_sla(
         self,
         request_level_metrics_file: str,
         qps: float,
-    ) -> Tuple[
-        bool, Optional[float], Optional[float], Optional[float], Optional[float], str
-    ]:
-        is_under_sla = False
-        tbt = None
-        ttft = None
-        tpot = None
-        deadline_miss_rate = None
-
-        if self.capacity_search_config.slo_type == "deadline":
-            is_under_sla, deadline_miss_rate = self._use_deadline_based_slo(
-                request_level_metrics_file
-            )
-        elif self.capacity_search_config.slo_type == "tbt_ttft":
-            is_under_sla, tbt, ttft = self._use_tbt_and_ttft_slo(
-                request_level_metrics_file
-            )
-        elif self.capacity_search_config.slo_type == "ttft_tpot":
-            is_under_sla, ttft, tpot = self._use_ttft_and_tpot_slo(
-                request_level_metrics_file
-            )
-        else:
-            raise ValueError(
-                f"Invalid SLO type: {self.capacity_search_config.slo_type}"
-            )
-
-        logger.info(
-            f"QPS: {qps}"
-            f" - TBT P{self.capacity_search_config.tbt_percentile * 100} Tokens: {tbt}"
-            f" - TTFT P{self.capacity_search_config.ttft_percentile * 100} Tokens: {ttft}"
-            f" - TPOT P{self.capacity_search_config.tpot_percentile * 100} Requests: {tpot}"
-            f" - Deadline Miss Rate P{self.capacity_search_config.deadline_miss_rate_percentile * 100} Requests: {deadline_miss_rate}",
+    ) -> Tuple[bool, Optional[Dict[str, float]], str]:
+        # user provided slos, percentiles and thresholds
+        is_under_sla, slo_metrics_dict = (
+            self.slo_evaluator.evaluate_slo_request_metrics(request_level_metrics_file)
         )
+
         return (
             is_under_sla,
-            tbt,
-            ttft,
-            tpot,
-            deadline_miss_rate,
+            slo_metrics_dict,
             str(qps),
         )
 
@@ -259,8 +153,9 @@ class CapacitySearch:
         """
 
         logger.info(
-            f"Starting search. SLO type: {self.capacity_search_config.slo_type}, start QPS: {self.capacity_search_config.start_qps}",
+            f"Starting search. Start QPS: {self.capacity_search_config.start_qps}",
         )
+        logger.info(f"SLOs: {self.slo_evaluator.slo_set}")
 
         left = 0
         right = self.capacity_search_config.start_qps * 2
@@ -269,10 +164,7 @@ class CapacitySearch:
         max_qps_under_sla = None
         min_qps_over_sla = 2**32
 
-        tbt_at_max_qps = None
-        ttft_at_max_qps = None
-        tpot_at_max_qps = None
-        deadline_miss_rate_at_max_qps = None
+        slo_metrics_at_max_qps = None
         best_run_id = None
         found_valid_qps = False
 
@@ -285,9 +177,7 @@ class CapacitySearch:
             ):
                 break
 
-            qps = (left + right) / 2
-            # round to 2 decimal places
-            qps = round(qps, 2)
+            qps = round((left + right) / 2, 2)
 
             if qps == last_qps:
                 break
@@ -296,20 +186,14 @@ class CapacitySearch:
 
             (
                 is_under_sla,
-                tbt,
-                ttft,
-                tpot,
-                deadline_miss_rate,
+                metrics_dict,
                 run_id,
             ) = self._run_capacity_search_benchmark(qps)
 
             if is_under_sla:
                 found_valid_qps = True
                 max_qps_under_sla = qps
-                tbt_at_max_qps = tbt
-                ttft_at_max_qps = ttft
-                tpot_at_max_qps = tpot
-                deadline_miss_rate_at_max_qps = deadline_miss_rate
+                slo_metrics_at_max_qps = metrics_dict
                 best_run_id = run_id
 
                 if qps > VICINITY_THRESHOLD * right:
@@ -327,13 +211,13 @@ class CapacitySearch:
             return {}
 
         logger.info(
-            f"Max QPS under SLO: "
-            f"QPS: {max_qps_under_sla}, "
-            f"TBT P{self.capacity_search_config.tbt_percentile * 100}: {tbt_at_max_qps}, "
-            f"TTFT P{self.capacity_search_config.ttft_percentile * 100}: {ttft_at_max_qps}, "
-            f"TPOT P{self.capacity_search_config.tpot_percentile * 100}: {tpot_at_max_qps}, "
-            f"Deadline Miss Rate P{self.capacity_search_config.deadline_miss_rate_percentile * 100}: {deadline_miss_rate_at_max_qps}"
-            f"Best Run ID: {best_run_id} \n",
+            f"{'-'*100}\n"
+            f"Max QPS found by Capacity Search with: \n"
+            f"    * SLOs: {self.slo_evaluator.slo_set} \n"
+            f"    * SLO Metrics: {slo_metrics_at_max_qps} \n"
+            f"    * Best Run ID: {best_run_id} \n"
+            f"is {max_qps_under_sla} \n"
+            f"{'-'*100}\n"
         )
 
         if (
@@ -346,8 +230,64 @@ class CapacitySearch:
             best_run.tags.append("BEST_CONFIG")
             best_run.update()
 
+        self._cache_final(
+            max_qps_under_sla=max_qps_under_sla,
+            slo_metrics_at_max_qps=slo_metrics_at_max_qps,
+            best_run_id=best_run_id,
+        )
+
         return {
-            **self.capacity_search_config.to_dict(),
             "max_qps_under_sla": max_qps_under_sla,
-            "deadline_miss_rate_at_max_qps": deadline_miss_rate_at_max_qps,
+            "slo_metrics_at_max_qps": slo_metrics_at_max_qps,
         }
+
+    def _load_cache(self) -> Dict[str, Any]:
+        try:
+            if os.path.exists(self._capsearch_cache_file):
+                with open(self._capsearch_cache_file, "r") as f:
+                    cache = json.load(f)
+                    return cache
+        except Exception as e:
+            logger.warning(f"Failed to read capsearch cache: {e}")
+        return {
+            "slos": str(self.slo_evaluator.slo_set),
+            "iterations": {},
+            "final": None,
+        }
+
+    def _save_cache(self) -> None:
+        try:
+            with open(self._capsearch_cache_file, "w") as f:
+                json.dump(self._capsearch_cache, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Failed to write capsearch cache: {e}")
+
+    def _cache_iteration(
+        self,
+        qps: str,
+        is_under_sla: bool,
+        slo_metrics: Dict[str, float],
+        run_id: str,
+    ) -> None:
+        if "iterations" not in self._capsearch_cache:
+            self._capsearch_cache["iterations"] = {}
+        self._capsearch_cache["iterations"][qps] = {
+            "is_under_sla": is_under_sla,
+            "slo_metrics": slo_metrics,
+            "run_id": run_id,
+        }
+        self._save_cache()
+
+    def _cache_final(
+        self,
+        max_qps_under_sla: Optional[float],
+        slo_metrics_at_max_qps: Optional[Dict[str, float]],
+        best_run_id: Optional[str],
+    ) -> None:
+        self._capsearch_cache["final"] = {
+            "max_qps_under_sla": max_qps_under_sla,
+            "slo_metrics_at_max_qps": slo_metrics_at_max_qps,
+            "best_run_id": best_run_id,
+            "slos": str(self.slo_evaluator.slo_set),
+        }
+        self._save_cache()

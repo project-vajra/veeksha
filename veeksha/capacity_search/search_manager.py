@@ -24,10 +24,10 @@ def run_search(
             or capacity_search_config.wandb_sweep_name
         ), "wandb-sweep-name/id is required with wandb-project"
 
-    assert (
-        capacity_search_config.deadline_miss_rate_slo >= 0
-        and capacity_search_config.deadline_miss_rate_slo <= 1
-    )
+    # assert (
+    #     capacity_search_config.deadline_miss_rate_slo >= 0
+    #     and capacity_search_config.deadline_miss_rate_slo <= 1
+    # )
 
     os.makedirs(capacity_search_config.output_dir, exist_ok=True)
 
@@ -58,6 +58,9 @@ class SearchManager:
     def run(self):
         num_jobs = len(self.capacity_search_configs)
         logger.info(f"Running {num_jobs} jobs sequentially")
+        logger.info(f"Capacity search configs:")
+        for i, cfg in enumerate(self.capacity_search_configs):
+            logger.info(f"- {i}: {cfg} \n")
 
         all_results = [
             run_search(cfg_params) for cfg_params in self.capacity_search_configs

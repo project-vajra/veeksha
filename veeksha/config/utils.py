@@ -74,26 +74,55 @@ def is_subclass(cls, parent: type) -> bool:
     return hasattr(cls, "__bases__") and parent in cls.__bases__
 
 
+from enum import Enum
+
+
 def dataclass_to_dict(obj):
+    """
+    Recursively convert a dataclass (or any nested structure containing
+    dataclasses) into a JSON-serialisable structure composed only of
+    dicts, lists and primitive types.
+
+    Special handling:
+    • Enum instances are converted to their ``value`` (or ``name`` when the
+      value is not JSON-serialisable).
+    • Dictionaries are traversed recursively.
+    """
+    # lists and tuples
     if isinstance(obj, list):
         return [dataclass_to_dict(item) for item in obj]
-    elif is_dataclass(obj):
+
+    # dicts
+    if isinstance(obj, dict):
+        return {k: dataclass_to_dict(v) for k, v in obj.items()}
+
+    # enums
+    if isinstance(obj, Enum):
+        return (
+            obj.value
+            if isinstance(obj.value, (str, int, float, bool, type(None)))
+            else obj.name
+        )
+
+    # dataclasses
+    if is_dataclass(obj):
         data = {}
         for field in fields(obj):
             value = getattr(obj, field.name)
             data[field.name] = dataclass_to_dict(value)
-        # Include members created in __post_init__
+
         for key, value in obj.__dict__.items():
             if key not in data:
                 data[key] = dataclass_to_dict(value)
-        # Include the name of the class
-        if hasattr(obj, "get_type") and callable(getattr(obj, "get_type")):
-            data["name"] = str(obj.get_type())  # type: ignore
-        elif hasattr(obj, "get_name") and callable(getattr(obj, "get_name")):
-            data["name"] = obj.get_name()  # type: ignore
+
+        if hasattr(obj, "get_type") and callable(getattr(obj, "get_type", None)):
+            data["name"] = str(obj.get_type())  # type: ignore[attr-defined]
+        elif hasattr(obj, "get_name") and callable(getattr(obj, "get_name", None)):
+            data["name"] = obj.get_name()  # type: ignore[attr-defined]
         return data
-    else:
-        return obj
+
+    # all other primitives
+    return obj
 
 
 def dict_to_args(class_dict):

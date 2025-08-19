@@ -16,10 +16,10 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
     def __init__(self, config: TraceRequestLengthGeneratorConfig):
         self.config = config
 
-        self.trace_df = load_trace(self.config.trace_file)
+        trace_df = load_trace(self.config.trace_file)
 
-        process_request_length_trace(
-            self.trace_df,
+        self.trace_df = process_request_length_trace(
+            trace_df,
             self.config.trace_file,
             self.config.prefill_scale_factor,
             self.config.decode_scale_factor,

@@ -196,15 +196,13 @@ def run_main_loop(
 def run_benchmark(
     benchmark_config: BenchmarkConfig,
 ):
-    """Get the token throughput and latencies for the given model.
+    """Run the benchmark and return the in-memory metrics object.
 
     Args:
         benchmark_config: The benchmark configuration.
 
     Returns:
-        A summary of the performance metrics collected across all completed requests
-        (e.g. throughput, latencies, etc.)
-        The individual metrics for each request.
+        ServiceMetrics containing the collected metrics (including the `MetricStore`).
     """
 
     setup_api_environment(
@@ -285,6 +283,8 @@ def run_benchmark(
 
         store_lmeval_results(service_metrics.output_dir, lmeval_results)
 
+    return service_metrics
+
 
 if __name__ == "__main__":
     if platform.system() == "Darwin":
@@ -303,7 +303,7 @@ if __name__ == "__main__":
             logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
 
         random.seed(benchmark_config.seed)
-        run_benchmark(benchmark_config=benchmark_config)
+        service_metrics = run_benchmark(benchmark_config=benchmark_config)
 
         if len(benchmark_configs) > 1:
             logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")
