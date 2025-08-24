@@ -13,7 +13,6 @@ from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
 
-<<<<<<< HEAD
 def run_search(
     capacity_search_config: CapacitySearchConfig,
 ):
@@ -47,11 +46,6 @@ def run_search(
         wandb.finish(quiet=True)
 
     capacity_search = CapacitySearch(capacity_search_config)
-=======
-def run_search(config: CapacitySearchConfig):
-    """Run a single capacity search with the given config."""
-    capacity_search = CapacitySearch(config)
->>>>>>> 6ffb5d5 (Fix pickling problem)
     return capacity_search.search()
 
 class SearchManager:
@@ -67,21 +61,10 @@ class SearchManager:
         return [run_search(cfg) for cfg in configs_for_endpoint]
 
     def run(self):
-<<<<<<< HEAD
-<<<<<<< HEAD
-        num_jobs = len(self.capacity_search_configs)
-        logger.info(f"Running {num_jobs} jobs sequentially")
-        logger.info(f"Capacity search configs:")
-        for i, cfg in enumerate(self.capacity_search_configs):
-            logger.info(f"- {i}: {cfg} \n")
-=======
-=======
         """Run all capacity searches with parallel execution per endpoint."""
->>>>>>> 6ffb5d5 (Fix pickling problem)
         grouped_configs = collections.defaultdict(list)
         for cfg in self.capacity_search_configs:
             grouped_configs[cfg.benchmark_config.api_url].append(cfg)
->>>>>>> ee6c210 (Add parallel search)
 
         num_parallel_jobs = len(grouped_configs)
         logger.info(f"Running {num_parallel_jobs} job groups in parallel.")
