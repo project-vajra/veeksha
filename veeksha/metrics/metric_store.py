@@ -43,10 +43,14 @@ class MetricStore:
         self.error_code_freq: DefaultDict[int, int] = DefaultDict(int)
         self.ttft_deadline = metrics_config.deadline_reporting.ttft_deadline
         self.tbt_deadline = metrics_config.deadline_reporting.tbt_deadline
-        self.target_deadline_miss_rate = metrics_config.deadline_reporting.target_deadline_miss_rate
+        self.target_deadline_miss_rate = (
+            metrics_config.deadline_reporting.target_deadline_miss_rate
+        )
         self.service_level_missed_deadlines = 0
         self.service_level_total_deadlines = 0
-        self.should_write_metrics_to_wandb = metrics_config.should_write_metrics_to_wandb
+        self.should_write_metrics_to_wandb = (
+            metrics_config.should_write_metrics_to_wandb
+        )
         self.wandb_project = metrics_config.wandb_project
         self.wandb_group = metrics_config.wandb_group
         self.wandb_run_name = metrics_config.wandb_run_name
@@ -65,8 +69,12 @@ class MetricStore:
             "num_total_tokens": CDFSketch(
                 "Number of Total Tokens", self.should_write_metrics_to_wandb
             ),
-            "tpot": CDFSketch("Time per Output Token", self.should_write_metrics_to_wandb),
-            "ttft": CDFSketch("Time to First Token", self.should_write_metrics_to_wandb),
+            "tpot": CDFSketch(
+                "Time per Output Token", self.should_write_metrics_to_wandb
+            ),
+            "ttft": CDFSketch(
+                "Time to First Token", self.should_write_metrics_to_wandb
+            ),
             "tbt": CDFSketch("Time Between Tokens", self.should_write_metrics_to_wandb),
             "end_to_end_latency": CDFSketch(
                 "End to End Latency", self.should_write_metrics_to_wandb
