@@ -17,9 +17,3 @@ class DeadlineConfig:
         default=0.1,
         metadata={"help": "The target deadline miss rate."},
     )
-    ttft_slack: float = field(
-        default=0.0,
-        metadata={
-            "help": "The slack for time to first token. Only used if use_predictions_for_ttft is True."
-        },
-    )

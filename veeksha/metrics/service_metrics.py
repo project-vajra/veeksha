@@ -3,7 +3,6 @@ from typing import Dict
 
 from veeksha.config.deadline import DeadlineConfig
 from veeksha.config.metrics import MetricsConfig
-from veeksha.config.prefill_profiler import PrefillProfilerConfig
 from veeksha.metrics.metric_store import MetricStore
 from veeksha.metrics.request_metrics import RequestMetrics
 
@@ -15,7 +14,6 @@ class ServiceMetrics:
         max_requests: int,
         deadline_config: DeadlineConfig,
         metrics_config: MetricsConfig,
-        prefill_profiler_config: PrefillProfilerConfig,
     ) -> None:
         self.timeout = timeout
         self.max_requests = max_requests
@@ -28,7 +26,6 @@ class ServiceMetrics:
             max_requests=max_requests,
             deadline_config=deadline_config,
             metrics_config=metrics_config,
-            prefill_profiler_config=prefill_profiler_config,
         )
 
     @property

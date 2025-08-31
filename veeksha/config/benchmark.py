@@ -17,7 +17,6 @@ from veeksha.config.generators.request_generator.synthetic_generator import (
     SyntheticRequestGeneratorConfig,
 )
 from veeksha.config.metrics import MetricsConfig
-from veeksha.config.prefill_profiler import PrefillProfilerConfig
 from veeksha.config.utils import dataclass_to_dict
 from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
@@ -63,26 +62,14 @@ class BenchmarkConfig:
         default_factory=DeadlineConfig,
         metadata={"help": "The deadline configuration for the benchmark."},
     )
-    prefill_profiler_config: PrefillProfilerConfig = field(
-        default_factory=PrefillProfilerConfig,
-        metadata={"help": "The prefill profiler configuration for the benchmark."},
-    )
     request_generator_config: BaseRequestGeneratorConfig = field(
         default_factory=SyntheticRequestGeneratorConfig,
         metadata={"help": "The request generator configuration for the benchmark."},
     )
 
-    # TODO mv
     def __post_init__(self):
         if not os.path.exists(self.metrics_config.output_dir):
             os.makedirs(self.metrics_config.output_dir)
-
-        if self.prefill_profiler_config.use_predictions_for_ttft:
-            self.prefill_profiler_config.max_prefill_tokens_to_predict = max(
-                self.prefill_profiler_config.max_prefill_tokens_to_predict,
-                self.request_generator_config.max_tokens,
-            )
-            self.prefill_profiler_config.fill_predictions_array()
 
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
             logger.warning("Removing timeout for LMEval.")

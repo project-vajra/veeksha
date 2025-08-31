@@ -89,31 +89,7 @@ And then we can run the benchmark as shown [here](#running-benchmark). Be sure t
 
 The results of the benchmark are saved in the results directory specified by the `--output-dir` argument.
 
-## Running Prefill Profiler
-To profile prefill times of open source systems and create a prefill time predictor for a given model and open source system, based on input prompt length, we can run `veeksha.prefill_profiler`.
-
-Launch any open source system and setup API keys and URL as shown for [vLLM](#running-with-open-source-systems).
-```bash
-python -m veeksha.prefill_profiler \
---client_config_model "meta-llama/Meta-Llama-3-8B-Instruct" \
---timeout 600 \
---metrics_config_output_dir "prefill_experiments/prefill_profiler_vllm_llama-3-8b" \
---metrics_config_should_use_given_dir true
-```
-
-To modify range of prompt tokens for which prefill times get profiled, use the flag ``--prefill-lengths`` as follows:
-```bash
-python -m veeksha.prefill_profiler \
---client_config_model "meta-llama/Meta-Llama-3-8B-Instruct" \
---timeout 600 \
---metrics_config_output_dir "prefill_experiments/prefill_profiler_vllm_llama-3-8b" \
---metrics_config_should_use_given_dir true \
---prefill_profiler_config_prefill_lengths 256 512 1024 2048 4096 8192 16384 32768 65536
-```
-
 ## Running Capacity Search
-`Important`: Run prefill profiler for a given model and open source system before running capacity search of `deadline-based` SLO type.
-
 Refer to [readme](veeksha/capacity_search/README.md) file of `veeksha/capacity_search` folder to know more about how to run capacity search.
 
 
