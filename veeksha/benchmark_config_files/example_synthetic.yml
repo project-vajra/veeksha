@@ -15,6 +15,3 @@ request_generator_config:
     type: "poisson"
   length_generator_config:
     type: "uniform"
-    
-metrics_config:
-  output_dir: "bench_res"
