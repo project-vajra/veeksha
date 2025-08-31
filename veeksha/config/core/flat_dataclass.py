@@ -345,10 +345,18 @@ def reconstruct_original_dataclass(self) -> Any:
     # skip all classes with default None and that have not been provided by the user
     classes_to_skip = set()
     for cls, dependencies in self.dataclass_dependencies.items():
-        cls_type_arg = cls + "_type"  # to specify a class, one provides the type
+        # did the user provide anything that belongs to this dataclass?
+        sub_arg_provided = any(k.startswith(f"{cls}_") for k in self.provided_args)
+        # fallback for base poly configs: to specify a poly class, one provides the type
+        cls_type_arg = cls + "_type"
+
+        # skip if the field defaults to None and the user did not provide it
+        #   – For polymorphic configs: no <cls>_type
+        #   – For regular dataclasses: no sub-field with the <cls>_ prefix
         if (
             cls in self.args_with_default_none
             and cls_type_arg not in self.provided_args
+            and not sub_arg_provided
         ):
             classes_to_skip.add(cls)
             for dependency in dependencies:
@@ -390,11 +398,27 @@ def reconstruct_original_dataclass(self) -> Any:
                 ), f"Invalid type {config_type} for {prefixed_field_name}_type. Valid types: {[str(subclass.get_type()) for subclass in get_all_subclasses(field_type)]}"
             # child dataclass has already been instantiated, so just assign it
             elif hasattr(field_type, "__dataclass_fields__"):
-                if prefixed_field_name in instances:
-                    args[original_field_name] = instances[prefixed_field_name]
+                # find the dependency name corresponding to this field's type.
+                dependency_name = None
+                for dep_name in self.dataclass_dependencies[_cls]:
+                    dep_cls = self.dataclass_names_to_classes.get(dep_name)
+                    if dep_cls is field_type:
+                        dependency_name = dep_name
+                        break
+
+                if dependency_name and dependency_name in instances:
+                    args[original_field_name] = instances[dependency_name]
                 else:
-                    # if not found in instances, the class has not been provided by the user and is None by default
-                    args[original_field_name] = None
+                    if (
+                        prefixed_field_name not in self.args_with_default_none
+                        and dependency_name is None
+                    ):
+                        raise ValueError(
+                            f"Class {_cls} has no dependency name and is not in args_with_default_none"
+                        )
+                    else:
+                        # not been provided by the user and is None by default
+                        args[original_field_name] = None
             # primitive type
             else:
                 value = getattr(self, prefixed_field_name)
