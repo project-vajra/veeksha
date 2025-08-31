@@ -6,7 +6,6 @@ from typing import Optional
 from veeksha.config.client import ClientConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
-from veeksha.config.deadline import DeadlineConfig
 from veeksha.config.generators.request_generator.base_generator import (
     BaseRequestGeneratorConfig,
 )
@@ -57,10 +56,6 @@ class BenchmarkConfig:
     metrics_config: MetricsConfig = field(
         default_factory=MetricsConfig,
         metadata={"help": "The metrics configuration for the benchmark."},
-    )
-    deadline_config: DeadlineConfig = field(
-        default_factory=DeadlineConfig,
-        metadata={"help": "The deadline configuration for the benchmark."},
     )
     request_generator_config: BaseRequestGeneratorConfig = field(
         default_factory=SyntheticRequestGeneratorConfig,
