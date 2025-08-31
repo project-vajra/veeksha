@@ -91,7 +91,7 @@ class MetricStore:
 
     def _init_wandb(self):
         if not self.should_write_metrics_to_wandb:
-            logger.warn("wandb not initialized")
+            logger.warning("wandb not initialized")
             return
 
         wandb.init(
@@ -110,7 +110,11 @@ class MetricStore:
 
     @property
     def error_rate(self):
-        return self.num_errored_requests / self.num_requests
+        return (
+            self.num_errored_requests / self.num_requests
+            if self.num_requests > 0
+            else 0.0
+        )
 
     def register_launched_request(self):
         self.num_requests += 1
@@ -123,18 +127,16 @@ class MetricStore:
             self.num_completed_requests += 1
 
         for metric_name, cdf_sketch in self.summaries.items():
-            ttft_deadline = self.ttft_deadline
             if metric_name == "tbt":
                 cdf_sketch.extend(request_metrics.inter_token_times[1:])
             elif metric_name == "deadline_miss_rate":
-                ttft_deadline = self.ttft_deadline
                 (
                     deadline_miss_rate,
                     missed_deadlines,
                     total_deadlines,
                 ) = get_request_level_deadline_miss_rate(
                     inter_token_times=request_metrics.inter_token_times,
-                    ttft_deadline=ttft_deadline,
+                    ttft_deadline=self.ttft_deadline,
                     tbt_deadline=self.tbt_deadline,
                 )
                 cdf_sketch.put(deadline_miss_rate)
@@ -144,7 +146,7 @@ class MetricStore:
                 cdf_sketch.put(
                     find_min_tbt_deadline_to_meet(
                         inter_token_times=request_metrics.inter_token_times,
-                        ttft_deadline=ttft_deadline,
+                        ttft_deadline=self.ttft_deadline,
                         target_deadline_miss_rate=self.target_deadline_miss_rate,
                     )
                 )
@@ -179,7 +181,7 @@ class MetricStore:
 
     def store_output(self, output_dir: str):
         perf_csv_path = os.path.join(output_dir, "perf_metrics.csv")
-        summary_stats_path = os.path.join(output_dir, "error_stats.json")
+        summary_stats_path = os.path.join(output_dir, "summary_stats.json")
 
         # store request level metrics
         self.request_level_metrics.save(output_dir)
@@ -216,7 +218,9 @@ class MetricStore:
 
         # store summary stats
         with open(summary_stats_path, "w") as f:
-            json.dump(self.get_summary(), f)
+            json.dump(
+                {**self.get_summary(), "error_code_freq": dict(self.error_code_freq)}, f
+            )
 
         # store additional outputs
         self.store_additional_outputs(output_dir)
@@ -346,7 +350,7 @@ class MetricStore:
         ] + self.request_level_metrics.tbt[request_idx]
         for i in range(1, len(token_generated_times)):
             token_generated_times[i] += token_generated_times[i - 1]
-        tokens_generated = list(range(len(token_generated_times)))
+        tokens_generated = list(range(1, len(token_generated_times) + 1))
         data = {
             "Time (s)": token_generated_times,
             "Tokens Generated": tokens_generated,
