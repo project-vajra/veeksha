@@ -9,9 +9,10 @@ boto3
 ddsketch
 google-cloud-aiplatform
 wandb
-kaleido
+kaleido==0.1.*
 plotly-express
 scikit-learn
 pandas
 jinja2
 lm_eval
+simplejson
