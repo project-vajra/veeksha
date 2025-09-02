@@ -9,10 +9,9 @@ boto3
 ddsketch
 google-cloud-aiplatform
 wandb
-kaleido==0.1.*
-plotly-express
-scikit-learn
+kaleido==0.2.1 # bundles Chrome
+plotly-express==0.4.1 # before deprecation of kaleido v0
 pandas
 jinja2
 lm_eval
-simplejson
+simplejson # `requests` optional dependency
