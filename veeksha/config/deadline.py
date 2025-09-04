@@ -27,7 +27,7 @@ class DeadlineReportConfig:
             "help": "The target deadline miss rate. Used to report smallest TBT deadline that would meet it."
         },
     )
-    
+
     def __post_init__(self):
         if self.ttft_deadline <= 0:
             raise ValueError("ttft_deadline must be greater than 0")
