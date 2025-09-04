@@ -21,7 +21,7 @@ class BaseLLMClient:
         return len(self.tokenizer.encode(text))
 
     @abc.abstractmethod
-    def send_llm_request(
+    async def send_llm_request(
         self, request_config: RequestConfig
     ) -> Tuple[RequestMetrics, Response]:
         """Make a single completion request to a LLM API

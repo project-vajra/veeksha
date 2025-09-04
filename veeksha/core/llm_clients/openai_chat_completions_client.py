@@ -3,7 +3,7 @@ import os
 import time
 from typing import List, Tuple
 
-import requests
+import aiohttp
 
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
 from veeksha.core.request_config import RequestConfig
@@ -55,7 +55,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
         previous_token_count = self.total_tokens(previous_responses)
         return current_tokens_received, previous_token_count
 
-    def send_llm_request(
+    async def send_llm_request(
         self, request_config: RequestConfig
     ) -> Tuple[RequestMetrics, Response]:
         prompt, prompt_len = request_config.prompt
@@ -93,57 +93,63 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
         request_dispatched_at = time.monotonic() - self.start_time
 
         try:
-            with requests.post(
-                address, json=body, timeout=None, headers=headers, stream=True
-            ) as response:
-                if response.status_code != 200:
-                    error_response_code = response.status_code
-                    error_msg = response.text
-                    logger.error(f"Request Error: {error_msg}")
-                    response.raise_for_status()
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    address, json=body, headers=headers, timeout=None
+                ) as response:
+                    if response.status != 200:
+                        error_response_code = response.status
+                        error_msg = await response.text()
+                        logger.error(f"Request Error: {error_msg}")
+                        response.raise_for_status()
 
-                for chunk in response.iter_lines(chunk_size=None):
-                    chunk = chunk.strip()
+                    async for line_bytes in response.content:
+                        line = line_bytes.decode('utf-8').strip()
 
-                    if not chunk:
-                        continue
-                    stem = "data: "
-                    chunk = chunk[len(stem) :]
-                    if chunk in [b"[DONE]", "[DONE]"]:
-                        continue
+                        if not line:
+                            continue
+                        
+                        stem = "data: "
+                        if line.startswith(stem):
+                            chunk = line[len(stem):]
+                        else:
+                            chunk = line
+                            
+                        if chunk in ["[DONE]"]:
+                            continue
 
-                    try:
-                        data = json.loads(chunk)
-                    except json.JSONDecodeError:
-                        logger.error(f"JSON decode error with chunk: {chunk}")
-                        continue  # Skip malformed JSON
+                        try:
+                            data = json.loads(chunk)
+                        except json.JSONDecodeError:
+                            logger.error(f"JSON decode error with chunk: {chunk}")
+                            continue  # Skip malformed JSON
 
-                    if "error" in data:
-                        error_msg = data["error"]["message"]
-                        error_response_code = data["error"]["code"]
-                        raise RuntimeError(data["error"]["message"])
+                        if "error" in data:
+                            error_msg = data["error"]["message"]
+                            error_response_code = data["error"]["code"]
+                            raise RuntimeError(data["error"]["message"])
 
-                    delta = data["choices"][0]["delta"]
-                    if delta.get("content", None):
-                        (
-                            current_tokens_received,
-                            previous_token_count,
-                        ) = self.get_current_tokens_received(
-                            previous_responses=previous_responses,
-                            current_response=delta["content"],
-                            previous_token_count=previous_token_count,
-                        )
-
-                        tokens_received += current_tokens_received
-                        inter_token_times.append(
-                            time.monotonic() - most_recent_received_token_time
-                        )
-                        if current_tokens_received > 1:
-                            inter_token_times.extend(
-                                [0] * (current_tokens_received - 1)
+                        delta = data["choices"][0]["delta"]
+                        if delta.get("content", None):
+                            (
+                                current_tokens_received,
+                                previous_token_count,
+                            ) = self.get_current_tokens_received(
+                                previous_responses=previous_responses,
+                                current_response=delta["content"],
+                                previous_token_count=previous_token_count,
                             )
-                        most_recent_received_token_time = time.monotonic()
-                        generated_text += delta["content"]
+
+                            tokens_received += current_tokens_received
+                            inter_token_times.append(
+                                time.monotonic() - most_recent_received_token_time
+                            )
+                            if current_tokens_received > 1:
+                                inter_token_times.extend(
+                                    [0] * (current_tokens_received - 1)
+                                )
+                            most_recent_received_token_time = time.monotonic()
+                            generated_text += delta["content"]
         except Exception as e:
             logger.error(f"Warning Or Error: ({error_response_code}) {e}")
 
