@@ -4,9 +4,14 @@ from multiprocessing import Queue as MPQueue
 from threading import Thread
 from typing import Dict
 
+import aiohttp
+
 from veeksha.config.client import ClientConfig
 from veeksha.core.llm_clients import construct_client
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
+from veeksha.logger import init_logger
+
+logger = init_logger(__name__)
 
 
 class RequestsLauncher:
@@ -63,19 +68,38 @@ class RequestsLauncher:
         # Create event loop for this thread to handle async calls
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
+
+        async def main():
+            # Create a single session with a timeout to be reused for all requests.
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=60)
+            ) as session:
+                while True:
+                    request_config = self.input_queue.get()
+                    if request_config is None:
+                        # End of queue marker
+                        break
+
+                    # Run the async method in the event loop
+                    try:
+                        result = await self.llm_clients[client_id].send_llm_request(
+                            request_config, session
+                        )
+                        self.output_queue.put(result)
+                    except Exception:
+                        logger.exception(
+                            "send_llm_request failed for client_id=%s", client_id
+                        )
+                        continue
+
         try:
-            while True:
-                request_config = self.input_queue.get()
-                if request_config is None:
-                    break
-                # Run the async method in the event loop
-                result = loop.run_until_complete(
-                    self.llm_clients[client_id].send_llm_request(request_config)
-                )
-                self.output_queue.put(result)
+            loop.run_until_complete(main())
         finally:
-            loop.close()
+            try:
+                # Clear the event loop reference for the current thread
+                asyncio.set_event_loop(None)
+            finally:
+                loop.close()
 
     def complete_tasks(self) -> None:
         """Complete the clients."""

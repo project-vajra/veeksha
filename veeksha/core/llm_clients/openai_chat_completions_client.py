@@ -56,7 +56,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
         return current_tokens_received, previous_token_count
 
     async def send_llm_request(
-        self, request_config: RequestConfig
+        self, request_config: RequestConfig, session: aiohttp.ClientSession
     ) -> Tuple[RequestMetrics, Response]:
         prompt, prompt_len = request_config.prompt
 
@@ -93,41 +93,39 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
         request_dispatched_at = time.monotonic() - self.start_time
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    address, json=body, headers=headers, timeout=None
-                ) as response:
-                    if response.status != 200:
-                        error_response_code = response.status
-                        error_msg = await response.text()
-                        logger.error(f"Request Error: {error_msg}")
-                        response.raise_for_status()
+            async with session.post(
+                address, json=body, headers=headers
+            ) as response:
+                if response.status != 200:
+                    error_response_code = response.status
+                    error_msg = await response.text()
+                    logger.error(f"Request Error: {error_msg}")
+                    response.raise_for_status()
 
-                    async for line_bytes in response.content:
-                        line = line_bytes.decode('utf-8').strip()
-
+                buffer = b""
+                async for chunk_bytes in response.content.iter_any():
+                    buffer += chunk_bytes
+                    while b"\n" in buffer:
+                        line_bytes, buffer = buffer.split(b"\n", 1)
+                        line = line_bytes.decode("utf-8").strip()
                         if not line:
                             continue
-                        
                         stem = "data: "
-                        if line.startswith(stem):
-                            chunk = line[len(stem):]
-                        else:
-                            chunk = line
-                            
-                        if chunk in ["[DONE]"]:
-                            continue
-
+                        payload = line[len(stem) :] if line.startswith(stem) else line
+                        if payload == "[DONE]":
+                            buffer = b""
+                            break
                         try:
-                            data = json.loads(chunk)
+                            data = json.loads(payload)
                         except json.JSONDecodeError:
-                            logger.error(f"JSON decode error with chunk: {chunk}")
+                            logger.exception(f"JSON decode error with chunk: {payload}")
                             continue  # Skip malformed JSON
 
                         if "error" in data:
-                            error_msg = data["error"]["message"]
-                            error_response_code = data["error"]["code"]
-                            raise RuntimeError(data["error"]["message"])
+                            err = data.get("error") or {}
+                            error_msg = err.get("message", "Unknown error")
+                            error_response_code = err.get("code")
+                            break
 
                         delta = data["choices"][0]["delta"]
                         if delta.get("content", None):
