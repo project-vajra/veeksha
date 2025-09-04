@@ -4,7 +4,7 @@ from collections import defaultdict
 from typing import DefaultDict, Dict, Optional
 
 import pandas as pd
-import plotly_express as px
+import plotly.express as px
 import wandb
 
 from veeksha.config.metrics import MetricsConfig
