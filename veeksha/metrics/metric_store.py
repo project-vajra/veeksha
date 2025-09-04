@@ -1,5 +1,6 @@
 import json
 import os
+from collections import defaultdict
 from typing import DefaultDict, Dict, Optional
 
 import pandas as pd
@@ -40,20 +41,20 @@ class MetricStore:
         self.num_completed_requests: int = 0
         self.start_time: Optional[float] = None
         self.end_time: Optional[float] = None
-        self.error_code_freq: DefaultDict[int, int] = DefaultDict(int)
-        self.ttft_deadline = metrics_config.deadline_reporting.ttft_deadline
-        self.tbt_deadline = metrics_config.deadline_reporting.tbt_deadline
-        self.target_deadline_miss_rate = (
+        self.error_code_freq: DefaultDict[int, int] = defaultdict(int)
+        self.ttft_deadline: float = metrics_config.deadline_reporting.ttft_deadline
+        self.tbt_deadline: float = metrics_config.deadline_reporting.tbt_deadline
+        self.target_deadline_miss_rate: float = (
             metrics_config.deadline_reporting.target_deadline_miss_rate
         )
-        self.service_level_missed_deadlines = 0
-        self.service_level_total_deadlines = 0
-        self.should_write_metrics_to_wandb = (
+        self.service_level_missed_deadlines: int = 0
+        self.service_level_total_deadlines: int = 0
+        self.should_write_metrics_to_wandb: bool = (
             metrics_config.should_write_metrics_to_wandb
         )
-        self.wandb_project = metrics_config.wandb_project
-        self.wandb_group = metrics_config.wandb_group
-        self.wandb_run_name = metrics_config.wandb_run_name
+        self.wandb_project: Optional[str] = metrics_config.wandb_project
+        self.wandb_group: Optional[str] = metrics_config.wandb_group
+        self.wandb_run_name: Optional[str] = metrics_config.wandb_run_name
 
         self.request_level_metrics = RequestLevelMetrics(
             deadline_config=metrics_config.deadline_reporting,
@@ -99,7 +100,7 @@ class MetricStore:
 
     def _init_wandb(self):
         if not self.should_write_metrics_to_wandb:
-            logger.warning("wandb not initialized")
+            logger.warning("wandb disabled; not initialized")
             return
 
         wandb.init(
@@ -114,7 +115,7 @@ class MetricStore:
                 "target_deadline_miss_rate": self.target_deadline_miss_rate,
             },
         )
-        logger.info("wandb initialized")
+        logger.info("wandb enabled")
 
     @property
     def error_rate(self):
@@ -200,7 +201,7 @@ class MetricStore:
             metric_summary.plot_cdf(output_dir, metric_name, metric_name)
 
         # store service level deadline stats
-        with open(f"{output_dir}/service_level_metrics.json", "w") as f:
+        with open(os.path.join(output_dir, "service_level_metrics.json"), "w") as f:
             json.dump(
                 {
                     "service_level_missed_deadlines": self.service_level_missed_deadlines,
@@ -260,7 +261,10 @@ class MetricStore:
         df = pd.DataFrame(data)
 
         with open(
-            f"{output_dir}/p{percentile_value}_deadline_miss_rate_for_target_tbt_values.json",
+            os.path.join(
+                output_dir,
+                f"p{percentile_value}_deadline_miss_rate_for_target_tbt_values.json",
+            ),
             "w",
         ) as f:
             json.dump(data, f)
@@ -344,7 +348,7 @@ class MetricStore:
             xaxis_title="Number of Prompt Tokens",
             yaxis_title="TTFT (s)",
         )
-        fig.write_image(f"{output_dir}/ttft_violin_plot.png")
+        fig.write_image(os.path.join(output_dir, "ttft_violin_plot.png"))
         if self.should_write_metrics_to_wandb and wandb.run:
             wandb.log({"ttft_violin_plot": fig})
             wandb.log({"ttft_violin_data": wandb.Table(dataframe=df)})
@@ -369,6 +373,6 @@ class MetricStore:
             y="Tokens Generated",
             title="Tokens Generated vs Time",
         )
-        fig.write_image(f"{output_dir}/tokens_generated_vs_time.png")
+        fig.write_image(os.path.join(output_dir, "tokens_generated_vs_time.png"))
         if self.should_write_metrics_to_wandb and wandb.run:
             wandb.log({"tokens_generated_vs_time": fig})
