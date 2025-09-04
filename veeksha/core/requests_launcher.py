@@ -1,3 +1,4 @@
+import asyncio
 from multiprocessing import Process
 from multiprocessing import Queue as MPQueue
 from threading import Thread
@@ -59,12 +60,22 @@ class RequestsLauncher:
             thread.start()
 
     def process_requests(self, client_id: int) -> None:
-        while True:
-            request_config = self.input_queue.get()
-            if request_config is None:
-                break
-            result = self.llm_clients[client_id].send_llm_request(request_config)
-            self.output_queue.put(result)
+        # Create event loop for this thread to handle async calls
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            while True:
+                request_config = self.input_queue.get()
+                if request_config is None:
+                    break
+                # Run the async method in the event loop
+                result = loop.run_until_complete(
+                    self.llm_clients[client_id].send_llm_request(request_config)
+                )
+                self.output_queue.put(result)
+        finally:
+            loop.close()
 
     def complete_tasks(self) -> None:
         """Complete the clients."""
