@@ -1,6 +1,7 @@
 import json
 import os
 from collections import defaultdict
+from itertools import accumulate
 from typing import DefaultDict, Dict, Optional
 
 import pandas as pd
@@ -100,7 +101,7 @@ class MetricStore:
 
     def _init_wandb(self):
         if not self.should_write_metrics_to_wandb:
-            logger.warning("wandb disabled; not initialized")
+            logger.info("wandb disabled; not initialized")
             return
 
         wandb.init(
@@ -173,7 +174,7 @@ class MetricStore:
             "Deadline Miss Rate": (
                 self.service_level_missed_deadlines / self.service_level_total_deadlines
                 if self.service_level_total_deadlines > 0
-                else 0
+                else 0.0
             ),
         }
 
@@ -298,7 +299,7 @@ class MetricStore:
             "deadline_based_throughput": deadline_based_throughput,
         }
 
-        with open(f"{output_dir}/throughput_metrics.json", "w") as f:
+        with open(os.path.join(output_dir, "throughput_metrics.json"), "w") as f:
             json.dump(throughput_metrics, f)
 
         # log plot of throughput metrics to wandb
@@ -360,8 +361,7 @@ class MetricStore:
         token_generated_times = [
             self.request_level_metrics.ttft[request_idx]
         ] + self.request_level_metrics.tbt[request_idx]
-        for i in range(1, len(token_generated_times)):
-            token_generated_times[i] += token_generated_times[i - 1]
+        token_generated_times = list(accumulate(token_generated_times))
         tokens_generated = list(range(1, len(token_generated_times) + 1))
         data = {
             "Time (s)": token_generated_times,

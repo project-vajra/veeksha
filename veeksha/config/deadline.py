@@ -15,16 +15,16 @@ class DeadlineReportConfig:
 
     ttft_deadline: float = field(
         default=0.1,
-        metadata={"help": "The deadline for time to first token."},
+        metadata={"help": "The deadline, in seconds, for time to first token."},
     )
     tbt_deadline: float = field(
         default=0.05,
-        metadata={"help": "The deadline for time between tokens."},
+        metadata={"help": "The deadline, in seconds, for time between tokens."},
     )
     target_deadline_miss_rate: float = field(
         default=0.1,
         metadata={
-            "help": "The target deadline miss rate. Used to report smallest TBT deadline that would meet it."
+            "help": "The target deadline miss rate [0,1]. Used to report smallest TBT deadline that would meet it.",
         },
     )
 
