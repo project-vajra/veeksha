@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import time
@@ -93,9 +94,7 @@ class OpenAICompletionsClient(BaseLLMClient):
         request_dispatched_at = time.monotonic() - self.start_time
 
         try:
-            async with session.post(
-                address, json=body, headers=headers
-            ) as response:
+            async with session.post(address, json=body, headers=headers) as response:
                 if response.status != 200:
                     error_response_code = response.status
                     error_msg = await response.text()
@@ -103,6 +102,7 @@ class OpenAICompletionsClient(BaseLLMClient):
                     response.raise_for_status()
 
                 buffer = b""
+                stream_done = False
                 async for chunk_bytes in response.content.iter_any():
                     buffer += chunk_bytes
                     while b"\n" in buffer:
@@ -118,6 +118,7 @@ class OpenAICompletionsClient(BaseLLMClient):
 
                         if payload == "[DONE]":
                             buffer = b""
+                            stream_done = True
                             break
 
                         try:
@@ -130,6 +131,7 @@ class OpenAICompletionsClient(BaseLLMClient):
                             err = data.get("error") or {}
                             error_msg = err.get("message", "Unknown error")
                             error_response_code = err.get("code")
+                            stream_done = True
                             break
 
                         text_chunk = data["choices"][0].get("text", "")
@@ -149,6 +151,10 @@ class OpenAICompletionsClient(BaseLLMClient):
                             generated_text += text_chunk
                             if "logprobs" in data["choices"][0]:
                                 logprobs = data["choices"][0]["logprobs"]
+                    if stream_done:
+                        break
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             logger.error(f"Warning Or Error: ({error_response_code}) {e}")
 

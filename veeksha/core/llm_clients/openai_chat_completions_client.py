@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import time
@@ -93,9 +94,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
         request_dispatched_at = time.monotonic() - self.start_time
 
         try:
-            async with session.post(
-                address, json=body, headers=headers
-            ) as response:
+            async with session.post(address, json=body, headers=headers) as response:
                 if response.status != 200:
                     error_response_code = response.status
                     error_msg = await response.text()
@@ -103,6 +102,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
                     response.raise_for_status()
 
                 buffer = b""
+                stream_done = False
                 async for chunk_bytes in response.content.iter_any():
                     buffer += chunk_bytes
                     while b"\n" in buffer:
@@ -114,6 +114,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
                         payload = line[len(stem) :] if line.startswith(stem) else line
                         if payload == "[DONE]":
                             buffer = b""
+                            stream_done = True
                             break
                         try:
                             data = json.loads(payload)
@@ -125,6 +126,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
                             err = data.get("error") or {}
                             error_msg = err.get("message", "Unknown error")
                             error_response_code = err.get("code")
+                            stream_done = True
                             break
 
                         delta = data["choices"][0]["delta"]
@@ -148,6 +150,10 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
                                 )
                             most_recent_received_token_time = time.monotonic()
                             generated_text += delta["content"]
+                    if stream_done:
+                        break
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             logger.error(f"Warning Or Error: ({error_response_code}) {e}")
 
