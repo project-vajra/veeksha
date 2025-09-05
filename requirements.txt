@@ -15,5 +15,4 @@ scikit-learn
 pandas
 jinja2
 lm_eval
-aiohttp>=3.9.0
-aiofiles>=23.0.0
+aiohttp
