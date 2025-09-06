@@ -219,10 +219,15 @@ def explode_dict(
                     try:
                         typed_child_name = cls.base_poly_children_types[
                             stripped_prefix
-                        ][data["type"]]
+                        ][data["type"].lower()]
                         prefixed_key = f"{typed_child_name}_{key}"
                     except KeyError:
-                        prefixed_key = f"Cannot find type {data['type']} in {cls.base_poly_children_types[stripped_prefix]}"
+                        valid = list(
+                            cls.base_poly_children_types.get(stripped_prefix, {}).keys()
+                        )
+                        raise ValueError(
+                            f"Invalid type '{data['type']}' for '{stripped_prefix}_type'. Valid types: {valid}"
+                        ) from None
                 else:
                     prefixed_key = f"{current_prefix}{key}"
 
@@ -382,20 +387,26 @@ def reconstruct_original_dataclass(self) -> Any:
             _cls
         ]:
             if is_subclass(field_type, BasePolyConfig):
+                # pick the instantiated child that matches the selected type
                 config_type = getattr(self, f"{prefixed_field_name}_type")
-                # find all subclasses of field_type and check which one matches the config_type
-                config_type_matched = False
-                # base poly children contains all subclasses of the base poly config
-                for child_name, child_cls in self.base_poly_children[
-                    prefixed_field_name
-                ].items():
-                    if str(child_cls.get_type()) == config_type:
-                        config_type_matched = True
-                        args[original_field_name] = instances[child_name]
-                        break
-                assert (
-                    config_type_matched
-                ), f"Invalid type {config_type} for {prefixed_field_name}_type. Valid types: {[str(subclass.get_type()) for subclass in get_all_subclasses(field_type)]}"
+                if config_type == "None":
+                    args[original_field_name] = None
+                else:
+                    type_key = config_type.lower()
+                    try:
+                        child_node_name = self.base_poly_children_types[
+                            prefixed_field_name
+                        ][type_key]
+                    except KeyError:
+                        valid = list(
+                            self.base_poly_children_types.get(
+                                prefixed_field_name, {}
+                            ).keys()
+                        )
+                        raise ValueError(
+                            f"Invalid type '{config_type}' for '{prefixed_field_name}_type'. Valid types: {valid}"
+                        ) from None
+                    args[original_field_name] = instances[child_node_name]
             # child dataclass has already been instantiated, so just assign it
             elif hasattr(field_type, "__dataclass_fields__"):
                 # find the dependency name corresponding to this field's type.
@@ -899,30 +910,30 @@ def _handle_polymorphic_config_field(
     # process all subclasses of the polymorphic config
     assert hasattr(field_type, "__dataclass_fields__")
     for subclass in get_all_subclasses(field_type):
-        child_name = prefix + to_snake_case(subclass.__name__)
-        state["base_poly_children"][prefixed_name][child_name] = subclass
-        state["base_poly_children_types"][prefixed_name][
-            subclass.get_type().name.lower()
-        ] = child_name
-        state["dataclass_dependencies"][prefixed_input_dataclass].append(child_name)
-
-        _process_single_dataclass(
-            state, subclass, f"{to_snake_case(prefix[:-1] + subclass.__name__)}_"
+        type_key = subclass.get_type().name.lower()
+        child_node_name = f"{prefix}{to_snake_case(type_key)}_{field.name}"
+        # map the child node name to the subclass
+        state["base_poly_children"][prefixed_name][child_node_name] = subclass
+        # map type -> child node name
+        state["base_poly_children_types"][prefixed_name][type_key] = child_node_name
+        # ensure parent depends on this child node name
+        state["dataclass_dependencies"][prefixed_input_dataclass].append(
+            child_node_name
         )
+
+        _process_single_dataclass(state, subclass, f"{child_node_name}_")
 
 
 def _handle_nested_dataclass_field(
-    state, field, field_type, prefixed_name, prefixed_input_dataclass, prefix
+    state, field, field_type, prefixed_name, prefixed_input_dataclass
 ):
     """Process a field that is a nested dataclass."""
-    dependency_name = prefix + to_snake_case(field_type.__name__)
+    dependency_name = prefixed_name
     state["dataclass_dependencies"][prefixed_input_dataclass].append(dependency_name)
     state["dataclass_args"][prefixed_input_dataclass].append(
         (prefixed_name, field.name, field_type)
     )
-    _process_single_dataclass(
-        state, field_type, f"{prefix + to_snake_case(field_type.__name__)}_"
-    )
+    _process_single_dataclass(state, field_type, f"{prefixed_name}_")
 
 
 def _handle_primitive_field(
@@ -987,7 +998,7 @@ def _process_single_dataclass(state, input_dataclass, prefix=""):
             )
         elif hasattr(field_type, "__dataclass_fields__"):
             _handle_nested_dataclass_field(
-                state, field, field_type, prefixed_name, prefixed_class_name, prefix
+                state, field, field_type, prefixed_name, prefixed_class_name
             )
         else:
             _handle_primitive_field(

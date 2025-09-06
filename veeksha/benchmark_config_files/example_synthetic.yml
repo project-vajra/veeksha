@@ -10,7 +10,7 @@ client_config:
   llm_api: "openai_chat"
     
 request_generator_config:
-  type: "synthetic"
+  type: "shua"
   interval_generator_config:
     type: "poisson"
   length_generator_config:
