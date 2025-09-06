@@ -915,7 +915,7 @@ def _handle_polymorphic_config_field(
 
 
 def _handle_nested_dataclass_field(
-    state, field, field_type, prefixed_name, prefixed_input_dataclass, prefix
+    state, field, field_type, prefixed_name, prefixed_input_dataclass
 ):
     """Process a field that is a nested dataclass."""
     dependency_name = prefixed_name
@@ -988,7 +988,7 @@ def _process_single_dataclass(state, input_dataclass, prefix=""):
             )
         elif hasattr(field_type, "__dataclass_fields__"):
             _handle_nested_dataclass_field(
-                state, field, field_type, prefixed_name, prefixed_class_name, prefix
+                state, field, field_type, prefixed_name, prefixed_class_name
             )
         else:
             _handle_primitive_field(
