@@ -17,7 +17,7 @@ class MetricsConfig:
             "help": "Whether to add directly use output_dir directory or create new directories for the results."
         },
     )
-    deadline_reporting: DeadlineReportConfig = field(
+    deadline_report: DeadlineReportConfig = field(
         default_factory=DeadlineReportConfig,
         metadata={"help": "Reporting-only deadline thresholds for derived metrics."},
     )

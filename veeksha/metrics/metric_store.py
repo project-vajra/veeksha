@@ -43,10 +43,10 @@ class MetricStore:
         self.start_time: Optional[float] = None
         self.end_time: Optional[float] = None
         self.error_code_freq: DefaultDict[int, int] = defaultdict(int)
-        self.ttft_deadline: float = metrics_config.deadline_reporting.ttft_deadline
-        self.tbt_deadline: float = metrics_config.deadline_reporting.tbt_deadline
+        self.ttft_deadline: float = metrics_config.deadline_report.ttft_deadline
+        self.tbt_deadline: float = metrics_config.deadline_report.tbt_deadline
         self.target_deadline_miss_rate: float = (
-            metrics_config.deadline_reporting.target_deadline_miss_rate
+            metrics_config.deadline_report.target_deadline_miss_rate
         )
         self.service_level_missed_deadlines: int = 0
         self.service_level_total_deadlines: int = 0
@@ -58,7 +58,7 @@ class MetricStore:
         self.wandb_run_name: Optional[str] = metrics_config.wandb_run_name
 
         self.request_level_metrics = RequestLevelMetrics(
-            deadline_config=metrics_config.deadline_reporting,
+            deadline_config=metrics_config.deadline_report,
         )
 
         self.summaries: Dict[str, CDFSketch] = {
