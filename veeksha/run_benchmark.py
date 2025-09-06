@@ -250,7 +250,6 @@ def run_benchmark(
     service_metrics = ServiceMetrics(
         max_requests=max_requests,
         timeout=benchmark_config.timeout,
-        deadline_config=benchmark_config.deadline_config,
         metrics_config=benchmark_config.metrics_config,
     )
 

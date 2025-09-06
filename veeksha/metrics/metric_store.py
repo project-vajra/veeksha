@@ -1,12 +1,13 @@
 import json
 import os
+from collections import defaultdict
+from itertools import accumulate
 from typing import DefaultDict, Dict, Optional
 
 import pandas as pd
 import plotly.express as px
 import wandb
 
-from veeksha.config.deadline import DeadlineConfig
 from veeksha.config.metrics import MetricsConfig
 from veeksha.logger import init_logger
 from veeksha.metrics.cdf_sketch import CDFSketch
@@ -31,7 +32,6 @@ class MetricStore:
         self,
         timeout: float,
         max_requests: int,
-        deadline_config: DeadlineConfig,
         metrics_config: MetricsConfig,
     ) -> None:
         self.timeout = timeout
@@ -42,58 +42,66 @@ class MetricStore:
         self.num_completed_requests: int = 0
         self.start_time: Optional[float] = None
         self.end_time: Optional[float] = None
-        self.error_code_freq: DefaultDict[int, int] = DefaultDict(int)
-        self.ttft_deadline = deadline_config.ttft_deadline
-        self.tbt_deadline = deadline_config.tbt_deadline
-        self.target_deadline_miss_rate = deadline_config.target_deadline_miss_rate
-        self.service_level_missed_deadlines = 0
-        self.service_level_total_deadlines = 0
-        self.should_write_metrics = metrics_config.should_write_metrics
-        self.wandb_project = metrics_config.wandb_project
-        self.wandb_group = metrics_config.wandb_group
-        self.wandb_run_name = metrics_config.wandb_run_name
+        self.error_code_freq: DefaultDict[int, int] = defaultdict(int)
+        self.ttft_deadline: float = metrics_config.deadline_report.ttft_deadline
+        self.tbt_deadline: float = metrics_config.deadline_report.tbt_deadline
+        self.target_deadline_miss_rate: float = (
+            metrics_config.deadline_report.target_deadline_miss_rate
+        )
+        self.service_level_missed_deadlines: int = 0
+        self.service_level_total_deadlines: int = 0
+        self.should_write_metrics_to_wandb: bool = (
+            metrics_config.should_write_metrics_to_wandb
+        )
+        self.wandb_project: Optional[str] = metrics_config.wandb_project
+        self.wandb_group: Optional[str] = metrics_config.wandb_group
+        self.wandb_run_name: Optional[str] = metrics_config.wandb_run_name
 
         self.request_level_metrics = RequestLevelMetrics(
-            deadline_config=deadline_config,
+            deadline_config=metrics_config.deadline_report,
         )
 
         self.summaries: Dict[str, CDFSketch] = {
             "num_prompt_tokens": CDFSketch(
-                "Number of Prompt Tokens", self.should_write_metrics
+                "Number of Prompt Tokens", self.should_write_metrics_to_wandb
             ),
             "num_output_tokens": CDFSketch(
-                "Number of Output Tokens", self.should_write_metrics
+                "Number of Output Tokens", self.should_write_metrics_to_wandb
             ),
             "num_total_tokens": CDFSketch(
-                "Number of Total Tokens", self.should_write_metrics
+                "Number of Total Tokens", self.should_write_metrics_to_wandb
             ),
-            "tpot": CDFSketch("Time per Output Token", self.should_write_metrics),
-            "ttft": CDFSketch("Time to First Token", self.should_write_metrics),
-            "tbt": CDFSketch("Time Between Tokens", self.should_write_metrics),
+            "tpot": CDFSketch(
+                "Time per Output Token", self.should_write_metrics_to_wandb
+            ),
+            "ttft": CDFSketch(
+                "Time to First Token", self.should_write_metrics_to_wandb
+            ),
+            "tbt": CDFSketch("Time Between Tokens", self.should_write_metrics_to_wandb),
             "end_to_end_latency": CDFSketch(
-                "End to End Latency", self.should_write_metrics
+                "End to End Latency", self.should_write_metrics_to_wandb
             ),
             "normalized_end_to_end_latency": CDFSketch(
-                "Normalized End to End Latency", self.should_write_metrics
+                "Normalized End to End Latency", self.should_write_metrics_to_wandb
             ),
             "output_throughput": CDFSketch(
-                "Output Throughput", self.should_write_metrics
+                "Output Throughput", self.should_write_metrics_to_wandb
             ),
             "deadline_miss_rate": CDFSketch(
                 f"Deadline Miss Rate with {self.tbt_deadline}s TBT Deadline, {self.ttft_deadline}s TTFT Deadline",
-                self.should_write_metrics,
+                self.should_write_metrics_to_wandb,
             ),
             "min_tbt_deadline_to_meet": CDFSketch(
                 f"Min Deadline to Meet Target Deadline Miss Rate of {self.target_deadline_miss_rate * 100}%",
-                self.should_write_metrics,
+                self.should_write_metrics_to_wandb,
             ),
         }
 
         self._init_wandb()
 
     def _init_wandb(self):
-        if not self.should_write_metrics:
-            logger.warning("wandb not initialized")
+        if not self.should_write_metrics_to_wandb:
+            logger.info("wandb disabled; not initialized")
             return
 
         wandb.init(
@@ -108,7 +116,7 @@ class MetricStore:
                 "target_deadline_miss_rate": self.target_deadline_miss_rate,
             },
         )
-        logger.info("wandb initialized")
+        logger.info("wandb enabled")
 
     @property
     def error_rate(self):
@@ -166,7 +174,7 @@ class MetricStore:
             "Deadline Miss Rate": (
                 self.service_level_missed_deadlines / self.service_level_total_deadlines
                 if self.service_level_total_deadlines > 0
-                else 0
+                else 0.0
             ),
         }
 
@@ -194,7 +202,7 @@ class MetricStore:
             metric_summary.plot_cdf(output_dir, metric_name, metric_name)
 
         # store service level deadline stats
-        with open(f"{output_dir}/service_level_metrics.json", "w") as f:
+        with open(os.path.join(output_dir, "service_level_metrics.json"), "w") as f:
             json.dump(
                 {
                     "service_level_missed_deadlines": self.service_level_missed_deadlines,
@@ -203,7 +211,7 @@ class MetricStore:
                         self.service_level_missed_deadlines
                         / self.service_level_total_deadlines
                         if self.service_level_total_deadlines > 0
-                        else 0
+                        else 0.0
                     ),
                 },
                 f,
@@ -254,12 +262,15 @@ class MetricStore:
         df = pd.DataFrame(data)
 
         with open(
-            f"{output_dir}/p{percentile_value}_deadline_miss_rate_for_target_tbt_values.json",
+            os.path.join(
+                output_dir,
+                f"p{percentile_value}_deadline_miss_rate_for_target_tbt_values.json",
+            ),
             "w",
         ) as f:
             json.dump(data, f)
 
-        if self.should_write_metrics and wandb.run:
+        if self.should_write_metrics_to_wandb and wandb.run:
             # plot deadline miss rate for target TBT values
             wandb.log(
                 {
@@ -288,7 +299,7 @@ class MetricStore:
             "deadline_based_throughput": deadline_based_throughput,
         }
 
-        with open(f"{output_dir}/throughput_metrics.json", "w") as f:
+        with open(os.path.join(output_dir, "throughput_metrics.json"), "w") as f:
             json.dump(throughput_metrics, f)
 
         # log plot of throughput metrics to wandb
@@ -302,7 +313,7 @@ class MetricStore:
         }
         df = pd.DataFrame(data)
 
-        if self.should_write_metrics and wandb.run:
+        if self.should_write_metrics_to_wandb and wandb.run:
             wandb.log(
                 {
                     "throughput_metrics": wandb.plot.bar(
@@ -338,8 +349,8 @@ class MetricStore:
             xaxis_title="Number of Prompt Tokens",
             yaxis_title="TTFT (s)",
         )
-        fig.write_image(f"{output_dir}/ttft_violin_plot.png")
-        if self.should_write_metrics and wandb.run:
+        fig.write_image(os.path.join(output_dir, "ttft_violin_plot.png"))
+        if self.should_write_metrics_to_wandb and wandb.run:
             wandb.log({"ttft_violin_plot": fig})
             wandb.log({"ttft_violin_data": wandb.Table(dataframe=df)})
 
@@ -350,8 +361,7 @@ class MetricStore:
         token_generated_times = [
             self.request_level_metrics.ttft[request_idx]
         ] + self.request_level_metrics.tbt[request_idx]
-        for i in range(1, len(token_generated_times)):
-            token_generated_times[i] += token_generated_times[i - 1]
+        token_generated_times = list(accumulate(token_generated_times))
         tokens_generated = list(range(1, len(token_generated_times) + 1))
         data = {
             "Time (s)": token_generated_times,
@@ -363,6 +373,6 @@ class MetricStore:
             y="Tokens Generated",
             title="Tokens Generated vs Time",
         )
-        fig.write_image(f"{output_dir}/tokens_generated_vs_time.png")
-        if self.should_write_metrics and wandb.run:
+        fig.write_image(os.path.join(output_dir, "tokens_generated_vs_time.png"))
+        if self.should_write_metrics_to_wandb and wandb.run:
             wandb.log({"tokens_generated_vs_time": fig})
