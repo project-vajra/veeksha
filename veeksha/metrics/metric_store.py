@@ -211,7 +211,7 @@ class MetricStore:
                         self.service_level_missed_deadlines
                         / self.service_level_total_deadlines
                         if self.service_level_total_deadlines > 0
-                        else 0
+                        else 0.0
                     ),
                 },
                 f,
