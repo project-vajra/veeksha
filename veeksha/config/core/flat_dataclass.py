@@ -222,7 +222,12 @@ def explode_dict(
                         ][data["type"].lower()]
                         prefixed_key = f"{typed_child_name}_{key}"
                     except KeyError:
-                        prefixed_key = f"Cannot find type {data['type']} in {cls.base_poly_children_types[stripped_prefix]}"
+                        valid = list(
+                            cls.base_poly_children_types.get(stripped_prefix, {}).keys()
+                        )
+                        raise ValueError(
+                            f"Invalid type '{data['type']}' for '{stripped_prefix}_type'. Valid types: {valid}"
+                        ) from None
                 else:
                     prefixed_key = f"{current_prefix}{key}"
 
@@ -393,9 +398,14 @@ def reconstruct_original_dataclass(self) -> Any:
                             prefixed_field_name
                         ][type_key]
                     except KeyError:
-                        raise ValueError(
-                            f"Invalid type '{config_type}' for '{prefixed_field_name}_type'. Valid types: {[str(subclass.get_type()) for subclass in get_all_subclasses(field_type)]}"
+                        valid = list(
+                            self.base_poly_children_types.get(
+                                prefixed_field_name, {}
+                            ).keys()
                         )
+                        raise ValueError(
+                            f"Invalid type '{config_type}' for '{prefixed_field_name}_type'. Valid types: {valid}"
+                        ) from None
                     args[original_field_name] = instances[child_node_name]
             # child dataclass has already been instantiated, so just assign it
             elif hasattr(field_type, "__dataclass_fields__"):
