@@ -64,6 +64,7 @@ class RequestsLauncher:
         for thread in client_threads:
             thread.start()
 
+        # AsyncIO correctness fix: join all the threads
         for thread in client_threads:
             thread.join()
 
