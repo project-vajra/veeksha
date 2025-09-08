@@ -14,6 +14,14 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
         default="data/processed_traces/sharegpt_8k_filtered_stats_llama2_tokenizer.csv",
         metadata={"help": "Path to the trace file for request lengths."},
     )
+    input_length_column: str = field(
+        default="num_prefill_tokens",
+        metadata={"help": "Name of the column containing the input (prefill) length."},
+    )
+    output_length_column: str = field(
+        default="num_decode_tokens",
+        metadata={"help": "Name of the column containing the output (decode) length."},
+    )
     max_tokens: int = field(
         default=4096,
         metadata={"help": "Maximum number of tokens allowed in a request."},
@@ -44,7 +52,14 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
             raise ValueError(
                 f"{self.__class__.__name__}: decode_scale_factor cannot be negative"
             )
-
+        if self.input_length_column == self.output_length_column:
+            raise ValueError(
+                f"{self.__class__.__name__}: input_length_column and output_length_column must differ"
+            )
+        if not (self.max_tokens == -1 or self.max_tokens > 0):
+            raise ValueError(
+                f"{self.__class__.__name__}: max_tokens must be -1 (no cap) or > 0; got {self.max_tokens}"
+            )
         # block_size must be > 0
         if self.block_size <= 0:
             raise ValueError(f"{self.__class__.__name__}: block_size must be positive")

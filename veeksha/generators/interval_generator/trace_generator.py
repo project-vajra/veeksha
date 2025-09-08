@@ -19,12 +19,17 @@ class TraceRequestIntervalGenerator(BaseRequestIntervalGenerator):
     def __init__(self, config: TraceRequestIntervalGeneratorConfig):
         self.config = config
 
-        self.trace_df = load_trace(self.config.trace_file)
+        raw_trace_df = load_trace(self.config.trace_file)
 
-        process_request_interval_trace(
-            self.trace_df,
+        # canonical column names
+        self.interval_column_map = {self.config.timestamp_column: "timestamp"}
+
+        self.trace_df = process_request_interval_trace(
+            raw_trace_df,
             self.config.trace_file,
+            self.interval_column_map,
             self.config.time_scale_factor,
+            self.config.timestamp_unit,
         )
 
         logger.info(
