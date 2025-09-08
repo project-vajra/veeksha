@@ -3,6 +3,7 @@ from typing import Dict, Optional
 import numpy as np
 import pandas as pd
 
+from veeksha.constants.configuration_constants import SCALE_TO_SECONDS
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
@@ -78,7 +79,7 @@ def process_request_length_trace(
     new_trace_df["output_length"] = new_trace_df["output_length"].astype(int)
 
     bad = (new_trace_df["input_length"] <= 0) | (new_trace_df["output_length"] <= 0)
-    if bool(bad.to_numpy().any()):
+    if bad.any():
         bad_idx = new_trace_df.index[bad].tolist()[:5]
         raise ValueError(
             f"{bad.sum()} rows have nonpositive token counts (e.g., indices {bad_idx}). "
@@ -93,10 +94,9 @@ def process_request_length_trace(
 
         diff_tokens = (total_tokens - max_tokens).clip(lower=0)
 
-        # Compute ratios safely to avoid divide-by-zero when total_tokens == 0
-        safe_denominator = total_tokens.replace(0, 1)
-        input_length_ratio = new_trace_df["input_length"] / safe_denominator
-        output_length_ratio = new_trace_df["output_length"] / safe_denominator
+        # proportional adjustment
+        input_length_ratio = new_trace_df["input_length"] / total_tokens
+        output_length_ratio = new_trace_df["output_length"] / total_tokens
 
         new_trace_df["input_length"] -= (
             np.ceil(diff_tokens * input_length_ratio)
@@ -109,27 +109,36 @@ def process_request_length_trace(
         new_trace_df["input_length"] = new_trace_df["input_length"].clip(lower=1)
         new_trace_df["output_length"] = new_trace_df["output_length"].clip(lower=1)
 
-        assert all(
-            new_trace_df["input_length"] + new_trace_df["output_length"] <= max_tokens
-        ), f"Total tokens after clipping must be less than or equal to {max_tokens}"
+        overflow = (
+            new_trace_df["input_length"] + new_trace_df["output_length"] > max_tokens
+        )
+        if overflow.any():
+            bad_idx = new_trace_df.index[overflow].tolist()[:5]
+            raise ValueError(
+                f"Total tokens after clipping must be less <= {max_tokens}. Overflow at indices {bad_idx}."
+            )
     else:
         # No max cap: just ensure both are at least one
         new_trace_df["input_length"] = new_trace_df["input_length"].clip(lower=1)
         new_trace_df["output_length"] = new_trace_df["output_length"].clip(lower=1)
 
-    assert all(
-        new_trace_df["input_length"] > 0
-    ), f"All prefill tokens in length trace file {trace_file} must be greater than 0"
-
-    assert all(
-        new_trace_df["output_length"] > 0
-    ), f"All decode tokens in length trace file {trace_file} must be greater than 0"
+    if (new_trace_df["input_length"] <= 0).any():
+        bad_idx = new_trace_df.index[new_trace_df["input_length"] <= 0].tolist()[:5]
+        raise ValueError(
+            f"All prefill tokens must be > 0 in length trace file {trace_file}; e.g., indices {bad_idx}."
+        )
+    if (new_trace_df["output_length"] <= 0).any():
+        bad_idx = new_trace_df.index[new_trace_df["output_length"] <= 0].tolist()[:5]
+        raise ValueError(
+            f"All decode tokens must be > 0 in length trace file {trace_file}; e.g., indices {bad_idx}."
+        )
 
     # compute pd ratio and log the 25, 50, 75, 90, 95, 99 percentiles
     pd_ratio = new_trace_df["input_length"] / new_trace_df["output_length"]
 
     logger.info(
-        f"Prompt/decode token ratio stats\n:{pd_ratio.describe(percentiles=[0.25, 0.5, 0.75, 0.9, 0.95, 0.99])}"
+        "Prompt/decode token ratio stats\n%s",
+        pd_ratio.describe(percentiles=[0.25, 0.5, 0.75, 0.9, 0.95, 0.99]),
     )
 
     return new_trace_df
@@ -177,10 +186,6 @@ def process_request_interval_trace(
             f"Interval trace file must have column 'timestamp'. Available: {list(new_trace_df.columns)}"
         )
 
-    scale_to_seconds = {
-        "ms": 1e-3,
-        "s": 1.0,
-    }
     new_trace_df["timestamp"] = pd.to_numeric(
         new_trace_df["timestamp"], errors="coerce"
     )
@@ -191,7 +196,7 @@ def process_request_interval_trace(
         )
     if timestamp_unit != "s":
         new_trace_df["timestamp"] = (
-            new_trace_df["timestamp"] * scale_to_seconds[timestamp_unit]
+            new_trace_df["timestamp"] * SCALE_TO_SECONDS[timestamp_unit]
         )
 
     # Fail fast if timestamps are not increasing (unordered requests)
