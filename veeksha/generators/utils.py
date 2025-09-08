@@ -36,7 +36,7 @@ def process_request_length_trace(
     - The input_length and output_length are scaled by `prefill_scale_factor` and `decode_scale_factor` respectively.
     - If `max_tokens` is provided, the input_length and output_length are adjusted to ensure the total number of tokens does not exceed `max_tokens`.
     - The input_length and output_length are converted to integers.
-    - The input_length and output_length are clipped to be greater than 0.
+    - The input_length and output_length must be > 0; a ValueError is raised otherwise.
     - The input_length and output_length are clipped to be less than or equal to `max_tokens`.
     - Columns are renamed according to `column_map`.
 
@@ -86,7 +86,7 @@ def process_request_length_trace(
         )
 
     # If max_tokens > 0, ensure total tokens do not exceed it and adjust proportionally
-    if max_tokens and max_tokens > 0:
+    if max_tokens > 0:
         total_tokens = new_trace_df["input_length"] + new_trace_df["output_length"]
         if np.any(total_tokens.to_numpy() == 0):
             raise ValueError("Zero total tokens after scaling; cannot compute ratios.")
@@ -147,6 +147,7 @@ def process_request_interval_trace(
 
     - Timestamps are converted to seconds (canonical time unit) given `timestamp_unit`.
     - `inter_request_time` is created as the time difference between consecutive requests.
+      The first interval equals the first (absolute) timestamp value.
     - `inter_request_time` is scaled by `time_scale_factor`.
     - Columns are renamed according to `column_map`.
 

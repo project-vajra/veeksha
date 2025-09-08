@@ -90,8 +90,10 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
             raise ValueError(
                 f"{self.__class__.__name__}: input_length_column and output_length_column must differ"
             )
-        if self.max_tokens == 0:
-            raise ValueError(f"{self.__class__.__name__}: max_tokens cannot be 0")
+        if not (self.max_tokens == -1 or self.max_tokens > 0):
+            raise ValueError(
+                f"{self.__class__.__name__}: max_tokens must be -1 (no cap) or > 0; got {self.max_tokens}"
+            )
         if self.time_scale_factor < 0:
             raise ValueError(
                 f"{self.__class__.__name__}: time_scale_factor cannot be negative"
