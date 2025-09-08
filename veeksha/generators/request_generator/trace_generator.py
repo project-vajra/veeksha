@@ -90,9 +90,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 # get next request intervals again because session sampling shuffles sessions
                 process_request_interval_trace,
                 self.config.trace_file,
-                self.interval_column_map,
+                None,  # colnames are already canonical
                 self.config.time_scale_factor,
-                self.config.timestamp_unit,
+                "s",  # self.trace_df has already been converted to seconds
             )
 
             # convert timestamps to milliseconds (default time units) before saving

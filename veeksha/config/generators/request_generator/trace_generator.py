@@ -26,15 +26,9 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
         default="num_decode_tokens",
         metadata={"help": "Name of the column containing the output (decode) length."},
     )
-    timestamp_column: str = field(
-        default="timestamp",
-        metadata={"help": "Name of the column containing request timestamps."},
-    )
-    timestamp_unit: str = field(
-        default="ms",
-        metadata={
-            "help": "Unit of the timestamps in the trace file. Must be either 'ms' or 's'."
-        },
+    max_tokens: int = field(
+        default=4096,
+        metadata={"help": "Maximum number of tokens allowed in a request."},
     )
     prefill_scale_factor: float = field(
         default=1, metadata={"help": "Scale factor for prefill tokens."}
@@ -44,6 +38,16 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     )
     block_size: int = field(
         default=512, metadata={"help": "Number of tokens per block."}
+    )
+    timestamp_column: str = field(
+        default="timestamp",
+        metadata={"help": "Name of the column containing request timestamps."},
+    )
+    timestamp_unit: str = field(
+        default="ms",
+        metadata={
+            "help": "Unit of the timestamps in the trace file. Must be either 'ms' or 's'."
+        },
     )
     time_scale_factor: float = field(
         default=1, metadata={"help": "Scale factor for request dispatch intervals."}
@@ -82,6 +86,12 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
             raise ValueError(
                 f"{self.__class__.__name__}: decode_scale_factor cannot be negative"
             )
+        if self.input_length_column == self.output_length_column:
+            raise ValueError(
+                f"{self.__class__.__name__}: input_length_column and output_length_column must differ"
+            )
+        if self.max_tokens == 0:
+            raise ValueError(f"{self.__class__.__name__}: max_tokens cannot be 0")
         if self.time_scale_factor < 0:
             raise ValueError(
                 f"{self.__class__.__name__}: time_scale_factor cannot be negative"

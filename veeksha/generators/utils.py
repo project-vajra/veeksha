@@ -56,10 +56,11 @@ def process_request_length_trace(
     new_trace_df = trace_df.copy()
 
     if column_map is not None:
-        if any(col not in new_trace_df.columns for col in column_map.keys()):
-            raise ValueError(
-                f"Length trace file does not have columns {list(column_map.keys())}. Available: {list(new_trace_df.columns)}"
-            )
+        for col in column_map.keys():
+            if col not in new_trace_df.columns:
+                raise ValueError(
+                    f"Length trace file does not have column {col}. Available: {list(new_trace_df.columns)}"
+                )
         new_trace_df = new_trace_df.rename(columns=column_map, errors="ignore")
 
     for col in ["input_length", "output_length"]:
@@ -77,7 +78,7 @@ def process_request_length_trace(
     new_trace_df["output_length"] = new_trace_df["output_length"].astype(int)
 
     bad = (new_trace_df["input_length"] <= 0) | (new_trace_df["output_length"] <= 0)
-    if bad.any():
+    if bool(bad.to_numpy().any()):
         bad_idx = new_trace_df.index[bad].tolist()[:5]
         raise ValueError(
             f"{bad.sum()} rows have nonpositive token counts (e.g., indices {bad_idx}). "
@@ -142,9 +143,9 @@ def process_request_interval_trace(
     timestamp_unit: str = "ms",
 ) -> pd.DataFrame:
     """
-    Postprocess a trace dataframe containing request timestamps `timestamp`:
+    Postprocess a trace dataframe containing request timestamps:
 
-    - If `ms_to_s` is True, the timestamps are converted to seconds.
+    - Timestamps are converted to seconds (canonical time unit) given `timestamp_unit`.
     - `inter_request_time` is created as the time difference between consecutive requests.
     - `inter_request_time` is scaled by `time_scale_factor`.
     - Columns are renamed according to `column_map`.
@@ -163,10 +164,11 @@ def process_request_interval_trace(
     new_trace_df = trace_df.copy()
 
     if column_map is not None:
-        if any(col not in new_trace_df.columns for col in column_map.keys()):
-            raise ValueError(
-                f"Interval trace file does not have columns {list(column_map.keys())}. Available: {list(new_trace_df.columns)}"
-            )
+        for col in column_map.keys():
+            if col not in new_trace_df.columns:
+                raise ValueError(
+                    f"Interval trace file does not have column {col}. Available: {list(new_trace_df.columns)}"
+                )
         new_trace_df = new_trace_df.rename(columns=column_map, errors="ignore")
 
     if "timestamp" not in new_trace_df.columns:
@@ -178,9 +180,27 @@ def process_request_interval_trace(
         "ms": 1e-3,
         "s": 1.0,
     }
+    new_trace_df["timestamp"] = pd.to_numeric(
+        new_trace_df["timestamp"], errors="coerce"
+    )
+    if bool(new_trace_df["timestamp"].isna().to_numpy().any()):
+        bad_idx = new_trace_df.index[new_trace_df["timestamp"].isna()].tolist()[:5]
+        raise ValueError(
+            f"Non-numeric timestamps found in interval trace file {trace_file} at indices {bad_idx}."
+        )
     if timestamp_unit != "s":
         new_trace_df["timestamp"] = (
             new_trace_df["timestamp"] * scale_to_seconds[timestamp_unit]
+        )
+
+    # Fail fast if timestamps are not increasing (unordered requests)
+    ts_diff = new_trace_df["timestamp"].diff()
+    decreasing = ts_diff < 0
+    if bool(decreasing.to_numpy().any()):
+        bad_positions = decreasing[decreasing].index.tolist()[:5]
+        raise ValueError(
+            f"Timestamps are not increasing in interval trace file {trace_file}. "
+            f"Decreasing at indices {bad_positions}."
         )
 
     # The interval for the first request is its own timestamp. Subsequent intervals are the time difference

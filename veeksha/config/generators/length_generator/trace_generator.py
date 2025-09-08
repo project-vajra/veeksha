@@ -52,6 +52,12 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
             raise ValueError(
                 f"{self.__class__.__name__}: decode_scale_factor cannot be negative"
             )
+        if self.input_length_column == self.output_length_column:
+            raise ValueError(
+                f"{self.__class__.__name__}: input_length_column and output_length_column must differ"
+            )
+        if self.max_tokens == 0:
+            raise ValueError(f"{self.__class__.__name__}: max_tokens cannot be 0")
 
         # block_size must be > 0
         if self.block_size <= 0:
