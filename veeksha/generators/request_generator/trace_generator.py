@@ -36,20 +36,28 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self.client_config = client_config
         self.past_prompts: Dict[int, str] = {}
 
-        self.trace_df = load_trace(self.config.trace_file)
+        raw_trace_df = load_trace(self.config.trace_file)
 
-        process_request_length_trace(
-            self.trace_df,
+        # canonical column names
+        self.length_column_map = {
+            self.config.input_length_column: "input_length",
+            self.config.output_length_column: "output_length",
+        }
+        self.interval_column_map = {self.config.timestamp_column: "timestamp"}
+
+        self.trace_df = raw_trace_df.pipe(
+            process_request_length_trace,
             self.config.trace_file,
+            self.length_column_map,
             self.config.prefill_scale_factor,
             self.config.decode_scale_factor,
             self.config.max_tokens,
-        )
-
-        process_request_interval_trace(
-            self.trace_df,
+        ).pipe(
+            process_request_interval_trace,
             self.config.trace_file,
+            self.interval_column_map,
             self.config.time_scale_factor,
+            self.config.timestamp_unit,
         )
 
         logger.info(
@@ -75,19 +83,19 @@ class TraceRequestGenerator(BaseRequestGenerator):
             self.session_generator = SessionGenerator(
                 self.config.session_generator_config
             )
-            self.trace_df_with_sessions = self.session_generator.generate_sessions(
-                self.trace_df
-            )
 
-            # get next request intervals again because session sampling shuffles sessions
-            process_request_interval_trace(
-                self.trace_df_with_sessions,
+            self.trace_df_with_sessions = self.trace_df.pipe(
+                self.session_generator.generate_sessions,
+            ).pipe(
+                # get next request intervals again because session sampling shuffles sessions
+                process_request_interval_trace,
                 self.config.trace_file,
+                self.interval_column_map,
                 self.config.time_scale_factor,
-                ms_to_s=False,
+                self.config.timestamp_unit,
             )
 
-            # convert timestamps to milliseconds for saving (as expected by trace format)
+            # convert timestamps to milliseconds (default time units) before saving
             session_df_for_saving = self.trace_df_with_sessions.copy()
             session_df_for_saving["timestamp"] = (
                 session_df_for_saving["timestamp"] * 1000

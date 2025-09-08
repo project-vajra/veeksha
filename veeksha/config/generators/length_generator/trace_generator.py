@@ -14,6 +14,14 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
         default="data/processed_traces/sharegpt_8k_filtered_stats_llama2_tokenizer.csv",
         metadata={"help": "Path to the trace file for request lengths."},
     )
+    input_length_column: str = field(
+        default="num_prefill_tokens",
+        metadata={"help": "Name of the column containing the input (prefill) length."},
+    )
+    output_length_column: str = field(
+        default="num_decode_tokens",
+        metadata={"help": "Name of the column containing the output (decode) length."},
+    )
     max_tokens: int = field(
         default=4096,
         metadata={"help": "Maximum number of tokens allowed in a request."},

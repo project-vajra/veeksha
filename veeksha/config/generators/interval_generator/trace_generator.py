@@ -16,9 +16,19 @@ class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
             "help": "Path to the trace file for request intervals. Should be a csv or jsonl file."
         },
     )
+    timestamp_column: str = field(
+        default="timestamp",
+        metadata={"help": "Name of the column containing request timestamps."},
+    )
+    timestamp_unit: str = field(
+        default="ms",
+        metadata={
+            "help": "Unit of the timestamps in the trace file. Must be either 'ms' or 's'."
+        },
+    )
     time_scale_factor: float = field(
-        default=0.3,
-        metadata={"help": "Factor to scale the time intervals in the trace."},
+        default=1,
+        metadata={"help": "Factor to scale the dispatch intervals in the trace."},
     )
 
     def __post_init__(self):
@@ -31,6 +41,10 @@ class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
         if self.time_scale_factor < 0:
             raise ValueError(
                 f"{self.__class__.__name__}: time_scale_factor cannot be negative"
+            )
+        if self.timestamp_unit not in ["ms", "s"]:
+            raise ValueError(
+                f"{self.__class__.__name__}: timestamp_unit must be either 'ms' or 's'"
             )
 
     @classmethod

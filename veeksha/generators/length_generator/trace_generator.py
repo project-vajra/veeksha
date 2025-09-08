@@ -16,11 +16,18 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
     def __init__(self, config: TraceRequestLengthGeneratorConfig):
         self.config = config
 
-        trace_df = load_trace(self.config.trace_file)
+        raw_trace_df = load_trace(self.config.trace_file)
+
+        # canonical column names
+        self.length_column_map = {
+            self.config.input_length_column: "input_length",
+            self.config.output_length_column: "output_length",
+        }
 
         self.trace_df = process_request_length_trace(
-            trace_df,
+            raw_trace_df,
             self.config.trace_file,
+            self.length_column_map,
             self.config.prefill_scale_factor,
             self.config.decode_scale_factor,
             self.config.max_tokens,

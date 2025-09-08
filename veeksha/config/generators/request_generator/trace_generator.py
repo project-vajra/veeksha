@@ -18,6 +18,24 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
         default="data/processed_traces/swe_agent_trace_short.jsonl",
         metadata={"help": "Path to the trace file for request generation."},
     )
+    input_length_column: str = field(
+        default="num_prefill_tokens",
+        metadata={"help": "Name of the column containing the input (prefill) length."},
+    )
+    output_length_column: str = field(
+        default="num_decode_tokens",
+        metadata={"help": "Name of the column containing the output (decode) length."},
+    )
+    timestamp_column: str = field(
+        default="timestamp",
+        metadata={"help": "Name of the column containing request timestamps."},
+    )
+    timestamp_unit: str = field(
+        default="ms",
+        metadata={
+            "help": "Unit of the timestamps in the trace file. Must be either 'ms' or 's'."
+        },
+    )
     prefill_scale_factor: float = field(
         default=1, metadata={"help": "Scale factor for prefill tokens."}
     )
@@ -68,7 +86,10 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
             raise ValueError(
                 f"{self.__class__.__name__}: time_scale_factor cannot be negative"
             )
-
+        if self.timestamp_unit not in ["ms", "s"]:
+            raise ValueError(
+                f"{self.__class__.__name__}: timestamp_unit must be either 'ms' or 's'"
+            )
         # block_size must be > 0
         if self.block_size <= 0:
             raise ValueError(f"{self.__class__.__name__}: block_size must be positive")
