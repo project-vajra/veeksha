@@ -802,7 +802,7 @@ def _merge_args_with_configs(
     all_provided_args: List[Dict[str, Any]] = []
 
     if not all_config_combinations:
-        return [args], all_provided_args
+        return [args], [cli_provided_args]
 
     final_args = []
     for config, keys_to_file_field_names in zip(
