@@ -24,7 +24,7 @@ class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
     timestamp_unit: str = field(
         default="ms",
         metadata={
-            "help": f"Unit of the timestamps in the trace file. Must be in {ALLOWED_TS_UNITS}."
+            "help": f"Unit of the timestamps in the trace file. Must be in {sorted(ALLOWED_TS_UNITS)}."
         },
     )
     time_scale_factor: float = field(
@@ -45,7 +45,7 @@ class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
             )
         if self.timestamp_unit not in ALLOWED_TS_UNITS:
             raise ValueError(
-                f"{self.__class__.__name__}: timestamp_unit must be in {ALLOWED_TS_UNITS}"
+                f"{self.__class__.__name__}: timestamp_unit must be in {sorted(ALLOWED_TS_UNITS)}"
             )
 
     @classmethod

@@ -89,8 +89,6 @@ def process_request_length_trace(
     # If max_tokens > 0, ensure total tokens do not exceed it and adjust proportionally
     if max_tokens > 0:
         total_tokens = new_trace_df["input_length"] + new_trace_df["output_length"]
-        if np.any(total_tokens.to_numpy() == 0):
-            raise ValueError("Zero total tokens after scaling; cannot compute ratios.")
 
         diff_tokens = (total_tokens - max_tokens).clip(lower=0)
 
@@ -115,7 +113,7 @@ def process_request_length_trace(
         if overflow.any():
             bad_idx = new_trace_df.index[overflow].tolist()[:5]
             raise ValueError(
-                f"Total tokens after clipping must be less <= {max_tokens}. Overflow at indices {bad_idx}."
+                f"Total tokens after clipping must be <= {max_tokens}. Overflow at indices {bad_idx}."
             )
     else:
         # No max cap: just ensure both are at least one
