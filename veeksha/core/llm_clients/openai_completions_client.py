@@ -67,6 +67,7 @@ class OpenAICompletionsClient(BaseLLMClient):
         body = {
             "model": model,
             "prompt": prompt,
+            "stream": True,
         }
         sampling_params = request_config.sampling_params
         body.update(sampling_params or {})
