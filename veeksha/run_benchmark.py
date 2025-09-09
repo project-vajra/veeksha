@@ -187,7 +187,7 @@ def run_main_loop(
     processor_thread.join()
 
     # Terminate all clients
-    req_launcher.kill_clients()
+    req_launcher.complete_tasks()
 
     pbar.close()
     logger.info("Main loop completed.")
