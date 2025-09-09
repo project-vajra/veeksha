@@ -3,6 +3,7 @@ import os
 from typing import List
 
 from veeksha.config.deadline import DeadlineReportConfig
+from veeksha.config.microbenchmarks.prefill_profiler import PrefillProfilerConfig
 from veeksha.metrics.metric_utils import (
     find_min_tbt_deadline_to_meet,
     get_request_level_deadline_miss_rate,
@@ -18,12 +19,17 @@ class RequestLevelMetrics:
     def __init__(
         self,
         deadline_config: DeadlineReportConfig,
+        prefill_profiler_config: PrefillProfilerConfig,
     ) -> None:
         self.ttft_deadline: float = deadline_config.ttft_deadline
         self.tbt_deadline: float = deadline_config.tbt_deadline
         self.target_deadline_miss_rate: float = (
             deadline_config.target_deadline_miss_rate
         )
+        self.ttft_slack: float = deadline_config.ttft_slack
+
+        self.prefill_predictions = prefill_profiler_config.predictions
+        self.use_predictions_for_ttft = prefill_profiler_config.use_predictions_for_ttft
         self.request_dispatched_at: List[float] = []
         self.num_prompt_tokens: List[int] = []
         self.num_output_tokens: List[int] = []
@@ -36,6 +42,7 @@ class RequestLevelMetrics:
         self.output_throughput: List[float] = []
         self.deadline_miss_rate: List[float] = []
         self.min_tbt_deadline_to_meet: List[float] = []
+        self.token_arrival_times: List[List[float]] = []
 
     def put(self, request_metrics: RequestMetrics):
         self.request_dispatched_at.append(request_metrics.request_dispatched_at)
@@ -50,8 +57,16 @@ class RequestLevelMetrics:
             request_metrics.normalized_end_to_end_latency
         )
         self.output_throughput.append(request_metrics.output_throughput)
+        self.token_arrival_times.append(request_metrics.token_arrival_times)
 
         ttft_deadline = self.ttft_deadline
+
+        if self.use_predictions_for_ttft:
+            assert self.prefill_predictions is not None, "Predictions are not available"
+            ttft_deadline = (
+                self.prefill_predictions[request_metrics.num_total_tokens]
+                + self.ttft_slack
+            )
 
         deadline_miss_rate, _, _ = get_request_level_deadline_miss_rate(
             inter_token_times=request_metrics.inter_token_times,
@@ -80,6 +95,7 @@ class RequestLevelMetrics:
             "output_throughput": self.output_throughput,
             "deadline_miss_rate": self.deadline_miss_rate,
             "min_tbt_deadline_to_meet": self.min_tbt_deadline_to_meet,
+            "token_arrival_times": self.token_arrival_times,
         }
 
     def save(self, output_dir: str):

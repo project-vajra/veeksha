@@ -94,7 +94,7 @@ class OpenAICompletionsClient(BaseLLMClient):
 
         try:
             with requests.post(
-                address, json=body, timeout=None, headers=headers, stream=False
+                address, json=body, timeout=None, headers=headers, stream=True
             ) as response:
                 if response.status_code != 200:
                     error_response_code = response.status_code

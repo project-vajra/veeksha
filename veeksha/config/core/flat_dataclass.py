@@ -81,7 +81,18 @@ def explode_dict(
         dict_items = {}
 
         for key, value in d.items():
+<<<<<<< HEAD
             prefixed_key = f"{current_prefix}{key}" if current_prefix else key
+=======
+            # Fix for nested list type checking - we need to check the prefixed key name
+            # in annotations since explode_dict processes nested configs with prefixes.
+            # This fixes prefill_lengths/context_lengths being incorrectly exploded.
+            # Related to recent literal list logic added to prevent List[...] explosion.
+            # See commit range: before 9fa41b4 all lists were exploded, after that commit
+            # literal list logic was added but didn't account for prefixes.
+            effective_prefix = current_prefix or prefix
+            prefixed_key = f"{effective_prefix}{key}" if effective_prefix else key
+>>>>>>> ddb92f4 (Microbenchmarking framework for prefill and decode profiling)
             expected_type = getattr(cls, "__annotations__", {}).get(prefixed_key, None)
             is_literal_list = expected_type and is_list(expected_type)
 
@@ -126,12 +137,17 @@ def explode_dict(
 
         for key, nested_dict in dict_items.items():
             # Build prefix for nested dictionary - add current key to prefix chain
+<<<<<<< HEAD
             nested_prefix = (
                 f"{current_prefix}{key}_" if current_prefix or key else f"{key}_"
             )
             exploded_nested = _explode_dict_recursive(
                 nested_dict, level + 1, nested_prefix
             )
+=======
+            nested_prefix = f"{current_prefix}{key}_" if current_prefix or key else f"{key}_"
+            exploded_nested = _explode_dict_recursive(nested_dict, level + 1, nested_prefix)
+>>>>>>> ddb92f4 (Microbenchmarking framework for prefill and decode profiling)
             new_combinations = []
 
             for base_combo in dict_combinations:
@@ -170,9 +186,13 @@ def explode_dict(
         for values in list_values:
             if values and isinstance(values[0], dict):
                 # explode each config dict in the list
+<<<<<<< HEAD
                 processed_list_values.append(
                     _explode_dict_list(values, level, current_prefix)
                 )
+=======
+                processed_list_values.append(_explode_dict_list(values, level, current_prefix))
+>>>>>>> ddb92f4 (Microbenchmarking framework for prefill and decode profiling)
             else:
                 # keep primitive values as-is
                 processed_list_values.append(values)
@@ -195,6 +215,7 @@ def explode_dict(
         d: Dict[str, Any], level: int = 0, current_prefix: str = ""
     ) -> List[Dict[str, Any]]:
         """Recursively explode a dictionary into all combinations."""
+<<<<<<< HEAD
         list_keys, list_values, non_list_items, dict_items = _categorize_dict_items(
             d, current_prefix
         )
@@ -203,6 +224,12 @@ def explode_dict(
         dict_combinations = _generate_dict_combinations(
             dict_items, level, current_prefix
         )
+=======
+        list_keys, list_values, non_list_items, dict_items = _categorize_dict_items(d, current_prefix)
+
+        # generate combinations from nested dictionaries
+        dict_combinations = _generate_dict_combinations(dict_items, level, current_prefix)
+>>>>>>> ddb92f4 (Microbenchmarking framework for prefill and decode profiling)
 
         # if no lists found, just combine non-list items with dict combinations
         if not list_keys:
@@ -210,12 +237,16 @@ def explode_dict(
 
         # generate all combinations including lists
         return _generate_all_combinations(
+<<<<<<< HEAD
             list_keys,
             list_values,
             non_list_items,
             dict_combinations,
             level,
             current_prefix,
+=======
+            list_keys, list_values, non_list_items, dict_combinations, level, current_prefix
+>>>>>>> ddb92f4 (Microbenchmarking framework for prefill and decode profiling)
         )
 
     def _add_prefix_to_dict(cls, d: Dict[str, Any], prefix: str) -> Dict[str, Any]:
@@ -823,7 +854,7 @@ def _merge_args_with_configs(
     all_provided_args: List[Dict[str, Any]] = []
 
     if not all_config_combinations:
-        return [args], [cli_provided_args]
+        return [args], all_provided_args
 
     final_args = []
     for config, keys_to_file_field_names in zip(

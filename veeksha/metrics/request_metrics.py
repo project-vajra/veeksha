@@ -55,3 +55,14 @@ class RequestMetrics:
             return 0
 
         return self.num_output_tokens / self.end_to_end_latency
+
+    @cached_property
+    def token_arrival_times(self):
+        if not self.inter_token_times or self.num_output_tokens == 0:
+            return []
+        arrival_times = []
+        cumulative_time = self.request_dispatched_at
+        for token_time in self.inter_token_times:
+            cumulative_time += token_time
+            arrival_times.append(cumulative_time)
+        return arrival_times

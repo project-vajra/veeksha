@@ -27,6 +27,10 @@ class DeadlineReportConfig:
             "help": "The target deadline miss rate [0,1]. Used to report smallest TBT deadline that would meet it.",
         },
     )
+    ttft_slack: float = field(
+        default=0.0,
+        metadata={"help": "The slack, in seconds, to add to TTFT predictions when using prefill predictions."},
+    )
 
     def __post_init__(self):
         if self.ttft_deadline <= 0:

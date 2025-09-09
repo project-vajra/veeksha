@@ -16,6 +16,8 @@ from veeksha.config.generators.request_generator.synthetic_generator import (
     SyntheticRequestGeneratorConfig,
 )
 from veeksha.config.metrics import MetricsConfig
+from veeksha.config.microbenchmarks.decode_profiler import DecodeProfilerConfig
+from veeksha.config.microbenchmarks.prefill_profiler import PrefillProfilerConfig
 from veeksha.config.utils import dataclass_to_dict
 from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
@@ -56,6 +58,14 @@ class BenchmarkConfig:
     metrics_config: MetricsConfig = field(
         default_factory=MetricsConfig,
         metadata={"help": "The metrics configuration for the benchmark."},
+    )
+    prefill_profiler_config: PrefillProfilerConfig = field(
+        default_factory=PrefillProfilerConfig,
+        metadata={"help": "The prefill profiler configuration for the benchmark."},
+    )
+    decode_profiler_config: DecodeProfilerConfig = field(
+        default_factory=DecodeProfilerConfig,
+        metadata={"help": "The decode profiler configuration for the benchmark."},
     )
     request_generator_config: BaseRequestGeneratorConfig = field(
         default_factory=SyntheticRequestGeneratorConfig,
