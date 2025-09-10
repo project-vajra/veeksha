@@ -126,8 +126,12 @@ def explode_dict(
 
         for key, nested_dict in dict_items.items():
             # Build prefix for nested dictionary - add current key to prefix chain
-            nested_prefix = f"{current_prefix}{key}_" if current_prefix or key else f"{key}_"
-            exploded_nested = _explode_dict_recursive(nested_dict, level + 1, nested_prefix)
+            nested_prefix = (
+                f"{current_prefix}{key}_" if current_prefix or key else f"{key}_"
+            )
+            exploded_nested = _explode_dict_recursive(
+                nested_dict, level + 1, nested_prefix
+            )
             new_combinations = []
 
             for base_combo in dict_combinations:
@@ -166,7 +170,9 @@ def explode_dict(
         for values in list_values:
             if values and isinstance(values[0], dict):
                 # explode each config dict in the list
-                processed_list_values.append(_explode_dict_list(values, level, current_prefix))
+                processed_list_values.append(
+                    _explode_dict_list(values, level, current_prefix)
+                )
             else:
                 # keep primitive values as-is
                 processed_list_values.append(values)
@@ -189,10 +195,14 @@ def explode_dict(
         d: Dict[str, Any], level: int = 0, current_prefix: str = ""
     ) -> List[Dict[str, Any]]:
         """Recursively explode a dictionary into all combinations."""
-        list_keys, list_values, non_list_items, dict_items = _categorize_dict_items(d, current_prefix)
+        list_keys, list_values, non_list_items, dict_items = _categorize_dict_items(
+            d, current_prefix
+        )
 
         # generate combinations from nested dictionaries
-        dict_combinations = _generate_dict_combinations(dict_items, level, current_prefix)
+        dict_combinations = _generate_dict_combinations(
+            dict_items, level, current_prefix
+        )
 
         # if no lists found, just combine non-list items with dict combinations
         if not list_keys:
@@ -200,7 +210,12 @@ def explode_dict(
 
         # generate all combinations including lists
         return _generate_all_combinations(
-            list_keys, list_values, non_list_items, dict_combinations, level, current_prefix
+            list_keys,
+            list_values,
+            non_list_items,
+            dict_combinations,
+            level,
+            current_prefix,
         )
 
     def _add_prefix_to_dict(cls, d: Dict[str, Any], prefix: str) -> Dict[str, Any]:
