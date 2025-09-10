@@ -73,7 +73,7 @@ def explode_dict(
                 "to avoid combinatorial explosion."
             )
 
-    def _categorize_dict_items(d: Dict[str, Any]) -> tuple:
+    def _categorize_dict_items(d: Dict[str, Any], current_prefix: str = "") -> tuple:
         """Categorize dictionary items into lists, dicts, and primitives."""
         list_keys = []
         list_values = []
@@ -81,7 +81,8 @@ def explode_dict(
         dict_items = {}
 
         for key, value in d.items():
-            expected_type = getattr(cls, "__annotations__", {}).get(key, None)
+            prefixed_key = f"{current_prefix}{key}" if current_prefix else key
+            expected_type = getattr(cls, "__annotations__", {}).get(prefixed_key, None)
             is_literal_list = expected_type and is_list(expected_type)
 
             if isinstance(value, list) and len(value) > 0:
@@ -108,23 +109,25 @@ def explode_dict(
         return list_keys, list_values, non_list_items, dict_items
 
     def _explode_dict_list(
-        dict_list: List[Dict[str, Any]], level: int
+        dict_list: List[Dict[str, Any]], level: int, current_prefix: str = ""
     ) -> List[Dict[str, Any]]:
         """Explode a list of dictionaries recursively."""
         exploded_configs = []
         for config in dict_list:
-            exploded = _explode_dict_recursive(config, level + 1)
+            exploded = _explode_dict_recursive(config, level + 1, current_prefix)
             exploded_configs.extend(exploded)
         return exploded_configs
 
     def _generate_dict_combinations(
-        dict_items: Dict[str, Dict[str, Any]], level: int
+        dict_items: Dict[str, Dict[str, Any]], level: int, current_prefix: str = ""
     ) -> List[Dict[str, Any]]:
         """Generate all combinations from nested dictionaries."""
         dict_combinations = [{}]
 
         for key, nested_dict in dict_items.items():
-            exploded_nested = _explode_dict_recursive(nested_dict, level + 1)
+            # Build prefix for nested dictionary - add current key to prefix chain
+            nested_prefix = f"{current_prefix}{key}_" if current_prefix or key else f"{key}_"
+            exploded_nested = _explode_dict_recursive(nested_dict, level + 1, nested_prefix)
             new_combinations = []
 
             for base_combo in dict_combinations:
@@ -155,6 +158,7 @@ def explode_dict(
         non_list_items: Dict[str, Any],
         dict_combinations: List[Dict[str, Any]],
         level: int,
+        current_prefix: str = "",
     ) -> List[Dict[str, Any]]:
         """Generate all combinations including list values."""
         # handle list of config dictionaries vs primitives
@@ -162,7 +166,7 @@ def explode_dict(
         for values in list_values:
             if values and isinstance(values[0], dict):
                 # explode each config dict in the list
-                processed_list_values.append(_explode_dict_list(values, level))
+                processed_list_values.append(_explode_dict_list(values, level, current_prefix))
             else:
                 # keep primitive values as-is
                 processed_list_values.append(values)
@@ -182,13 +186,13 @@ def explode_dict(
         return result
 
     def _explode_dict_recursive(
-        d: Dict[str, Any], level: int = 0
+        d: Dict[str, Any], level: int = 0, current_prefix: str = ""
     ) -> List[Dict[str, Any]]:
         """Recursively explode a dictionary into all combinations."""
-        list_keys, list_values, non_list_items, dict_items = _categorize_dict_items(d)
+        list_keys, list_values, non_list_items, dict_items = _categorize_dict_items(d, current_prefix)
 
         # generate combinations from nested dictionaries
-        dict_combinations = _generate_dict_combinations(dict_items, level)
+        dict_combinations = _generate_dict_combinations(dict_items, level, current_prefix)
 
         # if no lists found, just combine non-list items with dict combinations
         if not list_keys:
@@ -196,7 +200,7 @@ def explode_dict(
 
         # generate all combinations including lists
         return _generate_all_combinations(
-            list_keys, list_values, non_list_items, dict_combinations, level
+            list_keys, list_values, non_list_items, dict_combinations, level, current_prefix
         )
 
     def _add_prefix_to_dict(cls, d: Dict[str, Any], prefix: str) -> Dict[str, Any]:
@@ -254,7 +258,7 @@ def explode_dict(
         all_exploded = []
         for item in list_data:
             if isinstance(item, dict):
-                exploded = _explode_dict_recursive(item)
+                exploded = _explode_dict_recursive(item, current_prefix=prefix)
                 all_exploded.extend(exploded)
             else:
                 # non-dict items are wrapped
@@ -269,7 +273,7 @@ def explode_dict(
         return _handle_list_config(config, prefix)
 
     # standard case: explode the config and add prefixes
-    exploded_configs = _explode_dict_recursive(config)
+    exploded_configs = _explode_dict_recursive(config, current_prefix=prefix)
     _increment_counter(len(exploded_configs))
     return [_add_prefix_to_dict(cls, cfg, prefix) for cfg in exploded_configs]
 
@@ -481,8 +485,10 @@ def init_iterable_args(loaded_configs, cli_provided_args, list_fields):
                                 subclass.get_type().name.upper()
                                 == raw_value["type"].upper()
                             ):
-                                raw_value.pop("type")
-                                return_iterable.append(subclass(**raw_value))
+                                subclass_kwargs = {
+                                    k: v for k, v in raw_value.items() if k != "type"
+                                }
+                                return_iterable.append(subclass(**subclass_kwargs))
                                 is_match = True
                                 break
                         assert (
