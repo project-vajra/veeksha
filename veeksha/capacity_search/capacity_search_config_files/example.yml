@@ -1,35 +1,37 @@
-output_dir: "cap_experiments/example_capsearch"
+output_dir: cap_experiments/example_capsearch
 max_iterations: 5
 slos:
-  - type: "constant"
-    metric: "ttft"
+  - type: constant
+    metric: ttft
     value: 5
     percentile: 0.5
-    name: "P50 TTFT"
-  - type: "constant"
-    metric: "tbt"
+    name: P50 TTFT
+  - type: constant
+    metric: tbt
     value: 0.05
     percentile: 0.9
-    name: "P90 TBT"
+    name: P90 TBT
 
 benchmark_config:
   timeout: 10000
   max_completed_requests: 5
-  api_url: "http://localhost:30000/v1"
-  api_key: "token-abc123"
+  api_url: http://localhost:30000/v1
+  api_key: token-abc123
 
   client_config:
-    model: "meta-llama/Meta-Llama-3-8B-Instruct"
+    model: meta-llama/Meta-Llama-3-8B-Instruct
     num_clients: 15
     num_concurrent_requests_per_client: 10
-    llm_api: "openai_chat"
+    llm_api: openai_chat
 
   request_generator_config:
-    type: "trace"
-    trace_file: "data/processed_traces/swe_agent_trace_short.jsonl"
+    type: trace
+    trace_file: data/processed_traces/swe_agent_trace_short.jsonl
+    input_length_column: input_length
+    output_length_column: output_length
     use_trace_prefix_hash_ids: true
     session_generator_config:
-        minimum_prefix_match: 0.8
-        max_session_size: 100
-        min_session_size: 5
-        save_as_trace_file: true
+      minimum_prefix_match: 0.8
+      max_session_size: 100
+      min_session_size: 5
+      save_as_trace_file: true

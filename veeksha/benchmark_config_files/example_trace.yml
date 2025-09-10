@@ -12,6 +12,8 @@ client_config:
 request_generator_config:
   type: trace
   trace_file: data/processed_traces/swe_agent_trace_short.jsonl
+  input_length_column: input_length
+  output_length_column: output_length
   use_trace_prefix_hash_ids: true
   session_generator_config:
     minimum_prefix_match: 0.8
