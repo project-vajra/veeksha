@@ -52,7 +52,7 @@ class DecodeProfiler:
         tbt_values = metrics_data["tbt"]
 
 
-        if self.base_config.decode_profiler_config.enable_mixed_batching:
+        if self.base_config.decode_profiler_config.engine_uses_mixed_batching:
             batch_saturation_first_token_time = sorted(arr[0] for arr in token_arrival_times)[batch_size - 1]
             latest_first_token_time = max(arr[0] for arr in token_arrival_times)
 
@@ -114,7 +114,7 @@ class DecodeProfiler:
             )
             
             num_requests = batch_size
-            if self.base_config.decode_profiler_config.enable_mixed_batching:
+            if self.base_config.decode_profiler_config.engine_uses_mixed_batching:
                 num_requests += int(np.ceil(DECODE_PROFILING_ITERATIONS / num_iterations_per_prefill))
             
             num_clients = int(np.ceil(num_requests / DECODE_NUM_CONCURRENT_REQUESTS_PER_CLIENT))
