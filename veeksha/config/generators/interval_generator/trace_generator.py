@@ -1,19 +1,15 @@
 import os
 from dataclasses import field
-import importlib.resources
 
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.generators.interval_generator.base_generator import (
     BaseRequestIntervalGeneratorConfig,
 )
+from veeksha.config.utils import get_trace_file_path
 from veeksha.constants.configuration_constants import ALLOWED_TS_UNITS
 from veeksha.types.request_interval_generator_type import RequestIntervalGeneratorType
 
-_DATA_FILE_PATH = (
-    importlib.resources.files("veeksha.data.processed_traces")
-    .joinpath("swe_agent_trace_short.jsonl")
-)
-
+_DATA_FILE_PATH = get_trace_file_path("swe_agent_trace_short.jsonl")
 DEFAULT_TRACE_FILE = str(_DATA_FILE_PATH)
 
 
@@ -42,10 +38,18 @@ class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
 
     def __post_init__(self):
         # check if trace file exists
-        if not os.path.exists(self.trace_file):
-            raise FileNotFoundError(
-                f"{self.__class__.__name__}: Trace file not found: {self.trace_file}"
-            )
+        if self.trace_file == DEFAULT_TRACE_FILE:
+            # For the default path, use the is_file() method on the importlib.resources object
+            if not _DATA_FILE_PATH.is_file():
+                raise FileNotFoundError(
+                    f"{self.__class__.__name__}: Default trace file resource not found."
+                )
+        else:
+            # For user-provided paths, use os.path.exists
+            if not os.path.exists(self.trace_file):
+                raise FileNotFoundError(
+                    f"{self.__class__.__name__}: Trace file not found: {self.trace_file}"
+                )
         # time_scale_factor cannot be negative
         if self.time_scale_factor < 0:
             raise ValueError(
