@@ -157,7 +157,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         raise Exception(f"Could not generate stable encoding for value {value}")
 
     def get_request(self) -> RequestConfig:
-        if self.request_idx >= len(self.trace_df):
+        if self.request_idx >= self.capacity():
             if self.config.exhaustion_policy == "error":
                 raise StopIteration(
                     f"Trace exhausted for requests at index {self.request_idx}"
@@ -182,10 +182,8 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     )
                     self._wrap_warning_logged = True
                 self.request_idx = 0
-        if (
-            self.config.use_trace_sessions
-            or self.config.session_generator_config is not None
-        ):
+
+        if self.config.session_generator_config is not None:
             request_to_send = self.trace_df_with_sessions.iloc[self.request_idx]
         else:
             request_to_send = self.trace_df.iloc[self.request_idx]
@@ -243,4 +241,8 @@ class TraceRequestGenerator(BaseRequestGenerator):
         return request_config
 
     def capacity(self) -> Optional[int]:
-        return len(self.trace_df)
+        return (
+            len(self.trace_df)
+            if self.config.session_generator_config is None
+            else len(self.trace_df_with_sessions)
+        )

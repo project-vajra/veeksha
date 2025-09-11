@@ -12,7 +12,7 @@ from veeksha.types.request_interval_generator_type import RequestIntervalGenerat
 @frozen_dataclass
 class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
     exhaustion_policy: str = field(
-        default="error",
+        default="stop",
         metadata={
             "help": "Behavior when the trace runs out: error | stop | wrap.",
         },

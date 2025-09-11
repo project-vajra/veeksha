@@ -16,7 +16,7 @@ from veeksha.types.request_generator_type import RequestGeneratorType
 @frozen_dataclass(allow_from_file=True)
 class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     exhaustion_policy: str = field(
-        default="error",
+        default="stop",
         metadata={
             "help": "Behavior when the trace runs out: error | stop | wrap.",
         },

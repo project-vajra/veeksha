@@ -1,4 +1,0 @@
-{"timestamp": 0, "hash_ids": [2843919484, 2273059928, 524725557], "input_length": 1079, "output_length": 68, "trajectory_id": 0, "instance_id": "AnalogJ__lexicon-336", "user_turn_id": 1, "assistant_turn_id": 2, "request_in_session": 0}
-{"timestamp": 101, "hash_ids": [2843919484, 2273059928, 524725557], "input_length": 1079, "output_length": 69, "trajectory_id": 1, "instance_id": "AnalogJ__lexicon-336", "user_turn_id": 1, "assistant_turn_id": 2, "request_in_session": 0}
-{"timestamp": 553, "hash_ids": [2843919484, 2273059928, 524725557], "input_length": 1079, "output_length": 69, "trajectory_id": 2, "instance_id": "AnalogJ__lexicon-336", "user_turn_id": 1, "assistant_turn_id": 2, "request_in_session": 0}
-{"timestamp": 564, "hash_ids": [2843919484, 2273059928, 524725557], "input_length": 1079, "output_length": 100, "trajectory_id": 3, "instance_id": "AnalogJ__lexicon-336", "user_turn_id": 1, "assistant_turn_id": 2, "request_in_session": 0}
