@@ -10,8 +10,12 @@ client_config:
   llm_api: openai_chat
 
 request_generator_config:
-  type: trace
-  trace_file: data/processed_traces/short_trace.jsonl
-  input_length_column: input_length
-  output_length_column: output_length
-  use_trace_prefix_hash_ids: true
+  type: synthetic
+  length_generator_config:
+    type: trace
+    trace_file: data/processed_traces/short_trace.jsonl
+    exhaustion_policy: stop
+    input_length_column: input_length
+    output_length_column: output_length
+  interval_generator_config:
+    type: poisson

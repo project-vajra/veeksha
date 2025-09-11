@@ -45,6 +45,10 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
                 raise StopIteration(
                     f"Trace exhausted for lengths at index {self.next_request_idx}"
                 )
+            if self.config.exhaustion_policy == "stop":
+                logger.info(
+                    f"Stop policy active: length trace exhausted at index {self.next_request_idx}."
+                )
             return -1, -1
 
         row = self.trace_df.iloc[self.next_request_idx]

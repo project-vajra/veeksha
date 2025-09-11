@@ -161,6 +161,18 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 raise StopIteration(
                     f"Trace exhausted for requests at index {self.request_idx}"
                 )
+            # stop policy: return a sentinel request with negative dispatch delay
+            logger.info(
+                f"Stop policy active: request trace exhausted at index {self.request_idx}."
+            )
+            return RequestConfig(
+                model=self.client_config.model,
+                prompt=("", 0),
+                dispatch_delay=-1,
+                llm_api=self.client_config.llm_api,
+                address_append_value=self.client_config.address_append_value,
+                id=self.request_idx,
+            )
         if (
             self.config.use_trace_sessions
             or self.config.session_generator_config is not None

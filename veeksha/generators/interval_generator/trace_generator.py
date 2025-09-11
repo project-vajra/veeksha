@@ -44,6 +44,10 @@ class TraceRequestIntervalGenerator(BaseRequestIntervalGenerator):
                 raise StopIteration(
                     f"Trace exhausted for intervals at index {self.next_request_idx}"
                 )
+            if self.config.exhaustion_policy == "stop":
+                logger.info(
+                    f"Stop policy active: interval trace exhausted at index {self.next_request_idx}."
+                )
             return -1
 
         inter_request_time = self.trace_df.iloc[self.next_request_idx][
