@@ -40,10 +40,7 @@ class RequestsLauncher:
 
     def run_client(self, client_id: int) -> None:
         """Run a client process that sends requests to the LLM API."""
-        try:
-            asyncio.run(self.run_async_worker(client_id))
-        except KeyboardInterrupt:
-            logger.info("Worker %s received KeyboardInterrupt", client_id)
+        asyncio.run(self.run_async_worker(client_id))
 
     async def run_async_worker(self, client_id: int) -> None:
         """Run the async worker that processes requests."""
@@ -126,7 +123,7 @@ class RequestsLauncher:
         ):
             self.input_queue.put(None)
 
-    def kill_clients(self) -> None:
+    def wait_for_clients(self) -> None:
         """Wait for all clients to complete their tasks and exit."""
         self.complete_tasks()
         for client in self.clients:

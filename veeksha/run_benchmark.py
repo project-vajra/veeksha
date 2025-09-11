@@ -184,10 +184,12 @@ def run_main_loop(
     # Signal threads to stop and wait for completion
     stop_event.set()
     dispatcher_thread.join()
-    processor_thread.join()
 
-    # Terminate all clients
-    req_launcher.complete_tasks()
+    # Wait for all client processes to terminate
+    req_launcher.wait_for_clients()
+
+    # Wait for the results processor to drain the output queue and finish
+    processor_thread.join()
 
     pbar.close()
     logger.info("Main loop completed.")
