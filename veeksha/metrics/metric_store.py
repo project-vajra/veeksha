@@ -58,10 +58,6 @@ class MetricStore:
         self.wandb_project: Optional[str] = metrics_config.wandb_project
         self.wandb_group: Optional[str] = metrics_config.wandb_group
         self.wandb_run_name: Optional[str] = metrics_config.wandb_run_name
-        self.ttft_slack: float = metrics_config.deadline_report.ttft_slack
-
-        self.prefill_predictions = prefill_profiler_config.predictions
-        self.use_predictions_for_ttft = prefill_profiler_config.use_predictions_for_ttft
 
         self.request_level_metrics = RequestLevelMetrics(
             deadline_config=metrics_config.deadline_report,
@@ -95,7 +91,7 @@ class MetricStore:
                 "Output Throughput", self.should_write_metrics_to_wandb
             ),
             "deadline_miss_rate": CDFSketch(
-                f"Deadline Miss Rate with {self.tbt_deadline}s TBT Deadline, {self.ttft_deadline}s TTFT Deadline, {self.ttft_slack}s TTFT Slack, Using Predictions for TTFT: {self.use_predictions_for_ttft} ",
+                f"Deadline Miss Rate with {self.tbt_deadline}s TBT Deadline, {self.ttft_deadline}s TTFT Deadline",
                 self.should_write_metrics_to_wandb,
             ),
             "min_tbt_deadline_to_meet": CDFSketch(
@@ -121,8 +117,6 @@ class MetricStore:
                 "ttft_deadline": self.ttft_deadline,
                 "tbt_deadline": self.tbt_deadline,
                 "target_deadline_miss_rate": self.target_deadline_miss_rate,
-                "ttft_slack": self.ttft_slack,
-                "using_predictions_for_ttft": self.use_predictions_for_ttft,
             },
         )
         logger.info("wandb enabled")
@@ -150,12 +144,6 @@ class MetricStore:
                 cdf_sketch.extend(request_metrics.inter_token_times[1:])
             elif metric_name == "deadline_miss_rate":
                 ttft_deadline = self.ttft_deadline
-                if self.use_predictions_for_ttft:
-                    assert self.prefill_predictions is not None, "Predictions not found"
-                    ttft_deadline = (
-                        self.prefill_predictions[request_metrics.num_total_tokens]
-                        + self.ttft_slack
-                    )
                 (
                     deadline_miss_rate,
                     missed_deadlines,

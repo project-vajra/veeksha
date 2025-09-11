@@ -6,13 +6,7 @@ import platform
 from dataclasses import replace
 from typing import Dict, List
 
-import joblib
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-import wandb
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import PolynomialFeatures
 
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.generators.length_generator.fixed_generator import (
@@ -55,16 +49,6 @@ class PrefillProfiler:
         self.base_config = base_config
         self.prefill_values = base_config.prefill_profiler_config.prefill_lengths
         self.prefill_times: Dict[int, List[float]] = {}
-        self.model = RandomForestRegressor(
-            n_estimators=PREFILL_RANDOM_FOREST_PARAMS["n_estimators"],
-            random_state=PREFILL_RANDOM_FOREST_PARAMS["random_state"],
-        )
-        self.transformer = PolynomialFeatures(
-            degree=PREFILL_POLYNOMIAL_DEGREE, include_bias=False
-        )
-
-        if PREFILL_MODEL != "RandomForestRegressor":
-            raise NotImplementedError(f"Model {PREFILL_MODEL} is not implemented")
 
         # Create profiler-specific config using replace() to respect frozen design
         profiler_client_config = replace(
@@ -90,140 +74,6 @@ class PrefillProfiler:
         
         self.base_dir = self.base_config.metrics_config.output_dir
 
-    def train_prefill_predictor_model(self):
-        # Convert dictionary of lists to single arrays for training
-        all_prefill_times = []
-        all_prefill_values = []
-        
-        for prefill_value, times_list in self.prefill_times.items():
-            # Use median time for each prefill value for training
-            median_time = np.median(times_list)
-            all_prefill_times.append(median_time)
-            all_prefill_values.append(prefill_value)
-        
-        transformed_prefill_values = self.transformer.fit_transform(
-            np.array(all_prefill_values).reshape(-1, 1)
-        )
-
-        self.model.fit(transformed_prefill_values, np.array(all_prefill_times))
-        rmse = np.sqrt(
-            np.mean(
-                (
-                    self.model.predict(transformed_prefill_values)
-                    - np.array(all_prefill_times)
-                )
-                ** 2
-            )
-        )
-        logger.info(
-            f"Model fitted with prefill values and times with root mean squared error: {rmse}",
-        )
-
-        joblib.dump(
-            self.model,
-            os.path.join(self.base_dir, "prefill_predictor.pkl"),
-        )
-
-        # also plot the curve containing model's predictions and actual outputs, and dump it
-        plt.figure(figsize=(10, 6))
-        plt.plot(all_prefill_values, all_prefill_times, 'o', label="Actual")
-        plt.plot(
-            all_prefill_values,
-            self.model.predict(transformed_prefill_values),
-            'x',
-            label="Predicted",
-        )
-        plt.xlabel("Prompt Length")
-        plt.ylabel("Prefill Time")
-        plt.title(self.config.client_config.model)
-        plt.legend()
-        plt.savefig(os.path.join(self.base_dir, "prefill_predictions.png"))
-
-        # also do fine-grained plotting
-        fine_grained_prefill_values = np.linspace(
-            min(all_prefill_values), max(all_prefill_values), 1000
-        )
-        fine_grained_transformed_prefill_values = self.transformer.fit_transform(
-            fine_grained_prefill_values.reshape(-1, 1)
-        )
-        fine_grained_prefill_times = self.model.predict(
-            fine_grained_transformed_prefill_values
-        )
-        plt.plot(
-            fine_grained_prefill_values,
-            fine_grained_prefill_times,
-            '-',
-            label="Fine-grained Prediction",
-        )
-        plt.xlabel("Prompt Length")
-        plt.ylabel("Prefill Time")
-        plt.title(self.config.client_config.model)
-        plt.legend()
-        plt.savefig(
-            os.path.join(
-                self.base_dir,
-                "fine_grained_prefill_predictions.png",
-            )
-        )
-
-        plt.close()
-
-        if (
-            self.config.metrics_config.wandb_project
-            and self.config.metrics_config.should_write_metrics
-        ):
-            wandb.init(
-                project=self.config.metrics_config.wandb_project,
-                group=self.config.metrics_config.wandb_group,
-                name=f"prefill_profiler_{self.config.client_config.model}",
-            )
-            data = {
-                "prefill_lengths": all_prefill_values,
-                "prefill_times": all_prefill_times,
-            }
-            wandb.log(
-                {
-                    "prefill_times_vs_length": wandb.plot.line(
-                        table=wandb.Table(data=pd.DataFrame(data)),
-                        x="prefill_lengths",
-                        y="prefill_times",
-                        title="Prefill Times vs Prefill Lengths",
-                    )
-                },
-                step=0,
-            )
-            data = {
-                "prefill_lengths": fine_grained_prefill_values,
-                "predicted_prefill_times": fine_grained_prefill_times,
-            }
-            wandb.log(
-                {
-                    "predicted_prefill_times_vs_length": wandb.plot.line(
-                        table=wandb.Table(data=pd.DataFrame(data)),
-                        x="prefill_lengths",
-                        y="predicted_prefill_times",
-                        title="Predicted Prefill Times vs Prefill Lengths",
-                    )
-                },
-                step=0,
-            )
-
-        if self.config.prefill_profiler_config.cache_predictions:
-            predictions = {}
-
-            x = np.arange(
-                self.config.prefill_profiler_config.max_prefill_tokens_to_predict + 1
-            )
-            x = x.reshape(-1, 1)
-            x_poly = self.transformer.fit_transform(x)
-            y = self.model.predict(x_poly)
-            for i in range(len(x)):
-                predictions[int(x[i][0])] = float(y[i])
-
-            joblib.dump(
-                predictions,
-                os.path.join(self.base_dir, "prefill_predictions.pkl"),
-            )
 
     def run(self):
         for prefill_value in self.prefill_values:
@@ -275,8 +125,6 @@ class PrefillProfiler:
                 logger.info(f"Running profiling for prefill value = {prefill_value}...")
                 service_metrics = run_benchmark(final_run_config)
                 logger.info(f"Run benchmark done")
-                if wandb.run:
-                    wandb.finish()
 
                 json_file = os.path.join(run_dir, f"request_level_metrics.json")
                 assert os.path.exists(json_file), f"Could not find the result file for {run_dir}"
@@ -303,8 +151,6 @@ class PrefillProfiler:
         with open(prefill_stats_file, "w") as f:
             json.dump(prefill_stats, f)
 
-        if self.config.prefill_profiler_config.should_train_predictor:
-            self.train_prefill_predictor_model()
 
 
 if __name__ == "__main__":

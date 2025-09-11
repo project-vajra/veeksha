@@ -26,10 +26,6 @@ class RequestLevelMetrics:
         self.target_deadline_miss_rate: float = (
             deadline_config.target_deadline_miss_rate
         )
-        self.ttft_slack: float = deadline_config.ttft_slack
-
-        self.prefill_predictions = prefill_profiler_config.predictions
-        self.use_predictions_for_ttft = prefill_profiler_config.use_predictions_for_ttft
         self.request_dispatched_at: List[float] = []
         self.num_prompt_tokens: List[int] = []
         self.num_output_tokens: List[int] = []
@@ -60,13 +56,6 @@ class RequestLevelMetrics:
         self.token_arrival_times.append(request_metrics.token_arrival_times)
 
         ttft_deadline = self.ttft_deadline
-
-        if self.use_predictions_for_ttft:
-            assert self.prefill_predictions is not None, "Predictions are not available"
-            ttft_deadline = (
-                self.prefill_predictions[request_metrics.num_total_tokens]
-                + self.ttft_slack
-            )
 
         deadline_miss_rate, _, _ = get_request_level_deadline_miss_rate(
             inter_token_times=request_metrics.inter_token_times,
