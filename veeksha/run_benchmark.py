@@ -89,7 +89,6 @@ def dispatch_requests(
                 raise ValueError(
                     f"Invalid request dispatch delay '{request_dispatch_delay}' from request metadata."
                 )
-                break
 
             # wait for dispatch time
             while not stop_event.is_set():
@@ -197,7 +196,7 @@ def run_main_loop(
         while not service_metrics.should_stop():
             time.sleep(0.1)
         logger.info("Stopping the main loop.")
-        if service_metrics._stop_requested and service_metrics.error is None:
+        if service_metrics.stop_requested and service_metrics.error is None:
             logger.info(
                 "Main loop exited due to stop policy; partial metrics will be saved."
             )

@@ -5,7 +5,10 @@ from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.generators.interval_generator.base_generator import (
     BaseRequestIntervalGeneratorConfig,
 )
-from veeksha.constants.configuration_constants import ALLOWED_TS_UNITS
+from veeksha.constants.configuration_constants import (
+    ALLOWED_EXHAUSTION_POLICIES,
+    ALLOWED_TS_UNITS,
+)
 from veeksha.types.request_interval_generator_type import RequestIntervalGeneratorType
 
 
@@ -53,9 +56,9 @@ class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
             raise ValueError(
                 f"{self.__class__.__name__}: timestamp_unit must be in {sorted(ALLOWED_TS_UNITS)}"
             )
-        if self.exhaustion_policy not in {"error", "stop", "wrap"}:
+        if self.exhaustion_policy not in ALLOWED_EXHAUSTION_POLICIES:
             raise ValueError(
-                f"{self.__class__.__name__}: exhaustion_policy must be one of ['error','stop','wrap']"
+                f"{self.__class__.__name__}: exhaustion_policy must be one of {ALLOWED_EXHAUSTION_POLICIES}"
             )
 
     @classmethod

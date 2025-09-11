@@ -5,6 +5,7 @@ from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.generators.length_generator.base_generator import (
     BaseRequestLengthGeneratorConfig,
 )
+from veeksha.constants.configuration_constants import ALLOWED_EXHAUSTION_POLICIES
 from veeksha.types import RequestLengthGeneratorType
 
 
@@ -69,9 +70,9 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
         # block_size must be > 0
         if self.block_size <= 0:
             raise ValueError(f"{self.__class__.__name__}: block_size must be positive")
-        if self.exhaustion_policy not in {"error", "stop", "wrap"}:
+        if self.exhaustion_policy not in ALLOWED_EXHAUSTION_POLICIES:
             raise ValueError(
-                f"{self.__class__.__name__}: exhaustion_policy must be one of ['error','stop','wrap']"
+                f"{self.__class__.__name__}: exhaustion_policy must be one of {ALLOWED_EXHAUSTION_POLICIES}"
             )
 
     @classmethod

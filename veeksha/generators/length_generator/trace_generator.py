@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Tuple
 
 from veeksha.config.generators.length_generator.trace_generator import (
     TraceRequestLengthGeneratorConfig,
@@ -46,12 +46,12 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
                 raise StopIteration(
                     f"Trace exhausted for lengths at index {self.next_request_idx}"
                 )
-            if self.config.exhaustion_policy == "stop":
+            elif self.config.exhaustion_policy == "stop":
                 logger.info(
                     f"Stop policy active: length trace exhausted at index {self.next_request_idx}."
                 )
                 return -1, -1
-            if self.config.exhaustion_policy == "wrap":
+            elif self.config.exhaustion_policy == "wrap":
                 if not self._wrap_warning_logged:
                     logger.warning(
                         f"Length trace exhausted at index {self.next_request_idx}; wrapping to start."
@@ -67,5 +67,5 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
             int(row["output_length"]),
         )
 
-    def capacity(self) -> Optional[int]:
+    def capacity(self) -> int:
         return len(self.trace_df)

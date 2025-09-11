@@ -45,12 +45,12 @@ class TraceRequestIntervalGenerator(BaseRequestIntervalGenerator):
                 raise StopIteration(
                     f"Trace exhausted for intervals at index {self.next_request_idx}"
                 )
-            if self.config.exhaustion_policy == "stop":
+            elif self.config.exhaustion_policy == "stop":
                 logger.info(
                     f"Stop policy active: interval trace exhausted at index {self.next_request_idx}."
                 )
                 return -1
-            if self.config.exhaustion_policy == "wrap":
+            elif self.config.exhaustion_policy == "wrap":
                 if not self._wrap_warning_logged:
                     logger.warning(
                         f"Interval trace exhausted at index {self.next_request_idx}; wrapping to start."
@@ -64,5 +64,5 @@ class TraceRequestIntervalGenerator(BaseRequestIntervalGenerator):
         self.next_request_idx += 1
         return inter_request_time
 
-    def capacity(self):
+    def capacity(self) -> int:
         return len(self.trace_df)

@@ -9,7 +9,10 @@ from veeksha.config.generators.request_generator.base_generator import (
 from veeksha.config.generators.session_generator import (
     SessionGeneratorConfig,
 )
-from veeksha.constants.configuration_constants import ALLOWED_TS_UNITS
+from veeksha.constants.configuration_constants import (
+    ALLOWED_EXHAUSTION_POLICIES,
+    ALLOWED_TS_UNITS,
+)
 from veeksha.types.request_generator_type import RequestGeneratorType
 
 
@@ -123,9 +126,9 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
             raise ValueError(
                 f"{self.__class__.__name__}: session_generator_config requires use_trace_prefix_hash_ids to be True"
             )
-        if self.exhaustion_policy not in {"error", "stop", "wrap"}:
+        if self.exhaustion_policy not in ALLOWED_EXHAUSTION_POLICIES:
             raise ValueError(
-                f"{self.__class__.__name__}: exhaustion_policy must be one of ['error','stop','wrap']"
+                f"{self.__class__.__name__}: exhaustion_policy must be one of {ALLOWED_EXHAUSTION_POLICIES}"
             )
 
     @classmethod

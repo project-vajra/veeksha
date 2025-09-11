@@ -1,5 +1,5 @@
 import ast
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
@@ -162,7 +162,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 raise StopIteration(
                     f"Trace exhausted for requests at index {self.request_idx}"
                 )
-            if self.config.exhaustion_policy == "stop":
+            elif self.config.exhaustion_policy == "stop":
                 # stop policy: return a sentinel request with negative dispatch delay
                 logger.info(
                     f"Stop policy active: request trace exhausted at index {self.request_idx}."
@@ -175,7 +175,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     address_append_value=self.client_config.address_append_value,
                     id=self.request_idx,
                 )
-            if self.config.exhaustion_policy == "wrap":
+            elif self.config.exhaustion_policy == "wrap":
                 if not self._wrap_warning_logged:
                     logger.warning(
                         f"Request trace exhausted at index {self.request_idx}; wrapping to start."
@@ -240,7 +240,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         return request_config
 
-    def capacity(self) -> Optional[int]:
+    def capacity(self) -> int:
         return (
             len(self.trace_df)
             if self.config.session_generator_config is None
