@@ -70,7 +70,12 @@ def dispatch_requests(
                 num_errored_requests_handled += 1
 
             # get next request and its dispatch time
-            request_config = request_generator.get_request()
+            try:
+                request_config = request_generator.get_request()
+            except StopIteration as e:
+                service_metrics.notify_error(e)
+                stop_event.set()
+                break
             request_dispatch_delay = request_config.dispatch_delay
 
             if request_dispatch_delay < 0:
@@ -190,7 +195,11 @@ def run_main_loop(
     req_launcher.kill_clients()
 
     pbar.close()
-    logger.info("Main loop completed.")
+
+    if service_metrics.error is None:
+        logger.info("Main loop completed.")
+    else:
+        raise service_metrics.error
 
 
 def run_benchmark(

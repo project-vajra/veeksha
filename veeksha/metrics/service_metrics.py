@@ -1,5 +1,5 @@
 import time
-from typing import Dict
+from typing import Dict, Optional
 
 from veeksha.config.metrics import MetricsConfig
 from veeksha.metrics.metric_store import MetricStore
@@ -18,6 +18,8 @@ class ServiceMetrics:
         self.start_time = None
         self.end_time = None
         self.output_dir = metrics_config.output_dir
+        self._stop_requested = False
+        self._error: Optional[BaseException] = None
 
         self.metric_store = MetricStore(
             timeout=timeout,
@@ -57,6 +59,8 @@ class ServiceMetrics:
     def should_stop(self):
         assert self.start_time is not None
         # never stop due to timeout if timeout is -1
+        if self._stop_requested or self._error is not None:
+            return True
         if self.timeout == -1:
             return not (self.num_completed_requests < self.max_requests)
         return not (
@@ -99,3 +103,16 @@ class ServiceMetrics:
 
     def store_output(self):
         self.metric_store.store_output(self.output_dir)
+
+    def request_stop(self) -> None:
+        """Signal main loop to stop as soon as possible."""
+        self._stop_requested = True
+
+    def notify_error(self, exc: BaseException) -> None:
+        """Record an error and request stop; main loop can re-raise."""
+        self._error = exc
+        self._stop_requested = True
+
+    @property
+    def error(self) -> Optional[BaseException]:
+        return self._error

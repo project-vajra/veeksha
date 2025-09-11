@@ -15,6 +15,12 @@ from veeksha.types.request_generator_type import RequestGeneratorType
 
 @frozen_dataclass(allow_from_file=True)
 class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
+    exhaustion_policy: str = field(
+        default="error",
+        metadata={
+            "help": "Behavior when the trace runs out: error | stop | wrap.",
+        },
+    )
     trace_file: str = field(
         default="data/processed_traces/swe_agent_trace_short.jsonl",
         metadata={"help": "Path to the trace file for request generation."},
@@ -116,6 +122,10 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
         if self.session_generator_config and not self.use_trace_prefix_hash_ids:
             raise ValueError(
                 f"{self.__class__.__name__}: session_generator_config requires use_trace_prefix_hash_ids to be True"
+            )
+        if self.exhaustion_policy not in {"error", "stop", "wrap"}:
+            raise ValueError(
+                f"{self.__class__.__name__}: exhaustion_policy must be one of ['error','stop','wrap']"
             )
 
     @classmethod

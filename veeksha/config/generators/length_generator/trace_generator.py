@@ -10,6 +10,12 @@ from veeksha.types import RequestLengthGeneratorType
 
 @frozen_dataclass
 class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
+    exhaustion_policy: str = field(
+        default="error",
+        metadata={
+            "help": "Behavior when the trace runs out: error | stop | wrap.",
+        },
+    )
     trace_file: str = field(
         default="data/processed_traces/sharegpt_8k_filtered_stats_llama2_tokenizer.csv",
         metadata={"help": "Path to the trace file for request lengths."},
@@ -63,6 +69,10 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
         # block_size must be > 0
         if self.block_size <= 0:
             raise ValueError(f"{self.__class__.__name__}: block_size must be positive")
+        if self.exhaustion_policy not in {"error", "stop", "wrap"}:
+            raise ValueError(
+                f"{self.__class__.__name__}: exhaustion_policy must be one of ['error','stop','wrap']"
+            )
 
     @classmethod
     def get_type(cls) -> RequestLengthGeneratorType:

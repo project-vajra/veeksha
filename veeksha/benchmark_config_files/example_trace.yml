@@ -1,6 +1,6 @@
 timeout: 10000
 max_completed_requests: 5
-api_url: http://localhost:30000/v1
+api_url: http://localhost:30001/v1
 api_key: token-abc123
 
 client_config:
@@ -11,12 +11,7 @@ client_config:
 
 request_generator_config:
   type: trace
-  trace_file: data/processed_traces/swe_agent_trace_short.jsonl
+  trace_file: data/processed_traces/short_trace.jsonl
   input_length_column: input_length
   output_length_column: output_length
   use_trace_prefix_hash_ids: true
-  session_generator_config:
-    minimum_prefix_match: 0.8
-    max_session_size: 100
-    min_session_size: 5
-    save_as_trace_file: true

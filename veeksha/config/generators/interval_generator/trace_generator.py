@@ -11,6 +11,12 @@ from veeksha.types.request_interval_generator_type import RequestIntervalGenerat
 
 @frozen_dataclass
 class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
+    exhaustion_policy: str = field(
+        default="error",
+        metadata={
+            "help": "Behavior when the trace runs out: error | stop | wrap.",
+        },
+    )
     trace_file: str = field(
         default="data/processed_traces/swe_agent_trace_short.jsonl",
         metadata={
@@ -46,6 +52,10 @@ class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
         if self.timestamp_unit not in ALLOWED_TS_UNITS:
             raise ValueError(
                 f"{self.__class__.__name__}: timestamp_unit must be in {sorted(ALLOWED_TS_UNITS)}"
+            )
+        if self.exhaustion_policy not in {"error", "stop", "wrap"}:
+            raise ValueError(
+                f"{self.__class__.__name__}: exhaustion_policy must be one of ['error','stop','wrap']"
             )
 
     @classmethod

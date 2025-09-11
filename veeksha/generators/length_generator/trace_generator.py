@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Optional, Tuple
 
 from veeksha.config.generators.length_generator.trace_generator import (
     TraceRequestLengthGeneratorConfig,
@@ -41,6 +41,10 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
 
     def get_next_num_tokens(self) -> Tuple[int, int]:
         if self.next_request_idx >= len(self.trace_df):
+            if self.config.exhaustion_policy == "error":
+                raise StopIteration(
+                    f"Trace exhausted for lengths at index {self.next_request_idx}"
+                )
             return -1, -1
 
         row = self.trace_df.iloc[self.next_request_idx]
@@ -50,3 +54,6 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
             int(row["input_length"]),
             int(row["output_length"]),
         )
+
+    def capacity(self) -> Optional[int]:
+        return len(self.trace_df)
