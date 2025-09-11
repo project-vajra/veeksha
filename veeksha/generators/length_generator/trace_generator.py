@@ -41,7 +41,7 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
         self._wrap_warning_logged = False
 
     def get_next_num_tokens(self) -> Tuple[int, int]:
-        if self.next_request_idx >= len(self.trace_df):
+        if self.next_request_idx >= self.capacity():
             if self.config.exhaustion_policy == "error":
                 raise StopIteration(
                     f"Trace exhausted for lengths at index {self.next_request_idx}"

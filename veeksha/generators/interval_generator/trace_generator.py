@@ -40,7 +40,7 @@ class TraceRequestIntervalGenerator(BaseRequestIntervalGenerator):
         self._wrap_warning_logged = False
 
     def get_next_inter_request_time(self) -> float:
-        if self.next_request_idx >= len(self.trace_df):
+        if self.next_request_idx >= self.capacity():
             if self.config.exhaustion_policy == "error":
                 raise StopIteration(
                     f"Trace exhausted for intervals at index {self.next_request_idx}"
