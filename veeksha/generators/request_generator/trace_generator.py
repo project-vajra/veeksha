@@ -103,6 +103,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
             self.session_generator.save_requests_as_trace(session_df_for_saving)
 
         self.request_idx = 0
+        self._wrap_warning_logged = False
 
     def is_stable_encoding(
         self,
@@ -161,18 +162,26 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 raise StopIteration(
                     f"Trace exhausted for requests at index {self.request_idx}"
                 )
-            # stop policy: return a sentinel request with negative dispatch delay
-            logger.info(
-                f"Stop policy active: request trace exhausted at index {self.request_idx}."
-            )
-            return RequestConfig(
-                model=self.client_config.model,
-                prompt=("", 0),
-                dispatch_delay=-1,
-                llm_api=self.client_config.llm_api,
-                address_append_value=self.client_config.address_append_value,
-                id=self.request_idx,
-            )
+            if self.config.exhaustion_policy == "stop":
+                # stop policy: return a sentinel request with negative dispatch delay
+                logger.info(
+                    f"Stop policy active: request trace exhausted at index {self.request_idx}."
+                )
+                return RequestConfig(
+                    model=self.client_config.model,
+                    prompt=("", 0),
+                    dispatch_delay=-1,
+                    llm_api=self.client_config.llm_api,
+                    address_append_value=self.client_config.address_append_value,
+                    id=self.request_idx,
+                )
+            if self.config.exhaustion_policy == "wrap":
+                if not self._wrap_warning_logged:
+                    logger.warning(
+                        f"Request trace exhausted at index {self.request_idx}; wrapping to start."
+                    )
+                    self._wrap_warning_logged = True
+                self.request_idx = 0
         if (
             self.config.use_trace_sessions
             or self.config.session_generator_config is not None

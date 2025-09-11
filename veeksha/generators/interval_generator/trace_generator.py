@@ -37,6 +37,7 @@ class TraceRequestIntervalGenerator(BaseRequestIntervalGenerator):
         )
 
         self.next_request_idx = 0
+        self._wrap_warning_logged = False
 
     def get_next_inter_request_time(self) -> float:
         if self.next_request_idx >= len(self.trace_df):
@@ -48,7 +49,14 @@ class TraceRequestIntervalGenerator(BaseRequestIntervalGenerator):
                 logger.info(
                     f"Stop policy active: interval trace exhausted at index {self.next_request_idx}."
                 )
-            return -1
+                return -1
+            if self.config.exhaustion_policy == "wrap":
+                if not self._wrap_warning_logged:
+                    logger.warning(
+                        f"Interval trace exhausted at index {self.next_request_idx}; wrapping to start."
+                    )
+                    self._wrap_warning_logged = True
+                self.next_request_idx = 0
 
         inter_request_time = self.trace_df.iloc[self.next_request_idx][
             "inter_request_time"
