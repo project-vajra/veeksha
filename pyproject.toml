@@ -11,6 +11,9 @@ exclude = [
 ]
 reportMissingImports = false
 
+[tool.setuptools.package-data]
+"veeksha.data.processed_traces" = ["*"]
+
 [build-system]
 requires = [
     "packaging",

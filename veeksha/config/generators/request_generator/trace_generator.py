@@ -1,6 +1,7 @@
 import os
 from dataclasses import field
 from typing import Optional
+import importlib.resources
 
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.generators.request_generator.base_generator import (
@@ -12,11 +13,17 @@ from veeksha.config.generators.session_generator import (
 from veeksha.constants.configuration_constants import ALLOWED_TS_UNITS
 from veeksha.types.request_generator_type import RequestGeneratorType
 
+_DATA_FILE_PATH = (
+    importlib.resources.files("veeksha.data.processed_traces")
+    .joinpath("swe_agent_trace_short.jsonl")
+)
+
+DEFAULT_TRACE_FILE = str(_DATA_FILE_PATH)
 
 @frozen_dataclass(allow_from_file=True)
 class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     trace_file: str = field(
-        default="data/processed_traces/swe_agent_trace_short.jsonl",
+        default=DEFAULT_TRACE_FILE,
         metadata={"help": "Path to the trace file for request generation."},
     )
     input_length_column: str = field(
