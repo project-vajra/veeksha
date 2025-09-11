@@ -134,7 +134,11 @@ class OpenAICompletionsClient(BaseLLMClient):
         sampling_params = request_config.sampling_params
         body.update(sampling_params or {})
 
-        headers = {"Authorization": f"Bearer {self.key}"}
+        headers = {
+            "Authorization": f"Bearer {self.key}",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
         address = self.address
 
         if not address:
@@ -149,7 +153,7 @@ class OpenAICompletionsClient(BaseLLMClient):
         error_response_code = None
         tokens_received = 0
         generated_text = ""
-        logprobs = {}
+        logprobs: List[Dict] = []
         previous_responses = []
         previous_token_count = 0
 
@@ -203,7 +207,7 @@ class OpenAICompletionsClient(BaseLLMClient):
         response = Response(
             id=request_config.id,
             text=generated_text,
-            logprobs=logprobs,
+            logprobs={"chunks": logprobs},
         )
 
         return metrics, response

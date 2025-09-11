@@ -135,7 +135,11 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
         sampling_params = request_config.sampling_params
         body.update(sampling_params or {})
 
-        headers = {"Authorization": f"Bearer {self.key}"}
+        headers = {
+            "Authorization": f"Bearer {self.key}",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
         address = self.address
 
         if not address:
