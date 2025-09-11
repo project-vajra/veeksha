@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 import time
-from typing import List, Tuple
+from typing import AsyncGenerator, Dict, List, Tuple
 
 import aiohttp
 
@@ -56,10 +56,72 @@ class OpenAICompletionsClient(BaseLLMClient):
         previous_token_count = self.total_tokens(previous_responses)
         return current_tokens_received, previous_token_count
 
+    async def _process_stream(
+        self, response: aiohttp.ClientResponse
+    ) -> AsyncGenerator[Dict, None]:
+        """Process the SSE stream from the API."""
+        buffer = b""
+        async for chunk_bytes in response.content.iter_any():
+            buffer += chunk_bytes
+            while b"\n" in buffer:
+                line_bytes, buffer = buffer.split(b"\n", 1)
+                line = line_bytes.decode("utf-8").strip()
+
+                if not line or not line.startswith("data:"):
+                    # Skip empty lines, comments, etc.
+                    continue
+
+                payload = line[len("data:") :].strip()
+                if payload == "[DONE]":
+                    return
+
+                try:
+                    yield json.loads(payload)
+                except json.JSONDecodeError:
+                    logger.exception(f"JSON decode error with chunk: {payload}")
+
+    def _update_metrics_from_chunk(
+        self,
+        data: Dict,
+        inter_token_times: list,
+        previous_responses: list,
+        previous_token_count: int,
+        most_recent_received_token_time: float,
+    ) -> Tuple[int, int, str, float, list]:
+        """Update metrics and generated text from a single data chunk."""
+        generated_text_chunk = ""
+        tokens_received_chunk = 0
+        logprobs = []
+
+        choice = data.get("choices", [{}])[0]
+        if text_chunk := choice.get("text"):
+            (
+                current_tokens_received,
+                previous_token_count,
+            ) = self.get_current_tokens_received(
+                previous_responses=previous_responses,
+                current_response=text_chunk,
+                previous_token_count=previous_token_count,
+            )
+
+            tokens_received_chunk += current_tokens_received
+            inter_token_times.append(time.monotonic() - most_recent_received_token_time)
+            most_recent_received_token_time = time.monotonic()
+            generated_text_chunk = text_chunk
+            if "logprobs" in choice:
+                logprobs = choice["logprobs"]
+
+        return (
+            tokens_received_chunk,
+            previous_token_count,
+            generated_text_chunk,
+            most_recent_received_token_time,
+            logprobs,
+        )
+
     async def send_llm_request(
         self, request_config: RequestConfig, session: aiohttp.ClientSession
     ) -> Tuple[RequestMetrics, Response]:
-        # The request_config.prompt is expected to be a tuple: (prompt_text, prompt_length)
         prompt, prompt_len = request_config.prompt
 
         # Completions API should only be used with lm_eval loglikelihood tasks.
@@ -96,68 +158,38 @@ class OpenAICompletionsClient(BaseLLMClient):
 
         try:
             async with session.post(address, json=body, headers=headers) as response:
-                if response.status != 200:
-                    error_response_code = response.status
-                    error_msg = await response.text()
-                    logger.error(f"Request Error: {error_msg}")
-                    response.raise_for_status()
+                response.raise_for_status()
 
-                buffer = b""
-                stream_done = False
-                async for chunk_bytes in response.content.iter_any():
-                    buffer += chunk_bytes
-                    while b"\n" in buffer:
-                        line_bytes, buffer = buffer.split(b"\n", 1)
-                        line = line_bytes.decode("utf-8").strip()
-
-                        if not line:
-                            continue
-
-                        # Remove the "data: " prefix if present.
-                        stem = "data: "
-                        payload = line[len(stem) :] if line.startswith(stem) else line
-
-                        if payload == "[DONE]":
-                            buffer = b""
-                            stream_done = True
-                            break
-
-                        try:
-                            data = json.loads(payload)
-                        except json.JSONDecodeError:
-                            logger.exception(f"JSON decode error with chunk: {payload}")
-                            continue  # Skip malformed JSON
-
-                        if "error" in data:
-                            err = data.get("error") or {}
-                            error_msg = err.get("message", "Unknown error")
-                            error_response_code = err.get("code")
-                            stream_done = True
-                            break
-
-                        text_chunk = data["choices"][0].get("text", "")
-                        if text_chunk:
-                            current_tokens_received, previous_token_count = (
-                                self.get_current_tokens_received(
-                                    previous_responses=previous_responses,
-                                    current_response=text_chunk,
-                                    previous_token_count=previous_token_count,
-                                )
-                            )
-                            tokens_received += current_tokens_received
-                            inter_token_times.append(  # Just get TTFT
-                                time.monotonic() - most_recent_received_token_time
-                            )
-                            most_recent_received_token_time = time.monotonic()
-                            generated_text += text_chunk
-                            if "logprobs" in data["choices"][0]:
-                                logprobs = data["choices"][0]["logprobs"]
-                    if stream_done:
+                async for data in self._process_stream(response):
+                    if "error" in data:
+                        err = data.get("error") or {}
+                        error_msg = err.get("message", "Unknown error")
+                        error_response_code = err.get("code")
                         break
-        except asyncio.CancelledError:
-            raise
+
+                    (
+                        tokens_received_chunk,
+                        previous_token_count,
+                        generated_text_chunk,
+                        most_recent_received_token_time,
+                        logprobs_chunk,
+                    ) = self._update_metrics_from_chunk(
+                        data=data,
+                        inter_token_times=inter_token_times,
+                        previous_responses=previous_responses,
+                        previous_token_count=previous_token_count,
+                        most_recent_received_token_time=most_recent_received_token_time,
+                    )
+                    tokens_received += tokens_received_chunk
+                    generated_text += generated_text_chunk
+                    logprobs.extend(logprobs_chunk)
+
+        except asyncio.TimeoutError as e:
+            error_msg = error_msg or "Request timed out"
+            logger.warning(f"Timeout Error: ({error_response_code}) {error_msg}")
         except Exception as e:
-            logger.error(f"Warning Or Error: ({error_response_code}) {e}")
+            error_msg = error_msg or str(e)
+            logger.exception(f"An unexpected error occurred: ({error_response_code})")
 
         metrics = RequestMetrics(
             request_dispatched_at=request_dispatched_at,

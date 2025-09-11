@@ -76,7 +76,7 @@ class RequestsLauncher:
         async def main():
             # Create a single session with a timeout to be reused for all requests.
             async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=60)
+                timeout=aiohttp.ClientTimeout(total=self.client_config.request_timeout)
             ) as session:
                 while True:
                     request_config = self.input_queue.get()

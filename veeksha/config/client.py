@@ -43,6 +43,12 @@ class ClientConfig:
         default="chat/completions",
         metadata={"help": "The address append value for OpenAI API."},
     )
+    request_timeout: int = field(
+        default=60,
+        metadata={
+            "help": "The timeout for each request to the LLM API in seconds."
+        },
+    )
 
     def __post_init__(self):
         self.additional_sampling_params_dict = {}
