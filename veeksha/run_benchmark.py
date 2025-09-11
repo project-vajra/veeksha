@@ -251,7 +251,6 @@ def run_benchmark(
         max_requests=max_requests,
         timeout=benchmark_config.timeout,
         metrics_config=benchmark_config.metrics_config,
-        prefill_profiler_config=benchmark_config.prefill_profiler_config,
     )
 
     run_main_loop(

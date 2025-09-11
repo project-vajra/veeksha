@@ -9,7 +9,6 @@ import plotly.express as px
 import wandb
 
 from veeksha.config.metrics import MetricsConfig
-from veeksha.config.microbenchmarks.prefill_profiler import PrefillProfilerConfig
 from veeksha.logger import init_logger
 from veeksha.metrics.cdf_sketch import CDFSketch
 from veeksha.metrics.metric_utils import (
@@ -34,7 +33,6 @@ class MetricStore:
         timeout: float,
         max_requests: int,
         metrics_config: MetricsConfig,
-        prefill_profiler_config: PrefillProfilerConfig,
     ) -> None:
         self.timeout = timeout
         self.max_requests = max_requests
@@ -61,7 +59,6 @@ class MetricStore:
 
         self.request_level_metrics = RequestLevelMetrics(
             deadline_config=metrics_config.deadline_report,
-            prefill_profiler_config=prefill_profiler_config,
         )
 
         self.summaries: Dict[str, CDFSketch] = {

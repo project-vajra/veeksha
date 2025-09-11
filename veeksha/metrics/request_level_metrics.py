@@ -3,7 +3,6 @@ import os
 from typing import List
 
 from veeksha.config.deadline import DeadlineReportConfig
-from veeksha.config.microbenchmarks.prefill_profiler import PrefillProfilerConfig
 from veeksha.metrics.metric_utils import (
     find_min_tbt_deadline_to_meet,
     get_request_level_deadline_miss_rate,
@@ -19,7 +18,6 @@ class RequestLevelMetrics:
     def __init__(
         self,
         deadline_config: DeadlineReportConfig,
-        prefill_profiler_config: PrefillProfilerConfig,
     ) -> None:
         self.ttft_deadline: float = deadline_config.ttft_deadline
         self.tbt_deadline: float = deadline_config.tbt_deadline

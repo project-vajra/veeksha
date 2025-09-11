@@ -2,7 +2,6 @@ import time
 from typing import Dict
 
 from veeksha.config.metrics import MetricsConfig
-from veeksha.config.microbenchmarks.prefill_profiler import PrefillProfilerConfig
 from veeksha.metrics.metric_store import MetricStore
 from veeksha.metrics.request_metrics import RequestMetrics
 
@@ -13,7 +12,6 @@ class ServiceMetrics:
         timeout: float,
         max_requests: int,
         metrics_config: MetricsConfig,
-        prefill_profiler_config: PrefillProfilerConfig,
     ) -> None:
         self.timeout = timeout
         self.max_requests = max_requests
@@ -25,7 +23,6 @@ class ServiceMetrics:
             timeout=timeout,
             max_requests=max_requests,
             metrics_config=metrics_config,
-            prefill_profiler_config=prefill_profiler_config,
         )
 
     @property
