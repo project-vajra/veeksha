@@ -255,6 +255,7 @@ wandb/
 prefill_outputs/
 prefill_experiments*
 cap_experiments*
+microbenchmark_experiments*
 experiments/
 experiments_*
 results*
