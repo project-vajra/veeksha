@@ -9,11 +9,11 @@ from typing import Dict, List
 import numpy as np
 
 from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.config.generators.length_generator.fixed_generator import (
-    FixedRequestLengthGeneratorConfig,
-)
 from veeksha.config.generators.interval_generator.static_generator import (
     StaticRequestIntervalGeneratorConfig,
+)
+from veeksha.config.generators.length_generator.fixed_generator import (
+    FixedRequestLengthGeneratorConfig,
 )
 from veeksha.config.generators.request_generator.synthetic_generator import (
     SyntheticRequestGeneratorConfig,
@@ -46,7 +46,9 @@ PREFILL_RANDOM_FOREST_PARAMS = {
 
 
 class PrefillProfiler:
-    def __init__(self, base_config: BenchmarkConfig, prefill_lengths: List[int]) -> None:
+    def __init__(
+        self, base_config: BenchmarkConfig, prefill_lengths: List[int]
+    ) -> None:
         self.base_config = base_config
         self.prefill_values = prefill_lengths
         self.prefill_times: Dict[int, List[float]] = {}
@@ -55,14 +57,13 @@ class PrefillProfiler:
         profiler_client_config = replace(
             base_config.client_config,
             num_clients=PREFILL_NUM_CLIENTS,
-            num_concurrent_requests_per_client=PREFILL_NUM_CONCURRENT_REQUESTS_PER_CLIENT
+            num_concurrent_requests_per_client=PREFILL_NUM_CONCURRENT_REQUESTS_PER_CLIENT,
         )
-        
+
         profiler_metrics_config = replace(
-            base_config.metrics_config,
-            should_write_metrics_to_wandb=False
+            base_config.metrics_config, should_write_metrics_to_wandb=False
         )
-        
+
         self.config = replace(
             base_config,
             max_completed_requests=PREFILL_MAX_NUM_COMPLETED_REQUESTS,
@@ -70,11 +71,10 @@ class PrefillProfiler:
             metrics_config=profiler_metrics_config,
             request_generator_config=SyntheticRequestGeneratorConfig(
                 interval_generator_config=StaticRequestIntervalGeneratorConfig()
-            )
+            ),
         )
-        
-        self.base_dir = self.base_config.metrics_config.output_dir
 
+        self.base_dir = self.base_config.metrics_config.output_dir
 
     def run(self):
         for prefill_value in self.prefill_values:
@@ -83,15 +83,14 @@ class PrefillProfiler:
                 decode_tokens=PREFILL_PROFILER_DECODE_TOKENS,
                 prefill_tokens=prefill_value,
             )
-            
+
             request_generator_config = replace(
                 self.config.request_generator_config,
-                length_generator_config=length_generator_config
+                length_generator_config=length_generator_config,
             )
-                
+
             run_config = replace(
-                self.config,
-                request_generator_config=request_generator_config
+                self.config, request_generator_config=request_generator_config
             )
 
             run_dir = os.path.join(
@@ -114,21 +113,22 @@ class PrefillProfiler:
                 run_metrics_config = replace(
                     run_config.metrics_config,
                     wandb_run_name=f"prefill_p{prefill_value}_{self.config.client_config.model}",
-                    output_dir=run_dir
+                    output_dir=run_dir,
                 )
-                
+
                 final_run_config = replace(
-                    run_config,
-                    metrics_config=run_metrics_config
+                    run_config, metrics_config=run_metrics_config
                 )
-                
+
                 os.makedirs(run_dir, exist_ok=True)
                 logger.info(f"Running profiling for prefill value = {prefill_value}...")
                 service_metrics = run_benchmark(final_run_config)
                 logger.info(f"Run benchmark done")
 
                 json_file = os.path.join(run_dir, f"request_level_metrics.json")
-                assert os.path.exists(json_file), f"Could not find the result file for {run_dir}"
+                assert os.path.exists(
+                    json_file
+                ), f"Could not find the result file for {run_dir}"
 
                 with open(json_file, "r") as f:
                     data = json.load(f)
@@ -144,12 +144,12 @@ class PrefillProfiler:
                 "std": float(np.std(self.prefill_times[prefill_value])),
                 "min": float(np.min(self.prefill_times[prefill_value])),
                 "max": float(np.max(self.prefill_times[prefill_value])),
-            } for prefill_value in self.prefill_values}
+            }
+            for prefill_value in self.prefill_values
+        }
 
         print(f"Prefill runtime stats: {prefill_stats}")
 
         prefill_stats_file = os.path.join(self.base_dir, "prefill_stats.json")
         with open(prefill_stats_file, "w") as f:
             json.dump(prefill_stats, f)
-
-

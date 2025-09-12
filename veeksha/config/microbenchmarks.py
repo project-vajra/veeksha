@@ -96,6 +96,7 @@ class MicrobenchmarkConfig:
 
     def to_dict(self):
         from veeksha.config.utils import dataclass_to_dict
+
         return dataclass_to_dict(self)
 
     def write_config_to_file(self):
@@ -107,4 +108,3 @@ class MicrobenchmarkConfig:
                 json.dump(config_dict, f, indent=4)
         except (OSError, IOError) as e:
             raise RuntimeError(f"Failed to write config to {output_path}: {e}")
-

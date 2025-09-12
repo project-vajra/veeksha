@@ -10,11 +10,11 @@ import numpy as np
 import wandb
 
 from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.config.generators.length_generator.fixed_generator import (
-    FixedRequestLengthGeneratorConfig,
-)
 from veeksha.config.generators.interval_generator.static_generator import (
     StaticRequestIntervalGeneratorConfig,
+)
+from veeksha.config.generators.length_generator.fixed_generator import (
+    FixedRequestLengthGeneratorConfig,
 )
 from veeksha.config.generators.request_generator.synthetic_generator import (
     SyntheticRequestGeneratorConfig,
@@ -44,47 +44,56 @@ class DecodeProfiler:
         metrics_file = os.path.join(output_dir, "request_level_metrics.json")
 
         assert os.path.exists(metrics_file)
-        
+
         # Read the metrics file
-        with open(metrics_file, 'r') as f:
+        with open(metrics_file, "r") as f:
             metrics_data = json.load(f)
 
         token_arrival_times = metrics_data["token_arrival_times"]
         tbt_values = metrics_data["tbt"]
 
-
         if self.decode_config.engine_uses_mixed_batching:
-            batch_saturation_first_token_time = sorted(arr[0] for arr in token_arrival_times)[batch_size - 1]
+            batch_saturation_first_token_time = sorted(
+                arr[0] for arr in token_arrival_times
+            )[batch_size - 1]
             latest_first_token_time = max(arr[0] for arr in token_arrival_times)
 
-            assert latest_first_token_time >= batch_saturation_first_token_time, "No overlapping generation window found. The earliest request finished before the latest request started."
+            assert (
+                latest_first_token_time >= batch_saturation_first_token_time
+            ), "No overlapping generation window found. The earliest request finished before the latest request started."
 
             window_start_time = batch_saturation_first_token_time
             window_end_time = latest_first_token_time
-        else:        
-            # Find the latest first token time across all requests 
+        else:
+            # Find the latest first token time across all requests
             # (the time when all requests have started generating tokens)
             latest_first_token_time = max(arr[0] for arr in token_arrival_times)
 
             # Find the earliest last token time across all requests
             # (the time when the first request completes)
             earliest_last_token_time = min(arr[-1] for arr in token_arrival_times)
-            
-            assert latest_first_token_time <= earliest_last_token_time, "No overlapping generation window found. The earliest request finished before the latest request started."
+
+            assert (
+                latest_first_token_time <= earliest_last_token_time
+            ), "No overlapping generation window found. The earliest request finished before the latest request started."
 
             window_start_time = latest_first_token_time
             window_end_time = earliest_last_token_time
 
-        logger.info(f"Analyzing decode batch runtime in window: [{window_start_time}, {window_end_time}]")
+        logger.info(
+            f"Analyzing decode batch runtime in window: [{window_start_time}, {window_end_time}]"
+        )
 
         # Create filtered tbt values
         filtered_tbt_values = []
-        
+
         for arrival_times, tbts in zip(token_arrival_times, tbt_values):
-            assert arrival_times 
+            assert arrival_times
             assert tbts
             # first arrival time corrosponds to prefill latency
-            assert len(arrival_times) - 1 == len(tbts), f"{len(arrival_times) - 2} != {len(tbts)}"
+            assert len(arrival_times) - 1 == len(
+                tbts
+            ), f"{len(arrival_times) - 2} != {len(tbts)}"
 
             for arrival_time, tbt in zip(arrival_times[1:], tbts):
                 if window_start_time <= arrival_time <= window_end_time:
@@ -92,40 +101,47 @@ class DecodeProfiler:
         return filtered_tbt_values
 
     def run(self):
-        for batch_size, context_length in product(self.batch_sizes, self.context_lengths):
+        for batch_size, context_length in product(
+            self.batch_sizes, self.context_lengths
+        ):
             prefill_tokens = context_length
             num_iterations_per_prefill = np.ceil(
                 context_length / self.decode_config.engine_chunk_size
             ).astype(int)
 
             # Calculate decode tokens dynamically like the original implementation
-            decode_tokens = int(batch_size * num_iterations_per_prefill + DECODE_PROFILING_ITERATIONS)
+            decode_tokens = int(
+                batch_size * num_iterations_per_prefill + DECODE_PROFILING_ITERATIONS
+            )
             decode_tokens *= 2
-            
+
             # Create new config for this run with proper replacements
             length_config = FixedRequestLengthGeneratorConfig(
-                prefill_tokens=prefill_tokens,
-                decode_tokens=decode_tokens
+                prefill_tokens=prefill_tokens, decode_tokens=decode_tokens
             )
-            
+
             # Create a synthetic request generator config with fixed length
             request_gen_config = SyntheticRequestGeneratorConfig(
                 interval_generator_config=StaticRequestIntervalGeneratorConfig(),
-                length_generator_config=length_config
+                length_generator_config=length_config,
             )
-            
+
             num_requests = batch_size
             if self.decode_config.engine_uses_mixed_batching:
-                num_requests += int(np.ceil(DECODE_PROFILING_ITERATIONS / num_iterations_per_prefill))
-            
-            num_clients = int(np.ceil(num_requests / DECODE_NUM_CONCURRENT_REQUESTS_PER_CLIENT))
-            
+                num_requests += int(
+                    np.ceil(DECODE_PROFILING_ITERATIONS / num_iterations_per_prefill)
+                )
+
+            num_clients = int(
+                np.ceil(num_requests / DECODE_NUM_CONCURRENT_REQUESTS_PER_CLIENT)
+            )
+
             # Create new client config with updated num_clients and force streaming API
             client_config = replace(
                 self.base_config.client_config,
                 num_clients=num_clients,
                 llm_api="openai_chat",
-                address_append_value="chat/completions"
+                address_append_value="chat/completions",
             )
 
             run_dir = os.path.join(
@@ -138,26 +154,30 @@ class DecodeProfiler:
                 self.base_config.metrics_config,
                 wandb_run_name=f"decode_cl{context_length}_bsz{batch_size}_{self.base_config.client_config.model}",
                 output_dir=run_dir,
-                should_write_metrics_to_wandb=False
+                should_write_metrics_to_wandb=False,
             )
-            
+
             # Create a new config with all replacements
             config = replace(
                 self.base_config,
                 request_generator_config=request_gen_config,
                 max_completed_requests=num_requests,
                 client_config=client_config,
-                metrics_config=metrics_config
+                metrics_config=metrics_config,
             )
-            
+
             os.makedirs(run_dir, exist_ok=True)
-            logger.info(f"Running profiling for decode context_length = {context_length} and batch_size = {batch_size}...")
+            logger.info(
+                f"Running profiling for decode context_length = {context_length} and batch_size = {batch_size}..."
+            )
             run_benchmark(config)
             logger.info(f"Run benchmark done")
             if wandb.run:
                 wandb.finish()
 
-            self.decode_times[(context_length, batch_size)] = self.extract_decode_times(run_dir, batch_size)
+            self.decode_times[(context_length, batch_size)] = self.extract_decode_times(
+                run_dir, batch_size
+            )
 
         # log all the decode times with their length
         tbt_stats = {
@@ -167,11 +187,12 @@ class DecodeProfiler:
                 "std": float(np.std(times)),
                 "min": float(np.min(times)),
                 "max": float(np.max(times)),
-            } for (context_length, batch_size), times in self.decode_times.items()}
+            }
+            for (context_length, batch_size), times in self.decode_times.items()
+        }
 
         print(f"Decode runtime stats: {tbt_stats}")
 
         decode_stats_file = os.path.join(self.base_dir, "decode_stats.json")
         with open(decode_stats_file, "w") as f:
             json.dump(tbt_stats, f)
-
