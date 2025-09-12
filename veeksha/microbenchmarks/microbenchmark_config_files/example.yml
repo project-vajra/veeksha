@@ -1,0 +1,33 @@
+output_dir: microbenchmark_experiments/example
+seed: 42
+
+prefill_profiler:
+  enabled: true
+  prefill_lengths: [128, 256]
+
+decode_profiler:
+  enabled: true
+  context_lengths: [512]
+  engine_chunk_size: 512
+  batch_sizes: [2]
+  engine_uses_mixed_batching: false
+
+benchmark_config:
+  timeout: 10000
+  max_completed_requests: 1
+  api_url: http://localhost:8002/v1
+  api_key: ""
+  
+  client_config:
+    model: meta-llama/Meta-Llama-3-8B-Instruct
+    num_clients: 10
+    num_concurrent_requests_per_client: 5
+    llm_api: openai_completions
+    address_append_value: completions
+      
+  metrics_config:
+    should_write_metrics_to_wandb: false
+    deadline_report:
+      ttft_deadline: 0.6
+      tbt_deadline: 0.04
+      target_deadline_miss_rate: 0.1
