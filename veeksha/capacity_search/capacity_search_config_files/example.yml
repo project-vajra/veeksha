@@ -1,4 +1,4 @@
-output_dir: cap_experiments/example_capsearch
+output_dir: capsearch_results
 max_iterations: 5
 slos:
   - type: constant
@@ -26,7 +26,6 @@ benchmark_config:
 
   request_generator_config:
     type: trace
-    trace_file: data/processed_traces/swe_agent_trace_short.jsonl
     input_length_column: input_length
     output_length_column: output_length
     use_trace_prefix_hash_ids: true

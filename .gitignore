@@ -247,20 +247,19 @@ __pycache__
 
 env/
 benchmark_results/
-benchmark_test_dir/
+capsearch_results/
 profile_dir*
 temp*
 experiment*
 wandb/
 prefill_outputs/
 prefill_experiments*
-cap_experiments*
 microbenchmark_experiments*
 experiments/
 experiments_*
 results*
 .qodo
-data/generated_traces
+generated_traces
 veeksha/benchmark_config_files/
 veeksha/capacity_search/capsearch_config_files/
 

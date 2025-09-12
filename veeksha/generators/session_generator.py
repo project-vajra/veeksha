@@ -164,10 +164,8 @@ class SessionGenerator:
 
             return f"{base_name}_{'_'.join(params)}.jsonl"
 
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-        file_name = os.path.join(
-            project_root, "data", "generated_traces", create_clean_filename()
-        )
+        target_dir = self.config.trace_file_save_dir
+        file_name = os.path.join(target_dir, create_clean_filename())
         os.makedirs(os.path.dirname(file_name), exist_ok=True)
         requests_df.to_json(file_name, orient="records", lines=True)
         logger.info(f"Saved generated trace with sessions to {file_name}")
