@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List, Optional, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
@@ -32,3 +32,7 @@ class BaseRequestGenerator:
 
     def get_responses(self, responses: List[Response]) -> None:
         pass
+
+    def capacity(self) -> Optional[int]:
+        """Optional: total number of requests producible if finite; None if unbounded."""
+        return None

@@ -71,14 +71,25 @@ def dispatch_requests(
                 num_errored_requests_handled += 1
 
             # get next request and its dispatch time
-            request_config = request_generator.get_request()
+            try:
+                request_config = request_generator.get_request()
+            except StopIteration as e:
+                service_metrics.notify_error(e)
+                stop_event.set()
+                break
             request_dispatch_delay = request_config.dispatch_delay
 
-            if request_dispatch_delay < 0:
-                logger.warning(
-                    f"Invalid request dispatch delay '{request_dispatch_delay}' from request metadata. Stopping the main loop."
+            if request_dispatch_delay == -1:
+                logger.info(
+                    "Benchmark ending early due to stop policy (generator sentinel received)."
                 )
+                service_metrics.request_stop()
+                stop_event.set()
                 break
+            elif request_dispatch_delay < 0:
+                raise ValueError(
+                    f"Invalid request dispatch delay '{request_dispatch_delay}' from request metadata."
+                )
 
             # wait for dispatch time
             while not stop_event.is_set():
@@ -112,7 +123,12 @@ def process_results(
     stop_event: threading.Event,
 ) -> None:
     """Thread function to process results from the output queue."""
-    while not stop_event.is_set() or not output_queue.empty():
+    # On graceful stop, wait for all launched requests to finish.
+    # On error, return promptly after stop_event is set.
+    while not stop_event.is_set() or (
+        service_metrics.error is None
+        and service_metrics.num_completed_requests < service_metrics.num_requests
+    ):
         try:
             result = output_queue.get(timeout=0.1)
             request_metrics, generated_response = result
@@ -181,6 +197,10 @@ def run_main_loop(
         while not service_metrics.should_stop():
             time.sleep(0.1)
         logger.info("Stopping the main loop.")
+        if service_metrics.stop_requested and service_metrics.error is None:
+            logger.info(
+                "Main loop exited due to stop policy; partial metrics will be saved."
+            )
 
     # Signal threads to stop and wait for completion
     stop_event.set()
@@ -191,7 +211,11 @@ def run_main_loop(
     req_launcher.kill_clients()
 
     pbar.close()
-    logger.info("Main loop completed.")
+
+    if service_metrics.error is None:
+        logger.info("Main loop completed.")
+    else:
+        raise service_metrics.error
 
 
 def run_benchmark(

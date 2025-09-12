@@ -86,9 +86,15 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             num_output_tokens,
         ) = self.request_length_generator.get_next_num_tokens()
         dispatch_delay = self.requests_interval_generator.get_next_inter_request_time()
-        if num_prompt_tokens < 0 or num_output_tokens < 0:
-            logger.error(
-                f"Invalid number of tokens generated: prompt={num_prompt_tokens}, output={num_output_tokens} (potentially from trace request length generator)."
+        # graceful stop if any generator signals stop via sentinel values
+        if num_prompt_tokens < 0 or num_output_tokens < 0 or dispatch_delay < 0:
+            return RequestConfig(
+                model=self.client_config.model,
+                prompt=("", 0),
+                dispatch_delay=-1,
+                llm_api=self.client_config.llm_api,
+                address_append_value=self.client_config.address_append_value,
+                id=self.request_id,
             )
         num_prompt_tokens = int(num_prompt_tokens)
         num_output_tokens = int(num_output_tokens)
