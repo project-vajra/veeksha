@@ -137,16 +137,21 @@ class PrefillProfiler:
             logger.info(f"Profiling for prefill value = {prefill_value} done")
 
         # log all the prefill times with their length
-        prefill_stats = {
-            str(prefill_value): {
-                "mean": float(np.mean(self.prefill_times[prefill_value])),
-                "median": float(np.median(self.prefill_times[prefill_value])),
-                "std": float(np.std(self.prefill_times[prefill_value])),
-                "min": float(np.min(self.prefill_times[prefill_value])),
-                "max": float(np.max(self.prefill_times[prefill_value])),
+        prefill_stats = {}
+        for prefill_value in self.prefill_values:
+            if prefill_value not in self.prefill_times or not self.prefill_times[prefill_value]:
+                logger.warning(f"No prefill times found for prefill_value {prefill_value}")
+                prefill_stats[str(prefill_value)] = {"count": 0}
+                continue
+            times = self.prefill_times[prefill_value]
+            prefill_stats[str(prefill_value)] = {
+                "count": len(times),
+                "mean": float(np.mean(times)),
+                "median": float(np.median(times)),
+                "std": float(np.std(times)),
+                "min": float(np.min(times)),
+                "max": float(np.max(times)),
             }
-            for prefill_value in self.prefill_values
-        }
 
         print(f"Prefill runtime stats: {prefill_stats}")
 
