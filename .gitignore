@@ -258,7 +258,7 @@ experiments/
 experiments_*
 results*
 .qodo
-data/generated_traces
+generated_traces
 veeksha/benchmark_config_files/
 veeksha/capacity_search/capsearch_config_files/
 

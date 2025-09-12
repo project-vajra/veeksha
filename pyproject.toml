@@ -13,6 +13,7 @@ reportMissingImports = false
 
 [tool.setuptools.package-data]
 "veeksha.data.processed_traces" = ["*"]
+"veeksha.data" = ["corpus.txt"]
 
 [build-system]
 requires = [
