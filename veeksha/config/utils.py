@@ -501,11 +501,9 @@ def _build_unique_output_dir(root: str, model_name: str, config_hash: str) -> st
 
 
 def prepare_benchmark_output_dir(benchmark_config) -> None:
-    """Create output directory at benchmark launch and persist config.
-
-    - If `metrics_config.output_dir` equals the default root `benchmark_results`,
-      create a unique subdirectory with model and config hash.
-    - Otherwise, ensure the provided directory exists.
+    """Create a unique output subdirectory and persist config.
+    - Always create a unique subdirectory under `metrics_config.output_dir`,
+      named with model and config-hash plus a high-entropy timestamp.
     - Save `config.json` in the final output directory.
     """
     from veeksha.config.utils import (  # local to avoid cycles
@@ -523,6 +521,8 @@ def prepare_benchmark_output_dir(benchmark_config) -> None:
 
     # write config.json
     with open(
-        os.path.join(benchmark_config.metrics_config.output_dir, "config.json"), "w"
+        os.path.join(benchmark_config.metrics_config.output_dir, "config.json"),
+        "w",
+        encoding="utf-8",
     ) as f:
         json.dump(dataclass_to_dict(benchmark_config), f, indent=4)
