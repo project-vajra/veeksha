@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 from copy import deepcopy
 from dataclasses import fields, is_dataclass
@@ -455,3 +456,31 @@ def has_allow_from_file_attribute(cls: type) -> bool:
         True if the class has the _allow_from_file attribute set to True, False otherwise
     """
     return vars(cls).get("_allow_from_file", False)
+
+
+def get_config_hash(config_dict: dict) -> str:
+    """Return a stable 8-char hash for config dictionaries.
+
+    - Recursively removes volatile keys that can vary between runs
+      (e.g., output directories or wandb runtime values).
+    - Uses JSON with sorted keys to ensure deterministic ordering.
+    """
+
+    VOLATILE_KEYS = {
+        "output_dir",
+        "wandb_run_name",
+        "wandb_sweep_id",
+        "wandb_group",
+        "__flat_config__",
+    }
+
+    def scrub(obj):
+        if isinstance(obj, dict):
+            return {k: scrub(v) for k, v in obj.items() if k not in VOLATILE_KEYS}
+        if isinstance(obj, list):
+            return [scrub(i) for i in obj]
+        return obj
+
+    scrubbed = scrub(config_dict)
+    stable_json = json.dumps(scrubbed, sort_keys=True, separators=(",", ":"))
+    return hashlib.md5(stable_json.encode()).hexdigest()[:8]

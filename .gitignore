@@ -247,14 +247,13 @@ __pycache__
 
 env/
 benchmark_results/
-benchmark_test_dir/
+capsearch_results/
 profile_dir*
 temp*
 experiment*
 wandb/
 prefill_outputs/
 prefill_experiments*
-cap_experiments*
 experiments/
 experiments_*
 results*

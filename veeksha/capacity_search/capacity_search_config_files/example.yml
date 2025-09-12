@@ -1,4 +1,4 @@
-output_dir: cap_experiments/example_capsearch
+output_dir: capsearch_results
 max_iterations: 5
 slos:
   - type: constant
