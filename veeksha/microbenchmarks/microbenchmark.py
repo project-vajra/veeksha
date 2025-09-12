@@ -1,5 +1,4 @@
 import os
-from dataclasses import replace
 
 from veeksha.config.microbenchmarks import MicrobenchmarkConfig
 from veeksha.logger import init_logger
@@ -17,14 +16,8 @@ class Microbenchmark:
     ) -> None:
         self.microbenchmark_config = microbenchmark_config
 
-        # Update benchmark config with the microbenchmark output directory
-        self.benchmark_config = replace(
-            microbenchmark_config.benchmark_config,
-            metrics_config=replace(
-                microbenchmark_config.benchmark_config.metrics_config,
-                output_dir=microbenchmark_config.output_dir,
-            ),
-        )
+        # Store base benchmark config
+        self.base_benchmark_config = microbenchmark_config.create_benchmark_config()
 
     def _run_prefill_profiler(self) -> None:
         """Run the prefill profiler."""
@@ -36,11 +29,10 @@ class Microbenchmark:
         )
 
         # Create benchmark config with prefill output directory
-        benchmark_config_with_prefill = replace(
-            self.benchmark_config,
-            metrics_config=replace(
-                self.benchmark_config.metrics_config, output_dir=prefill_output_dir
-            ),
+        benchmark_config_with_prefill = (
+            self.microbenchmark_config.create_benchmark_config(
+                output_dir=prefill_output_dir
+            )
         )
 
         # Run prefill profiler
@@ -61,11 +53,10 @@ class Microbenchmark:
         )
 
         # Create benchmark config with decode output directory
-        benchmark_config_with_decode = replace(
-            self.benchmark_config,
-            metrics_config=replace(
-                self.benchmark_config.metrics_config, output_dir=decode_output_dir
-            ),
+        benchmark_config_with_decode = (
+            self.microbenchmark_config.create_benchmark_config(
+                output_dir=decode_output_dir
+            )
         )
 
         # Run decode profiler

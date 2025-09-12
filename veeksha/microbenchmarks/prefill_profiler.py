@@ -1,8 +1,5 @@
-import glob
 import json
-import multiprocessing
 import os
-import platform
 from dataclasses import replace
 from typing import Dict, List
 
@@ -18,7 +15,6 @@ from veeksha.config.generators.length_generator.fixed_generator import (
 from veeksha.config.generators.request_generator.synthetic_generator import (
     SyntheticRequestGeneratorConfig,
 )
-from veeksha.constants.prefill_constants import *
 from veeksha.logger import init_logger
 from veeksha.run_benchmark import run_benchmark
 
@@ -126,7 +122,9 @@ class PrefillProfiler:
                 logger.info(f"Run benchmark done")
 
                 benchmark_output_dir = service_metrics.output_dir
-                metrics_file = os.path.join(benchmark_output_dir, "request_level_metrics.json")
+                metrics_file = os.path.join(
+                    benchmark_output_dir, "request_level_metrics.json"
+                )
                 assert os.path.exists(
                     metrics_file
                 ), f"Could not find the result file for {benchmark_output_dir}"
@@ -140,8 +138,13 @@ class PrefillProfiler:
         # log all the prefill times with their length
         prefill_stats = {}
         for prefill_value in self.prefill_values:
-            if prefill_value not in self.prefill_times or not self.prefill_times[prefill_value]:
-                logger.warning(f"No prefill times found for prefill_value {prefill_value}")
+            if (
+                prefill_value not in self.prefill_times
+                or not self.prefill_times[prefill_value]
+            ):
+                logger.warning(
+                    f"No prefill times found for prefill_value {prefill_value}"
+                )
                 prefill_stats[str(prefill_value)] = {"count": 0}
                 continue
             times = self.prefill_times[prefill_value]

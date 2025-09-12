@@ -4,8 +4,10 @@ from dataclasses import field
 from typing import List, Optional
 
 from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.client import ClientConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from veeksha.config.metrics import MetricsConfig
 from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
 
@@ -53,12 +55,41 @@ class MicrobenchmarkConfig:
     """Configuration for microbenchmark profilers. This runs prefill and/or decode profiling
     based on the enabled flags in each section."""
 
+    model: str = field(
+        default="meta-llama/Meta-Llama-3-8B-Instruct",
+        metadata={"help": "The model to use for this microbenchmark."},
+    )
+    api_url: str = field(
+        default="http://localhost:8000/v1",
+        metadata={"help": "The API URL for the benchmark."},
+    )
+    api_key: str = field(
+        default="token-abc123",
+        metadata={"help": "The API key for the benchmark."},
+    )
+    tokenizer: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "The tokenizer to use for this microbenchmark. By default, the tokenizer is inferred from the model."
+        },
+    )
+    additional_sampling_params: str = field(
+        default="{}",
+        metadata={
+            "help": "Additional sampling params to send with each request to the LLM API. "
+            "By default, no additional sampling params are sent."
+        },
+    )
+    timeout: int = field(
+        default=1200,
+        metadata={"help": "The amount of time to run each profiling run for."},
+    )
     seed: int = field(
         default=DEFAULT_SEED,
         metadata={"help": "Seed for the random number generator for microbenchmarks."},
     )
     output_dir: str = field(
-        default="./microbenchmark_output",
+        default="microbenchmark_experiments",
         metadata={"help": "Output directory for microbenchmark results."},
     )
     prefill_profiler: PrefillProfilerSection = field(
@@ -69,14 +100,34 @@ class MicrobenchmarkConfig:
         default_factory=DecodeProfilerSection,
         metadata={"help": "Decode profiler configuration."},
     )
-    benchmark_config: BenchmarkConfig = field(
-        default_factory=BenchmarkConfig,
-        metadata={"help": "Base benchmark config for microbenchmarks."},
-    )
     wandb_project: Optional[str] = field(
         default=None,
         metadata={"help": "Wandb project for microbenchmarks"},
     )
+
+    def create_benchmark_config(self, output_dir: str = None) -> BenchmarkConfig:
+        """Create a BenchmarkConfig from microbenchmark settings.
+
+        Args:
+            output_dir: Override output directory. If None, uses self.output_dir
+
+        Returns:
+            BenchmarkConfig built from microbenchmark settings
+        """
+        return BenchmarkConfig(
+            seed=self.seed,
+            timeout=self.timeout,
+            api_url=self.api_url,
+            api_key=self.api_key,
+            client_config=ClientConfig(
+                model=self.model,
+                tokenizer=self.tokenizer,
+                additional_sampling_params=self.additional_sampling_params,
+            ),
+            metrics_config=MetricsConfig(
+                output_dir=output_dir or self.output_dir,
+            ),
+        )
 
     @classmethod
     def create_from_cli_args(cls):
