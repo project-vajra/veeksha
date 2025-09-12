@@ -11,12 +11,6 @@ class MetricsConfig:
         default="benchmark_results",
         metadata={"help": "The directory to save the benchmark results to."},
     )
-    should_use_given_dir: bool = field(
-        default=True,
-        metadata={
-            "help": "Whether to add directly use output_dir directory or create new directories for the results."
-        },
-    )
     deadline_report: DeadlineReportConfig = field(
         default_factory=DeadlineReportConfig,
         metadata={"help": "Reporting-only deadline thresholds for derived metrics."},
