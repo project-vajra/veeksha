@@ -6,7 +6,12 @@ from veeksha.config.generators.length_generator.base_generator import (
     BaseRequestLengthGeneratorConfig,
 )
 from veeksha.constants.configuration_constants import ALLOWED_EXHAUSTION_POLICIES
+from veeksha.config.utils import get_trace_file_path
 from veeksha.types import RequestLengthGeneratorType
+
+_DATA_FILE_PATH = get_trace_file_path("sharegpt_8k_filtered_stats_llama2_tokenizer.csv")
+
+DEFAULT_TRACE_FILE = str(_DATA_FILE_PATH)
 
 
 @frozen_dataclass
@@ -18,7 +23,7 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
         },
     )
     trace_file: str = field(
-        default="data/processed_traces/sharegpt_8k_filtered_stats_llama2_tokenizer.csv",
+        default=DEFAULT_TRACE_FILE,
         metadata={"help": "Path to the trace file for request lengths."},
     )
     input_length_column: str = field(
@@ -44,11 +49,18 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
     )
 
     def __post_init__(self):
-        # check if trace file exists
-        if not os.path.exists(self.trace_file):
-            raise FileNotFoundError(
-                f"{self.__class__.__name__}: Trace file not found: {self.trace_file}"
-            )
+        if self.trace_file == DEFAULT_TRACE_FILE:
+            # For the default path, use the is_file() method on the importlib.resources object
+            if not _DATA_FILE_PATH.is_file():
+                raise FileNotFoundError(
+                    f"{self.__class__.__name__}: Default trace file resource not found."
+                )
+        else:
+            # For user-provided paths, use os.path.exists
+            if not os.path.exists(self.trace_file):
+                raise FileNotFoundError(
+                    f"{self.__class__.__name__}: Trace file not found: {self.trace_file}"
+                )
 
         # prefill_scale_factor and decode_scale_factor cannot be negative
         if self.prefill_scale_factor < 0:

@@ -9,11 +9,16 @@ from veeksha.config.generators.request_generator.base_generator import (
 from veeksha.config.generators.session_generator import (
     SessionGeneratorConfig,
 )
+from veeksha.config.utils import get_trace_file_path
 from veeksha.constants.configuration_constants import (
     ALLOWED_EXHAUSTION_POLICIES,
     ALLOWED_TS_UNITS,
 )
 from veeksha.types.request_generator_type import RequestGeneratorType
+
+_DATA_FILE_PATH = get_trace_file_path("swe_agent_trace_short.jsonl")
+
+DEFAULT_TRACE_FILE = str(_DATA_FILE_PATH)
 
 
 @frozen_dataclass(allow_from_file=True)
@@ -25,7 +30,7 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
         },
     )
     trace_file: str = field(
-        default="data/processed_traces/swe_agent_trace_short.jsonl",
+        default=DEFAULT_TRACE_FILE,
         metadata={"help": "Path to the trace file for request generation."},
     )
     input_length_column: str = field(
@@ -77,16 +82,24 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     session_generator_config: Optional[SessionGeneratorConfig] = field(
         default=None,
         metadata={
-            "help": "If not None, it will synthesize sessions based on the trace file and prefix hash IDs of requests (requires use_prefix_hash_ids to be True)."
+            "help": "If not None, it will synthesize sessions based on the trace file and prefix hash IDs of requests (requires use_trace_prefix_hash_ids to be True)."
         },
     )
 
     def __post_init__(self):
-        # check if trace file exists
-        if not os.path.exists(self.trace_file):
-            raise FileNotFoundError(
-                f"{self.__class__.__name__}: Trace file not found: {self.trace_file}"
-            )
+        # Check if trace file exists, handling package resources
+        if self.trace_file == DEFAULT_TRACE_FILE:
+            # For the default path, use the is_file() method on the importlib.resources object
+            if not _DATA_FILE_PATH.is_file():
+                raise FileNotFoundError(
+                    f"{self.__class__.__name__}: Default trace file resource not found."
+                )
+        else:
+            # For user-provided paths, use os.path.exists
+            if not os.path.exists(self.trace_file):
+                raise FileNotFoundError(
+                    f"{self.__class__.__name__}: Trace file not found: {self.trace_file}"
+                )
         # factors cannot be negative
         if self.prefill_scale_factor < 0:
             raise ValueError(

@@ -1,7 +1,12 @@
 import hashlib
+import importlib.resources
+import json
 import logging
+import os
+import time
 from copy import deepcopy
 from dataclasses import fields, is_dataclass
+from importlib.abc import Traversable
 from typing import Any, Dict, List, Union, get_args, get_origin
 
 primitive_types = {int, str, float, bool, type(None)}
@@ -455,3 +460,84 @@ def has_allow_from_file_attribute(cls: type) -> bool:
         True if the class has the _allow_from_file attribute set to True, False otherwise
     """
     return vars(cls).get("_allow_from_file", False)
+
+
+def get_trace_file_path(filename: str) -> Traversable:
+    """
+    Resolves the path to a data file within the package's processed_traces directory.
+
+    Args:
+        filename: The name of the file in veeksha.data.processed_traces.
+
+    Returns:
+        A Traversable object representing the path to the data file.
+    """
+    return importlib.resources.files("veeksha.data.processed_traces").joinpath(filename)
+
+
+def get_config_hash(config_dict: dict) -> str:
+    """Return a stable 8-char hash for config dictionaries.
+
+    - Recursively removes volatile keys that can vary between runs
+      (e.g., output directories or wandb runtime values).
+    - Uses JSON with sorted keys to ensure deterministic ordering.
+    """
+
+    VOLATILE_KEYS = {
+        "output_dir",
+        "wandb_run_name",
+        "wandb_sweep_id",
+        "wandb_group",
+        "__flat_config__",
+    }
+
+    def scrub(obj):
+        if isinstance(obj, dict):
+            return {k: scrub(v) for k, v in obj.items() if k not in VOLATILE_KEYS}
+        if isinstance(obj, list):
+            return [scrub(i) for i in obj]
+        return obj
+
+    scrubbed = scrub(config_dict)
+    stable_json = json.dumps(scrubbed, sort_keys=True, separators=(",", ":"))
+    return hashlib.blake2s(stable_json.encode()).hexdigest()[:8]
+
+
+def _build_unique_output_dir(root: str, model_name: str, config_hash: str) -> str:
+    """Return a unique timestamped output directory path.
+
+    Format: <root>/<model>-<hash>-<timestamp>
+    """
+    timestamp = (
+        time.strftime("%Y%m%d-%H%M%S", time.localtime())
+        + f"-{int(time.time()*1000)%1000:03d}"
+    )
+    return os.path.join(root, f"{model_name}-{config_hash}-{timestamp}")
+
+
+def prepare_benchmark_output_dir(benchmark_config) -> None:
+    """Create a unique output subdirectory and persist config.
+    - Always create a unique subdirectory under `metrics_config.output_dir`,
+      named with model and config-hash plus a high-entropy timestamp.
+    - Save `config.json` in the final output directory.
+    """
+    from veeksha.config.utils import (  # local to avoid cycles
+        dataclass_to_dict,
+        get_config_hash,
+    )
+
+    base_output_dir = benchmark_config.metrics_config.output_dir
+    model_name = benchmark_config.client_config.model.split("/")[-1]
+
+    cfg_hash = get_config_hash(dataclass_to_dict(benchmark_config))
+    unique_dir = _build_unique_output_dir(base_output_dir, model_name, cfg_hash)
+    object.__setattr__(benchmark_config.metrics_config, "output_dir", unique_dir)
+    os.makedirs(benchmark_config.metrics_config.output_dir, exist_ok=True)
+
+    # write config.json
+    with open(
+        os.path.join(benchmark_config.metrics_config.output_dir, "config.json"),
+        "w",
+        encoding="utf-8",
+    ) as f:
+        json.dump(dataclass_to_dict(benchmark_config), f, indent=4)

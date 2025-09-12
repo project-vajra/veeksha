@@ -1,9 +1,10 @@
 import glob
-import hashlib
 import json
 import os
+import tempfile
 import threading
 from dataclasses import replace
+from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
 import wandb
@@ -13,7 +14,7 @@ from veeksha.capacity_search.slo import SloSet
 from veeksha.capacity_search.slo_evaluator import SloEvaluator
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.capacity_search import CapacitySearchConfig
-from veeksha.config.utils import dataclass_to_dict
+from veeksha.config.utils import dataclass_to_dict, get_config_hash
 from veeksha.constants.capacity_search_constants import (
     QPS_INCREASE_SCALE,
     VICINITY_THRESHOLD,
@@ -43,27 +44,30 @@ class CapacitySearch:
         }
 
         model_name = self.base_benchmark_config.client_config.model.split("/")[-1]
-        config_hash = hashlib.md5(str(self.full_config).encode()).hexdigest()[:8]
 
-        self.job_output_dir = os.path.join(
-            self.capacity_search_config.output_dir, f"{model_name}_{config_hash}"
+        config_hash = get_config_hash(self.full_config)
+
+        # stable root dir to persist cache across runs
+        self.job_root_dir = os.path.join(
+            self.capacity_search_config.output_dir, f"{model_name}-{config_hash}"
         )
-        os.makedirs(self.job_output_dir, exist_ok=True)
+        os.makedirs(self.job_root_dir, exist_ok=True)
 
-        with open(os.path.join(self.job_output_dir, "config.json"), "w") as f:
-            json.dump(self.full_config, f, indent=4)
+        # avoid empty dirs on cache hits
+        self.job_output_dir = None
 
         self.slo_set = SloSet(slos=self.capacity_search_config.slos)
         self.slo_evaluator = SloEvaluator(self.slo_set)
+        # can be reused across runs
         self._capsearch_cache_file = os.path.join(
-            self.job_output_dir, "_capsearch_cache.json"
+            self.job_root_dir, "_capsearch_cache.json"
         )
         self._capsearch_cache = self._load_cache()
 
     def _build_benchmark_config_for_qps(
         self, qps: float, run_dir: str
     ) -> BenchmarkConfig:
-        """Return a new BenchmarkConfig with metrics_config pointing to run_dir and
+        """Return a new BenchmarkConfig with metrics_config.output_dir pointing to run_dir and
         wandb_run_name encoding QPS.
         """
 
@@ -74,13 +78,25 @@ class CapacitySearch:
             wandb_run_name=f"qps_{qps}_model_{self.base_benchmark_config.client_config.model}",
         )
 
-        # copy of benchmark_config with updated metrics_config
+        # copy of benchmark_config with updated metrics_config.output_dir
         return replace(self.base_benchmark_config, metrics_config=new_metrics_cfg)
+
+    def _ensure_run_dir(self) -> None:
+        if self.job_output_dir is None:
+            now = datetime.now()
+            timestamp = (
+                now.strftime("%Y%m%d-%H%M%S") + f"-{now.microsecond // 1000:03d}"
+            )
+            self.job_output_dir = os.path.join(self.job_root_dir, timestamp)
+            os.makedirs(self.job_output_dir, exist_ok=True)
+            with open(
+                os.path.join(self.job_output_dir, "config.json"), "w", encoding="utf-8"
+            ) as f:
+                json.dump(self.full_config, f, indent=4)
 
     def _run_capacity_search_benchmark(
         self, qps: float
     ) -> Tuple[bool, Optional[Dict[str, float]], str]:
-        qps_run_dir = os.path.join(self.job_output_dir, str(qps))
         qps_key = str(qps)
 
         cached_iter = self._capsearch_cache.get("iterations", {}).get(qps_key)
@@ -91,6 +107,12 @@ class CapacitySearch:
                 cached_iter.get("slo_metrics", {}),
                 qps_key,
             )
+
+        # no cache: ensure per-run dir exists now
+        self._ensure_run_dir()
+        assert self.job_output_dir is not None
+        qps_run_dir = os.path.join(self.job_output_dir, str(qps))
+        os.makedirs(qps_run_dir, exist_ok=True)
 
         # isolated benchmark config for this QPS
         benchmark_config = self._build_benchmark_config_for_qps(qps, qps_run_dir)
@@ -244,7 +266,7 @@ class CapacitySearch:
     def _load_cache(self) -> Dict[str, Any]:
         try:
             if os.path.exists(self._capsearch_cache_file):
-                with open(self._capsearch_cache_file, "r") as f:
+                with open(self._capsearch_cache_file, "r", encoding="utf-8") as f:
                     cache = json.load(f)
                     return cache
         except Exception as e:
@@ -257,8 +279,26 @@ class CapacitySearch:
 
     def _save_cache(self) -> None:
         try:
-            with open(self._capsearch_cache_file, "w") as f:
-                json.dump(self._capsearch_cache, f, indent=2)
+            target_path = self._capsearch_cache_file
+            target_dir = os.path.dirname(target_path)
+            os.makedirs(target_dir, exist_ok=True)
+
+            fd, tmp_path = tempfile.mkstemp(
+                prefix="._capsearch_cache.", suffix=".json", dir=target_dir
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(self._capsearch_cache, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, target_path)
+            finally:
+                # If replace failed, ensure temp file is removed
+                if os.path.exists(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except FileNotFoundError:
+                        pass
         except Exception as e:
             logger.warning(f"Failed to write capsearch cache: {e}")
 
