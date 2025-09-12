@@ -42,11 +42,11 @@ class Microbenchmark:
             )
         )
         
-        # Create prefill profiler config
-        prefill_config = self.microbenchmark_config.create_prefill_profiler_config()
-        
         # Run prefill profiler
-        prefill_profiler = PrefillProfiler(benchmark_config_with_prefill, prefill_config)
+        prefill_profiler = PrefillProfiler(
+            benchmark_config_with_prefill, 
+            self.microbenchmark_config.prefill_profiler.prefill_lengths
+        )
         prefill_profiler.run()
         logger.info("Prefill profiler completed.")
 
@@ -66,11 +66,11 @@ class Microbenchmark:
             )
         )
         
-        # Create decode profiler config
-        decode_config = self.microbenchmark_config.create_decode_profiler_config()
-        
         # Run decode profiler
-        decode_profiler = DecodeProfiler(benchmark_config_with_decode, decode_config)
+        decode_profiler = DecodeProfiler(
+            benchmark_config_with_decode, 
+            self.microbenchmark_config.decode_profiler
+        )
         decode_profiler.run()
         logger.info("Decode profiler completed.")
 

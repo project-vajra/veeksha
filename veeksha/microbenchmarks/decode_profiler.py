@@ -10,7 +10,6 @@ import numpy as np
 import wandb
 
 from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.config.microbenchmarks.decode_profiler import DecodeProfilerConfig
 from veeksha.config.generators.length_generator.fixed_generator import (
     FixedRequestLengthGeneratorConfig,
 )
@@ -33,7 +32,7 @@ DECODE_PROFILING_ITERATIONS = 10
 
 
 class DecodeProfiler:
-    def __init__(self, base_config: BenchmarkConfig, decode_config: DecodeProfilerConfig) -> None:
+    def __init__(self, base_config: BenchmarkConfig, decode_config) -> None:
         self.base_config = base_config
         self.decode_config = decode_config
         self.context_lengths = decode_config.context_lengths
@@ -96,7 +95,7 @@ class DecodeProfiler:
         for batch_size, context_length in product(self.batch_sizes, self.context_lengths):
             prefill_tokens = context_length
             num_iterations_per_prefill = np.ceil(
-                context_length / self.base_config.decode_profiler_config.engine_chunk_size
+                context_length / self.decode_config.engine_chunk_size
             ).astype(int)
 
             # Calculate decode tokens dynamically like the original implementation

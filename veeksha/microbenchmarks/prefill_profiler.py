@@ -9,7 +9,6 @@ from typing import Dict, List
 import numpy as np
 
 from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.config.microbenchmarks.prefill_profiler import PrefillProfilerConfig
 from veeksha.config.generators.length_generator.fixed_generator import (
     FixedRequestLengthGeneratorConfig,
 )
@@ -47,9 +46,9 @@ PREFILL_RANDOM_FOREST_PARAMS = {
 
 
 class PrefillProfiler:
-    def __init__(self, base_config: BenchmarkConfig, prefill_config: PrefillProfilerConfig) -> None:
+    def __init__(self, base_config: BenchmarkConfig, prefill_lengths: List[int]) -> None:
         self.base_config = base_config
-        self.prefill_values = prefill_config.prefill_lengths
+        self.prefill_values = prefill_lengths
         self.prefill_times: Dict[int, List[float]] = {}
 
         # Create profiler-specific config using replace() to respect frozen design
@@ -89,7 +88,7 @@ class PrefillProfiler:
                 self.config.request_generator_config,
                 length_generator_config=length_generator_config
             )
-            
+                
             run_config = replace(
                 self.config,
                 request_generator_config=request_generator_config

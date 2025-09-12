@@ -6,8 +6,6 @@ from typing import List, Optional
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
-from .decode_profiler import DecodeProfilerConfig
-from .prefill_profiler import PrefillProfilerConfig
 from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
 
@@ -110,17 +108,3 @@ class MicrobenchmarkConfig:
         except (OSError, IOError) as e:
             raise RuntimeError(f"Failed to write config to {output_path}: {e}")
 
-    def create_prefill_profiler_config(self) -> PrefillProfilerConfig:
-        """Create the embedded prefill profiler config from top-level config."""
-        return PrefillProfilerConfig(
-            prefill_lengths=self.prefill_profiler.prefill_lengths,
-        )
-
-    def create_decode_profiler_config(self) -> DecodeProfilerConfig:
-        """Create the embedded decode profiler config from top-level config."""
-        return DecodeProfilerConfig(
-            context_lengths=self.decode_profiler.context_lengths,
-            engine_chunk_size=self.decode_profiler.engine_chunk_size,
-            batch_sizes=self.decode_profiler.batch_sizes,
-            engine_uses_mixed_batching=self.decode_profiler.engine_uses_mixed_batching,
-        )
