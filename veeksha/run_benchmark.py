@@ -17,6 +17,7 @@ from veeksha.benchmark_data_utils import (
     store_lmeval_results,
 )
 from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.utils import prepare_benchmark_output_dir
 from veeksha.core.hf_utils import get_tokenizer
 from veeksha.core.requests_launcher import RequestsLauncher
 from veeksha.core.response import Response
@@ -204,6 +205,8 @@ def run_benchmark(
     Returns:
         ServiceMetrics containing the collected metrics (including the `MetricStore`).
     """
+
+    prepare_benchmark_output_dir(benchmark_config)
 
     setup_api_environment(
         api_key=benchmark_config.api_key,

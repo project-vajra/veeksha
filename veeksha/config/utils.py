@@ -1,6 +1,8 @@
 import hashlib
 import json
 import logging
+import os
+import time
 from copy import deepcopy
 from dataclasses import fields, is_dataclass
 from typing import Any, Dict, List, Union, get_args, get_origin
@@ -484,3 +486,43 @@ def get_config_hash(config_dict: dict) -> str:
     scrubbed = scrub(config_dict)
     stable_json = json.dumps(scrubbed, sort_keys=True, separators=(",", ":"))
     return hashlib.md5(stable_json.encode()).hexdigest()[:8]
+
+
+def _build_unique_output_dir(root: str, model_name: str, config_hash: str) -> str:
+    """Return a unique timestamped output directory path.
+
+    Format: <root>/<model>-<hash>-<timestamp>
+    """
+    timestamp = (
+        time.strftime("%Y%m%d-%H%M%S", time.localtime())
+        + f"-{int(time.time()*1000)%1000:03d}"
+    )
+    return os.path.join(root, f"{model_name}-{config_hash}-{timestamp}")
+
+
+def prepare_benchmark_output_dir(benchmark_config) -> None:
+    """Create output directory at benchmark launch and persist config.
+
+    - If `metrics_config.output_dir` equals the default root `benchmark_results`,
+      create a unique subdirectory with model and config hash.
+    - Otherwise, ensure the provided directory exists.
+    - Save `config.json` in the final output directory.
+    """
+    from veeksha.config.utils import (  # local to avoid cycles
+        dataclass_to_dict,
+        get_config_hash,
+    )
+
+    base_output_dir = benchmark_config.metrics_config.output_dir
+    model_name = benchmark_config.client_config.model.split("/")[-1]
+
+    cfg_hash = get_config_hash(dataclass_to_dict(benchmark_config))
+    unique_dir = _build_unique_output_dir(base_output_dir, model_name, cfg_hash)
+    object.__setattr__(benchmark_config.metrics_config, "output_dir", unique_dir)
+    os.makedirs(benchmark_config.metrics_config.output_dir, exist_ok=True)
+
+    # write config.json
+    with open(
+        os.path.join(benchmark_config.metrics_config.output_dir, "config.json"), "w"
+    ) as f:
+        json.dump(dataclass_to_dict(benchmark_config), f, indent=4)

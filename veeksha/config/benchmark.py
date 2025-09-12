@@ -1,7 +1,4 @@
-import json
-import os
 from dataclasses import field
-from datetime import datetime
 from typing import Optional
 
 from veeksha.config.client import ClientConfig
@@ -17,7 +14,7 @@ from veeksha.config.generators.request_generator.synthetic_generator import (
     SyntheticRequestGeneratorConfig,
 )
 from veeksha.config.metrics import MetricsConfig
-from veeksha.config.utils import dataclass_to_dict, get_config_hash
+from veeksha.config.utils import dataclass_to_dict
 from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
 from veeksha.types import RequestGeneratorType
@@ -64,19 +61,6 @@ class BenchmarkConfig:
     )
 
     def __post_init__(self):
-        config_hash = get_config_hash(dataclass_to_dict(self))
-        model_name = self.client_config.model.split("/")[-1]
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        unique_output_dir = os.path.join(
-            self.metrics_config.output_dir, f"{model_name}-{config_hash}-{timestamp}"
-        )
-
-        # frozen dataclass
-        object.__setattr__(self.metrics_config, "output_dir", unique_output_dir)
-
-        if not os.path.exists(self.metrics_config.output_dir):
-            os.makedirs(self.metrics_config.output_dir, exist_ok=True)
-
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
             logger.warning("Removing timeout for LMEval.")
             self.timeout = -1
@@ -90,8 +74,6 @@ class BenchmarkConfig:
             else:
                 self.client_config.llm_api = "openai_chat"
                 self.client_config.address_append_value = "chat/completions"
-
-        self.write_config_to_file()
 
     @classmethod
     def create_from_cli_args(cls):
@@ -115,10 +97,3 @@ class BenchmarkConfig:
             return dataclass_to_dict(self)
 
         return self.__flat_config__.__dict__  # type: ignore
-
-    def write_config_to_file(self):
-        config_dict = dataclass_to_dict(self)
-        with open(
-            os.path.join(f"{self.metrics_config.output_dir}", "config.json"), "w"
-        ) as f:
-            json.dump(config_dict, f, indent=4)

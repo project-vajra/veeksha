@@ -1,6 +1,7 @@
 import glob
 import json
 import os
+import tempfile
 import threading
 from dataclasses import replace
 from datetime import datetime
@@ -66,7 +67,7 @@ class CapacitySearch:
     def _build_benchmark_config_for_qps(
         self, qps: float, run_dir: str
     ) -> BenchmarkConfig:
-        """Return a new BenchmarkConfig with metrics_config pointing to run_dir and
+        """Return a new BenchmarkConfig with metrics_config.output_dir pointing to run_dir and
         wandb_run_name encoding QPS.
         """
 
@@ -77,12 +78,15 @@ class CapacitySearch:
             wandb_run_name=f"qps_{qps}_model_{self.base_benchmark_config.client_config.model}",
         )
 
-        # copy of benchmark_config with updated metrics_config
+        # copy of benchmark_config with updated metrics_config.output_dir
         return replace(self.base_benchmark_config, metrics_config=new_metrics_cfg)
 
     def _ensure_run_dir(self) -> None:
         if self.job_output_dir is None:
-            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            now = datetime.now()
+            timestamp = (
+                now.strftime("%Y%m%d-%H%M%S") + f"-{now.microsecond // 1000:03d}"
+            )
             self.job_output_dir = os.path.join(self.job_root_dir, timestamp)
             os.makedirs(self.job_output_dir, exist_ok=True)
             with open(os.path.join(self.job_output_dir, "config.json"), "w") as f:
@@ -106,6 +110,7 @@ class CapacitySearch:
         self._ensure_run_dir()
         assert self.job_output_dir is not None
         qps_run_dir = os.path.join(self.job_output_dir, str(qps))
+        os.makedirs(qps_run_dir, exist_ok=True)
 
         # isolated benchmark config for this QPS
         benchmark_config = self._build_benchmark_config_for_qps(qps, qps_run_dir)
@@ -272,8 +277,26 @@ class CapacitySearch:
 
     def _save_cache(self) -> None:
         try:
-            with open(self._capsearch_cache_file, "w") as f:
-                json.dump(self._capsearch_cache, f, indent=2)
+            target_path = self._capsearch_cache_file
+            target_dir = os.path.dirname(target_path)
+            os.makedirs(target_dir, exist_ok=True)
+
+            fd, tmp_path = tempfile.mkstemp(
+                prefix="._capsearch_cache.", suffix=".json", dir=target_dir
+            )
+            try:
+                with os.fdopen(fd, "w") as f:
+                    json.dump(self._capsearch_cache, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, target_path)
+            finally:
+                # If replace failed, ensure temp file is removed
+                if os.path.exists(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except Exception:
+                        pass
         except Exception as e:
             logger.warning(f"Failed to write capsearch cache: {e}")
 
