@@ -70,7 +70,7 @@ class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
             )
         if self.exhaustion_policy not in ALLOWED_EXHAUSTION_POLICIES:
             raise ValueError(
-                f"{self.__class__.__name__}: exhaustion_policy must be one of {ALLOWED_EXHAUSTION_POLICIES}"
+                f"{self.__class__.__name__}: exhaustion_policy must be one of {sorted(ALLOWED_EXHAUSTION_POLICIES)}"
             )
 
     @classmethod

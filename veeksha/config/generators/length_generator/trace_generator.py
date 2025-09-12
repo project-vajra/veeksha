@@ -5,8 +5,8 @@ from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.generators.length_generator.base_generator import (
     BaseRequestLengthGeneratorConfig,
 )
-from veeksha.constants.configuration_constants import ALLOWED_EXHAUSTION_POLICIES
 from veeksha.config.utils import get_trace_file_path
+from veeksha.constants.configuration_constants import ALLOWED_EXHAUSTION_POLICIES
 from veeksha.types import RequestLengthGeneratorType
 
 _DATA_FILE_PATH = get_trace_file_path("sharegpt_8k_filtered_stats_llama2_tokenizer.csv")
@@ -84,7 +84,7 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
             raise ValueError(f"{self.__class__.__name__}: block_size must be positive")
         if self.exhaustion_policy not in ALLOWED_EXHAUSTION_POLICIES:
             raise ValueError(
-                f"{self.__class__.__name__}: exhaustion_policy must be one of {ALLOWED_EXHAUSTION_POLICIES}"
+                f"{self.__class__.__name__}: exhaustion_policy must be one of {sorted(ALLOWED_EXHAUSTION_POLICIES)}"
             )
 
     @classmethod
