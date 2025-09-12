@@ -89,7 +89,9 @@ class CapacitySearch:
             )
             self.job_output_dir = os.path.join(self.job_root_dir, timestamp)
             os.makedirs(self.job_output_dir, exist_ok=True)
-            with open(os.path.join(self.job_output_dir, "config.json"), "w") as f:
+            with open(
+                os.path.join(self.job_output_dir, "config.json"), "w", encoding="utf-8"
+            ) as f:
                 json.dump(self.full_config, f, indent=4)
 
     def _run_capacity_search_benchmark(
@@ -264,7 +266,7 @@ class CapacitySearch:
     def _load_cache(self) -> Dict[str, Any]:
         try:
             if os.path.exists(self._capsearch_cache_file):
-                with open(self._capsearch_cache_file, "r") as f:
+                with open(self._capsearch_cache_file, "r", encoding="utf-8") as f:
                     cache = json.load(f)
                     return cache
         except Exception as e:
@@ -285,7 +287,7 @@ class CapacitySearch:
                 prefix="._capsearch_cache.", suffix=".json", dir=target_dir
             )
             try:
-                with os.fdopen(fd, "w") as f:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
                     json.dump(self._capsearch_cache, f, indent=2)
                     f.flush()
                     os.fsync(f.fileno())
@@ -295,7 +297,7 @@ class CapacitySearch:
                 if os.path.exists(tmp_path):
                     try:
                         os.remove(tmp_path)
-                    except Exception:
+                    except FileNotFoundError:
                         pass
         except Exception as e:
             logger.warning(f"Failed to write capsearch cache: {e}")

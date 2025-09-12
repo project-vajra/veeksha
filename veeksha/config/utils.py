@@ -485,7 +485,7 @@ def get_config_hash(config_dict: dict) -> str:
 
     scrubbed = scrub(config_dict)
     stable_json = json.dumps(scrubbed, sort_keys=True, separators=(",", ":"))
-    return hashlib.md5(stable_json.encode()).hexdigest()[:8]
+    return hashlib.blake2s(stable_json.encode()).hexdigest()[:8]
 
 
 def _build_unique_output_dir(root: str, model_name: str, config_hash: str) -> str:

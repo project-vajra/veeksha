@@ -207,6 +207,9 @@ def run_benchmark(
     """
 
     prepare_benchmark_output_dir(benchmark_config)
+    logger.info(
+        f"Benchmark output directory: {benchmark_config.metrics_config.output_dir}"
+    )
 
     setup_api_environment(
         api_key=benchmark_config.api_key,
