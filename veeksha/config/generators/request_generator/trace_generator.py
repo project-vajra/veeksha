@@ -73,7 +73,7 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     session_generator_config: Optional[SessionGeneratorConfig] = field(
         default=None,
         metadata={
-            "help": "If not None, it will synthesize sessions based on the trace file and prefix hash IDs of requests (requires use_prefix_hash_ids to be True)."
+            "help": "If not None, it will synthesize sessions based on the trace file and prefix hash IDs of requests (requires use_trace_prefix_hash_ids to be True)."
         },
     )
 
