@@ -52,11 +52,24 @@ class DecodeProfiler:
         token_arrival_times = metrics_data["token_arrival_times"]
         tbt_values = metrics_data["tbt"]
 
+        # Filter out empty sequences (requests with zero output tokens)
+        non_empty_arrivals = [arr for arr in token_arrival_times if arr]
+        
+        if not non_empty_arrivals:
+            raise ValueError(
+                "No requests produced any output tokens. Cannot compute decode window."
+            )
+
         if self.decode_config.engine_uses_mixed_batching:
-            batch_saturation_first_token_time = sorted(
-                arr[0] for arr in token_arrival_times
-            )[batch_size - 1]
-            latest_first_token_time = max(arr[0] for arr in token_arrival_times)
+            if len(non_empty_arrivals) < batch_size:
+                raise ValueError(
+                    f"Mixed batching requires at least {batch_size} requests with tokens, "
+                    f"got {len(non_empty_arrivals)}. Decode profiling run insufficient."
+                )
+            
+            first_tokens = sorted(arr[0] for arr in non_empty_arrivals)
+            batch_saturation_first_token_time = first_tokens[batch_size - 1]
+            latest_first_token_time = max(arr[0] for arr in non_empty_arrivals)
 
             assert (
                 latest_first_token_time >= batch_saturation_first_token_time
@@ -67,11 +80,11 @@ class DecodeProfiler:
         else:
             # Find the latest first token time across all requests
             # (the time when all requests have started generating tokens)
-            latest_first_token_time = max(arr[0] for arr in token_arrival_times)
+            latest_first_token_time = max(arr[0] for arr in non_empty_arrivals)
 
             # Find the earliest last token time across all requests
             # (the time when the first request completes)
-            earliest_last_token_time = min(arr[-1] for arr in token_arrival_times)
+            earliest_last_token_time = min(arr[-1] for arr in non_empty_arrivals)
 
             assert (
                 latest_first_token_time <= earliest_last_token_time
@@ -180,16 +193,21 @@ class DecodeProfiler:
             )
 
         # log all the decode times with their length
-        tbt_stats = {
-            f"{context_length}_{batch_size}": {
+        tbt_stats = {}
+        for (context_length, batch_size), times in self.decode_times.items():
+            key = f"{context_length}_{batch_size}"
+            if not times:
+                logger.warning(f"No decode TBTs in analysis window for {key}")
+                tbt_stats[key] = {"count": 0}
+                continue
+            tbt_stats[key] = {
+                "count": len(times),
                 "mean": float(np.mean(times)),
                 "median": float(np.median(times)),
                 "std": float(np.std(times)),
                 "min": float(np.min(times)),
                 "max": float(np.max(times)),
             }
-            for (context_length, batch_size), times in self.decode_times.items()
-        }
 
         print(f"Decode runtime stats: {tbt_stats}")
 
