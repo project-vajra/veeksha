@@ -1,10 +1,12 @@
 import hashlib
+import importlib.resources
 import json
 import logging
 import os
 import time
 from copy import deepcopy
 from dataclasses import fields, is_dataclass
+from importlib.abc import Traversable
 from typing import Any, Dict, List, Union, get_args, get_origin
 
 primitive_types = {int, str, float, bool, type(None)}
@@ -458,6 +460,19 @@ def has_allow_from_file_attribute(cls: type) -> bool:
         True if the class has the _allow_from_file attribute set to True, False otherwise
     """
     return vars(cls).get("_allow_from_file", False)
+
+
+def get_trace_file_path(filename: str) -> Traversable:
+    """
+    Resolves the path to a data file within the package's processed_traces directory.
+
+    Args:
+        filename: The name of the file in veeksha.data.processed_traces.
+
+    Returns:
+        A Traversable object representing the path to the data file.
+    """
+    return importlib.resources.files("veeksha.data.processed_traces").joinpath(filename)
 
 
 def get_config_hash(config_dict: dict) -> str:

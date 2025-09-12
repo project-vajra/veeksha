@@ -18,10 +18,7 @@ def store_lmeval_results(output_dir: str, lmeval_results: Dict) -> None:
 
 
 def load_corpus() -> List[str]:
-    """Load the corpus lines from the corpus.txt file."""
-    corpus_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "data", "corpus.txt")
-    )
-    with open(corpus_path, "r") as f:
-        corpus_lines = f.readlines()
-    return corpus_lines
+    """Load corpus lines from packaged corpus.txt file"""
+    corpus_resource = _pkg_files("veeksha.data").joinpath("corpus.txt")
+    with corpus_resource.open("r", encoding="utf-8") as f:
+        return f.readlines()
