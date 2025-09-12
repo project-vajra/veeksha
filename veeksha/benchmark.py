@@ -265,10 +265,12 @@ def run_benchmark(
     )
 
     request_generator_params = {}
+    request_generator_config_type = benchmark_config.request_generator_config.get_type()
 
     if (
-        benchmark_config.request_generator_config.get_type()
-        == RequestGeneratorType.SYNTHETIC
+        request_generator_config_type
+        == RequestGeneratorType.SYNTHETIC or request_generator_config_type
+        == RequestGeneratorType.TRACE
     ):
         request_generator_params = {
             "corpus_lines": load_corpus(),
