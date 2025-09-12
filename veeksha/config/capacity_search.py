@@ -39,7 +39,7 @@ class CapacitySearchConfig:
         metadata={"help": "Maximum number of iterations for capacity search."},
     )
     output_dir: str = field(
-        default="./veeksha/capacity_search/output",
+        default="capsearch_results",
         metadata={
             "help": "Output directory for capacity search benchmarks and results. Overrides output_dir in benchmark_config.metrics_config."
         },
