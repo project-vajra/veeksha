@@ -2,7 +2,7 @@ import multiprocessing
 import platform
 
 from veeksha.config.microbenchmarks import MicrobenchmarkConfig
-from veeksha.microbenchmarks.profiler import run_microbenchmarks
+from veeksha.microbenchmarks.microbenchmark import Microbenchmark
 
 if __name__ == "__main__":
     if platform.system() == "Darwin":
@@ -11,4 +11,5 @@ if __name__ == "__main__":
     configs = MicrobenchmarkConfig.create_from_cli_args()
     for config in configs:
         config.write_config_to_file()
-        run_microbenchmarks(config)
+        microbenchmark = Microbenchmark(config)
+        microbenchmark.run()

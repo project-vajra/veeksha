@@ -9,6 +9,7 @@ from typing import Dict, List
 import numpy as np
 
 from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.microbenchmarks.prefill_profiler import PrefillProfilerConfig
 from veeksha.config.generators.length_generator.fixed_generator import (
     FixedRequestLengthGeneratorConfig,
 )
@@ -22,6 +23,7 @@ from veeksha.constants.prefill_constants import *
 from veeksha.logger import init_logger
 from veeksha.run_benchmark import run_benchmark
 
+# pyright: reportCallIssue=false, reportArgumentType=false
 logger = init_logger(__name__)
 
 
@@ -45,9 +47,9 @@ PREFILL_RANDOM_FOREST_PARAMS = {
 
 
 class PrefillProfiler:
-    def __init__(self, base_config: BenchmarkConfig) -> None:
+    def __init__(self, base_config: BenchmarkConfig, prefill_config: PrefillProfilerConfig) -> None:
         self.base_config = base_config
-        self.prefill_values = base_config.prefill_profiler_config.prefill_lengths
+        self.prefill_values = prefill_config.prefill_lengths
         self.prefill_times: Dict[int, List[float]] = {}
 
         # Create profiler-specific config using replace() to respect frozen design
@@ -152,12 +154,3 @@ class PrefillProfiler:
             json.dump(prefill_stats, f)
 
 
-
-if __name__ == "__main__":
-    if platform.system() == "Darwin":
-        multiprocessing.set_start_method("fork", force=True)
-
-    configs = BenchmarkConfig.create_from_cli_args()
-    config = configs[0] if isinstance(configs, list) else configs
-    prefill_profiler = PrefillProfiler(config)
-    prefill_profiler.run()

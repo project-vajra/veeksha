@@ -7,10 +7,10 @@ from itertools import product
 from typing import Dict, List, Tuple
 
 import numpy as np
-import pandas as pd
 import wandb
 
 from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.microbenchmarks.decode_profiler import DecodeProfilerConfig
 from veeksha.config.generators.length_generator.fixed_generator import (
     FixedRequestLengthGeneratorConfig,
 )
@@ -23,6 +23,7 @@ from veeksha.config.generators.request_generator.synthetic_generator import (
 from veeksha.logger import init_logger
 from veeksha.run_benchmark import run_benchmark
 
+# pyright: reportCallIssue=false, reportArgumentType=false
 logger = init_logger(__name__)
 
 # Number of concurrent requests per client for decode profiling
@@ -32,10 +33,11 @@ DECODE_PROFILING_ITERATIONS = 10
 
 
 class DecodeProfiler:
-    def __init__(self, base_config: BenchmarkConfig) -> None:
+    def __init__(self, base_config: BenchmarkConfig, decode_config: DecodeProfilerConfig) -> None:
         self.base_config = base_config
-        self.context_lengths = base_config.decode_profiler_config.context_lengths
-        self.batch_sizes = base_config.decode_profiler_config.batch_sizes
+        self.decode_config = decode_config
+        self.context_lengths = decode_config.context_lengths
+        self.batch_sizes = decode_config.batch_sizes
         self.decode_times: Dict[Tuple[int, int], List[int]] = {}
         self.base_dir = self.base_config.metrics_config.output_dir
 
@@ -52,7 +54,7 @@ class DecodeProfiler:
         tbt_values = metrics_data["tbt"]
 
 
-        if self.base_config.decode_profiler_config.engine_uses_mixed_batching:
+        if self.decode_config.engine_uses_mixed_batching:
             batch_saturation_first_token_time = sorted(arr[0] for arr in token_arrival_times)[batch_size - 1]
             latest_first_token_time = max(arr[0] for arr in token_arrival_times)
 
@@ -114,7 +116,7 @@ class DecodeProfiler:
             )
             
             num_requests = batch_size
-            if self.base_config.decode_profiler_config.engine_uses_mixed_batching:
+            if self.decode_config.engine_uses_mixed_batching:
                 num_requests += int(np.ceil(DECODE_PROFILING_ITERATIONS / num_iterations_per_prefill))
             
             num_clients = int(np.ceil(num_requests / DECODE_NUM_CONCURRENT_REQUESTS_PER_CLIENT))
@@ -174,15 +176,3 @@ class DecodeProfiler:
         with open(decode_stats_file, "w") as f:
             json.dump(tbt_stats, f)
 
-
-if __name__ == "__main__":
-    if platform.system() == "Darwin":
-        multiprocessing.set_start_method("fork", force=True)
-
-    configs: List[BenchmarkConfig] = BenchmarkConfig.create_from_cli_args()
-    if len(configs) != 1:
-        raise ValueError(f"Expected exactly one config for decode profiling, got {len(configs)}")
-    
-    config: BenchmarkConfig = configs[0]
-    decode_profiler = DecodeProfiler(config)
-    decode_profiler.run()
