@@ -95,7 +95,7 @@ class PrefillProfiler:
 
             run_dir = os.path.join(
                 self.base_dir,
-                f"{self.config.client_config.model}_{prefill_value}",
+                str(prefill_value),
             )
 
             if os.path.isdir(run_dir):
@@ -125,12 +125,13 @@ class PrefillProfiler:
                 service_metrics = run_benchmark(final_run_config)
                 logger.info(f"Run benchmark done")
 
-                json_file = os.path.join(run_dir, f"request_level_metrics.json")
+                benchmark_output_dir = service_metrics.output_dir
+                metrics_file = os.path.join(benchmark_output_dir, "request_level_metrics.json")
                 assert os.path.exists(
-                    json_file
-                ), f"Could not find the result file for {run_dir}"
+                    metrics_file
+                ), f"Could not find the result file for {benchmark_output_dir}"
 
-                with open(json_file, "r") as f:
+                with open(metrics_file, "r") as f:
                     data = json.load(f)
                     self.prefill_times[prefill_value] = data["ttft"]
 

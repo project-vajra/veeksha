@@ -159,7 +159,7 @@ class DecodeProfiler:
 
             run_dir = os.path.join(
                 self.base_dir,
-                f"{self.base_config.client_config.model}_{context_length}_{batch_size}",
+                f"{context_length}_{batch_size}",
             )
 
             # Create new metrics config with updated wandb run name and output dir
@@ -183,13 +183,14 @@ class DecodeProfiler:
             logger.info(
                 f"Running profiling for decode context_length = {context_length} and batch_size = {batch_size}..."
             )
-            run_benchmark(config)
+            service_metrics = run_benchmark(config)
             logger.info(f"Run benchmark done")
             if wandb.run:
                 wandb.finish()
 
+            benchmark_output_dir = service_metrics.output_dir
             self.decode_times[(context_length, batch_size)] = self.extract_decode_times(
-                run_dir, batch_size
+                benchmark_output_dir, batch_size
             )
 
         # log all the decode times with their length
