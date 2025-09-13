@@ -123,14 +123,15 @@ def process_results(
     stop_event: threading.Event,
 ) -> None:
     """Thread function to process results from the output queue."""
-    # On graceful stop, wait for all launched requests to finish.
-    # On error, return promptly after stop_event is set.
+    # On stop, attempt to drain for a short grace period, then exit
+    consecutive_empty_polls_after_stop = 0
     while not stop_event.is_set() or (
         service_metrics.error is None
         and service_metrics.num_completed_requests < service_metrics.num_requests
     ):
         try:
             result = output_queue.get(timeout=0.1)
+            consecutive_empty_polls_after_stop = 0
             request_metrics, generated_response = result
             if generated_response:
                 service_metrics.add_request_metrics(request_metrics)
@@ -138,6 +139,11 @@ def process_results(
 
             pbar.update(service_metrics.num_completed_requests - pbar.n)
         except Empty:
+            if stop_event.is_set():
+                consecutive_empty_polls_after_stop += 1
+                # ~1s
+                if consecutive_empty_polls_after_stop >= 10:
+                    break
             continue
 
 
