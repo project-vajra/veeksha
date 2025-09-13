@@ -1,7 +1,5 @@
 import ast
-import math
-import random
-from typing import Dict, List, Union, Optional, Tuple
+from typing import Dict, List, Optional, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
@@ -12,6 +10,7 @@ from veeksha.config.generators.request_generator.trace_generator import (
 from veeksha.core.request_config import RequestConfig
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.generators.utils import (
+    generate_random_prompt,
     load_trace,
     process_request_interval_trace,
     process_request_length_trace,
@@ -81,8 +80,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     )
         else:
             if self.corpus_lines is None:
-                ValueError("A corpus_file must be provided when not using trace prefix hash IDs.")
-
+                ValueError(
+                    "A corpus_file must be provided when not using trace prefix hash IDs."
+                )
 
         if self.config.use_trace_sessions:
             if "session_id" not in self.trace_df.columns:
@@ -163,41 +163,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
             return encoding
 
         raise Exception(f"Could not generate stable encoding for value {value}")
-    
-    def generate_random_prompt(
-        self,
-        tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
-        num_prompt_tokens: int = 1024,
-        corpus_lines: Union[List[str], None] = None,
-    ) -> Tuple[str, int]:
-        """Generate a random prompt with a given number of tokens.
-        Args:
-            num_prompt_tokens: The number of tokens to generate in the prompt.
-        Returns:
-            A random prompt with the given number of tokens.
-        """
-        assert corpus_lines is not None, "corpus_lines must be provided"
 
-        get_token_length = lambda text: len(tokenizer.encode(text))
-
-        remaining_prompt_tokens = num_prompt_tokens
-        random.shuffle(corpus_lines)
-        sampling_lines = True
-        prompt = ""
-        while sampling_lines:
-            for line in corpus_lines:
-                line_to_add = line
-                if remaining_prompt_tokens - get_token_length(line_to_add) < 0:
-                    # This will cut off a line in the middle of a word, but that's ok since an
-                    # llm should be able to handle that.
-                    line_to_add = line_to_add[: int(math.ceil(remaining_prompt_tokens))]
-                    sampling_lines = False
-                    prompt += line_to_add
-                    break
-                prompt += line_to_add
-                remaining_prompt_tokens -= get_token_length(line_to_add)
-        return (prompt, num_prompt_tokens)
-    
     def get_request(self) -> RequestConfig:
         if self.request_idx >= self.capacity():
             if self.config.exhaustion_policy == "error":
@@ -255,7 +221,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         else:
             # generate input random text
             prompt_length_tokens = int(request_to_send["input_length"])
-            prompt, _ = self.generate_random_prompt(
+            prompt, _ = generate_random_prompt(
                 tokenizer=self.tokenizer,
                 num_prompt_tokens=prompt_length_tokens,
                 corpus_lines=self.corpus_lines,

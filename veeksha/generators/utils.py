@@ -1,7 +1,10 @@
-from typing import Dict, Optional
+import math
+import random
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
+from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 from veeksha.constants.configuration_constants import SCALE_TO_SECONDS
 from veeksha.logger import init_logger
@@ -221,3 +224,38 @@ def process_request_interval_trace(
     new_trace_df["inter_request_time"] *= time_scale_factor
 
     return new_trace_df
+
+
+def generate_random_prompt(
+    tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+    num_prompt_tokens: int = 1024,
+    corpus_lines: Union[List[str], None] = None,
+) -> Tuple[str, int]:
+    """Generate a random prompt with a given number of tokens.
+    Args:
+        num_prompt_tokens: The number of tokens to generate in the prompt.
+    Returns:
+        A random prompt with the given number of tokens.
+    """
+    assert corpus_lines is not None, "corpus_lines must be provided"
+
+    get_token_length = lambda text: len(tokenizer.encode(text))
+
+    remaining_prompt_tokens = num_prompt_tokens
+    random.shuffle(corpus_lines)
+    sampling_lines = True
+    prompt = ""
+    while sampling_lines:
+        for line in corpus_lines:
+            line_to_add = line
+            if remaining_prompt_tokens - get_token_length(line_to_add) < 0:
+                # This will cut off a line in the middle of a word, but that's ok since an
+                # llm should be able to handle that.
+                line_to_add = line_to_add[: int(math.ceil(remaining_prompt_tokens))]
+                sampling_lines = False
+                prompt += line_to_add
+                break
+            prompt += line_to_add
+            remaining_prompt_tokens -= get_token_length(line_to_add)
+
+    return (prompt, num_prompt_tokens)
