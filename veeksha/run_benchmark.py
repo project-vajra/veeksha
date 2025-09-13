@@ -108,20 +108,23 @@ def process_results(
     service_metrics: ServiceMetrics,
     generated_responses: List[Response],
     pbar: tqdm,
-    stop_event: threading.Event,
 ) -> None:
     """Thread function to process results from the output queue."""
-    while not stop_event.is_set() or not output_queue.empty():
+    while True:
         try:
             result = output_queue.get(timeout=0.1)
-            request_metrics, generated_response = result
-            if generated_response:
-                service_metrics.add_request_metrics(request_metrics)
-                generated_responses.append(generated_response)
-
-            pbar.update(service_metrics.num_completed_requests - pbar.n)
         except Empty:
             continue
+
+        if result is None:  # Sentinel check
+            break
+
+        request_metrics, generated_response = result
+        service_metrics.add_request_metrics(request_metrics)
+        if generated_response is not None:
+            generated_responses.append(generated_response)
+
+        pbar.update(service_metrics.num_completed_requests - pbar.n)
 
 
 def run_main_loop(
@@ -168,7 +171,6 @@ def run_main_loop(
             service_metrics,
             generated_responses,
             pbar,
-            stop_event,
         ),
     )
 
@@ -188,7 +190,8 @@ def run_main_loop(
     # Wait for all client processes to terminate
     req_launcher.wait_for_clients()
 
-    # Wait for the results processor to drain the output queue and finish
+    # Signal the results processor to finish after draining and join it
+    output_queue.put(None)
     processor_thread.join()
 
     pbar.close()
