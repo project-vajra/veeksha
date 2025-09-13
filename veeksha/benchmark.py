@@ -141,8 +141,8 @@ def process_results(
         except Empty:
             if stop_event.is_set():
                 consecutive_empty_polls_after_stop += 1
-                # ~1s
-                if consecutive_empty_polls_after_stop >= 10:
+                # ~5s
+                if consecutive_empty_polls_after_stop >= 50:
                     break
             continue
 

@@ -4,9 +4,9 @@ This file contains the wrapper for the benchmarking.
 
 import os
 
+from veeksha.benchmark import run_benchmark
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.logger import init_logger
-from veeksha.run_benchmark import run_benchmark
 
 logger = init_logger(__name__)
 
