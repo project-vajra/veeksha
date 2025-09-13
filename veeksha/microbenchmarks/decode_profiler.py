@@ -98,13 +98,18 @@ class DecodeProfiler:
         # Create filtered tbt values
         filtered_tbt_values = []
 
-        for arrival_times, tbts in zip(token_arrival_times, tbt_values):
-            assert arrival_times
-            assert tbts
+        # Filter both arrival times and tbt values to exclude empty sequences
+        non_empty_pairs = [
+            (arrival_times, tbts)
+            for arrival_times, tbts in zip(token_arrival_times, tbt_values)
+            if arrival_times and tbts
+        ]
+
+        for arrival_times, tbts in non_empty_pairs:
             # first arrival time corresponds to prefill latency
             assert len(arrival_times) - 1 == len(
                 tbts
-            ), f"{len(arrival_times) - 2} != {len(tbts)}"
+            ), f"{len(arrival_times) - 1} != {len(tbts)}"
 
             for arrival_time, tbt in zip(arrival_times[1:], tbts):
                 if window_start_time <= arrival_time <= window_end_time:

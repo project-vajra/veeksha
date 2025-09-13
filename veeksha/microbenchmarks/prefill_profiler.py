@@ -99,11 +99,19 @@ class PrefillProfiler:
                     f"Skipping profiling for prefill value = {prefill_value}..."
                 )
                 # Still need to load the data for training later
-                json_file = os.path.join(run_dir, f"request_level_metrics.json")
+                json_file = os.path.join(run_dir, "request_level_metrics.json")
                 if os.path.exists(json_file):
                     with open(json_file, "r") as f:
                         data = json.load(f)
-                        self.prefill_times[prefill_value] = data["ttft"]
+                        ttft = data.get("ttft")
+                        if ttft is None:
+                            logger.warning(
+                                "Key 'ttft' missing in %s; skipping.", json_file
+                            )
+                        else:
+                            self.prefill_times[prefill_value] = ttft
+                else:
+                    logger.warning("Missing %s; skipping cached load.", json_file)
             else:
                 # Create final config with updated output dir and wandb name
                 run_metrics_config = replace(
@@ -131,7 +139,13 @@ class PrefillProfiler:
 
                 with open(metrics_file, "r") as f:
                     data = json.load(f)
-                    self.prefill_times[prefill_value] = data["ttft"]
+                    ttft = data.get("ttft")
+                    if ttft is None:
+                        logger.warning(
+                            "Key 'ttft' missing in %s; skipping.", metrics_file
+                        )
+                    else:
+                        self.prefill_times[prefill_value] = ttft
 
             logger.info(f"Profiling for prefill value = {prefill_value} done")
 

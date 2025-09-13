@@ -1,5 +1,5 @@
 model: meta-llama/Meta-Llama-3-8B-Instruct
-api_url: http://localhost:8000/v1  
+api_url: http://localhost:8002/v1  
 api_key: ""
 timeout: 10000
 seed: 42
