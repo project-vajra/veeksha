@@ -19,7 +19,7 @@ TBT Based SLO
 
 .. code-block:: shell
 
-    python -m veeksha.capacity_search.main \
+    python -m veeksha.capacity_search \
     --output-dir "cap_experiments/capacity_search/" \
     --slo-type tbt_ttft \
     --tbt-slo 0.03 \
@@ -34,7 +34,7 @@ TPOT Based SLO
 
 .. code-block:: shell
 
-    python -m veeksha.capacity_search.main \
+    python -m veeksha.capacity_search \
     --output-dir "cap_experiments/capacity_search/" \
     --slo-type ttft_tpot \
     --ttft-slo 0.3 \
