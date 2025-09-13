@@ -1,9 +1,9 @@
 import os
 
-from veeksha.config.microbenchmarks import MicrobenchmarkConfig
+from veeksha.config.microbenchmark import MicrobenchmarkConfig
 from veeksha.logger import init_logger
-from veeksha.microbenchmarks.decode_profiler import DecodeProfiler
-from veeksha.microbenchmarks.prefill_profiler import PrefillProfiler
+from veeksha.microbenchmark.decode_profiler import DecodeProfiler
+from veeksha.microbenchmark.prefill_profiler import PrefillProfiler
 
 # pyright: reportCallIssue=false, reportArgumentType=false
 logger = init_logger(__name__)

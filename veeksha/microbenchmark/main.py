@@ -1,8 +1,8 @@
 import multiprocessing
 import platform
 
-from veeksha.config.microbenchmarks import MicrobenchmarkConfig
-from veeksha.microbenchmarks.microbenchmark import Microbenchmark
+from veeksha.config.microbenchmark import MicrobenchmarkConfig
+from veeksha.microbenchmark.microbenchmark import Microbenchmark
 
 if __name__ == "__main__":
     if platform.system() == "Darwin":

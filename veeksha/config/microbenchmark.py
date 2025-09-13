@@ -86,7 +86,7 @@ class MicrobenchmarkConfig:
     )
     seed: int = field(
         default=DEFAULT_SEED,
-        metadata={"help": "Seed for the random number generator for microbenchmarks."},
+        metadata={"help": "Seed for the random number generator."},
     )
     output_dir: str = field(
         default="microbenchmark_experiments",
@@ -102,7 +102,7 @@ class MicrobenchmarkConfig:
     )
     wandb_project: Optional[str] = field(
         default=None,
-        metadata={"help": "Wandb project for microbenchmarks"},
+        metadata={"help": "Wandb project."},
     )
 
     def create_benchmark_config(self, output_dir: str = None) -> BenchmarkConfig:
