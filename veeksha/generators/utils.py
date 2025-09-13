@@ -20,6 +20,9 @@ def load_trace(trace_file: str) -> pd.DataFrame:
     else:
         raise ValueError(f"Unsupported trace file format: {trace_file}")
 
+    if trace_df.empty:
+        raise ValueError(f"Trace file {trace_file} is empty.")
+
     return trace_df
 
 

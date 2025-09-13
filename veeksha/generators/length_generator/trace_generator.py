@@ -38,10 +38,26 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
         )
 
         self.next_request_idx = 0
+        self._wrap_warning_logged = False
 
     def get_next_num_tokens(self) -> Tuple[int, int]:
-        if self.next_request_idx >= len(self.trace_df):
-            return -1, -1
+        if self.next_request_idx >= self.capacity():
+            if self.config.exhaustion_policy == "error":
+                raise StopIteration(
+                    f"Trace exhausted for lengths at index {self.next_request_idx}"
+                )
+            elif self.config.exhaustion_policy == "stop":
+                logger.info(
+                    f"Stop policy active: length trace exhausted at index {self.next_request_idx}."
+                )
+                return -1, -1
+            elif self.config.exhaustion_policy == "wrap":
+                if not self._wrap_warning_logged:
+                    logger.warning(
+                        f"Length trace exhausted at index {self.next_request_idx}; wrapping to start."
+                    )
+                    self._wrap_warning_logged = True
+                self.next_request_idx = 0
 
         row = self.trace_df.iloc[self.next_request_idx]
         self.next_request_idx += 1
@@ -50,3 +66,6 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
             int(row["input_length"]),
             int(row["output_length"]),
         )
+
+    def capacity(self) -> int:
+        return len(self.trace_df)

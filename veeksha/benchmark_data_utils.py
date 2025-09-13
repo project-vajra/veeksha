@@ -1,5 +1,6 @@
 import json
 import os
+from importlib.resources import files as _pkg_files
 from typing import Dict, List
 
 try:
