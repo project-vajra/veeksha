@@ -6,7 +6,7 @@ Tool to help find maximal QPS given different SLOs. There are two types of SLOs:
 
 ## TBT-TTFT based Capacity Search
 ```bash
-python -m veeksha.capacity_search.main \
+python -m veeksha.capacity_search \
 --output-dir "cap_experiments/capacity_search/" \
 --slo-type tbt_ttft \
 --tbt-slo 0.03 \
@@ -19,7 +19,7 @@ python -m veeksha.capacity_search.main \
 
 ## TTFT-TPOT based Capacity Search
 ```bash
-python -m veeksha.capacity_search.main \
+python -m veeksha.capacity_search \
 --output-dir "cap_experiments/capacity_search/" \
 --slo-type ttft_tpot \
 --ttft-slo 0.3 \
