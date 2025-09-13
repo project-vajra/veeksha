@@ -80,7 +80,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     )
         else:
             if self.corpus_lines is None:
-                ValueError(
+                raise ValueError(
                     "A corpus_file must be provided when not using trace prefix hash IDs."
                 )
 
