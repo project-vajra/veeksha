@@ -1,5 +1,5 @@
 import ast
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
@@ -10,6 +10,7 @@ from veeksha.config.generators.request_generator.trace_generator import (
 from veeksha.core.request_config import RequestConfig
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.generators.utils import (
+    generate_random_prompt,
     load_trace,
     process_request_interval_trace,
     process_request_length_trace,
@@ -25,6 +26,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         config: TraceRequestGeneratorConfig,
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         client_config: ClientConfig,
+        corpus_lines: Optional[List[str]] = None,
     ):
         from veeksha.generators.session_generator import (
             SessionGenerator,
@@ -35,21 +37,30 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self.request_id = 0
         self.client_config = client_config
         self.past_prompts: Dict[int, str] = {}
+        self.corpus_lines = corpus_lines
 
-        self.trace_df = load_trace(self.config.trace_file)
+        raw_trace_df = load_trace(self.config.trace_file)
 
-        process_request_length_trace(
-            self.trace_df,
+        # canonical column names
+        self.length_column_map = {
+            self.config.input_length_column: "input_length",
+            self.config.output_length_column: "output_length",
+        }
+        self.interval_column_map = {self.config.timestamp_column: "timestamp"}
+
+        self.trace_df = raw_trace_df.pipe(
+            process_request_length_trace,
             self.config.trace_file,
+            self.length_column_map,
             self.config.prefill_scale_factor,
             self.config.decode_scale_factor,
             self.config.max_tokens,
-        )
-
-        process_request_interval_trace(
-            self.trace_df,
+        ).pipe(
+            process_request_interval_trace,
             self.config.trace_file,
+            self.interval_column_map,
             self.config.time_scale_factor,
+            self.config.timestamp_unit,
         )
 
         logger.info(
@@ -67,6 +78,11 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
                         ast.literal_eval
                     )
+        else:
+            if self.corpus_lines is None:
+                raise ValueError(
+                    "A corpus file must be provided when not using trace prefix hash IDs."
+                )
 
         if self.config.use_trace_sessions:
             if "session_id" not in self.trace_df.columns:
@@ -75,19 +91,19 @@ class TraceRequestGenerator(BaseRequestGenerator):
             self.session_generator = SessionGenerator(
                 self.config.session_generator_config
             )
-            self.trace_df_with_sessions = self.session_generator.generate_sessions(
-                self.trace_df
-            )
 
-            # get next request intervals again because session sampling shuffles sessions
-            process_request_interval_trace(
-                self.trace_df_with_sessions,
+            self.trace_df_with_sessions = self.trace_df.pipe(
+                self.session_generator.generate_sessions,
+            ).pipe(
+                # get next request intervals again because session sampling shuffles sessions
+                process_request_interval_trace,
                 self.config.trace_file,
+                None,  # colnames are already canonical
                 self.config.time_scale_factor,
-                ms_to_s=False,
+                "s",  # self.trace_df has already been converted to seconds
             )
 
-            # convert timestamps to milliseconds for saving (as expected by trace format)
+            # convert timestamps to milliseconds (default time units) before saving
             session_df_for_saving = self.trace_df_with_sessions.copy()
             session_df_for_saving["timestamp"] = (
                 session_df_for_saving["timestamp"] * 1000
@@ -95,6 +111,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
             self.session_generator.save_requests_as_trace(session_df_for_saving)
 
         self.request_idx = 0
+        self._wrap_warning_logged = False
 
     def is_stable_encoding(
         self,
@@ -148,10 +165,33 @@ class TraceRequestGenerator(BaseRequestGenerator):
         raise Exception(f"Could not generate stable encoding for value {value}")
 
     def get_request(self) -> RequestConfig:
-        if (
-            self.config.use_trace_sessions
-            or self.config.session_generator_config is not None
-        ):
+        if self.request_idx >= self.capacity():
+            if self.config.exhaustion_policy == "error":
+                raise StopIteration(
+                    f"Trace exhausted for requests at index {self.request_idx}"
+                )
+            elif self.config.exhaustion_policy == "stop":
+                # stop policy: return a sentinel request with negative dispatch delay
+                logger.info(
+                    f"Stop policy active: request trace exhausted at index {self.request_idx}."
+                )
+                return RequestConfig(
+                    model=self.client_config.model,
+                    prompt=("", 0),
+                    dispatch_delay=-1,
+                    llm_api=self.client_config.llm_api,
+                    address_append_value=self.client_config.address_append_value,
+                    id=self.request_idx,
+                )
+            elif self.config.exhaustion_policy == "wrap":
+                if not self._wrap_warning_logged:
+                    logger.warning(
+                        f"Request trace exhausted at index {self.request_idx}; wrapping to start."
+                    )
+                    self._wrap_warning_logged = True
+                self.request_idx = 0
+
+        if self.config.session_generator_config is not None:
             request_to_send = self.trace_df_with_sessions.iloc[self.request_idx]
         else:
             request_to_send = self.trace_df.iloc[self.request_idx]
@@ -179,8 +219,13 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     self.past_prompts[hash_id] = prompt_segment
                 prompt += self.past_prompts[hash_id]
         else:
-            # todo generate input random text
-            raise NotImplementedError("to be implemented")
+            # generate input random text
+            prompt_length_tokens = int(request_to_send["input_length"])
+            prompt, _ = generate_random_prompt(
+                tokenizer=self.tokenizer,
+                num_prompt_tokens=prompt_length_tokens,
+                corpus_lines=self.corpus_lines,
+            )
 
         instruction = f"Generate at least {int(request_to_send['output_length'])} tokens repeating the following text:\n"
         prompt = instruction + prompt
@@ -207,3 +252,10 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self.request_idx += 1
 
         return request_config
+
+    def capacity(self) -> int:
+        return (
+            len(self.trace_df)
+            if self.config.session_generator_config is None
+            else len(self.trace_df_with_sessions)
+        )

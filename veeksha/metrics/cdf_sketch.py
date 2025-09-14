@@ -2,7 +2,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
-import plotly_express as px
+import plotly.express as px
 import wandb
 from ddsketch import DDSketch
 

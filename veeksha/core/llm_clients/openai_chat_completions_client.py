@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 import time
-from typing import List, Tuple, AsyncGenerator, Dict
+from typing import AsyncGenerator, Dict, List, Tuple
 
 import aiohttp
 

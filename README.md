@@ -40,7 +40,7 @@ export OPENAI_API_BASE=https://api.endpoints.anyscale.com/v1
 ```
 #### Running Benchmark
 ```bash
-python -m veeksha.run_benchmark \
+python -m veeksha.benchmark \
 --client_config_model "meta-llama/Meta-Llama-3-8B-Instruct" \
 --max_completed_requests 150 \
 --timeout 600 \
@@ -62,7 +62,7 @@ python -m veeksha.run_benchmark \
 
 There are many more arguments for running benchmark, run the following to know more:
 ```bash
-python -m veeksha.run_benchmark -h
+python -m veeksha.benchmark -h
 ```
 
 ### Running with Open Source Systems

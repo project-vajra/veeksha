@@ -10,7 +10,7 @@ The uniform length generator generates the number of prompt and decode tokens ac
 
 .. code-block:: shell
 
-    python -m veeksha.run_benchmark
+    python -m veeksha.benchmark
         # other arguments
         ... \
         --request_length_generator_config_type "uniform" \
@@ -28,7 +28,7 @@ The Zipf length generator generates the number of prompt and decode tokens accor
 
 .. code-block:: shell
 
-    python -m veeksha.run_benchmark
+    python -m veeksha.benchmark
         # other arguments
         ... \
         --request_length_generator_config_type "zipf" \
@@ -48,7 +48,7 @@ The trace length generator generates the number of prompt and decode tokens acco
 
 .. code-block:: shell
 
-    python -m veeksha.run_benchmark
+    python -m veeksha.benchmark
         # other arguments
         ... \
         --request_length_generator_config_type "trace" \
@@ -67,7 +67,7 @@ The fixed length generator generates the number of prompt and decode tokens acco
 
 .. code-block:: shell
 
-    python -m veeksha.run_benchmark
+    python -m veeksha.benchmark
         # other arguments
         ... \
         --request_length_generator_config_type "fixed" \

@@ -32,7 +32,7 @@ Benchmark can be run as shown below:
 
 .. code-block:: shell
 
-    python -m veeksha.run_benchmark \
+    python -m veeksha.benchmark \
     --client_config_model "meta-llama/Meta-Llama-3-8B-Instruct" \
     --max_completed_requests 20 \
     --request_interval_generator_config_type "gamma" \
@@ -66,7 +66,7 @@ There are many more arguments for running benchmark, run the following to know m
 
 .. code-block:: shell
 
-    python -m veeksha.run_benchmark -h
+    python -m veeksha.benchmark -h
 
 
 Saving Results

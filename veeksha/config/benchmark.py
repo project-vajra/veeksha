@@ -1,12 +1,9 @@
-import json
-import os
 from dataclasses import field
 from typing import Optional
 
 from veeksha.config.client import ClientConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
-from veeksha.config.deadline import DeadlineConfig
 from veeksha.config.generators.request_generator.base_generator import (
     BaseRequestGeneratorConfig,
 )
@@ -58,19 +55,12 @@ class BenchmarkConfig:
         default_factory=MetricsConfig,
         metadata={"help": "The metrics configuration for the benchmark."},
     )
-    deadline_config: DeadlineConfig = field(
-        default_factory=DeadlineConfig,
-        metadata={"help": "The deadline configuration for the benchmark."},
-    )
     request_generator_config: BaseRequestGeneratorConfig = field(
         default_factory=SyntheticRequestGeneratorConfig,
         metadata={"help": "The request generator configuration for the benchmark."},
     )
 
     def __post_init__(self):
-        if not os.path.exists(self.metrics_config.output_dir):
-            os.makedirs(self.metrics_config.output_dir)
-
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
             logger.warning("Removing timeout for LMEval.")
             self.timeout = -1
@@ -84,8 +74,6 @@ class BenchmarkConfig:
             else:
                 self.client_config.llm_api = "openai_chat"
                 self.client_config.address_append_value = "chat/completions"
-
-        self.write_config_to_file()
 
     @classmethod
     def create_from_cli_args(cls):
@@ -109,10 +97,3 @@ class BenchmarkConfig:
             return dataclass_to_dict(self)
 
         return self.__flat_config__.__dict__  # type: ignore
-
-    def write_config_to_file(self):
-        config_dict = dataclass_to_dict(self)
-        with open(
-            os.path.join(f"{self.metrics_config.output_dir}", "config.json"), "w"
-        ) as f:
-            json.dump(config_dict, f, indent=4)

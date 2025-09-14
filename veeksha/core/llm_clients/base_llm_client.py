@@ -8,6 +8,7 @@ from veeksha.core.request_config import RequestConfig
 from veeksha.core.response import Response
 from veeksha.metrics.request_metrics import RequestMetrics
 
+
 class BaseLLMClient:
     """A client for making requests to a LLM API e.g Anyscale Endpoints."""
 

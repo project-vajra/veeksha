@@ -108,7 +108,7 @@ class OpenAICompletionsClient(BaseLLMClient):
             inter_token_times.append(time.monotonic() - most_recent_received_token_time)
             if current_tokens_received > 1:
                 inter_token_times.extend([0] * (current_tokens_received - 1))
-                
+
             most_recent_received_token_time = time.monotonic()
             generated_text_chunk = text_chunk
             if "logprobs" in choice:

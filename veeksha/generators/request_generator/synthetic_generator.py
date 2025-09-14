@@ -1,6 +1,4 @@
-import math
-import random
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
@@ -16,6 +14,7 @@ from veeksha.generators.length_generator.generator_registry import (
     RequestLengthGeneratorRegistry,
 )
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
+from veeksha.generators.utils import generate_random_prompt
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
@@ -45,54 +44,25 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
 
         self.request_id = 0
 
-    def generate_random_prompt(
-        self,
-        tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
-        num_prompt_tokens: int = 1024,
-        corpus_lines: Union[List[str], None] = None,
-    ) -> Tuple[str, int]:
-        """Generate a random prompt with a given number of tokens.
-        Args:
-            num_prompt_tokens: The number of tokens to generate in the prompt.
-        Returns:
-            A random prompt with the given number of tokens.
-        """
-        assert corpus_lines is not None, "corpus_lines must be provided"
-
-        get_token_length = lambda text: len(tokenizer.encode(text))
-
-        remaining_prompt_tokens = num_prompt_tokens
-        random.shuffle(corpus_lines)
-        sampling_lines = True
-        prompt = ""
-        while sampling_lines:
-            for line in corpus_lines:
-                line_to_add = line
-                if remaining_prompt_tokens - get_token_length(line_to_add) < 0:
-                    # This will cut off a line in the middle of a word, but that's ok since an
-                    # llm should be able to handle that.
-                    line_to_add = line_to_add[: int(math.ceil(remaining_prompt_tokens))]
-                    sampling_lines = False
-                    prompt += line_to_add
-                    break
-                prompt += line_to_add
-                remaining_prompt_tokens -= get_token_length(line_to_add)
-
-        return (prompt, num_prompt_tokens)
-
     def get_request(self) -> RequestConfig:
         (
             num_prompt_tokens,
             num_output_tokens,
         ) = self.request_length_generator.get_next_num_tokens()
         dispatch_delay = self.requests_interval_generator.get_next_inter_request_time()
-        if num_prompt_tokens < 0 or num_output_tokens < 0:
-            logger.error(
-                f"Invalid number of tokens generated: prompt={num_prompt_tokens}, output={num_output_tokens} (potentially from trace request length generator)."
+        # graceful stop if any generator signals stop via sentinel values
+        if num_prompt_tokens < 0 or num_output_tokens < 0 or dispatch_delay < 0:
+            return RequestConfig(
+                model=self.client_config.model,
+                prompt=("", 0),
+                dispatch_delay=-1,
+                llm_api=self.client_config.llm_api,
+                address_append_value=self.client_config.address_append_value,
+                id=self.request_id,
             )
         num_prompt_tokens = int(num_prompt_tokens)
         num_output_tokens = int(num_output_tokens)
-        prompt_body, _ = self.generate_random_prompt(
+        prompt_body, _ = generate_random_prompt(
             tokenizer=self.tokenizer,
             num_prompt_tokens=num_prompt_tokens,
             corpus_lines=self.corpus_lines,

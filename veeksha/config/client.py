@@ -45,9 +45,7 @@ class ClientConfig:
     )
     request_timeout: int = field(
         default=60,
-        metadata={
-            "help": "The timeout for each request to the LLM API in seconds."
-        },
+        metadata={"help": "The timeout for each request to the LLM API (in seconds)."},
     )
 
     def __post_init__(self):

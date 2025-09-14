@@ -47,7 +47,13 @@ class SessionGeneratorConfig:
     save_as_trace_file: bool = field(
         default=False,
         metadata={
-            "help": "If true, save the trace after session generation as a jsonl file. Trace will be saved in data/generated_traces/."
+            "help": "If true, save the trace after session generation as a jsonl file."
+        },
+    )
+    trace_file_save_dir: str = field(
+        default="./generated_traces",
+        metadata={
+            "help": "Directory to save generated trace files when save_as_trace_file is true."
         },
     )
     trace_file_name: str = field(
