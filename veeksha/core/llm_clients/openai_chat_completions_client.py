@@ -1,12 +1,12 @@
 import asyncio
-import json
 import os
 import time
-from typing import AsyncGenerator, Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import aiohttp
 
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
+from veeksha.core.llm_clients.streaming_mixin import StreamingMixin
 from veeksha.core.request_config import RequestConfig
 from veeksha.core.response import Response
 from veeksha.logger import init_logger
@@ -14,11 +14,8 @@ from veeksha.metrics.request_metrics import RequestMetrics
 
 logger = init_logger(__name__)
 
-# Maximum number of responses to store for token counting
-MAX_RESPONSES_ALLOWED_TO_STORE = 5
 
-
-class OpenAIChatCompletionsClient(BaseLLMClient):
+class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
     """Client for OpenAI Chat Completions API."""
 
     def __init__(self, model_name: str, tokenizer_name: str) -> None:
@@ -36,49 +33,6 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
                 "Warning: OPENAI_API_KEY environment variable not set. Defaulting to empty string."
             )
         self.start_time = time.monotonic()
-
-    def total_tokens(self, response_list: List[str]) -> int:
-        merged_content = "".join(response_list)
-        return self.get_token_length(merged_content)
-
-    def get_current_tokens_received(
-        self,
-        previous_responses: List[str],
-        current_response: str,
-        previous_token_count: int,
-    ) -> Tuple[int, int]:
-        previous_responses.append(current_response)
-        current_tokens_received = (
-            self.total_tokens(previous_responses) - previous_token_count
-        )
-        if len(previous_responses) > MAX_RESPONSES_ALLOWED_TO_STORE:
-            previous_responses.pop(0)
-        previous_token_count = self.total_tokens(previous_responses)
-        return current_tokens_received, previous_token_count
-
-    async def _process_stream(
-        self, response: aiohttp.ClientResponse
-    ) -> AsyncGenerator[Dict, None]:
-        """Process the SSE stream from the API."""
-        buffer = b""
-        async for chunk_bytes in response.content.iter_any():
-            buffer += chunk_bytes
-            while b"\n" in buffer:
-                line_bytes, buffer = buffer.split(b"\n", 1)
-                line = line_bytes.decode("utf-8").strip()
-
-                if not line or not line.startswith("data:"):
-                    # Skip empty lines, comments, etc.
-                    continue
-
-                payload = line[len("data:") :].strip()
-                if payload == "[DONE]":
-                    return
-
-                try:
-                    yield json.loads(payload)
-                except json.JSONDecodeError:
-                    logger.exception(f"JSON decode error with chunk: {payload}")
 
     def _update_metrics_from_chunk(
         self,
