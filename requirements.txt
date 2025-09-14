@@ -15,3 +15,4 @@ pandas
 jinja2
 lm_eval
 simplejson # `requests` may require it
+aiohttp
