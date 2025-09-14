@@ -150,6 +150,8 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             error_response_code = 503
             error_msg = error_msg or str(e)
             logger.warning(f"Connection Error: ({error_response_code}) {error_msg}")
+        except asyncio.CancelledError:
+            raise
         except asyncio.TimeoutError:
             error_response_code = 408
             error_msg = error_msg or "Request timed out"
