@@ -3,7 +3,7 @@ import functools
 from multiprocessing import Process
 from multiprocessing import Queue as MPQueue
 from queue import Empty
-from typing import List
+from typing import Any, Callable, List, Optional
 
 import aiohttp
 
@@ -81,6 +81,7 @@ class RequestsLauncher:
         put_to_queue = functools.partial(self.output_queue.put)
 
         while True:
+            request_config = None
             try:
                 try:
                     request_config = await loop.run_in_executor(None, get_from_queue)
@@ -102,28 +103,14 @@ class RequestsLauncher:
                         client_id,
                         task_id,
                     )
-                    # Emit an error metrics entry so counters remain consistent
-                    try:
-                        prompt_len = (
-                            request_config.prompt[1]
-                            if request_config and request_config.prompt
-                            else 0
-                        )
-                    except Exception:
-                        prompt_len = 0
-
-                    error_code = (
-                        e.status if isinstance(e, aiohttp.ClientResponseError) else None
+                    await self._emit_error_result(
+                        loop=loop,
+                        put_to_queue=put_to_queue,
+                        e=e,
+                        request_config=request_config,
+                        client_id=client_id,
+                        task_id=task_id,
                     )
-                    metrics = RequestMetrics(
-                        request_dispatched_at=0.0,
-                        inter_token_times=[],
-                        num_prompt_tokens=prompt_len,
-                        num_output_tokens=0,
-                        error_msg=str(e),
-                        error_code=error_code,
-                    )
-                    await loop.run_in_executor(None, put_to_queue, (metrics, None))
                     continue
 
             except asyncio.CancelledError:
@@ -133,11 +120,70 @@ class RequestsLauncher:
                     task_id,
                 )
                 break
-            except Exception:
+            except Exception as e:
                 logger.exception(
                     "Unexpected error in worker %s task %s", client_id, task_id
                 )
-                break
+                await self._emit_error_result(
+                    loop=loop,
+                    put_to_queue=put_to_queue,
+                    e=e,
+                    request_config=request_config,
+                    client_id=client_id,
+                    task_id=task_id,
+                )
+                continue
+
+    async def _emit_error_result(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        put_to_queue: Callable[[Any], None],
+        e: Exception,
+        request_config: Optional[Any],
+        client_id: int,
+        task_id: int,
+    ) -> None:
+        """Emit an error RequestMetrics tuple to the output queue.
+
+        Mirrors the standard error path to keep counters consistent across
+        all failure scenarios.
+
+        Args:
+            loop: The current asyncio event loop.
+            put_to_queue: Callable to put items onto the output queue.
+            e: The exception that occurred.
+            request_config: The request configuration associated with the failure, if any.
+            client_id: ID of the worker client.
+            task_id: ID of the worker task within the client.
+        """
+        try:
+            try:
+                prompt_len = (
+                    request_config.prompt[1]
+                    if request_config and getattr(request_config, "prompt", None)
+                    else 0
+                )
+            except Exception:
+                prompt_len = 0
+
+            error_code = (
+                e.status if isinstance(e, aiohttp.ClientResponseError) else None
+            )
+            metrics = RequestMetrics(
+                request_dispatched_at=0.0,
+                inter_token_times=[],
+                num_prompt_tokens=prompt_len,
+                num_output_tokens=0,
+                error_msg=str(e),
+                error_code=error_code,
+            )
+            await loop.run_in_executor(None, put_to_queue, (metrics, None))
+        except Exception:
+            logger.exception(
+                "Failed to enqueue error result for worker %s task %s",
+                client_id,
+                task_id,
+            )
 
     def complete_tasks(self) -> None:
         """Signal worker processes to complete their tasks and exit."""
