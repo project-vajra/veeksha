@@ -81,7 +81,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         else:
             if self.corpus_lines is None:
                 raise ValueError(
-                    "A corpus_file must be provided when not using trace prefix hash IDs."
+                    "A corpus file must be provided when not using trace prefix hash IDs."
                 )
 
         if self.config.use_trace_sessions:

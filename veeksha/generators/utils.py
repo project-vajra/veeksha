@@ -1,4 +1,3 @@
-import math
 import random
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -229,7 +228,7 @@ def process_request_interval_trace(
 def generate_random_prompt(
     tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
     num_prompt_tokens: int = 1024,
-    corpus_lines: Union[List[str], None] = None,
+    corpus_lines: Optional[List[str]] = None,
 ) -> Tuple[str, int]:
     """Generate a random prompt with a given number of tokens.
     Args:
@@ -239,23 +238,29 @@ def generate_random_prompt(
     """
     assert corpus_lines is not None, "corpus_lines must be provided"
 
-    get_token_length = lambda text: len(tokenizer.encode(text))
+    get_token_length = lambda text: len(
+        tokenizer.encode(text, add_special_tokens=False)
+    )
 
     remaining_prompt_tokens = num_prompt_tokens
-    random.shuffle(corpus_lines)
+    shuffled_lines = random.sample(corpus_lines, len(corpus_lines))
     sampling_lines = True
     prompt = ""
     while sampling_lines:
-        for line in corpus_lines:
-            line_to_add = line
-            if remaining_prompt_tokens - get_token_length(line_to_add) < 0:
-                # This will cut off a line in the middle of a word, but that's ok since an
-                # llm should be able to handle that.
-                line_to_add = line_to_add[: int(math.ceil(remaining_prompt_tokens))]
+        for line in shuffled_lines:
+            if remaining_prompt_tokens <= 0:
                 sampling_lines = False
-                prompt += line_to_add
                 break
-            prompt += line_to_add
-            remaining_prompt_tokens -= get_token_length(line_to_add)
+
+            line_tokens = tokenizer.encode(line, add_special_tokens=False)
+            if remaining_prompt_tokens < len(line_tokens):
+                truncated_tokens = line_tokens[:remaining_prompt_tokens]
+                prompt += tokenizer.decode(truncated_tokens, skip_special_tokens=False)
+                remaining_prompt_tokens = 0
+                sampling_lines = False
+                break
+            else:
+                prompt += tokenizer.decode(line_tokens, skip_special_tokens=False)
+                remaining_prompt_tokens -= len(line_tokens)
 
     return (prompt, num_prompt_tokens)
