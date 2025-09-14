@@ -1,7 +1,9 @@
-from typing import Dict, Optional
+import random
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
+from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 from veeksha.constants.configuration_constants import SCALE_TO_SECONDS
 from veeksha.logger import init_logger
@@ -221,3 +223,44 @@ def process_request_interval_trace(
     new_trace_df["inter_request_time"] *= time_scale_factor
 
     return new_trace_df
+
+
+def generate_random_prompt(
+    tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+    num_prompt_tokens: int = 1024,
+    corpus_lines: Optional[List[str]] = None,
+) -> Tuple[str, int]:
+    """Generate a random prompt with a given number of tokens.
+    Args:
+        num_prompt_tokens: The number of tokens to generate in the prompt.
+    Returns:
+        A random prompt with the given number of tokens.
+    """
+    assert corpus_lines is not None, "corpus_lines must be provided"
+
+    get_token_length = lambda text: len(
+        tokenizer.encode(text, add_special_tokens=False)
+    )
+
+    remaining_prompt_tokens = num_prompt_tokens
+    shuffled_lines = random.sample(corpus_lines, len(corpus_lines))
+    sampling_lines = True
+    prompt = ""
+    while sampling_lines:
+        for line in shuffled_lines:
+            if remaining_prompt_tokens <= 0:
+                sampling_lines = False
+                break
+
+            line_tokens = tokenizer.encode(line, add_special_tokens=False)
+            if remaining_prompt_tokens < len(line_tokens):
+                truncated_tokens = line_tokens[:remaining_prompt_tokens]
+                prompt += tokenizer.decode(truncated_tokens, skip_special_tokens=False)
+                remaining_prompt_tokens = 0
+                sampling_lines = False
+                break
+            else:
+                prompt += tokenizer.decode(line_tokens, skip_special_tokens=False)
+                remaining_prompt_tokens -= len(line_tokens)
+
+    return (prompt, num_prompt_tokens)
