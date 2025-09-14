@@ -91,6 +91,10 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
 
         most_recent_received_token_time = time.monotonic()
         request_dispatched_at = time.monotonic() - self.start_time
+        # Respect a local cap on tokens to avoid mismatches with server/tokenizer
+        max_tokens_limit = None
+        if isinstance(request_config.sampling_params, dict):
+            max_tokens_limit = request_config.sampling_params.get("max_tokens")
 
         try:
             with requests.post(
@@ -134,16 +138,42 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
                             previous_token_count=previous_token_count,
                         )
 
-                        tokens_received += current_tokens_received
-                        inter_token_times.append(
-                            time.monotonic() - most_recent_received_token_time
-                        )
-                        if current_tokens_received > 1:
-                            inter_token_times.extend(
-                                [0] * (current_tokens_received - 1)
+                        # Apply local cap against requested max_tokens
+                        allowable_to_add = current_tokens_received
+                        if isinstance(max_tokens_limit, int):
+                            allowable_to_add = max(
+                                0,
+                                min(
+                                    current_tokens_received,
+                                    max_tokens_limit - tokens_received,
+                                ),
                             )
-                        most_recent_received_token_time = time.monotonic()
-                        generated_text += delta["content"]
+
+                        if allowable_to_add > 0:
+                            inter_token_times.append(
+                                time.monotonic() - most_recent_received_token_time
+                            )
+                            if allowable_to_add > 1:
+                                inter_token_times.extend([0] * (allowable_to_add - 1))
+                            tokens_received += allowable_to_add
+                            most_recent_received_token_time = time.monotonic()
+                            # We still append full text; metrics cap governs counts/timings
+                            generated_text += delta["content"]
+
+                            # Truncate generated_text to exactly tokens_received tokens
+                            if isinstance(max_tokens_limit, int):
+                                output_token_ids = self.tokenizer.encode(generated_text)
+                                if len(output_token_ids) > tokens_received:
+                                    generated_text = self.tokenizer.decode(
+                                        output_token_ids[:tokens_received]
+                                    )
+
+                        # If we've reached or exceeded the cap, stop processing further chunks
+                        if (
+                            isinstance(max_tokens_limit, int)
+                            and tokens_received >= max_tokens_limit
+                        ):
+                            break
         except Exception as e:
             logger.error(f"Warning Or Error: ({error_response_code}) {e}")
 
