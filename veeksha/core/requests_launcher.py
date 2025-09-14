@@ -11,6 +11,7 @@ from veeksha.config.client import ClientConfig
 from veeksha.core.llm_clients import construct_client
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
 from veeksha.logger import init_logger
+from veeksha.metrics.request_metrics import RequestMetrics
 
 logger = init_logger(__name__)
 
@@ -50,7 +51,7 @@ class RequestsLauncher:
         # Create LLM client for this worker process
         llm_client = construct_client(
             model_name=self.client_config.model,
-            tokenizer_name=self.client_config.tokenizer,
+            tokenizer_name=self.client_config.tokenizer or self.client_config.model,
             llm_api=self.client_config.llm_api,
         )
 
@@ -95,12 +96,34 @@ class RequestsLauncher:
                 except asyncio.CancelledError:
                     logger.debug("Worker %s task %s was cancelled", client_id, task_id)
                     break
-                except Exception:
+                except Exception as e:
                     logger.exception(
                         "send_llm_request failed for client_id=%s, task_id=%s",
                         client_id,
                         task_id,
                     )
+                    # Emit an error metrics entry so counters remain consistent
+                    try:
+                        prompt_len = (
+                            request_config.prompt[1]
+                            if request_config and request_config.prompt
+                            else 0
+                        )
+                    except Exception:
+                        prompt_len = 0
+
+                    error_code = (
+                        e.status if isinstance(e, aiohttp.ClientResponseError) else None
+                    )
+                    metrics = RequestMetrics(
+                        request_dispatched_at=0.0,
+                        inter_token_times=[],
+                        num_prompt_tokens=prompt_len,
+                        num_output_tokens=0,
+                        error_msg=str(e),
+                        error_code=error_code,
+                    )
+                    await loop.run_in_executor(None, put_to_queue, (metrics, None))
                     continue
 
             except asyncio.CancelledError:

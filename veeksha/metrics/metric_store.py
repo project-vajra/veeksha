@@ -131,8 +131,10 @@ class MetricStore:
 
     def add_request_metrics(self, request_metrics: RequestMetrics):
         if request_metrics.error_code:
+            # do not add errored requests to metric sketches
             self.error_code_freq[request_metrics.error_code] += 1
             self.num_errored_requests += 1
+            return
         else:
             self.num_completed_requests += 1
 
