@@ -505,6 +505,9 @@ def instantiate_from_args(cls, args, provided_args):
 
 def init_iterable_args(loaded_configs, cli_provided_args, list_fields):
     """Initialize iterable args."""
+    print(f"loaded_configs: {loaded_configs}")
+    print(f"cli_provided_args: {cli_provided_args}")
+    print(f"list_fields: {list_fields}")
 
     def _init_iterable_args(arg_map, list_fields):
         return_map = {}

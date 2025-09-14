@@ -248,13 +248,13 @@ __pycache__
 env/
 benchmark_results/
 capsearch_results/
+microbenchmark_results/
 profile_dir*
 temp*
 experiment*
 wandb/
 prefill_outputs/
 prefill_experiments*
-microbenchmark_experiments*
 experiments/
 experiments_*
 results*

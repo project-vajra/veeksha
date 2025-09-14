@@ -8,46 +8,12 @@ from veeksha.config.client import ClientConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.metrics import MetricsConfig
+from veeksha.config.microbenchmark import BaseMicrobenchmarkProbeConfig
+from veeksha.config.microbenchmark import PrefillProbeConfig
 from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
-
-
-@frozen_dataclass(allow_from_file=True)
-class PrefillProfilerSection:
-    enabled: bool = field(
-        default=True,
-        metadata={"help": "Whether to run the prefill profiler."},
-    )
-    prefill_lengths: List[int] = field(
-        default_factory=lambda: [2**i for i in range(8, 15)],
-        metadata={"help": "The lengths to prefill the profiler with."},
-    )
-
-
-@frozen_dataclass(allow_from_file=True)
-class DecodeProfilerSection:
-    enabled: bool = field(
-        default=False,
-        metadata={"help": "Whether to run the decode profiler."},
-    )
-    context_lengths: List[int] = field(
-        default_factory=lambda: [2**i for i in range(8, 15)],
-        metadata={"help": "The lengths to decode the profiler with."},
-    )
-    engine_chunk_size: int = field(
-        default=512,
-        metadata={"help": "The chunk size the engine is running with."},
-    )
-    batch_sizes: List[int] = field(
-        default_factory=lambda: [2**i for i in range(4, 8)],
-        metadata={"help": "The batch sizes to decode the profiler with."},
-    )
-    engine_uses_mixed_batching: bool = field(
-        default=False,
-        metadata={"help": "Whether the engine uses mixed batching."},
-    )
 
 
 @frozen_dataclass(allow_from_file=True)
@@ -60,7 +26,7 @@ class MicrobenchmarkConfig:
         metadata={"help": "The model to use for this microbenchmark."},
     )
     api_url: str = field(
-        default="http://localhost:8000/v1",
+        default="http://localhost:30000/v1",
         metadata={"help": "The API URL for the benchmark."},
     )
     api_key: str = field(
@@ -76,8 +42,7 @@ class MicrobenchmarkConfig:
     additional_sampling_params: str = field(
         default="{}",
         metadata={
-            "help": "Additional sampling params to send with each request to the LLM API. "
-            "By default, no additional sampling params are sent."
+            "help": "Additional sampling params."
         },
     )
     timeout: int = field(
@@ -92,13 +57,11 @@ class MicrobenchmarkConfig:
         default="microbenchmark_experiments",
         metadata={"help": "Output directory for microbenchmark results."},
     )
-    prefill_profiler: PrefillProfilerSection = field(
-        default_factory=PrefillProfilerSection,
-        metadata={"help": "Prefill profiler configuration."},
-    )
-    decode_profiler: DecodeProfilerSection = field(
-        default_factory=DecodeProfilerSection,
-        metadata={"help": "Decode profiler configuration."},
+    probe_config: BaseMicrobenchmarkProbeConfig = field(
+        default_factory=PrefillProbeConfig,
+        metadata={
+            "help": "Polymorphic microbenchmark probe configuration (e.g., prefill, decode).",
+        },
     )
     wandb_project: Optional[str] = field(
         default=None,

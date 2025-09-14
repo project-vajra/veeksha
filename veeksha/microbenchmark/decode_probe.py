@@ -18,23 +18,22 @@ from veeksha.config.generators.request_generator.synthetic_generator import (
     SyntheticRequestGeneratorConfig,
 )
 from veeksha.logger import init_logger
-from veeksha.run_benchmark import run_benchmark
+from veeksha.benchmark import run_benchmark
+from veeksha.config.microbenchmark import DecodeProbeConfig
 
 # pyright: reportCallIssue=false, reportArgumentType=false
 logger = init_logger(__name__)
 
-# Number of concurrent requests per client for decode profiling
-DECODE_NUM_CONCURRENT_REQUESTS_PER_CLIENT = 10
-# Number of profiling iterations
-DECODE_PROFILING_ITERATIONS = 10
+DECODE_NUM_CONCURRENT_REQUESTS_PER_CLIENT = None  # deprecated: use config
+DECODE_PROFILING_ITERATIONS = None  # deprecated: use config
 
 
-class DecodeProfiler:
-    def __init__(self, base_config: BenchmarkConfig, decode_config) -> None:
+class DecodeProbe:
+    def __init__(self, base_config: BenchmarkConfig, probe_config: DecodeProbeConfig) -> None:
         self.base_config = base_config
-        self.decode_config = decode_config
-        self.context_lengths = decode_config.context_lengths
-        self.batch_sizes = decode_config.batch_sizes
+        self.decode_config = probe_config
+        self.context_lengths = self.decode_config.context_lengths
+        self.batch_sizes = self.decode_config.batch_sizes
         self.decode_times: Dict[Tuple[int, int], List[int]] = {}
         self.base_dir = self.base_config.metrics_config.output_dir
 
@@ -127,7 +126,7 @@ class DecodeProfiler:
 
             # Calculate decode tokens dynamically like the original implementation
             decode_tokens = int(
-                batch_size * num_iterations_per_prefill + DECODE_PROFILING_ITERATIONS
+                batch_size * num_iterations_per_prefill + self.decode_config.profiling_iterations
             )
             decode_tokens *= 2
 
@@ -145,11 +144,13 @@ class DecodeProfiler:
             num_requests = batch_size
             if self.decode_config.engine_uses_mixed_batching:
                 num_requests += int(
-                    np.ceil(DECODE_PROFILING_ITERATIONS / num_iterations_per_prefill)
+                    np.ceil(self.decode_config.profiling_iterations / num_iterations_per_prefill)
                 )
 
             num_clients = int(
-                np.ceil(num_requests / DECODE_NUM_CONCURRENT_REQUESTS_PER_CLIENT)
+                np.ceil(
+                    num_requests / self.decode_config.num_concurrent_requests_per_client
+                )
             )
 
             # Create new client config with updated num_clients and force streaming API

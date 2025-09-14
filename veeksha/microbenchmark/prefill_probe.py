@@ -1,11 +1,11 @@
 import json
 import os
-from dataclasses import replace
 from typing import Dict, List
 
 import numpy as np
 
 from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.client import ClientConfig
 from veeksha.config.generators.interval_generator.static_generator import (
     StaticRequestIntervalGeneratorConfig,
 )
@@ -15,84 +15,64 @@ from veeksha.config.generators.length_generator.fixed_generator import (
 from veeksha.config.generators.request_generator.synthetic_generator import (
     SyntheticRequestGeneratorConfig,
 )
+from veeksha.config.metrics import MetricsConfig
 from veeksha.logger import init_logger
-from veeksha.run_benchmark import run_benchmark
+from veeksha.benchmark import run_benchmark
+from veeksha.config.microbenchmark import PrefillProbeConfig, MicrobenchmarkConfig
 
 # pyright: reportCallIssue=false, reportArgumentType=false
 logger = init_logger(__name__)
 
 
-# RMSE threshold for the prefill time predictor
-PREFILL_RMSE_THRESHOLD = 0.05
-# Number of Ray clients to use for prefill profiling
-PREFILL_NUM_CLIENTS = 1
-# Number of concurrent requests per client for prefill profiling
-PREFILL_NUM_CONCURRENT_REQUESTS_PER_CLIENT = 1
-# Number of completed requests to wait for before stopping the prefill profiling for a prompt length
-PREFILL_MAX_NUM_COMPLETED_REQUESTS = 1
-# Decode tokens when running the prefill profiler
-PREFILL_PROFILER_DECODE_TOKENS = 1
-# Model to train on the prefill values and prefill times
-PREFILL_MODEL = "RandomForestRegressor"
-# Random Forest Regressor parameters
-PREFILL_RANDOM_FOREST_PARAMS = {
-    "n_estimators": 10,
-    "random_state": 0,
-}
-
-
-class PrefillProfiler:
-    def __init__(
-        self, base_config: BenchmarkConfig, prefill_lengths: List[int]
-    ) -> None:
-        self.base_config = base_config
-        self.prefill_values = prefill_lengths
+class PrefillProbe:
+    def __init__(self, microbenchmark_config: MicrobenchmarkConfig) -> None:
+        self.micro_config = microbenchmark_config
+        assert isinstance(
+            self.micro_config.probe_config, PrefillProbeConfig
+        ), "PrefillProbe requires PrefillProbeConfig"
+        
+        self.probe_config: PrefillProbeConfig = self.micro_config.probe_config
         self.prefill_times: Dict[int, List[float]] = {}
 
-        # Create profiler-specific config using replace() to respect frozen design
-        profiler_client_config = replace(
-            base_config.client_config,
-            num_clients=PREFILL_NUM_CLIENTS,
-            num_concurrent_requests_per_client=PREFILL_NUM_CONCURRENT_REQUESTS_PER_CLIENT,
+    def _build_benchmark_config(self, run_dir: str, prefill_tokens: int) -> BenchmarkConfig:
+        length_generator_config = FixedRequestLengthGeneratorConfig(
+            prefill_tokens=prefill_tokens,
+            decode_tokens=1,
         )
 
-        profiler_metrics_config = replace(
-            base_config.metrics_config, should_write_metrics_to_wandb=False
+        request_generator_config = SyntheticRequestGeneratorConfig(
+            interval_generator_config=StaticRequestIntervalGeneratorConfig(),
+            length_generator_config=length_generator_config,
         )
 
-        self.config = replace(
-            base_config,
-            max_completed_requests=PREFILL_MAX_NUM_COMPLETED_REQUESTS,
-            client_config=profiler_client_config,
-            metrics_config=profiler_metrics_config,
-            request_generator_config=SyntheticRequestGeneratorConfig(
-                interval_generator_config=StaticRequestIntervalGeneratorConfig()
-            ),
+        client_config = ClientConfig(
+            model=self.micro_config.model,
+            tokenizer=self.micro_config.tokenizer,
+            num_clients=1,
+            num_concurrent_requests_per_client=1,
         )
 
-        self.base_dir = self.base_config.metrics_config.output_dir
+        metrics_config = MetricsConfig(
+            output_dir=run_dir,
+            should_write_metrics_to_wandb=False,
+            wandb_project=self.micro_config.wandb_project,
+            wandb_run_name=f"prefill_p{prefill_tokens}_{self.micro_config.model}",
+        )
+
+        return BenchmarkConfig(
+            seed=self.micro_config.seed,
+            timeout=self.micro_config.timeout,
+            api_url=self.micro_config.api_url,
+            api_key=self.micro_config.api_key,
+            max_completed_requests=self.probe_config.num_requests_per_prefill_length,
+            client_config=client_config,
+            metrics_config=metrics_config,
+            request_generator_config=request_generator_config,
+        )
 
     def run(self):
-        for prefill_value in self.prefill_values:
-            # Create config for this specific prefill run using replace()
-            length_generator_config = FixedRequestLengthGeneratorConfig(
-                decode_tokens=PREFILL_PROFILER_DECODE_TOKENS,
-                prefill_tokens=prefill_value,
-            )
-
-            request_generator_config = replace(
-                self.config.request_generator_config,
-                length_generator_config=length_generator_config,
-            )
-
-            run_config = replace(
-                self.config, request_generator_config=request_generator_config
-            )
-
-            run_dir = os.path.join(
-                self.base_dir,
-                str(prefill_value),
-            )
+        for prefill_value in self.probe_config.prefill_lengths:
+            run_dir = os.path.join(self.micro_config.output_dir, str(prefill_value))
 
             if os.path.isdir(run_dir):
                 logger.info(
@@ -113,20 +93,11 @@ class PrefillProfiler:
                 else:
                     logger.warning("Missing %s; skipping cached load.", json_file)
             else:
-                # Create final config with updated output dir and wandb name
-                run_metrics_config = replace(
-                    run_config.metrics_config,
-                    wandb_run_name=f"prefill_p{prefill_value}_{self.config.client_config.model}",
-                    output_dir=run_dir,
-                )
-
-                final_run_config = replace(
-                    run_config, metrics_config=run_metrics_config
-                )
+                config = self._build_benchmark_config(run_dir, prefill_value)
 
                 os.makedirs(run_dir, exist_ok=True)
                 logger.info(f"Running profiling for prefill value = {prefill_value}...")
-                service_metrics = run_benchmark(final_run_config)
+                service_metrics = run_benchmark(config)
                 logger.info(f"Run benchmark done")
 
                 benchmark_output_dir = service_metrics.output_dir
@@ -151,7 +122,7 @@ class PrefillProfiler:
 
         # log all the prefill times with their length
         prefill_stats = {}
-        for prefill_value in self.prefill_values:
+        for prefill_value in self.probe_config.prefill_lengths:
             if (
                 prefill_value not in self.prefill_times
                 or not self.prefill_times[prefill_value]
@@ -173,6 +144,6 @@ class PrefillProfiler:
 
         print(f"Prefill runtime stats: {prefill_stats}")
 
-        prefill_stats_file = os.path.join(self.base_dir, "prefill_stats.json")
+        prefill_stats_file = os.path.join(self.micro_config.output_dir, "prefill_stats.json")
         with open(prefill_stats_file, "w") as f:
             json.dump(prefill_stats, f)

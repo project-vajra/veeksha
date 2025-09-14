@@ -1,17 +1,9 @@
 model: meta-llama/Meta-Llama-3-8B-Instruct
-api_url: http://localhost:8002/v1  
-api_key: ""
 timeout: 10000
 seed: 42
-output_dir: microbenchmark_experiments/example
+output_dir: microbenchmark_results/example
 
-prefill_profiler:
-  enabled: false
-  prefill_lengths: [128, 256]
-
-decode_profiler:
-  enabled: true
-  context_lengths: [128]
-  engine_chunk_size: 512
-  batch_sizes: [2]
-  engine_uses_mixed_batching: false
+probe_config:
+  type: prefill
+  prefill_lengths: [128, 256, 512]
+  num_requests_per_prefill_length: 32
