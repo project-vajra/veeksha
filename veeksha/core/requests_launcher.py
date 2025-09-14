@@ -45,7 +45,7 @@ class RequestsLauncher:
 
     async def run_async_worker(self, client_id: int) -> None:
         """Run the async worker that processes requests."""
-        logger.info("Starting async worker %s", client_id)
+        logger.debug("Starting async worker %s", client_id)
 
         # Create LLM client for this worker process
         llm_client = construct_client(
@@ -65,7 +65,7 @@ class RequestsLauncher:
             ]
             await asyncio.gather(*tasks)
 
-        logger.info("Async worker %s finished", client_id)
+        logger.debug("Async worker %s finished", client_id)
 
     async def process_requests_async(
         self,
