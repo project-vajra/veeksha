@@ -93,6 +93,8 @@ def explode_dict(
             if stripped_prefix.endswith("_type"):
                 stripped_prefix = stripped_prefix[: -len("_type")]
             type_key = str(data["type"]).lower()
+            if data["type"] is None or type_key in {"none", ""}:
+                return current_prefix
             typed_child_name = cls.base_poly_children_types.get(
                 stripped_prefix, {}
             ).get(type_key)
@@ -267,11 +269,12 @@ def explode_dict(
         ) -> Dict[str, Any]:
             result = {}
 
+            # resolve effective typed prefix once per node
+            effective_prefix = _resolve_prefix_for_data(
+                cls, current_prefix=current_prefix, data=data, strict=True
+            )
+
             for key, value in data.items():
-                # resolve effective typed prefix once per node
-                effective_prefix = _resolve_prefix_for_data(
-                    cls, current_prefix=current_prefix, data=data, strict=True
-                )
                 # For the 'type' meta-key itself, keep the current (un-typed) prefix
                 if "type" in data and key == "type":
                     prefixed_key = f"{current_prefix}{key}"
@@ -819,9 +822,8 @@ def _create_config_combinations(loaded_configs):
         all_config_combinations.append(combined_config)
         all_keys_to_file_field_names.append(params_to_files)
 
-    logger.info(
-        f"Created {len(all_config_combinations)} total config combinations.\n---"
-    )
+    logger.info(f"Created {len(all_config_combinations)} total config combinations.")
+    logger.info("---")
 
     return all_config_combinations, all_keys_to_file_field_names
 
