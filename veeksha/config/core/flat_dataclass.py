@@ -73,6 +73,42 @@ def explode_dict(
                 "to avoid combinatorial explosion."
             )
 
+    def _resolve_prefix_for_data(
+        cls, current_prefix: str, data: Dict[str, Any], strict: bool = True
+    ) -> str:
+        """Resolve the effective prefix for a dictionary possibly representing a BasePolyConfig.
+
+        If the dictionary contains a "type" key, resolve the typed child name from
+        `base_poly_children_types` using the stripped `current_prefix`. When `strict`
+        is True, raise a ValueError if the type is invalid for the given prefix.
+        """
+        resolved_prefix = current_prefix
+        if "type" in data:
+            stripped_prefix = (
+                current_prefix[:-1]
+                if current_prefix and current_prefix[-1] == "_"
+                else current_prefix
+            )
+            # remove a trailing "_type"
+            if stripped_prefix.endswith("_type"):
+                stripped_prefix = stripped_prefix[: -len("_type")]
+            type_key = str(data["type"]).lower()
+            if data["type"] is None or type_key in {"none", "null", ""}:
+                return current_prefix
+            typed_child_name = cls.base_poly_children_types.get(
+                stripped_prefix, {}
+            ).get(type_key)
+            if typed_child_name:
+                resolved_prefix = f"{typed_child_name}_"
+            elif strict:
+                valid = list(
+                    cls.base_poly_children_types.get(stripped_prefix, {}).keys()
+                )
+                raise ValueError(
+                    f"Invalid type '{data['type']}' for '{stripped_prefix}_type'. Valid types: {valid}"
+                )
+        return resolved_prefix
+
     def _categorize_dict_items(d: Dict[str, Any], current_prefix: str = "") -> tuple:
         """Categorize dictionary items into lists, dicts, and primitives."""
         list_keys = []
@@ -114,6 +150,7 @@ def explode_dict(
         """Explode a list of dictionaries recursively."""
         exploded_configs = []
         for config in dict_list:
+            # child will resolve its own prefix types if needed
             exploded = _explode_dict_recursive(config, level + 1, current_prefix)
             exploded_configs.extend(exploded)
         return exploded_configs
@@ -195,13 +232,19 @@ def explode_dict(
         d: Dict[str, Any], level: int = 0, current_prefix: str = ""
     ) -> List[Dict[str, Any]]:
         """Recursively explode a dictionary into all combinations."""
+
+        # resolve effective prefix (might be typed)
+        effective_prefix = _resolve_prefix_for_data(
+            cls, current_prefix=current_prefix, data=d, strict=True
+        )
+
         list_keys, list_values, non_list_items, dict_items = _categorize_dict_items(
-            d, current_prefix
+            d, effective_prefix
         )
 
         # generate combinations from nested dictionaries
         dict_combinations = _generate_dict_combinations(
-            dict_items, level, current_prefix
+            dict_items, level, effective_prefix
         )
 
         # if no lists found, just combine non-list items with dict combinations
@@ -215,7 +258,7 @@ def explode_dict(
             non_list_items,
             dict_combinations,
             level,
-            current_prefix,
+            effective_prefix,
         )
 
     def _add_prefix_to_dict(cls, d: Dict[str, Any], prefix: str) -> Dict[str, Any]:
@@ -226,29 +269,17 @@ def explode_dict(
         ) -> Dict[str, Any]:
             result = {}
 
+            # resolve effective typed prefix once per node
+            effective_prefix = _resolve_prefix_for_data(
+                cls, current_prefix=current_prefix, data=data, strict=True
+            )
+
             for key, value in data.items():
-                if "type" in data and key != "type":
-                    # simply appending prefix is not enough
-                    # we fetch actual type name from base poly children
-                    stripped_prefix = (
-                        current_prefix[:-1]
-                        if current_prefix[-1] == "_"
-                        else current_prefix
-                    )
-                    try:
-                        typed_child_name = cls.base_poly_children_types[
-                            stripped_prefix
-                        ][data["type"].lower()]
-                        prefixed_key = f"{typed_child_name}_{key}"
-                    except KeyError:
-                        valid = list(
-                            cls.base_poly_children_types.get(stripped_prefix, {}).keys()
-                        )
-                        raise ValueError(
-                            f"Invalid type '{data['type']}' for '{stripped_prefix}_type'. Valid types: {valid}"
-                        ) from None
-                else:
+                # For the 'type' meta-key itself, keep the current (un-typed) prefix
+                if "type" in data and key == "type":
                     prefixed_key = f"{current_prefix}{key}"
+                else:
+                    prefixed_key = f"{effective_prefix}{key}"
 
                 if isinstance(value, dict):
                     # for nested dicts, recursively process with composed prefix
@@ -728,10 +759,6 @@ def _load_config_files(cls, args):
     """Load and process all config files specified in arguments."""
     loaded_configs: Dict[str, List[Dict[str, Any]]] = {}
 
-    logger.info("--------------------------------")
-    logger.info("BEGIN LOADING ARGS FROM FILES")
-    logger.info("--------------------------------")
-
     for file_field_name in cls.dataclass_file_fields.values():
         file_path = getattr(args, file_field_name, None)
         if not file_path:
@@ -756,7 +783,7 @@ def _load_config_files(cls, args):
     for file_field_name, configs in loaded_configs.items():
         n_configs = len(configs)
         logger.info(
-            f"File field name: {file_field_name}. Expanded to {n_configs} configs."
+            f"File field name '{file_field_name}' expanded to {n_configs} config{'' if n_configs == 1 else 's'}."
         )
         total_configs += n_configs
 
@@ -795,10 +822,8 @@ def _create_config_combinations(loaded_configs):
         all_config_combinations.append(combined_config)
         all_keys_to_file_field_names.append(params_to_files)
 
-    logger.info(f"Created {len(all_config_combinations)} total config combinations")
-    logger.info("--------------------------------")
-    logger.info("END LOADING ARGS FROM FILES")
-    logger.info("--------------------------------")
+    logger.info(f"Created {len(all_config_combinations)} total config combinations.")
+    logger.info("---")
 
     return all_config_combinations, all_keys_to_file_field_names
 
