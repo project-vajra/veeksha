@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 import time
-from typing import AsyncGenerator, Dict, List, Tuple
+from typing import AsyncGenerator, Dict, List, Optional, Tuple
 
 import aiohttp
 
@@ -120,7 +120,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
 
     async def send_llm_request(
         self, request_config: RequestConfig, session: aiohttp.ClientSession
-    ) -> Tuple[RequestMetrics, Response]:
+    ) -> Tuple[RequestMetrics, Optional[Response]]:
         prompt, prompt_len = request_config.prompt
 
         message = [
@@ -167,7 +167,10 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
                     if "error" in data:
                         err = data.get("error") or {}
                         error_msg = err.get("message", "Unknown error")
-                        error_response_code = err.get("code")
+                        code_value = err.get("code")
+                        error_response_code = (
+                            code_value if isinstance(code_value, int) else 400
+                        )
                         break  # Stop processing on error
 
                     (
@@ -185,12 +188,24 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
                     tokens_received += tokens_received_chunk
                     generated_text += generated_text_chunk
 
-        except asyncio.TimeoutError as e:
+        except aiohttp.ClientResponseError as e:
+            error_response_code = e.status
+            error_msg = error_msg or (e.message if hasattr(e, "message") else str(e))
+            logger.warning(f"HTTP Error: status={error_response_code} msg={error_msg}")
+        except aiohttp.ClientConnectorError as e:
+            error_response_code = 503
+            error_msg = error_msg or str(e)
+            logger.warning(f"Connection Error: ({error_response_code}) {error_msg}")
+        except asyncio.TimeoutError:
+            error_response_code = 408
             error_msg = error_msg or "Request timed out"
             logger.warning(f"Timeout Error: ({error_response_code}) {error_msg}")
         except Exception as e:
+            error_response_code = error_response_code or 520
             error_msg = error_msg or str(e)
-            logger.exception(f"An unexpected error occurred: ({error_response_code})")
+            logger.exception(
+                f"An unexpected error occurred: ({error_response_code}) {error_msg}"
+            )
 
         metrics = RequestMetrics(
             request_dispatched_at=request_dispatched_at,
@@ -201,9 +216,13 @@ class OpenAIChatCompletionsClient(BaseLLMClient):
             error_msg=error_msg,
         )
 
-        response = Response(
-            id=request_config.id,
-            text=generated_text,
-        )
+        generated_response: Optional[Response]
+        if error_msg or error_response_code:
+            generated_response = None
+        else:
+            generated_response = Response(
+                id=request_config.id,
+                text=generated_text,
+            )
 
-        return metrics, response
+        return metrics, generated_response
