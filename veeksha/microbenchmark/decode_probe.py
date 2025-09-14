@@ -7,6 +7,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import wandb
 
+from veeksha.benchmark import run_benchmark
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.generators.interval_generator.static_generator import (
     StaticRequestIntervalGeneratorConfig,
@@ -17,9 +18,8 @@ from veeksha.config.generators.length_generator.fixed_generator import (
 from veeksha.config.generators.request_generator.synthetic_generator import (
     SyntheticRequestGeneratorConfig,
 )
-from veeksha.logger import init_logger
-from veeksha.benchmark import run_benchmark
 from veeksha.config.microbenchmark import DecodeProbeConfig
+from veeksha.logger import init_logger
 
 # pyright: reportCallIssue=false, reportArgumentType=false
 logger = init_logger(__name__)
@@ -29,7 +29,9 @@ DECODE_PROFILING_ITERATIONS = None  # deprecated: use config
 
 
 class DecodeProbe:
-    def __init__(self, base_config: BenchmarkConfig, probe_config: DecodeProbeConfig) -> None:
+    def __init__(
+        self, base_config: BenchmarkConfig, probe_config: DecodeProbeConfig
+    ) -> None:
         self.base_config = base_config
         self.decode_config = probe_config
         self.context_lengths = self.decode_config.context_lengths
@@ -126,7 +128,8 @@ class DecodeProbe:
 
             # Calculate decode tokens dynamically like the original implementation
             decode_tokens = int(
-                batch_size * num_iterations_per_prefill + self.decode_config.profiling_iterations
+                batch_size * num_iterations_per_prefill
+                + self.decode_config.profiling_iterations
             )
             decode_tokens *= 2
 
@@ -144,7 +147,10 @@ class DecodeProbe:
             num_requests = batch_size
             if self.decode_config.engine_uses_mixed_batching:
                 num_requests += int(
-                    np.ceil(self.decode_config.profiling_iterations / num_iterations_per_prefill)
+                    np.ceil(
+                        self.decode_config.profiling_iterations
+                        / num_iterations_per_prefill
+                    )
                 )
 
             num_clients = int(

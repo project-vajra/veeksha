@@ -1,15 +1,17 @@
 import json
 import os
 from dataclasses import field
-from typing import List, Optional
+from typing import Optional
 
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.client import ClientConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.metrics import MetricsConfig
-from veeksha.config.microbenchmark import BaseMicrobenchmarkProbeConfig
-from veeksha.config.microbenchmark import PrefillProbeConfig
+from veeksha.config.microbenchmark import (
+    BaseMicrobenchmarkProbeConfig,
+    PrefillProbeConfig,
+)
 from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
 
@@ -41,9 +43,7 @@ class MicrobenchmarkConfig:
     )
     additional_sampling_params: str = field(
         default="{}",
-        metadata={
-            "help": "Additional sampling params."
-        },
+        metadata={"help": "Additional sampling params."},
     )
     timeout: int = field(
         default=1200,

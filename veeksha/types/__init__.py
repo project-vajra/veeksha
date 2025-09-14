@@ -1,10 +1,10 @@
 from veeksha.types.lmeval_output_type import LMEvalOutputType
+from veeksha.types.microbenchmark_probe_type import MicrobenchmarkProbeType
 from veeksha.types.request_generator_type import RequestGeneratorType
 from veeksha.types.request_interval_generator_type import RequestIntervalGeneratorType
 from veeksha.types.request_length_generator_type import RequestLengthGeneratorType
 from veeksha.types.session_generator_type import SessionGeneratorType
 from veeksha.types.slo_type import SloType
-from veeksha.types.microbenchmark_probe_type import MicrobenchmarkProbeType
 
 __all__ = [  # type: ignore
     "LMEvalOutputType",

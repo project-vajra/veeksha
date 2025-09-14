@@ -4,6 +4,7 @@ from typing import Dict, List
 
 import numpy as np
 
+from veeksha.benchmark import run_benchmark
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.client import ClientConfig
 from veeksha.config.generators.interval_generator.static_generator import (
@@ -16,9 +17,8 @@ from veeksha.config.generators.request_generator.synthetic_generator import (
     SyntheticRequestGeneratorConfig,
 )
 from veeksha.config.metrics import MetricsConfig
+from veeksha.config.microbenchmark import MicrobenchmarkConfig, PrefillProbeConfig
 from veeksha.logger import init_logger
-from veeksha.benchmark import run_benchmark
-from veeksha.config.microbenchmark import PrefillProbeConfig, MicrobenchmarkConfig
 
 # pyright: reportCallIssue=false, reportArgumentType=false
 logger = init_logger(__name__)
@@ -30,11 +30,13 @@ class PrefillProbe:
         assert isinstance(
             self.micro_config.probe_config, PrefillProbeConfig
         ), "PrefillProbe requires PrefillProbeConfig"
-        
+
         self.probe_config: PrefillProbeConfig = self.micro_config.probe_config
         self.prefill_times: Dict[int, List[float]] = {}
 
-    def _build_benchmark_config(self, run_dir: str, prefill_tokens: int) -> BenchmarkConfig:
+    def _build_benchmark_config(
+        self, run_dir: str, prefill_tokens: int
+    ) -> BenchmarkConfig:
         length_generator_config = FixedRequestLengthGeneratorConfig(
             prefill_tokens=prefill_tokens,
             decode_tokens=1,
@@ -144,6 +146,8 @@ class PrefillProbe:
 
         print(f"Prefill runtime stats: {prefill_stats}")
 
-        prefill_stats_file = os.path.join(self.micro_config.output_dir, "prefill_stats.json")
+        prefill_stats_file = os.path.join(
+            self.micro_config.output_dir, "prefill_stats.json"
+        )
         with open(prefill_stats_file, "w") as f:
             json.dump(prefill_stats, f)

@@ -2,8 +2,9 @@ from dataclasses import field
 from typing import List
 
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
-from veeksha.types.microbenchmark_probe_type import MicrobenchmarkProbeType
 from veeksha.config.microbenchmark import BaseMicrobenchmarkProbeConfig
+from veeksha.types.microbenchmark_probe_type import MicrobenchmarkProbeType
+
 
 @frozen_dataclass
 class DecodeProbeConfig(BaseMicrobenchmarkProbeConfig):
