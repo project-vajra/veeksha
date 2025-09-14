@@ -93,7 +93,7 @@ def explode_dict(
             if stripped_prefix.endswith("_type"):
                 stripped_prefix = stripped_prefix[: -len("_type")]
             type_key = str(data["type"]).lower()
-            if data["type"] is None or type_key in {"none", ""}:
+            if data["type"] is None or type_key in {"none", "null", ""}:
                 return current_prefix
             typed_child_name = cls.base_poly_children_types.get(
                 stripped_prefix, {}
