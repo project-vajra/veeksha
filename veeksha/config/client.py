@@ -43,6 +43,12 @@ class ClientConfig:
         default="chat/completions",
         metadata={"help": "The address append value for OpenAI API."},
     )
+    min_token_param: str = field(
+        default="min_tokens",
+        metadata={
+            "help": "Server supported parameter representing minimum new tokens to be generated."
+        },
+    )
 
     def __post_init__(self):
         self.additional_sampling_params_dict = {}

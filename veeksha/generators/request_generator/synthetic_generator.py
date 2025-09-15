@@ -78,10 +78,12 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
 
         default_sampling_params = {
             "max_tokens": num_output_tokens,
+            self.client_config.min_token_param: num_output_tokens,
         }
         default_sampling_params.update(
             self.client_config.additional_sampling_params_dict
         )
+
         request_config = RequestConfig(
             model=self.client_config.model,
             prompt=(prompt, prompt_token_count),

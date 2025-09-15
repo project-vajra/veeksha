@@ -238,6 +238,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         default_sampling_params = {
             "max_tokens": int(request_to_send["output_length"]),
+            self.client_config.min_token_param: int(request_to_send["output_length"]),
         }
         default_sampling_params.update(
             self.client_config.additional_sampling_params_dict
