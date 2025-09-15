@@ -53,6 +53,12 @@ class ClientConfig:
         default=60,
         metadata={"help": "The timeout for each request to the LLM API (in seconds)."},
     )
+    min_token_param: str = field(
+        default="min_tokens",
+        metadata={
+            "help": "Server supported parameter representing minimum new tokens to be generated."
+        },
+    )
 
     def __post_init__(self):
         self.additional_sampling_params_dict = {}
