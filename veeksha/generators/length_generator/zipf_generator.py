@@ -20,7 +20,7 @@ class ZipfGenerator:
         self.items = max - min + 1
         self.theta = theta
         self.zeta_2 = self._zeta(2, self.theta)
-        self.alpha = 1.0 / (1.0 - self.theta)
+        self.alpha = 1.0 / (1.0 - self.theta + ZIPF_REQUEST_GENERATOR_EPS)
         self.zetan = self._zeta(self.items, self.theta)
         self.eta = (1 - np.power(2.0 / self.items, 1 - self.theta)) / (
             1 - self.zeta_2 / (self.zetan + ZIPF_REQUEST_GENERATOR_EPS)

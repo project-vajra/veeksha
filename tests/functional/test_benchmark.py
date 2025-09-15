@@ -46,7 +46,7 @@ class TestBenchmarkFunctionality:
         # Check output files were created
         output_path = Path(temp_output_dir)
         assert output_path.exists()
-        metrics_files = list(output_path.glob("*.json"))
+        metrics_files = list(output_path.glob("**/*.json"))
         assert len(metrics_files) > 0, "No metrics files generated"
 
     @pytest.mark.gpu

@@ -53,7 +53,7 @@ class TestCapacitySearch:
             "python",
             "-m",
             "veeksha.capacity_search",
-            "--config-path",
+            "--capacity-search-config-from-file",
             str(config_file),
         ]
 
@@ -105,7 +105,7 @@ class TestCapacitySearch:
             "python",
             "-m",
             "veeksha.capacity_search",
-            "--config-path",
+            "--capacity-search-config-from-file",
             str(config_file),
         ]
 
@@ -160,7 +160,7 @@ class TestCapacitySearch:
             "python",
             "-m",
             "veeksha.capacity_search",
-            "--config-path",
+            "--capacity-search-config-from-file",
             str(config_file),
         ]
 
@@ -204,7 +204,7 @@ class TestCapacitySearch:
             "python",
             "-m",
             "veeksha.capacity_search",
-            "--config-path",
+            "--capacity-search-config-from-file",
             str(config_file),
         ]
         result1 = subprocess.run(cmd, capture_output=True, text=True)
@@ -218,5 +218,5 @@ class TestCapacitySearch:
         assert result2.returncode == 0, f"Second capacity search failed: {result2.stderr}"
 
         # Check that cache files were created
-        cache_files = list(cache_dir.glob("*.json"))
+        cache_files = list(cache_dir.glob("**/*.json"))
         assert len(cache_files) > 0, "No cache files found"
