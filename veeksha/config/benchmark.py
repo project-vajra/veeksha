@@ -68,9 +68,6 @@ class BenchmarkConfig:
                 self.request_generator_config, LmevalRequestGeneratorConfig
             )
 
-            if not getattr(self.request_generator_config, "tasks", None):
-                raise ValueError("LMEvalRequestGenerator requires at least one task.")
-
             if self.request_generator_config.is_logit_based:
                 object.__setattr__(self.client_config, "llm_api", "openai_completions")
                 object.__setattr__(

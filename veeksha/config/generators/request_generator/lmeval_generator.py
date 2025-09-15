@@ -16,7 +16,7 @@ from veeksha.types.request_generator_type import RequestGeneratorType
 @frozen_dataclass
 class LmevalRequestGeneratorConfig(BaseRequestGeneratorConfig):
     tasks: list = field(
-        default_factory=lambda: [],
+        default_factory=lambda: ["hellaswag"],
         metadata={"help": "The tasks to evaluate the language model on."},
     )
     num_fewshot: int = field(
@@ -36,6 +36,10 @@ class LmevalRequestGeneratorConfig(BaseRequestGeneratorConfig):
     interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
         default_factory=PoissonRequestIntervalGeneratorConfig
     )
+
+    def __post_init__(self):
+        if not self.tasks:
+            raise ValueError("LMEvalRequestGenerator requires at least one task.")
 
     @classmethod
     def get_type(cls):
