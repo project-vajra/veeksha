@@ -31,23 +31,23 @@ logger = init_logger(__name__)
 
 def detect_task_types(tasks: List[str]) -> bool:
     """Auto-detect if tasks are logit-based by examining their OUTPUT_TYPE.
-    
+
     Args:
         tasks: List of task names to check
-        
+
     Returns:
         True if all tasks are logit-based (LOGLIKELIHOOD, LOGLIKELIHOOD_ROLLING, or MULTIPLE_CHOICE)
         False if all tasks are generation-based (GENERATE_UNTIL)
-        
+
     Raises:
         ValueError: If tasks have mixed types or unknown types
     """
     task_manager = TaskManager()
     task_dict = get_task_dict(tasks, task_manager)  # type: ignore
-    
+
     if not task_dict:
         raise ValueError("Could not resolve any tasks from provided list.")
-    
+
     task_types = set()
     for task_name, task_obj in task_dict.items():
         output_type = str(task_obj.OUTPUT_TYPE)
@@ -60,14 +60,16 @@ def detect_task_types(tasks: List[str]) -> bool:
         elif output_type == str(LMEvalOutputType.GENERATE_UNTIL):
             task_types.add("generation")
         else:
-            raise ValueError(f"Unknown task output type '{output_type}' for task '{task_name}'")
-    
+            raise ValueError(
+                f"Unknown task output type '{output_type}' for task '{task_name}'"
+            )
+
     if len(task_types) > 1:
         raise ValueError(
             f"Mixed task types not supported. Found both logit-based and generation-based tasks. "
             f"Please separate them into different benchmark runs."
         )
-    
+
     return "logit" in task_types
 
 
@@ -169,7 +171,7 @@ class LMEvalRequestGenerator:
         self.limits = []
         for task_output in self.eval_tasks:
             task: Task = task_output.task  # type: ignore
-            
+
             # Task type validation is now handled by config.is_logit_based() method
 
             limit = get_sample_size(task, self.limit)
