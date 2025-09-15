@@ -48,6 +48,10 @@ class LMEvalRequestGenerator:
 
         self.task_manager = TaskManager()
         self.task_dict = get_task_dict(self.config.tasks, self.task_manager)  # type: ignore
+        if not self.task_dict:
+            raise ValueError(
+                "LMEvalRequestGenerator could not resolve any tasks from provided."
+            )
 
         # some parameters that can be set later or ignored
         self.gen_kwargs = None
@@ -153,14 +157,18 @@ class LMEvalRequestGenerator:
 
     def get_request(self) -> RequestConfig:
         if self.req_idx >= len(self.cloned_requests):
-            return None  # type: ignore
+            # Signal graceful stop with sentinel dispatch delay
+            return RequestConfig(
+                model=self.client_config.model,
+                prompt=("", 0),
+                dispatch_delay=-1,
+                llm_api=self.client_config.llm_api,
+                address_append_value=self.client_config.address_append_value,
+                id=self.req_idx,
+            )
         req: Instance = self.cloned_requests[self.req_idx]
         dispatch_delay = self.requests_interval_generator.get_next_inter_request_time()
         self.req_idx += 1
-
-        metadata = {
-            "request_dispatch_interval": dispatch_delay,
-        }
 
         # just need context to send to the model
         if req.request_type == str(LMEvalOutputType.GENERATE_UNTIL):
@@ -174,8 +182,7 @@ class LMEvalRequestGenerator:
                         self.tokenizer.encode(context)[-max_context_length:]
                     )
                     context_length = len(self.tokenizer.encode(context))
-                    logger.warning
-                    (
+                    logger.warning(
                         f"Context length exceeds max tokens limit. Truncated context to {context_length} tokens."
                     )
             return RequestConfig(
@@ -186,7 +193,6 @@ class LMEvalRequestGenerator:
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
                 id=self.req_idx - 1,
-                metadata=metadata,
             )
         elif req.request_type == str(LMEvalOutputType.LOGLIKELIHOOD):
             context, target = req.args  # type: ignore
@@ -207,7 +213,6 @@ class LMEvalRequestGenerator:
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
                 id=self.req_idx - 1,
-                metadata=metadata,
             )
         else:
             raise NotImplementedError(
