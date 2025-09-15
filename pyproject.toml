@@ -79,4 +79,5 @@ known_third_party = "wandb"
 include = ["veeksha"]
 exclude = [
     "**/__pycache__",
+    "veeksha/lm_eval/**",
 ]
