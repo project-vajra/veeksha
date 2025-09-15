@@ -6,7 +6,11 @@ from pathlib import Path
 import pytest
 import requests
 
+from veeksha.logger import init_logger
+
 from .template_utils import create_benchmark_config, create_capacity_search_config
+
+logger = init_logger("test_e2e_integration")
 
 @pytest.mark.functional
 class TestE2EIntegration:
@@ -19,7 +23,7 @@ class TestE2EIntegration:
         """Test the complete workflow as documented in README."""
 
         # Test 1: Basic benchmark run
-        print("\n=== Running basic benchmark test ===")
+        logger.info("\n=== Running basic benchmark test ===")
         config_content = create_benchmark_config(
             model=vllm_server.model,
             output_dir=f"{temp_output_dir}/benchmark_basic",
@@ -57,7 +61,7 @@ class TestE2EIntegration:
 
         # Test 2: Benchmark with trace file (if available)
         if Path(sample_trace_file).exists():
-            print("\n=== Running benchmark with trace file ===")
+            logger.info("\n=== Running benchmark with trace file ===")
             trace_config = create_benchmark_config(
                 model=vllm_server.model,
                 output_dir=f"{temp_output_dir}/benchmark_trace",
@@ -84,7 +88,7 @@ class TestE2EIntegration:
             assert result.returncode == 0, f"Trace benchmark failed: {result.stderr}"
 
         # Test 3: Capacity search
-        print("\n=== Running capacity search test ===")
+        logger.info("\n=== Running capacity search test ===")
         slos = [
             {
                 "type": "constant",
@@ -122,7 +126,7 @@ class TestE2EIntegration:
         capacity_output = Path(temp_output_dir) / "capacity_search"
         assert capacity_output.exists(), "Capacity search output not created"
 
-        print("\n=== All E2E tests passed successfully ===")
+        logger.info("\n=== All E2E tests passed successfully ===")
 
 
 @pytest.mark.functional
@@ -153,8 +157,8 @@ class TestVLLMServer:
         )
 
         if response.status_code != 200:
-            print(f"❌ Chat completions failed with status {response.status_code}")
-            print(f"Response: {response.text}")
+            logger.info(f"❌ Chat completions failed with status {response.status_code}")
+            logger.info(f"Response: {response.text}")
         assert response.status_code == 200
         result = response.json()
         assert "choices" in result

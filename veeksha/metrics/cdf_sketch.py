@@ -2,7 +2,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
-import plotly.express as px
+import rekha as rk
 import wandb
 from ddsketch import DDSketch
 
@@ -123,10 +123,9 @@ class CDFSketch:
 
         df = self._to_df()
 
-        fig = px.line(
-            df, x=self.metric_name, y="cdf", markers=True, labels={"x": x_axis_label}
+        fig = rk.line(
+            df, x=self.metric_name, y="cdf", markers=True, labels={self.metric_name: x_axis_label, "cdf": "CDF"},
         )
-        fig.update_traces(marker=dict(color="red", size=2))
 
         if wandb.run and self.should_write_to_wandb:
             wandb_df = df.copy()
@@ -145,7 +144,7 @@ class CDFSketch:
                 step=0,
             )
 
-        fig.write_image(f"{path}/{plot_name}.png")
+        fig.save(f"{path}/{plot_name}.png")
         self._save_df(df, path, plot_name)
 
     def get_summary(self) -> Dict[str, Optional[float]]:
