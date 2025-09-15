@@ -1,8 +1,8 @@
-from enum import Enum
+from veeksha.types.base_int_enum import BaseIntEnum
 
 
-class LMEvalOutputType(Enum):
-    LOGLIKELIHOOD = "loglikelihood"
-    LOGLIKELIHOOD_ROLLING = "loglikelihood_rolling"
-    GENERATE_UNTIL = "generate_until"
-    MULTIPLE_CHOICE = "multiple_choice"
+class LMEvalOutputType(BaseIntEnum):
+    LOGLIKELIHOOD = 1
+    LOGLIKELIHOOD_ROLLING = 2
+    GENERATE_UNTIL = 3
+    MULTIPLE_CHOICE = 4

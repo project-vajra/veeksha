@@ -1,10 +1,10 @@
-from enum import Enum
+from veeksha.types.base_int_enum import BaseIntEnum
 
 
-class SloType(Enum):
+class SloType(BaseIntEnum):
     """Enum for different SLO types."""
 
-    CONSTANT = "constant"
-    TTFT_PREDICTION_MULTIPLIER = "ttft_prediction_multiplier"
-    TTFT_PREDICTION_OFFSET = "ttft_prediction_offset"
-    DEADLINE = "deadline"
+    CONSTANT = 1
+    TTFT_PREDICTION_MULTIPLIER = 2
+    TTFT_PREDICTION_OFFSET = 3
+    DEADLINE = 4

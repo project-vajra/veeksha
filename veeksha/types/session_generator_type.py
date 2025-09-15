@@ -1,5 +1,5 @@
-from enum import Enum
+from veeksha.types.base_int_enum import BaseIntEnum
 
 
-class SessionGeneratorType(Enum):
-    SYNTHETIC = "synthetic"
+class SessionGeneratorType(BaseIntEnum):
+    SYNTHETIC = 1
