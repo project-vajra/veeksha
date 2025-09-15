@@ -6,7 +6,7 @@ class MetricSpec(Protocol):
     lower_is_better: bool
 
     def extract(self, request_metrics: Dict[str, Any]) -> List[float]:
-        pass
+        ...
 
 
 class _BaseMetricSpec:

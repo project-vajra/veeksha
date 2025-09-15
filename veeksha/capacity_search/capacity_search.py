@@ -73,13 +73,13 @@ class CapacitySearch:
 
         # copy of metric_config with updated output_dir and wandb_run_name
         new_metrics_cfg = replace(
-            self.base_benchmark_config.metrics_config,
+            self.base_benchmark_config.metrics_config,  # type: ignore
             output_dir=run_dir,
             wandb_run_name=f"qps_{qps}_model_{self.base_benchmark_config.client_config.model}",
         )
 
         # copy of benchmark_config with updated metrics_config.output_dir
-        return replace(self.base_benchmark_config, metrics_config=new_metrics_cfg)
+        return replace(self.base_benchmark_config, metrics_config=new_metrics_cfg)  # type: ignore
 
     def _ensure_run_dir(self) -> None:
         if self.job_output_dir is None:
@@ -153,21 +153,6 @@ class CapacitySearch:
 
         return files[0]
 
-    def _is_under_sla(
-        self,
-        request_level_metrics_file: str,
-        qps: float,
-    ) -> Tuple[bool, Optional[Dict[str, float]], str]:
-        # user provided slos, percentiles and thresholds
-        is_under_sla, slo_metrics_dict = (
-            self.slo_evaluator.evaluate_slo_request_metrics(request_level_metrics_file)
-        )
-
-        return (
-            is_under_sla,
-            slo_metrics_dict,
-            str(qps),
-        )
 
     def search(self):
         """

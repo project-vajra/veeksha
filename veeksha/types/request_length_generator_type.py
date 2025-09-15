@@ -1,8 +1,8 @@
-from veeksha.types.base_int_enum import BaseIntEnum
+from enum import Enum
 
 
-class RequestLengthGeneratorType(BaseIntEnum):
-    UNIFORM = 1
-    ZIPF = 2
-    TRACE = 3
-    FIXED = 4
+class RequestLengthGeneratorType(Enum):
+    UNIFORM = "uniform"
+    ZIPF = "zipf"
+    TRACE = "trace"
+    FIXED = "fixed"

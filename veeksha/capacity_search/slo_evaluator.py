@@ -45,6 +45,7 @@ class SloEvaluator:
         logger.info(f"Is under SLA: {is_under_sla}")
         return is_under_sla, metrics_dict
 
+
     def get_metrics_summary(self, metrics_dict: Dict[str, Any]) -> str:
         """Get a human-readable summary of metrics."""
         summary_parts = []
