@@ -1,3 +1,72 @@
+[build-system]
+requires = ["setuptools>=68", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "veeksha"
+dynamic = ["version"]
+description = "A framework for benchmarking LLM Inference Systems"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Vajra Team"},
+]
+classifiers = [
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "pydantic",
+    "transformers",
+    "tqdm",
+    "ddsketch",
+    "wandb",
+    "plotly>=5,<6",
+    "pandas",
+    "numpy",
+    "jinja2",
+    "datasets",
+    "sacrebleu",
+    "rouge-score",
+    "scikit-learn",
+    "evaluate",
+]
+
+[project.urls]
+Homepage = "https://github.com/project-vajra/veeksha"
+Documentation = "https://project-vajra.github.io/veeksha"
+
+[project.optional-dependencies]
+dev = [
+    "autoflake",
+    "black",
+    "codespell",
+    "isort",
+    "pyright",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["veeksha*"]
+exclude = ["tests*", "docs*"]
+
+[tool.setuptools.package-data]
+veeksha = [
+    "data/processed_traces/*",
+    "data/corpus.txt",
+]
+
+[tool.setuptools_scm]
+write_to = "veeksha/_version.py"
+version_scheme = "post-release"
+local_scheme = "no-local-version"
 
 [tool.isort]
 profile = "black"
@@ -5,22 +74,7 @@ known_first_party = "veeksha"
 known_third_party = "wandb"
 
 [tool.pyright]
-include = ["veeksha", "test"]
+include = ["veeksha"]
 exclude = [
     "**/__pycache__",
 ]
-reportMissingImports = false
-
-[tool.setuptools.package-data]
-"veeksha.data.processed_traces" = ["*"]
-"veeksha.data" = ["corpus.txt"]
-
-[build-system]
-requires = [
-    "packaging",
-    "setuptools>=61",
-    "setuptools-scm>=8.0",
-    "jinja2",
-    "lm_eval",
-]
-build-backend = "setuptools.build_meta"
