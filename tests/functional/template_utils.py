@@ -12,7 +12,6 @@ def render_config_template(template_name: str, **kwargs: Any) -> str:
     env = Environment(loader=FileSystemLoader(template_dir))
     template = env.get_template(template_name)
     string = template.render(**kwargs)
-    print(string)
     return string
 
 
