@@ -220,19 +220,61 @@ class LMEvalRequestGenerator:
             )
 
     def parse_logprobs(self, req: Instance, response: Response) -> Tuple[float, int]:
-        # adopted from lm_eval/models/openai_completions.py
+        # Parse OpenAI-style logprobs for completions. Support multiple shapes:
+        # 1) Non-stream OpenAI-compatible: {tokens, token_logprobs, top_logprobs, text_offset}
+        # 2) Some servers: {content: [{token, logprob, top_logprobs: [{token, logprob}, ...]}]}
+        # 3) Fallback: unsupported → raise
         assert response.logprobs is not None
+        lp = response.logprobs
         context, _ = req.args  # type: ignore
         ctxlen = len(self.tokenizer.encode(context))
-        tokens_logprobs = response.logprobs["token_logprobs"][ctxlen:-1]
-        logprobs = sum(tokens_logprobs)
-        top_logprobs = response.logprobs["top_logprobs"][ctxlen:-1]
-        is_greedy = True
-        for tok, top in zip(tokens_logprobs, top_logprobs):
-            if tok != max(top.values()):
-                is_greedy = False
-                break
-        return (logprobs, is_greedy)
+
+        # Case 1: tokens/token_logprobs arrays
+        if "token_logprobs" in lp and "top_logprobs" in lp:
+            tokens_logprobs = lp["token_logprobs"][ctxlen:-1]
+            top_logprobs = lp["top_logprobs"][ctxlen:-1]
+            logprobs_sum = sum(tokens_logprobs)
+            is_greedy = True
+            for tok_lp, top in zip(tokens_logprobs, top_logprobs):
+                # top may be a dict mapping token->logprob
+                if isinstance(top, dict):
+                    if tok_lp != max(top.values()):
+                        is_greedy = False
+                        break
+                else:
+                    # Unexpected structure; conservatively mark non-greedy
+                    is_greedy = False
+                    break
+            return (logprobs_sum, is_greedy)
+
+        # Case 2: content list with per-token objects
+        if isinstance(lp.get("content"), list):
+            content = lp["content"]
+            # Slice off context tokens using ctxlen as an approximate boundary
+            sliced = content[ctxlen:]
+            logprobs_list: List[float] = []
+            greedies: List[bool] = []
+            for entry in sliced:
+                tok_lp = entry.get("logprob")
+                if tok_lp is None:
+                    continue
+                logprobs_list.append(tok_lp)
+                top = entry.get("top_logprobs") or []
+                max_top = None
+                if isinstance(top, list) and top:
+                    # Entries like {"token": str, "logprob": float}
+                    try:
+                        max_top = max((t.get("logprob", float("-inf")) for t in top))
+                    except Exception:
+                        max_top = None
+                greedies.append(max_top is not None and tok_lp >= max_top)
+
+            logprobs_sum = float(sum(logprobs_list)) if logprobs_list else 0.0
+            is_greedy = int(all(greedies)) if greedies else 0
+            return (logprobs_sum, is_greedy)
+
+        # Unsupported structure
+        raise KeyError("Unsupported logprobs structure for completions response")
 
     def sort_responses(self, responses: List[Response]) -> List[Response]:
         return sorted(responses, key=lambda x: x.id)  # type: ignore
