@@ -1,4 +1,5 @@
 sphinx
+sphinx-autobuild
 docutils
 furo
 sphinx-copybutton
