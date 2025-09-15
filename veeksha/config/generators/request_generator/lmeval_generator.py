@@ -1,4 +1,5 @@
 from dataclasses import field
+from typing import List
 
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.generators.interval_generator.base_generator import (
@@ -15,7 +16,7 @@ from veeksha.types.request_generator_type import RequestGeneratorType
 
 @frozen_dataclass
 class LmevalRequestGeneratorConfig(BaseRequestGeneratorConfig):
-    tasks: list = field(
+    tasks: List[str] = field(
         default_factory=lambda: ["hellaswag"],
         metadata={"help": "The tasks to evaluate the language model on."},
     )
