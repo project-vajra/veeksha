@@ -56,7 +56,7 @@ class TestE2EIntegration:
         assert output_path.exists(), "Output directory not created"
 
         # Check for metrics files
-        json_files = list(output_path.glob("*.json"))
+        json_files = list(output_path.glob("**/*.json"))
         assert len(json_files) > 0, "No metrics files generated"
 
         # Test 2: Benchmark with trace file (if available)
@@ -88,7 +88,7 @@ class TestE2EIntegration:
             assert result.returncode == 0, f"Trace benchmark failed: {result.stderr}"
 
         # Test 3: Capacity search
-        logger.info("\n=== Running capacity search test ===")
+        print("\n=== Running capacity search test ===")
         slos = [
             {
                 "type": "constant",
@@ -116,7 +116,7 @@ class TestE2EIntegration:
 
         cmd = [
             "python", "-m", "veeksha.capacity_search",
-            "--config-path", str(capacity_config_file),
+            "--capacity-search-config-from-file", str(capacity_config_file),
         ]
 
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -126,7 +126,7 @@ class TestE2EIntegration:
         capacity_output = Path(temp_output_dir) / "capacity_search"
         assert capacity_output.exists(), "Capacity search output not created"
 
-        logger.info("\n=== All E2E tests passed successfully ===")
+        print("\n=== All E2E tests passed successfully ===")
 
 
 @pytest.mark.functional
@@ -157,8 +157,8 @@ class TestVLLMServer:
         )
 
         if response.status_code != 200:
-            logger.info(f"❌ Chat completions failed with status {response.status_code}")
-            logger.info(f"Response: {response.text}")
+            print(f"❌ Chat completions failed with status {response.status_code}")
+            print(f"Response: {response.text}")
         assert response.status_code == 200
         result = response.json()
         assert "choices" in result
@@ -197,5 +197,5 @@ class TestVLLMServer:
 
         # Check metrics were generated
         output_path = Path(temp_output_dir)
-        json_files = list(output_path.glob("*.json"))
+        json_files = list(output_path.glob("**/*.json"))
         assert len(json_files) > 0, "No metrics files generated"
