@@ -43,12 +43,6 @@ class ClientConfig:
         default="chat/completions",
         metadata={"help": "The address append value for OpenAI API."},
     )
-    min_token_param: str = field(
-        default="min_tokens",
-        metadata={
-            "help": "Server supported parameter representing minimum new tokens to be generated."
-        },
-    )
     request_timeout: int = field(
         default=60,
         metadata={"help": "The timeout for each request to the LLM API (in seconds)."},
