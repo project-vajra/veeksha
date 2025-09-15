@@ -34,6 +34,8 @@ dependencies = [
     "rouge-score",
     "scikit-learn",
     "evaluate",
+    "pytablewriter",
+    "Pillow",
 ]
 
 [project.urls]

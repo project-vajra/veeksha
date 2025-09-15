@@ -1,8 +1,8 @@
-from veeksha.types.base_int_enum import BaseIntEnum
+from enum import Enum
 
 
-class RequestIntervalGeneratorType(BaseIntEnum):
-    POISSON = 1
-    GAMMA = 2
-    STATIC = 3
-    TRACE = 4
+class RequestIntervalGeneratorType(Enum):
+    POISSON = "poisson"
+    GAMMA = "gamma"
+    STATIC = "static"
+    TRACE = "trace"

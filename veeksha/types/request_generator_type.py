@@ -1,7 +1,7 @@
-from veeksha.types.base_int_enum import BaseIntEnum
+from enum import Enum
 
 
-class RequestGeneratorType(BaseIntEnum):
-    SYNTHETIC = 1
-    TRACE = 2
-    LMEVAL = 3
+class RequestGeneratorType(Enum):
+    SYNTHETIC = "synthetic"
+    TRACE = "trace"
+    LMEVAL = "lmeval"

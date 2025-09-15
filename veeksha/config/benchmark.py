@@ -1,5 +1,5 @@
 from dataclasses import field
-from typing import Optional
+from typing import Any, Optional
 
 from veeksha.config.client import ClientConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
@@ -24,6 +24,8 @@ logger = init_logger(__name__)
 
 @frozen_dataclass(allow_from_file=True)
 class BenchmarkConfig:
+    # Dynamically added by create_from_cli_args()
+    __flat_config__: Optional[Any] = None
     seed: int = field(
         default=DEFAULT_SEED,
         metadata={"help": "Seed for the random number generator."},

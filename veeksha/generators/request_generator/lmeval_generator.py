@@ -186,7 +186,6 @@ class LMEvalRequestGenerator:
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
                 id=self.req_idx - 1,
-                metadata=metadata,
             )
         elif req.request_type == str(LMEvalOutputType.LOGLIKELIHOOD):
             context, target = req.args  # type: ignore
@@ -207,7 +206,6 @@ class LMEvalRequestGenerator:
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
                 id=self.req_idx - 1,
-                metadata=metadata,
             )
         else:
             raise NotImplementedError(

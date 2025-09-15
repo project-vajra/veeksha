@@ -74,8 +74,8 @@ class TaskConfig(dict):
     process_docs: Optional[Callable] = None
     doc_to_text: Optional[Union[Callable, str]] = None
     doc_to_target: Optional[Union[Callable, str]] = None
-    doc_to_image: Union[Callable, str] = None
-    doc_to_audio: Union[Callable, str] = None
+    doc_to_image: Optional[Union[Callable, str]] = None
+    doc_to_audio: Optional[Union[Callable, str]] = None
     unsafe_code: bool = False
     doc_to_choice: Optional[Union[Callable, str, dict, list]] = None
     process_results: Optional[Union[Callable, str]] = None
@@ -176,6 +176,8 @@ class TaskConfig(dict):
         if keep_callable:
             return value
         else:
+            if isinstance(value, str):
+                return value
             try:
                 return getsource(value)
             except (TypeError, OSError):
