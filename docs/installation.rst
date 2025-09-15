@@ -52,6 +52,6 @@ Disabling Wandb
 ^^^^^^^^^^^^^^^^^^^
 To opt out of wandb, do any of the following:
 
-1. Don't pass any wandb related args like ``--wandb-project``, ``--wandb-group`` and ``wandb-run-name`` when running python scripts. Alternatively, pass in ``--no-should-write-metrics`` instead of ``--should-write-metrics`` boolean flag.
+1. Don't pass any wandb related args like ``--metrics-config-wandb-project``, ``--metrics-config-wandb-group`` and ``--metrics-config-wandb-run-name`` when running python scripts. Alternatively, pass in ``--no-metrics-config-should-write-metrics-to-wandb`` instead of ``--metrics-config-should-write-metrics-to-wandb`` boolean flag.
 2. Run ``export WANDB_MODE=disabled`` in your shell or add this to ``~/.zshrc`` or ``~/.bashrc``. Remember to reload your shell using ``source ~/.zshrc`` or ``source ~/.bashrc``.
 

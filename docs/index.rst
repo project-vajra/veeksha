@@ -8,9 +8,7 @@ veeksha
 
    A tool for benchmarking the performance of LLM Inference Systems.
 
-Serving large language models (LLMs) in production is very expensive, and this challenge has prompted recent advances in inference system optimizations. As of today, these systems are evaluated through conventional metrics like TTFT (time to first token), TBT (time between tokens), normalized latency, and TPOT (time per output token). However, these metrics fail to capture the nuances of LLM inference leading to incomplete assessment of user-facing performance in real-time applications like chat.
-
-``veeksha`` is a holistic performance evaluation framework that includes new metrics, :ref:`fluidity-index` and :ref:`fluid-token-generation-rate`, alongside existing conventional metrics. The new metrics reflect the intricacies of LLM inference process and its impact on real-time user experience.
+Serving large language models (LLMs) in production is very expensive, and this challenge has prompted recent advances in inference system optimizations. ``veeksha`` is a holistic performance evaluation framework for LLM inference systems that provides comprehensive performance analysis through metrics like TTFT, TBT, TPOT, and normalized latency.
 
 ``veeksha`` is designed to be easy to use, and can be integrated with any LLM inference system. It is built on top of Ray, a popular distributed computing framework, and can be used to benchmark LLM inference systems on a single machine or a cluster.
 
@@ -20,19 +18,19 @@ Check out the following resources to get started:
    :maxdepth: 2
 
    installation
-   tutorials/metrics
+   tutorials/metrics_used
    how_to_use
    guides/guide
 
 Citation
 --------
 
-If you use our work, please consider citing our paper `veeksha: Holistic Performance Evaluation Framework for LLM Inference Systems <https://arxiv.org/abs/2407.07000>`_:
+If you use our work, please consider citing our paper `Etalon: Holistic Performance Evaluation Framework for LLM Inference Systems <https://arxiv.org/abs/2407.07000>`_:
 
 .. code-block:: bibtex
 
-      @misc{agrawal2024Veekshaholisticperformanceevaluation,
-         title={veeksha: Holistic Performance Evaluation Framework for LLM Inference Systems}, 
+      @misc{agrawal2024Etalonholisticperformanceevaluation,
+         title={Etalon: Holistic Performance Evaluation Framework for LLM Inference Systems}, 
          author={Amey Agrawal and Anmol Agarwal and Nitin Kedia and Jayashree Mohan and Souvik Kundu and Nipun Kwatra and Ramachandran Ramjee and Alexey Tumanov},
          year={2024},
          eprint={2407.07000},

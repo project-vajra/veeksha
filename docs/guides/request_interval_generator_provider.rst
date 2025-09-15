@@ -10,11 +10,11 @@ The Poisson interval generator generates intervals between requests according to
 
 .. code-block:: shell
 
-    python -m veeksha.benchmark
+    python -m veeksha.benchmark \
         # other arguments
         ... \
-        --request_interval_generator_config_type "poisson" \
-        --poisson_request_interval_generator_config_qps 1.0 \
+        --synthetic-request-generator-config-interval-generator-config-type "poisson" \
+        --synthetic-request-generator-config-poisson-interval-generator-config-qps 1.0 \
         --seed 42
 
 In the above example, the Poisson interval generator generates intervals between requests according to a Poisson distribution with a mean of 1.0 second. The seed is set to 42 for reproducibility.
@@ -26,12 +26,12 @@ The Gamma interval generator generates intervals between requests according to a
 
 .. code-block:: shell
 
-    python -m veeksha.benchmark
+    python -m veeksha.benchmark \
         # other arguments
         ... \
-        --request_interval_generator_config_type "gamma" \
-        --gamma_request_interval_generator_config_cv 1.0 \
-        --gamma_request_interval_generator_config_qps 1.0 \
+        --synthetic-request-generator-config-interval-generator-config-type "gamma" \
+        --synthetic-request-generator-config-gamma-interval-generator-config-cv 1.0 \
+        --synthetic-request-generator-config-gamma-interval-generator-config-qps 1.0 \
         --seed 42
 
 In the above example, the Gamma interval generator generates intervals between requests according to a Gamma distribution with a coefficient of variation (CV) of 1.0 and a mean of 1.0 second. The seed is set to 42 for reproducibility.
@@ -43,10 +43,10 @@ The static interval generator generates no interval between requests, i.e., each
 
 .. code-block:: shell
 
-    python -m veeksha.benchmark
+    python -m veeksha.benchmark \
         # other arguments
         ... \
-        --request_interval_generator_config_type "static"
+        --synthetic-request-generator-config-interval-generator-config-type "static"
 
 Trace Interval Generator
 ------------------------
@@ -55,13 +55,13 @@ The trace interval generator generates intervals between requests based on a tra
 
 .. code-block:: shell
 
-    python -m veeksha.benchmark
+    python -m veeksha.benchmark \
         # other arguments
         ... \
-        --request_interval_generator_config_type "trace" \
-        --trace_request_interval_generator_config_trace_file "path/to/trace/file" \
-        --trace_request_interval_generator_config_start_time "1970-01-04 12:00:00" \
-        --trace_request_interval_generator_config_end_time "1970-01-04 15:00:00" \
+        --synthetic-request-generator-config-interval-generator-config-type "trace" \
+        --synthetic-request-generator-config-trace-interval-generator-config-trace-file "path/to/trace/file" \
+        --synthetic-request-generator-config-trace-interval-generator-config-timestamp-column "timestamp" \
+        --synthetic-request-generator-config-trace-interval-generator-config-timestamp-unit "ms" \
         --seed 42
 
 In the above example, the trace interval generator generates intervals between requests based on a trace file. The trace file should contain timestamps of requests. The start and end times are used to determine the time range for generating intervals. The seed is set to 42 for reproducibility.

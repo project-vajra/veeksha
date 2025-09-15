@@ -33,14 +33,14 @@ Benchmark can be run as shown below:
 .. code-block:: shell
 
     python -m veeksha.benchmark \
-    --client_config_model "meta-llama/Meta-Llama-3-8B-Instruct" \
-    --max_completed_requests 20 \
-    --request_interval_generator_config_type "gamma" \
-    --request_length_generator_config_type "zipf" \
-    --zipf_request_length_generator_config_max_tokens 8192 \
-    --metrics_config_output_dir "results"
+    --client-config-model "meta-llama/Meta-Llama-3-8B-Instruct" \
+    --max-completed-requests 20 \
+    --synthetic-request-generator-config-interval-generator-config-type "gamma" \
+    --synthetic-request-generator-config-length-generator-config-type "zipf" \
+    --synthetic-request-generator-config-zipf-length-generator-config-max-tokens 8192 \
+    --metrics-config-output-dir "results"
 
-Be sure to update ``--client_config_model`` flag to same model used to launch vLLM.
+Be sure to update ``--client-config-model`` flag to same model used to launch vLLM.
 
 .. note::
 
@@ -55,10 +55,10 @@ Optionally, you can also specify the following arguments to log results to wandb
 
 .. code-block:: shell
 
-    --metrics_config_should_write_metrics \
-    --metrics_config_wandb_project Project \
-    --metrics_config_wandb_group Group \
-    --metrics_config_wandb_run_name Run
+    --metrics-config-should-write-metrics-to-wandb \
+    --metrics-config-wandb-project Project \
+    --metrics-config-wandb-group Group \
+    --metrics-config-wandb-run-name Run
 
 Other Arguments
 ^^^^^^^^^^^^^^^
@@ -71,4 +71,4 @@ There are many more arguments for running benchmark, run the following to know m
 
 Saving Results
 ~~~~~~~~~~~~~~~
-The results of the benchmark are saved in the results directory specified by the ``--metrics_config_output_dir`` argument.
+The results of the benchmark are saved in the results directory specified by the ``--metrics-config-output-dir`` argument.

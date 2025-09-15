@@ -22,12 +22,30 @@ pip install -e .
 ```
 
 ### Setup Wandb [Optional]
-First create and setup your account at `https://<your-org>.wandb.io/` or public Wandb and obtain API key. Then run the following command and enter API key linked to your wandb account:
+First create and setup your account at `https://wandb.ai/` (or your private instance at `https://<your-org>.wandb.io/`) and obtain API key. Then run the following command and enter API key linked to your wandb account:
+
+For public Wandb:
+```bash
+wandb login
+```
+
+For private Wandb instance:
 ```bash
 wandb login --host https://<your-org>.wandb.io
 ```
+
+#### Using Wandb with Veeksha
+To enable wandb logging when running benchmarks, add these parameters:
+```bash
+--metrics-config-should-write-metrics-to-wandb \
+--metrics-config-wandb-project "YourProject" \
+--metrics-config-wandb-group "YourGroup" \
+--metrics-config-wandb-run-name "YourRun"
+```
+
+#### Disabling Wandb
 To opt out of wandb, do any of the following:
-1. Don't pass any wandb related args like `--wandb-project`, `--wandb-group` and `wandb-run-name` when running python scripts. Alternatively, pass in `--no-should-write-metrics` instead of `--should-write-metrics` boolean flag.
+1. Don't pass any wandb related args like `--metrics-config-wandb-project`, `--metrics-config-wandb-group` and `--metrics-config-wandb-run-name` when running python scripts. Alternatively, pass in `--no-metrics-config-should-write-metrics-to-wandb` instead of `--metrics-config-should-write-metrics-to-wandb` boolean flag.
 2. Run `export WANDB_MODE=disabled` in your shell or add this to `~/.zshrc` or `~/.bashrc`. Remember to reload your shell using `source ~/.zshrc` or `source ~/.bashrc`.
 
 ## Running Code
@@ -41,23 +59,24 @@ export OPENAI_API_BASE=https://api.endpoints.anyscale.com/v1
 #### Running Benchmark
 ```bash
 python -m veeksha.benchmark \
---client_config_model "meta-llama/Meta-Llama-3-8B-Instruct" \
---max_completed_requests 150 \
+--client-config-model "meta-llama/Meta-Llama-3-8B-Instruct" \
+--max-completed-requests 150 \
 --timeout 600 \
---client_config_num_clients 2 \
---client_config_num_concurrent_requests_per_client 5 \
---metrics_config_output_dir "result_outputs" \
---request_interval_generator_config_type "poisson" \
---poisson_request_interval_generator_config_qps 0.5 \
---request_length_generator_config_type "trace" \
---trace_request_length_generator_config_trace_file "./data/processed_traces/arxiv_summarization_filtered_stats_llama2_tokenizer.csv" \
---trace_request_length_generator_config_max_tokens 8192 \
---deadline_config_ttft_deadline 0.3 \
---deadline_config_tbt_deadline 0.03 \
---metrics_config_should_write_metrics \
---metrics_config_wandb_project Project \
---metrics_config_wandb_group Group \
---metrics_config_wandb_run_name Run
+--client-config-num-clients 2 \
+--client-config-num-concurrent-requests-per-client 5 \
+--metrics-config-output-dir "result_outputs" \
+--request-generator-config-type "synthetic" \
+--synthetic-request-generator-config-interval-generator-config-type "poisson" \
+--synthetic-request-generator-config-poisson-interval-generator-config-qps 0.5 \
+--synthetic-request-generator-config-length-generator-config-type "trace" \
+--synthetic-request-generator-config-trace-length-generator-config-trace-file "veeksha/data/processed_traces/sharegpt_8k_filtered_stats_llama2_tokenizer.csv" \
+--synthetic-request-generator-config-trace-length-generator-config-max-tokens 8192 \
+--metrics-config-deadline-report-ttft-deadline 0.3 \
+--metrics-config-deadline-report-tbt-deadline 0.03 \
+--metrics-config-should-write-metrics-to-wandb \
+--metrics-config-wandb-project Project \
+--metrics-config-wandb-group Group \
+--metrics-config-wandb-run-name Run
 ```
 
 There are many more arguments for running benchmark, run the following to know more:
@@ -72,10 +91,16 @@ Here we give an example with vLLM.
 
 #### Launch vLLM Server
 ```bash
-python -m vllm.entrypoints.openai.api_server --model meta-llama/Meta-Llama-3-8B-Instruct --dtype auto --api-key token-abc123 -tp 1 --rope-scaling '{"type":"dynamic","factor":2.0}'
+python -m vllm.entrypoints.openai.api_server \
+  --model meta-llama/Meta-Llama-3-8B-Instruct \
+  --dtype auto \
+  --api-key token-abc123 \
+  -tp 1 \
+  --rope-scaling '{"rope_type":"dynamic","factor":2.0}'
+
 ```
 
-If we need higher context length than supported by the model with certain scale factor, then we can add rope-scaling as `--rope-scaling '{"type":"dynamic","factor":2.0}'`. Adjust type and factor as per the use case.
+If we need higher context length than supported by the model with certain scale factor, then we can add rope-scaling as `--rope-scaling '{"rope_type":"dynamic","factor":2.0}'`. Adjust type and factor as per the use case.
 
 #### Export API Key and URL
 ```bash
@@ -83,11 +108,11 @@ export OPENAI_API_KEY=token-abc123
 export OPENAI_API_BASE=http://localhost:8000/v1
 ```
 
-And then we can run the benchmark as shown [here](#running-benchmark). Be sure to update `--model` flag to same model used to launch vLLM.
+And then we can run the benchmark as shown [here](#running-benchmark). Be sure to update `--client-config-model` flag to same model used to launch vLLM.
 
 ### Saving Results
 
-The results of the benchmark are saved in the results directory specified by the `--output-dir` argument.
+The results of the benchmark are saved in the results directory specified by the `--metrics-config-output-dir` argument.
 
 ## Running Capacity Search
 Refer to [readme](veeksha/capacity_search/README.md) file of `veeksha/capacity_search` folder to know more about how to run capacity search.
