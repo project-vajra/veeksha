@@ -238,26 +238,34 @@ def generate_random_prompt(
     """
     assert corpus_lines is not None, "corpus_lines must be provided"
 
-    remaining_prompt_tokens = num_prompt_tokens
-    shuffled_lines = random.sample(corpus_lines, len(corpus_lines))
-    sampling_lines = True
-    prompt_token_ids: List[int] = []
-    while sampling_lines:
-        for line in shuffled_lines:
-            if remaining_prompt_tokens <= 0:
-                sampling_lines = False
-                break
+    if num_prompt_tokens < 0:
+        raise ValueError("num_prompt_tokens must be >= 0")
+    if num_prompt_tokens == 0:
+        logger.info(f"Generated random prompt with 0 tokens.")
+        return ("", 0)
 
-            line_tokens = tokenizer.encode(line, add_special_tokens=False)
-            if remaining_prompt_tokens < len(line_tokens):
-                truncated_tokens = line_tokens[:remaining_prompt_tokens]
-                prompt_token_ids.extend(truncated_tokens)
-                remaining_prompt_tokens = 0
-                sampling_lines = False
-                break
-            else:
-                prompt_token_ids.extend(line_tokens)
-                remaining_prompt_tokens -= len(line_tokens)
+    remaining_prompt_tokens = num_prompt_tokens
+
+    token_lines = [
+        tokenizer.encode(line, add_special_tokens=False) for line in corpus_lines
+    ]
+    token_lines = [t for t in token_lines if t]
+    if not token_lines:
+        raise ValueError("All corpus_lines tokenize to zero tokens.")
+
+    prompt_token_ids: List[int] = []
+    random.shuffle(token_lines)  # randomness in the first pass
+    idx = 0
+    while remaining_prompt_tokens > 0:
+        tokens = token_lines[idx]
+        take = min(remaining_prompt_tokens, len(tokens))
+        if take:
+            prompt_token_ids.extend(tokens[:take])
+            remaining_prompt_tokens -= take
+        idx += 1
+        if idx == len(token_lines):
+            idx = 0
+            random.shuffle(token_lines)  # reshuffle each full pass
 
     prompt = tokenizer.decode(prompt_token_ids, skip_special_tokens=False)
     return (prompt, num_prompt_tokens)
