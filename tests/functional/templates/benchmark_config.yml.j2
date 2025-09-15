@@ -1,0 +1,59 @@
+timeout: {{ timeout }}
+max_completed_requests: {{ max_completed_requests }}
+api_url: {{ api_url }}
+{% if api_key %}api_key: {{ api_key }}{% endif %}
+
+client_config:
+  model: {{ model }}
+  num_clients: {{ num_clients }}
+  num_concurrent_requests_per_client: {{ num_concurrent_requests_per_client }}
+  llm_api: openai_chat
+
+request_generator_config:
+  type: {{ request_generator_type }}
+  {% if request_generator_type == "synthetic" %}
+  {% if length_generator_type %}
+  length_generator_config:
+    type: {{ length_generator_type }}
+    {% if length_generator_type == "fixed" %}
+    prefill_tokens: {{ prefill_tokens }}
+    decode_tokens: {{ decode_tokens }}
+    {% elif length_generator_type == "uniform" %}
+    min_tokens: {{ min_tokens }}
+    max_tokens: {{ max_tokens }}
+    prefill_to_decode_ratio: {{ prefill_to_decode_ratio | default(0.5) }}
+    {% elif length_generator_type == "zipf" %}
+    min_tokens: {{ min_tokens }}
+    max_tokens: {{ max_tokens }}
+    theta: {{ theta | default(1.0) }}
+    scramble: {{ scramble | default(true) }}
+    prefill_to_decode_ratio: {{ prefill_to_decode_ratio | default(0.5) }}
+    {% elif length_generator_type == "trace" %}
+    trace_file: {{ trace_file }}
+    max_tokens: {{ max_tokens }}
+    {% endif %}
+  {% endif %}
+  {% if interval_generator_type %}
+  interval_generator_config:
+    type: {{ interval_generator_type }}
+    {% if interval_generator_type == "poisson" %}
+    qps: {{ qps }}
+    {% elif interval_generator_type == "gamma" %}
+    qps: {{ qps }}
+    cv: {{ cv }}
+    {% elif interval_generator_type == "static" %}
+    duration: {{ duration }}
+    {% endif %}
+  {% endif %}
+  {% elif request_generator_type == "trace" %}
+    trace_file: {{ trace_file }}
+    max_tokens: {{ max_tokens }}
+  {% endif %}
+
+metrics_config:
+  output_dir: {{ output_dir }}
+  {% if ttft_deadline %}
+  deadline_report:
+    ttft_deadline: {{ ttft_deadline }}
+    {% if tbt_deadline %}tbt_deadline: {{ tbt_deadline }}{% endif %}
+  {% endif %}

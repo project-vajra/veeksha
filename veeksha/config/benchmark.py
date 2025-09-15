@@ -24,8 +24,6 @@ logger = init_logger(__name__)
 
 @frozen_dataclass(allow_from_file=True)
 class BenchmarkConfig:
-    # Dynamically added by create_from_cli_args()
-    __flat_config__: Optional[Any] = None
     seed: int = field(
         default=DEFAULT_SEED,
         metadata={"help": "Seed for the random number generator."},
@@ -94,7 +92,7 @@ class BenchmarkConfig:
         return instances
 
     def to_dict(self):
-        if not hasattr(self, "__flat_config__") or self.__flat_config__ is None:
+        if not hasattr(self, "__flat_config__") or self.__flat_config__ is None: # type: ignore
             logger.debug("Flat config not found or is None. Using dataclass_to_dict.")
             return dataclass_to_dict(self)
 
