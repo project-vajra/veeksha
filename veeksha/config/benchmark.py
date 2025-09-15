@@ -68,7 +68,10 @@ class BenchmarkConfig:
                 self.request_generator_config, LmevalRequestGeneratorConfig
             )
 
-            if self.request_generator_config.is_logit_based:
+            # Import the utility function locally to avoid circular imports
+            from veeksha.generators.request_generator.lmeval_generator import detect_task_types
+            
+            if detect_task_types(self.request_generator_config.tasks):
                 object.__setattr__(self.client_config, "llm_api", "openai_completions")
                 object.__setattr__(
                     self.client_config, "address_append_value", "completions"

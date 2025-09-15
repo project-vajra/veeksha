@@ -28,12 +28,6 @@ class LmevalRequestGeneratorConfig(BaseRequestGeneratorConfig):
         default=10,
         metadata={"help": "The number of examples to evaluate on."},
     )
-    is_logit_based: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether the evaluation is logit based. If True, the task will be evaluated using OpenAI Completions API."
-        },
-    )
     interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
         default_factory=PoissonRequestIntervalGeneratorConfig
     )
