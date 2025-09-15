@@ -65,13 +65,13 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         instruction = f"Generate at least {num_output_tokens} tokens repeating the following text:\n"
         instruction_token_count = len(self.tokenizer.encode(instruction))
         body_token_count = max(0, num_prompt_tokens - instruction_token_count)
-        
+
         prompt_body, _ = generate_random_prompt(
             tokenizer=self.tokenizer,
             num_prompt_tokens=body_token_count,
             corpus_lines=self.corpus_lines,
         )
-        
+
         prompt = instruction + prompt_body
 
         prompt_token_count = len(self.tokenizer.encode(prompt))

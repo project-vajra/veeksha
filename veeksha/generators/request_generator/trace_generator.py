@@ -211,8 +211,10 @@ class TraceRequestGenerator(BaseRequestGenerator):
         remaining_prompt_tokens = request_to_send["input_length"]
         instruction = f"Generate at least {int(request_to_send['output_length'])} tokens repeating the following text:\n"
         instruction_token_count = len(self.tokenizer.encode(instruction))
-        remaining_prompt_tokens = max(0, remaining_prompt_tokens - instruction_token_count)
-                
+        remaining_prompt_tokens = max(
+            0, remaining_prompt_tokens - instruction_token_count
+        )
+
         if self.config.use_trace_prefix_hash_ids:
             for hash_id in request_to_send["hash_ids"]:
                 if hash_id not in self.past_prompts:
