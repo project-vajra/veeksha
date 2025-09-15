@@ -345,7 +345,12 @@ class MetricStore:
             }
         )
         df = df.sort_values("prompt_length", key=lambda x: x.astype(int))
-        fig = rk.box(df, x="prompt_length", y="ttft", labels={"prompt_length": "Number of Prompt Tokens", "ttft": "TTFT (s)"})
+        fig = rk.box(
+            df,
+            x="prompt_length",
+            y="ttft",
+            labels={"prompt_length": "Number of Prompt Tokens", "ttft": "TTFT (s)"},
+        )
         fig.save(os.path.join(output_dir, "ttft_violin_plot.png"))
         if self.should_write_metrics_to_wandb and wandb.run:
             wandb.log({"ttft_violin_plot": fig})

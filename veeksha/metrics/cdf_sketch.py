@@ -124,7 +124,11 @@ class CDFSketch:
         df = self._to_df()
 
         fig = rk.line(
-            df, x=self.metric_name, y="cdf", markers=True, labels={self.metric_name: x_axis_label, "cdf": "CDF"},
+            df,
+            x=self.metric_name,
+            y="cdf",
+            markers=True,
+            labels={self.metric_name: x_axis_label, "cdf": "CDF"},
         )
 
         if wandb.run and self.should_write_to_wandb:

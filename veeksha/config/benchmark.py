@@ -1,5 +1,5 @@
 from dataclasses import field
-from typing import Any, Optional
+from typing import Optional
 
 from veeksha.config.client import ClientConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
@@ -92,7 +92,7 @@ class BenchmarkConfig:
         return instances
 
     def to_dict(self):
-        if not hasattr(self, "__flat_config__") or self.__flat_config__ is None: # type: ignore
+        if not hasattr(self, "__flat_config__") or self.__flat_config__ is None:  # type: ignore
             logger.debug("Flat config not found or is None. Using dataclass_to_dict.")
             return dataclass_to_dict(self)
 
