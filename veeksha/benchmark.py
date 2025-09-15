@@ -26,6 +26,8 @@ from veeksha.core.response import Response
 from veeksha.core.seeding import (
     SeedManager,
 )
+from veeksha.dashboard.pipeline import emit_dashboard_event
+from veeksha.dashboard.events import RequestStartedEvent, BenchmarkStatusEvent
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.generators.request_generator.generator_registry import (
     RequestGeneratorRegistry,
@@ -190,6 +192,12 @@ def dispatch_requests(
         # Attempt to pop a ready request
         ready = scheduler.pop_ready()
         if ready is not None:
+            emit_dashboard_event(RequestStartedEvent(
+                request_id = request_config.id,
+                timestamp = time.time(),
+                input_tokens = request_config.prompt[1]
+            ))
+
             service_metrics.register_launched_request()
             input_queue.put(ready)
             if scheduled_backlog > 0:
@@ -250,6 +258,14 @@ def process_results(
         )
         if generated_response is not None:
             generated_responses.append(generated_response)
+        
+        emit_dashboard_event(RequestCompletedEvent(
+            request_id = request_metrics.request_id,
+            timestamp = time.time(),
+            final_metrics = request_metrics,
+        ))
+
+        # TODO: maybe add benchmark status event here?
 
         pbar.update(service_metrics.num_completed_requests - pbar.n)
 
