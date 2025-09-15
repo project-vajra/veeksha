@@ -238,14 +238,10 @@ def generate_random_prompt(
     """
     assert corpus_lines is not None, "corpus_lines must be provided"
 
-    get_token_length = lambda text: len(
-        tokenizer.encode(text, add_special_tokens=False)
-    )
-
     remaining_prompt_tokens = num_prompt_tokens
     shuffled_lines = random.sample(corpus_lines, len(corpus_lines))
     sampling_lines = True
-    prompt = ""
+    prompt_token_ids: List[int] = []
     while sampling_lines:
         for line in shuffled_lines:
             if remaining_prompt_tokens <= 0:
@@ -255,12 +251,13 @@ def generate_random_prompt(
             line_tokens = tokenizer.encode(line, add_special_tokens=False)
             if remaining_prompt_tokens < len(line_tokens):
                 truncated_tokens = line_tokens[:remaining_prompt_tokens]
-                prompt += tokenizer.decode(truncated_tokens, skip_special_tokens=False)
+                prompt_token_ids.extend(truncated_tokens)
                 remaining_prompt_tokens = 0
                 sampling_lines = False
                 break
             else:
-                prompt += tokenizer.decode(line_tokens, skip_special_tokens=False)
+                prompt_token_ids.extend(line_tokens)
                 remaining_prompt_tokens -= len(line_tokens)
 
+    prompt = tokenizer.decode(prompt_token_ids, skip_special_tokens=False)
     return (prompt, num_prompt_tokens)
