@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/vidur
+      url: https://pypi.org/p/veeksha
     permissions:
       id-token: write
     steps:

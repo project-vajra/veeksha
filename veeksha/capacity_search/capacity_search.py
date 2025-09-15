@@ -153,7 +153,6 @@ class CapacitySearch:
 
         return files[0]
 
-
     def search(self):
         """
         Perform binary search to find the maximum QPS under the SLO
