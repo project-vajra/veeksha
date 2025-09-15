@@ -41,11 +41,11 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
         previous_responses: list,
         previous_token_count: int,
         most_recent_received_token_time: float,
-    ) -> Tuple[int, int, str, float, list]:
+    ) -> Tuple[int, int, str, float, List[Dict]]:
         """Update metrics and generated text from a single data chunk."""
         generated_text_chunk = ""
         tokens_received_chunk = 0
-        logprobs = []
+        logprobs: List[Dict] = []
 
         choice = data.get("choices", [{}])[0]
         if text_chunk := choice.get("text"):
@@ -66,7 +66,13 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
             most_recent_received_token_time = time.monotonic()
             generated_text_chunk = text_chunk
             if "logprobs" in choice:
-                logprobs = choice["logprobs"]
+                raw_logprobs = choice["logprobs"]
+                if isinstance(raw_logprobs, list):
+                    logprobs = [lp for lp in raw_logprobs if isinstance(lp, dict)]
+                elif isinstance(raw_logprobs, dict):
+                    logprobs = [raw_logprobs]
+                else:
+                    logprobs = []
 
         return (
             tokens_received_chunk,
