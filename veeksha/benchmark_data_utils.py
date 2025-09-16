@@ -1,11 +1,7 @@
 import json
 import os
+from importlib.resources import files as _pkg_files
 from typing import Dict, List
-
-try:
-    from importlib.resources import files
-except ImportError:
-    from importlib_resources import files
 
 from veeksha.core.response import Response
 
@@ -24,6 +20,6 @@ def store_lmeval_results(output_dir: str, lmeval_results: Dict) -> None:
 
 def load_corpus() -> List[str]:
     """Load corpus lines from packaged corpus.txt file"""
-    corpus_resource = files("veeksha.data").joinpath("corpus.txt")
+    corpus_resource = _pkg_files("veeksha.data").joinpath("corpus.txt")
     with corpus_resource.open("r", encoding="utf-8") as f:
         return f.readlines()
