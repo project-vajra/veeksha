@@ -231,7 +231,6 @@ tag-mapping.json
 # ignore tmp files
 *.tmp
 out
-temp*
 
 # build output
 build/
@@ -250,7 +249,6 @@ benchmark_results/
 capsearch_results/
 microbenchmark_results/
 profile_dir*
-temp*
 experiment*
 wandb/
 prefill_outputs/

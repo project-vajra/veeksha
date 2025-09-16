@@ -454,7 +454,7 @@ def reconstruct_original_dataclass(self) -> Any:
                             ).keys()
                         )
                         raise ValueError(
-                            f"Invalid type '{config_type}' for '{prefixed_field_name}_type'. Valid types: {valid}"
+                            f"Invalid type '{config_type}' (key: {type_key}) for '{prefixed_field_name}_type'. Valid types: {valid}"
                         ) from None
                     args[original_field_name] = instances[child_node_name]
             # child dataclass has already been instantiated, so just assign it

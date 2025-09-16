@@ -37,6 +37,10 @@ class RequestMetrics:
         if self.num_output_tokens == 0:
             return 0
 
+        # non-streaming responses have no token timing data
+        if not self.inter_token_times:
+            return 0
+
         return self.inter_token_times[0]
 
     @cached_property

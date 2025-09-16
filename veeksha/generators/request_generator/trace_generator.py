@@ -1,5 +1,5 @@
 import ast
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
@@ -10,6 +10,7 @@ from veeksha.config.generators.request_generator.trace_generator import (
 from veeksha.core.request_config import RequestConfig
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.generators.utils import (
+    generate_random_prompt,
     load_trace,
     process_request_interval_trace,
     process_request_length_trace,
@@ -25,6 +26,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         config: TraceRequestGeneratorConfig,
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         client_config: ClientConfig,
+        corpus_lines: Optional[List[str]] = None,
     ):
         from veeksha.generators.session_generator import (
             SessionGenerator,
@@ -35,6 +37,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self.request_id = 0
         self.client_config = client_config
         self.past_prompts: Dict[int, str] = {}
+        self.corpus_lines = corpus_lines
 
         raw_trace_df = load_trace(self.config.trace_file)
 
@@ -75,6 +78,11 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
                         ast.literal_eval
                     )
+        else:
+            if self.corpus_lines is None:
+                raise ValueError(
+                    "A corpus file must be provided when not using trace prefix hash IDs."
+                )
 
         if self.config.use_trace_sessions:
             if "session_id" not in self.trace_df.columns:
@@ -211,8 +219,13 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     self.past_prompts[hash_id] = prompt_segment
                 prompt += self.past_prompts[hash_id]
         else:
-            # todo generate input random text
-            raise NotImplementedError("to be implemented")
+            # generate input random text
+            prompt_length_tokens = int(request_to_send["input_length"])
+            prompt, _ = generate_random_prompt(
+                tokenizer=self.tokenizer,
+                num_prompt_tokens=prompt_length_tokens,
+                corpus_lines=self.corpus_lines,
+            )
 
         instruction = f"Generate at least {int(request_to_send['output_length'])} tokens repeating the following text:\n"
         prompt = instruction + prompt

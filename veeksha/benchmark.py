@@ -123,7 +123,6 @@ def process_results(
     stop_event: threading.Event,
 ) -> None:
     """Thread function to process results from the output queue."""
-
     # On stop, attempt to drain for a short grace period, then exit
     POLL_TIMEOUT_S = 0.1
     DRAIN_MAX_EMPTY_POLLS = 50  # ~5s
@@ -135,16 +134,9 @@ def process_results(
         try:
             result = output_queue.get(timeout=POLL_TIMEOUT_S)
             consecutive_empty_polls_after_stop = 0
-            request_metrics, generated_response = result
-            if generated_response:
-                service_metrics.add_request_metrics(request_metrics)
-                generated_responses.append(generated_response)
-
-            pbar.update(service_metrics.num_completed_requests - pbar.n)
         except Empty:
             if stop_event.is_set():
                 consecutive_empty_polls_after_stop += 1
-                # ~5s
                 if consecutive_empty_polls_after_stop >= DRAIN_MAX_EMPTY_POLLS:
                     logger.info(
                         "Result processor drained for ~%.1fs after stop; exiting.",
@@ -152,6 +144,16 @@ def process_results(
                     )
                     break
             continue
+
+        if result is None:  # Sentinel check
+            break
+
+        request_metrics, generated_response = result
+        service_metrics.add_request_metrics(request_metrics)
+        if generated_response is not None:
+            generated_responses.append(generated_response)
+
+        pbar.update(service_metrics.num_completed_requests - pbar.n)
 
 
 def run_main_loop(
@@ -218,10 +220,13 @@ def run_main_loop(
     # Signal threads to stop and wait for completion
     stop_event.set()
     dispatcher_thread.join()
-    processor_thread.join()
 
-    # Terminate all clients
-    req_launcher.kill_clients()
+    # Wait for all client processes to terminate
+    req_launcher.wait_for_clients()
+
+    # Signal the results processor to finish after draining and join it
+    output_queue.put(None)
+    processor_thread.join()
 
     pbar.close()
 
@@ -265,10 +270,11 @@ def run_benchmark(
     )
 
     request_generator_params = {}
+    request_generator_config_type = benchmark_config.request_generator_config.get_type()
 
     if (
-        benchmark_config.request_generator_config.get_type()
-        == RequestGeneratorType.SYNTHETIC
+        request_generator_config_type == RequestGeneratorType.SYNTHETIC
+        or request_generator_config_type == RequestGeneratorType.TRACE
     ):
         request_generator_params = {
             "corpus_lines": load_corpus(),

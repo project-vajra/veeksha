@@ -28,3 +28,32 @@ format/autoflake: ## remove unused imports
 	autoflake --in-place --recursive --remove-all-unused-imports veeksha
 
 format: format/isort format/autoflake format/black ## format code
+
+# Test targets
+test: test/unit test/functional ## Run all tests
+
+test/unit: ## Run unit tests
+	@echo "Running unit tests..."
+	python -m pytest -s tests -v -m "unit" --tb=short
+
+test/functional: ## Run functional tests
+	@echo "Running functional tests..."
+	python -m pytest -s tests/functional -v -m "functional and not gpu" --tb=short
+
+test/gpu: ## Run GPU tests
+	@echo "Running GPU tests..."
+	python -m pytest -s tests/functional -v -m "gpu" --tb=short
+
+test/all: ## Run all tests including GPU
+	@echo "Running all tests..."
+	python -m pytest -s tests -v --tb=short
+
+# Test with coverage
+test/coverage: ## Run tests with coverage report
+	@echo "Running tests with coverage..."
+	python -m pytest -s tests --cov=veeksha --cov-report=xml --cov-report=html --cov-report=term
+
+# Rerun failed tests
+test/failed-only: ## Rerun only failed tests
+	@echo "Rerunning failed tests..."
+	python -m pytest -s tests --lf -v --tb=short
