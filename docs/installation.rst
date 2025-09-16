@@ -15,7 +15,7 @@ Create Conda Environment
 ~~~~~~~~~~~~~~~~~~~~~~~~
 .. code-block:: shell
 
-    conda create -n veeksha python=3.10
+    conda create -n veeksha python=3.12
     conda activate veeksha
 
 Install Veeksha
