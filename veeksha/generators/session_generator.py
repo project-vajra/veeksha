@@ -89,6 +89,8 @@ class SessionGenerator:
             remaining_sessions: List of remaining sessions to sample from
             current_timestamp: Current timestamp in seconds
         """
+        assert remaining_sessions, "No sessions remaining to sample from"
+
         rng = random.Random(seed)
 
         next_interval = self.session_interval_generator.get_next_inter_request_time()
@@ -96,6 +98,7 @@ class SessionGenerator:
         # Rejection sampling to bias towards sessions with more requests
         max_iterations = 1000  # prevent infinite loops
         iteration_count = 0
+        session = None
 
         while iteration_count < max_iterations:
             # Propose a session randomly from remaining sessions
@@ -110,7 +113,7 @@ class SessionGenerator:
             iteration_count += 1
 
         # fallback: take a random session if max iterations reached
-        if iteration_count >= max_iterations:
+        if session is None:
             proposed_idx = rng.randint(0, len(remaining_sessions) - 1)
             session = remaining_sessions.pop(proposed_idx)
 

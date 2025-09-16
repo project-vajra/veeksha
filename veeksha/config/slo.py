@@ -56,5 +56,5 @@ class ConstantSloConfig(BaseSloConfig):
             raise ValueError("ConstantSLO: value must be specified and must be > 0")
 
     @classmethod
-    def get_type(cls) -> str:
+    def get_type(cls) -> SloType:
         return SloType.CONSTANT

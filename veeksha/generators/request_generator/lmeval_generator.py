@@ -1,17 +1,6 @@
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from lm_eval.api.instance import Instance
-from lm_eval.evaluator_utils import (
-    TaskOutput,
-    consolidate_group_results,
-    consolidate_results,
-    get_sample_size,
-    get_subtask_list,
-    get_task_list,
-    prepare_print_tasks,
-)
-from lm_eval.tasks import Task, TaskManager, get_task_dict
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 from veeksha.config.client import ClientConfig
@@ -23,6 +12,17 @@ from veeksha.core.response import Response
 from veeksha.generators.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
 )
+from veeksha.lm_eval.api.instance import Instance
+from veeksha.lm_eval.evaluator_utils import (
+    TaskOutput,
+    consolidate_group_results,
+    consolidate_results,
+    get_sample_size,
+    get_subtask_list,
+    get_task_list,
+    prepare_print_tasks,
+)
+from veeksha.lm_eval.tasks import Task, TaskManager, get_task_dict
 from veeksha.logger import init_logger
 from veeksha.types import LMEvalOutputType
 
