@@ -41,11 +41,11 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
         previous_responses: list,
         previous_token_count: int,
         most_recent_received_token_time: float,
-    ) -> Tuple[int, int, str, float, list]:
+    ) -> Tuple[int, int, str, float, List[Dict]]:
         """Update metrics and generated text from a single data chunk."""
         generated_text_chunk = ""
         tokens_received_chunk = 0
-        logprobs = []
+        logprobs: List[Dict] = []
 
         choice = data.get("choices", [{}])[0]
         if text_chunk := choice.get("text"):
@@ -66,7 +66,13 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
             most_recent_received_token_time = time.monotonic()
             generated_text_chunk = text_chunk
             if "logprobs" in choice:
-                logprobs = choice["logprobs"]
+                raw_logprobs = choice["logprobs"]
+                if isinstance(raw_logprobs, list):
+                    logprobs = [lp for lp in raw_logprobs if isinstance(lp, dict)]
+                elif isinstance(raw_logprobs, dict):
+                    logprobs = [raw_logprobs]
+                else:
+                    logprobs = []
 
         return (
             tokens_received_chunk,
@@ -90,11 +96,12 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
         }
         sampling_params = request_config.sampling_params
         body.update(sampling_params or {})
+        stream: bool = bool(body.get("stream", True))
 
         headers = {
             "Authorization": f"Bearer {self.key}",
             "Content-Type": "application/json",
-            "Accept": "text/event-stream",
+            "Accept": "text/event-stream" if stream else "application/json",
         }
         address = self.address
 
@@ -111,6 +118,7 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
         tokens_received = 0
         generated_text = ""
         logprobs: List[Dict] = []
+        final_logprobs: Optional[Dict] = None
         previous_responses = []
         previous_token_count = 0
 
@@ -121,7 +129,35 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
             async with session.post(address, json=body, headers=headers) as response:
                 response.raise_for_status()
 
-                async for data in self._process_stream(response):
+                if stream:
+                    async for data in self._process_stream(response):
+                        if "error" in data:
+                            err = data.get("error") or {}
+                            error_msg = err.get("message", "Unknown error")
+                            code_value = err.get("code")
+                            error_response_code = (
+                                code_value if isinstance(code_value, int) else 400
+                            )
+                            break
+
+                        (
+                            tokens_received_chunk,
+                            previous_token_count,
+                            generated_text_chunk,
+                            most_recent_received_token_time,
+                            logprobs_chunk,
+                        ) = self._update_metrics_from_chunk(
+                            data=data,
+                            inter_token_times=inter_token_times,
+                            previous_responses=previous_responses,
+                            previous_token_count=previous_token_count,
+                            most_recent_received_token_time=most_recent_received_token_time,
+                        )
+                        tokens_received += tokens_received_chunk
+                        generated_text += generated_text_chunk
+                        logprobs.extend(logprobs_chunk)
+                else:
+                    data = await response.json()
                     if "error" in data:
                         err = data.get("error") or {}
                         error_msg = err.get("message", "Unknown error")
@@ -129,24 +165,16 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
                         error_response_code = (
                             code_value if isinstance(code_value, int) else 400
                         )
-                        break
-
-                    (
-                        tokens_received_chunk,
-                        previous_token_count,
-                        generated_text_chunk,
-                        most_recent_received_token_time,
-                        logprobs_chunk,
-                    ) = self._update_metrics_from_chunk(
-                        data=data,
-                        inter_token_times=inter_token_times,
-                        previous_responses=previous_responses,
-                        previous_token_count=previous_token_count,
-                        most_recent_received_token_time=most_recent_received_token_time,
-                    )
-                    tokens_received += tokens_received_chunk
-                    generated_text += generated_text_chunk
-                    logprobs.extend(logprobs_chunk)
+                    else:
+                        choice = (data.get("choices") or [{}])[0]
+                        generated_text = choice.get("text", "") or ""
+                        logprobs_obj = choice.get("logprobs") or {}
+                        # token arrays
+                        if isinstance(logprobs_obj, dict):
+                            tokens_received = len(logprobs_obj.get("tokens", []))
+                            final_logprobs = logprobs_obj
+                        else:
+                            final_logprobs = {}
 
         except aiohttp.ClientResponseError as e:
             error_response_code = e.status
@@ -182,10 +210,16 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
         if error_msg or error_response_code:
             generated_response = None
         else:
+            response_logprobs: Optional[Dict]
+            if final_logprobs is not None:
+                response_logprobs = final_logprobs
+            else:
+                response_logprobs = {"chunks": logprobs}
+
             generated_response = Response(
                 id=request_config.id,
                 text=generated_text,
-                logprobs={"chunks": logprobs},
+                logprobs=response_logprobs,
             )
 
         return metrics, generated_response
