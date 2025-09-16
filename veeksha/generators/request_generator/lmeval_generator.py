@@ -231,9 +231,7 @@ class LMEvalRequestGenerator:
             )
         elif req.request_type == str(LMEvalOutputType.LOGLIKELIHOOD):
             context, target = req.args  # type: ignore
-            # later: check if total length is within the limit supported by the model
-            if self.config.num_fewshot > 0:
-                context = context + target
+            context = context + target
             return RequestConfig(
                 model=self.client_config.model,
                 prompt=(context, len(self.tokenizer.encode(context))),
@@ -254,7 +252,7 @@ class LMEvalRequestGenerator:
                 f"Request type {req.request_type} not supported yet."
             )
 
-    def parse_logprobs(self, req: Instance, response: Response) -> Tuple[float, int]:
+    def parse_logprobs(self, req: Instance, response: Response) -> Tuple[float, bool]:
         # Parse OpenAI-style logprobs for completions. Support multiple shapes:
         # 1) Non-stream OpenAI-compatible: {tokens, token_logprobs, top_logprobs, text_offset}
         # 2) Some servers: {content: [{token, logprob, top_logprobs: [{token, logprob}, ...]}]}
@@ -273,7 +271,11 @@ class LMEvalRequestGenerator:
             for tok_lp, top in zip(tokens_logprobs, top_logprobs):
                 # top may be a dict mapping token->logprob
                 if isinstance(top, dict):
-                    if tok_lp != max(top.values()):
+                    if not top:
+                        is_greedy = False
+                        break
+                    EPS = 1e-8
+                    if tok_lp < (max(top.values()) - EPS):
                         is_greedy = False
                         break
                 else:
@@ -304,8 +306,8 @@ class LMEvalRequestGenerator:
                         max_top = None
                 greedies.append(max_top is not None and tok_lp >= max_top)
 
-            logprobs_sum = float(sum(logprobs_list)) if logprobs_list else 0.0
-            is_greedy = int(all(greedies)) if greedies else 0
+            logprobs_sum = sum(logprobs_list) if logprobs_list else 0.0
+            is_greedy = all(greedies) if greedies else False
             return (logprobs_sum, is_greedy)
 
         # Unsupported structure
