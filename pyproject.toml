@@ -94,4 +94,4 @@ exclude = [
 ]
 
 [tool.black]
-extend-exclude = "veeksha/_version\.py"
+extend-exclude = 'veeksha/_version\.py'
