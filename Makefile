@@ -2,19 +2,19 @@
 .DEFAULT_GOAL := help
 
 lint/black: ## check style with black
-	black --check veeksha
+	black --check --extend-exclude 'veeksha/lm_eval' veeksha
 
 lint/isort: ## check style with isort
-	isort --check-only --profile black veeksha
+	isort --check-only --profile black --extend-skip veeksha/lm_eval veeksha
 
 lint/autoflake: ## check for unused imports
-	autoflake --recursive --remove-all-unused-imports --check --exclude 'veeksha/_version.py' veeksha
+	autoflake --recursive --remove-all-unused-imports --check --exclude 'veeksha/lm_eval/*,veeksha/_version.py' veeksha
 
 lint/pyright: ## run type checking
 	pyright
 
 lint/codespell:
-	codespell --skip './env/**,./docs/_build/**' -L inout
+	codespell --skip './env/**,./docs/_build/**,./veeksha/lm_eval/**' -L inout
 
 lint: lint/isort lint/black lint/autoflake lint/codespell lint/pyright	## check style
 
