@@ -89,13 +89,11 @@ class SessionGenerator:
             remaining_sessions: List of remaining sessions to sample from
             current_timestamp: Current timestamp in seconds
         """
+        assert remaining_sessions, "No sessions remaining to sample from"
+
         rng = random.Random(seed)
 
         next_interval = self.session_interval_generator.get_next_inter_request_time()
-
-        # Check if we have any sessions left
-        if not remaining_sessions:
-            raise ValueError("No sessions remaining to sample from")
 
         # Rejection sampling to bias towards sessions with more requests
         max_iterations = 1000  # prevent infinite loops
