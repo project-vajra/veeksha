@@ -8,7 +8,7 @@ lint/isort: ## check style with isort
 	isort --check-only --profile black veeksha
 
 lint/autoflake: ## check for unused imports
-	autoflake --recursive --remove-all-unused-imports --check veeksha
+	autoflake --recursive --remove-all-unused-imports --check --exclude 'veeksha/_version.py' veeksha
 
 lint/pyright: ## run type checking
 	pyright
@@ -25,7 +25,7 @@ format/isort: ## format code with isort
 	isort --profile black --extend-skip veeksha/lm_eval veeksha
 
 format/autoflake: ## remove unused imports
-	autoflake --in-place --recursive --remove-all-unused-imports --exclude 'veeksha/lm_eval/*' veeksha
+	autoflake --in-place --recursive --remove-all-unused-imports --exclude 'veeksha/lm_eval/*,veeksha/_version.py' veeksha
 
 format: format/isort format/autoflake format/black ## format code
 
