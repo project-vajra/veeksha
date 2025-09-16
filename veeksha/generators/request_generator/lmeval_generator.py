@@ -29,6 +29,50 @@ from veeksha.types import LMEvalOutputType
 logger = init_logger(__name__)
 
 
+def detect_task_types(tasks: List[str]) -> bool:
+    """Auto-detect if tasks are logit-based by examining their OUTPUT_TYPE.
+
+    Args:
+        tasks: List of task names to check
+
+    Returns:
+        True if all tasks are logit-based (LOGLIKELIHOOD, LOGLIKELIHOOD_ROLLING, or MULTIPLE_CHOICE)
+        False if all tasks are generation-based (GENERATE_UNTIL)
+
+    Raises:
+        ValueError: If tasks have mixed types or unknown types
+    """
+    task_manager = TaskManager()
+    task_dict = get_task_dict(tasks, task_manager)  # type: ignore
+
+    if not task_dict:
+        raise ValueError("Could not resolve any tasks from provided list.")
+
+    task_types = set()
+    for task_name, task_obj in task_dict.items():
+        output_type = str(task_obj.OUTPUT_TYPE)
+        if output_type in [
+            str(LMEvalOutputType.LOGLIKELIHOOD),
+            str(LMEvalOutputType.LOGLIKELIHOOD_ROLLING),
+            str(LMEvalOutputType.MULTIPLE_CHOICE),
+        ]:
+            task_types.add("logit")
+        elif output_type == str(LMEvalOutputType.GENERATE_UNTIL):
+            task_types.add("generation")
+        else:
+            raise ValueError(
+                f"Unknown task output type '{output_type}' for task '{task_name}'"
+            )
+
+    if len(task_types) > 1:
+        raise ValueError(
+            f"Mixed task types not supported. Found both logit-based and generation-based tasks. "
+            f"Please separate them into different benchmark runs."
+        )
+
+    return "logit" in task_types
+
+
 class LMEvalRequestGenerator:
     def __init__(
         self,
@@ -48,6 +92,10 @@ class LMEvalRequestGenerator:
 
         self.task_manager = TaskManager()
         self.task_dict = get_task_dict(self.config.tasks, self.task_manager)  # type: ignore
+        if not self.task_dict:
+            raise ValueError(
+                "LMEvalRequestGenerator could not resolve any tasks from provided."
+            )
 
         # some parameters that can be set later or ignored
         self.gen_kwargs = None
@@ -124,16 +172,7 @@ class LMEvalRequestGenerator:
         for task_output in self.eval_tasks:
             task: Task = task_output.task  # type: ignore
 
-            if self.config.is_logit_based:
-                assert task.OUTPUT_TYPE in [
-                    str(LMEvalOutputType.LOGLIKELIHOOD),
-                    str(LMEvalOutputType.LOGLIKELIHOOD_ROLLING),
-                    str(LMEvalOutputType.MULTIPLE_CHOICE),
-                ], f"Task {task_output.task_name} is not logit-based. Please set is_logit_based to False."
-            else:
-                assert task.OUTPUT_TYPE == str(
-                    LMEvalOutputType.GENERATE_UNTIL
-                ), f"Task {task_output.task_name} is not generation-based. Please set is_logit_based to True."
+            # Task type validation is now handled by config.is_logit_based() method
 
             limit = get_sample_size(task, self.limit)
             self.limits.append(limit)
@@ -153,14 +192,18 @@ class LMEvalRequestGenerator:
 
     def get_request(self) -> RequestConfig:
         if self.req_idx >= len(self.cloned_requests):
-            return None  # type: ignore
+            # Signal graceful stop with sentinel dispatch delay
+            return RequestConfig(
+                model=self.client_config.model,
+                prompt=("", 0),
+                dispatch_delay=-1,
+                llm_api=self.client_config.llm_api,
+                address_append_value=self.client_config.address_append_value,
+                id=self.req_idx,
+            )
         req: Instance = self.cloned_requests[self.req_idx]
         dispatch_delay = self.requests_interval_generator.get_next_inter_request_time()
         self.req_idx += 1
-
-        metadata = {
-            "request_dispatch_interval": dispatch_delay,
-        }
 
         # just need context to send to the model
         if req.request_type == str(LMEvalOutputType.GENERATE_UNTIL):
@@ -174,8 +217,7 @@ class LMEvalRequestGenerator:
                         self.tokenizer.encode(context)[-max_context_length:]
                     )
                     context_length = len(self.tokenizer.encode(context))
-                    logger.warning
-                    (
+                    logger.warning(
                         f"Context length exceeds max tokens limit. Truncated context to {context_length} tokens."
                     )
             return RequestConfig(
@@ -186,13 +228,10 @@ class LMEvalRequestGenerator:
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
                 id=self.req_idx - 1,
-                metadata=metadata,
             )
         elif req.request_type == str(LMEvalOutputType.LOGLIKELIHOOD):
             context, target = req.args  # type: ignore
-            # later: check if total length is within the limit supported by the model
-            if self.config.num_fewshot > 0:
-                context = context + target
+            context = context + target
             return RequestConfig(
                 model=self.client_config.model,
                 prompt=(context, len(self.tokenizer.encode(context))),
@@ -207,27 +246,72 @@ class LMEvalRequestGenerator:
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
                 id=self.req_idx - 1,
-                metadata=metadata,
             )
         else:
             raise NotImplementedError(
                 f"Request type {req.request_type} not supported yet."
             )
 
-    def parse_logprobs(self, req: Instance, response: Response) -> Tuple[float, int]:
-        # adopted from lm_eval/models/openai_completions.py
+    def parse_logprobs(self, req: Instance, response: Response) -> Tuple[float, bool]:
+        # Parse OpenAI-style logprobs for completions. Support multiple shapes:
+        # 1) Non-stream OpenAI-compatible: {tokens, token_logprobs, top_logprobs, text_offset}
+        # 2) Some servers: {content: [{token, logprob, top_logprobs: [{token, logprob}, ...]}]}
+        # 3) Fallback: unsupported → raise
         assert response.logprobs is not None
+        lp = response.logprobs
         context, _ = req.args  # type: ignore
         ctxlen = len(self.tokenizer.encode(context))
-        tokens_logprobs = response.logprobs["token_logprobs"][ctxlen:-1]
-        logprobs = sum(tokens_logprobs)
-        top_logprobs = response.logprobs["top_logprobs"][ctxlen:-1]
-        is_greedy = True
-        for tok, top in zip(tokens_logprobs, top_logprobs):
-            if tok != max(top.values()):
-                is_greedy = False
-                break
-        return (logprobs, is_greedy)
+
+        # Case 1: tokens/token_logprobs arrays
+        if "token_logprobs" in lp and "top_logprobs" in lp:
+            tokens_logprobs = lp["token_logprobs"][ctxlen:-1]
+            top_logprobs = lp["top_logprobs"][ctxlen:-1]
+            logprobs_sum = sum(tokens_logprobs)
+            is_greedy = True
+            for tok_lp, top in zip(tokens_logprobs, top_logprobs):
+                # top may be a dict mapping token->logprob
+                if isinstance(top, dict):
+                    if not top:
+                        is_greedy = False
+                        break
+                    EPS = 1e-8
+                    if tok_lp < (max(top.values()) - EPS):
+                        is_greedy = False
+                        break
+                else:
+                    # Unexpected structure; conservatively mark non-greedy
+                    is_greedy = False
+                    break
+            return (logprobs_sum, is_greedy)
+
+        # Case 2: content list with per-token objects
+        if isinstance(lp.get("content"), list):
+            content = lp["content"]
+            # Slice off context tokens using ctxlen as an approximate boundary
+            sliced = content[ctxlen:]
+            logprobs_list: List[float] = []
+            greedies: List[bool] = []
+            for entry in sliced:
+                tok_lp = entry.get("logprob")
+                if tok_lp is None:
+                    continue
+                logprobs_list.append(tok_lp)
+                top = entry.get("top_logprobs") or []
+                max_top = None
+                if isinstance(top, list) and top:
+                    # Entries like {"token": str, "logprob": float}
+                    try:
+                        max_top = max((t.get("logprob", float("-inf")) for t in top))
+                    except Exception:
+                        max_top = None
+                greedies.append(max_top is not None and tok_lp >= max_top)
+
+            logprobs_sum = sum(logprobs_list) if logprobs_list else 0.0
+            is_greedy = all(greedies) if greedies else False
+            return (logprobs_sum, is_greedy)
+
+        # Unsupported structure
+        raise KeyError("Unsupported logprobs structure for completions response")
 
     def sort_responses(self, responses: List[Response]) -> List[Response]:
         return sorted(responses, key=lambda x: x.id)  # type: ignore
