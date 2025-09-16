@@ -5,7 +5,7 @@ lint/black: ## check style with black
 	black --check --extend-exclude 'veeksha/lm_eval' veeksha
 
 lint/isort: ## check style with isort
-	isort --check-only --profile black --extend-skip veeksha/lm_eval veeksha
+	isort --check-only --profile black --extend-skip veeksha/lm_eval --extend-skip veeksha/_version.py veeksha
 
 lint/autoflake: ## check for unused imports
 	autoflake --recursive --remove-all-unused-imports --check --exclude 'veeksha/lm_eval/*,veeksha/_version.py' veeksha
