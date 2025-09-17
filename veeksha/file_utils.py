@@ -1,0 +1,18 @@
+import json
+import os
+from typing import Dict, List
+from importlib.resources import files
+
+from veeksha.core.response import Response
+
+
+def store_generated_texts(output_dir: str, generated_responses: List[Response]) -> None:
+    """Store generated responses in a text file."""
+    with open(os.path.join(output_dir, "generated_texts.txt"), "w") as f:
+        f.write(("\n" + "-" * 30 + "\n").join([i.text for i in generated_responses]))
+
+
+def store_lmeval_results(output_dir: str, lmeval_results: Dict) -> None:
+    """Store LMEval results in a JSON file."""
+    with open(os.path.join(output_dir, "lmeval_results.json"), "w") as f:
+        json.dump(lmeval_results, f, indent=4)

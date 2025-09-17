@@ -9,11 +9,11 @@ from typing import Any, Dict, Optional, Tuple
 
 import wandb
 
-from veeksha.capacity_search.benchmark_wrapper import run_benchmark_wrapped
+from veeksha.benchmark import run_benchmark
 from veeksha.capacity_search.slo import SloSet
 from veeksha.capacity_search.slo_evaluator import SloEvaluator
-from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.config.capacity_search import CapacitySearchConfig
+from veeksha.config.benchmark_config import BenchmarkConfig
+from veeksha.config.capacity_search_config import CapacitySearchConfig
 from veeksha.config.utils import dataclass_to_dict, get_config_hash
 from veeksha.constants.capacity_search_constants import (
     QPS_INCREASE_SCALE,
@@ -27,36 +27,34 @@ logger = init_logger(__name__)
 class CapacitySearch:
     def __init__(
         self,
-        capacity_search_config: CapacitySearchConfig,
+        config: CapacitySearchConfig,
     ) -> None:
-        self.capacity_search_config = capacity_search_config
+        self.config = config
 
         # will be cloned for each QPS attempt (changing output_dir, wandb_run_name)
-        self.base_benchmark_config: BenchmarkConfig = (
-            self.capacity_search_config.benchmark_config
-        )
+        self.benchmark_config: BenchmarkConfig = self.config.benchmark_config
 
         self.stop_event = threading.Event()
 
         self.full_config = {
-            "capacity_search_config": dataclass_to_dict(self.capacity_search_config),
-            "benchmark_config": dataclass_to_dict(self.base_benchmark_config),
+            "config": dataclass_to_dict(self.config),
+            "benchmark_config": dataclass_to_dict(self.benchmark_config),
         }
 
-        model_name = self.base_benchmark_config.client_config.model.split("/")[-1]
+        model_name = self.benchmark_config.client_config.model.split("/")[-1]
 
         config_hash = get_config_hash(self.full_config)
 
         # stable root dir to persist cache across runs
         self.job_root_dir = os.path.join(
-            self.capacity_search_config.output_dir, f"{model_name}-{config_hash}"
+            self.config.output_dir, f"{model_name}-{config_hash}"
         )
         os.makedirs(self.job_root_dir, exist_ok=True)
 
         # avoid empty dirs on cache hits
         self.job_output_dir = None
 
-        self.slo_set = SloSet(slos=self.capacity_search_config.slos)
+        self.slo_set = SloSet(slos=self.config.slos)
         self.slo_evaluator = SloEvaluator(self.slo_set)
         # can be reused across runs
         self._capsearch_cache_file = os.path.join(
@@ -67,19 +65,19 @@ class CapacitySearch:
     def _build_benchmark_config_for_qps(
         self, qps: float, run_dir: str
     ) -> BenchmarkConfig:
-        """Return a new BenchmarkConfig with metrics_config.output_dir pointing to run_dir and
+        """Return a new BenchmarkConfig with output_dir pointing to run_dir and
         wandb_run_name encoding QPS.
         """
 
         # copy of metric_config with updated output_dir and wandb_run_name
         new_metrics_cfg = replace(
-            self.base_benchmark_config.metrics_config,  # type: ignore
+            self.benchmark_config.metrics_config,  # type: ignore
             output_dir=run_dir,
-            wandb_run_name=f"qps_{qps}_model_{self.base_benchmark_config.client_config.model}",
+            wandb_run_name=f"qps_{qps}_model_{self.benchmark_config.client_config.model}",
         )
 
         # copy of benchmark_config with updated metrics_config.output_dir
-        return replace(self.base_benchmark_config, metrics_config=new_metrics_cfg)  # type: ignore
+        return replace(self.benchmark_config, metrics_config=new_metrics_cfg)  # type: ignore
 
     def _ensure_run_dir(self) -> None:
         if self.job_output_dir is None:
@@ -117,10 +115,10 @@ class CapacitySearch:
         # isolated benchmark config for this QPS
         benchmark_config = self._build_benchmark_config_for_qps(qps, qps_run_dir)
 
-        service_metrics = run_benchmark_wrapped(benchmark_config)
+        benchmark_tracker = run_benchmark(benchmark_config)
 
         is_under_sla, slo_metrics_dict = self.slo_evaluator.evaluate_slo(
-            service_metrics.metric_store
+            benchmark_tracker.metric_store
         )
 
         self._cache_iteration(
@@ -159,12 +157,12 @@ class CapacitySearch:
         """
 
         logger.info(
-            f"Starting search. Start QPS: {self.capacity_search_config.start_qps}",
+            f"Starting search. Start QPS: {self.config.start_qps}",
         )
         logger.info(f"SLOs: {self.slo_evaluator.slo_set}")
 
         left = 0
-        right = self.capacity_search_config.start_qps * 2
+        right = self.config.start_qps * 2
         qps = 0
         last_qps = 0
         max_qps_under_sla = None
@@ -174,12 +172,12 @@ class CapacitySearch:
         best_run_id = None
         found_valid_qps = False
 
-        for _ in range(self.capacity_search_config.max_iterations):
+        for _ in range(self.config.max_iterations):
             logger.info(f"Searching between {left} and {right}")
             # stopping condition - we have reached the minimum granularity
             if (
                 abs(left - right)
-                < self.capacity_search_config.min_search_granularity * qps / 100
+                < self.config.min_search_granularity * qps / 100
             ):
                 break
 
@@ -225,16 +223,6 @@ class CapacitySearch:
             f"is {max_qps_under_sla} \n"
             f"{'-'*100}\n"
         )
-
-        if (
-            self.capacity_search_config.wandb_project is not None
-            and self.capacity_search_config.enable_wandb_sweep
-        ):
-            best_run = wandb.Api().run(
-                f"{self.capacity_search_config.wandb_project}/{best_run_id}"
-            )
-            best_run.tags.append("BEST_CONFIG")
-            best_run.update()
 
         self._cache_final(
             max_qps_under_sla=max_qps_under_sla,

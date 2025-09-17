@@ -2,7 +2,7 @@ from typing import List, Tuple
 
 import numpy as np
 
-from veeksha.config.slo import BaseSloConfig, ConstantSloConfig
+from veeksha.config.slo_config import BaseSloConfig, ConstantSloConfig
 from veeksha.logger import init_logger
 from veeksha.metrics.metric_registry import MetricRegistry
 from veeksha.metrics.metric_store import MetricStore

@@ -11,22 +11,20 @@ from typing import List
 
 from tqdm import tqdm  # type: ignore
 
-from veeksha.benchmark_data_utils import (
-    load_corpus,
+from veeksha.file_utils import (
     store_generated_texts,
     store_lmeval_results,
 )
-from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.config.utils import prepare_benchmark_output_dir
+from veeksha.config.benchmark_config import BenchmarkConfig
 from veeksha.core.hf_utils import get_tokenizer
 from veeksha.core.requests_launcher import RequestsLauncher
 from veeksha.core.response import Response
-from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
-from veeksha.generators.request_generator.generator_registry import (
+from veeksha.generators.request_generator.base_request_generator import BaseRequestGenerator
+from veeksha.generators.request_generator.request_generator_registry import (
     RequestGeneratorRegistry,
 )
 from veeksha.logger import init_logger
-from veeksha.metrics.service_metrics import ServiceMetrics
+from veeksha.benchmark_tracker import BenchmarkTracker
 from veeksha.types import RequestGeneratorType
 
 logger = init_logger(__name__)
@@ -44,18 +42,46 @@ def setup_api_environment(
 
 
 def should_send_new_request(
-    service_metrics: ServiceMetrics, num_errored_requests_handled: int
+    benchmark_tracker: BenchmarkTracker, num_errored_requests_handled: int
 ) -> bool:
     """Check if a request should be sent based on the current state of the service."""
-    return (service_metrics.num_requests < service_metrics.max_requests) or (
-        service_metrics.num_requests >= service_metrics.max_requests
-        and num_errored_requests_handled < service_metrics.num_errored_requests
+    return (benchmark_tracker.num_requests < benchmark_tracker.max_requests) or (
+        benchmark_tracker.num_requests >= benchmark_tracker.max_requests
+        and num_errored_requests_handled < benchmark_tracker.num_errored_requests
     )
+
+
+def build_unique_output_dir(root: str, model_name: str, config_hash: str) -> str:
+    """Return a unique timestamped output directory path.
+
+    Format: <root>/<model>-<hash>-<timestamp>
+    """
+    timestamp = (
+        time.strftime("%Y%m%d-%H%M%S", time.localtime())
+        + f"-{int(time.time()*1000)%1000:03d}"
+    )
+    return os.path.join(root, f"{model_name}-{config_hash}-{timestamp}")
+
+
+def prepare_benchmark_output_dir(benchmark_config: BenchmarkConfig) -> None:
+    """Create a unique output subdirectory and persist config.
+    - Create a unique subdirectory under `output_dir`,
+      named with model and config-hash plus a high-entropy timestamp.
+    - Save `config.json` in the final output directory.
+    """
+
+    base_output_dir = benchmark_config.output_dir
+    model_name = benchmark_config.client_config.model.split("/")[-1]
+
+    config_hash = benchmark_config.get_hash()
+    unique_dir = build_unique_output_dir(base_output_dir, model_name, config_hash)
+    object.__setattr__(benchmark_config, "output_dir", unique_dir)
+    benchmark_config.write_config_to_file()
 
 
 def dispatch_requests(
     input_queue: Queue,
-    service_metrics: ServiceMetrics,
+    benchmark_tracker: BenchmarkTracker,
     request_generator: BaseRequestGenerator,
     stop_event: threading.Event,
 ) -> None:
@@ -63,18 +89,18 @@ def dispatch_requests(
     num_errored_requests_handled = 0
 
     while not stop_event.is_set():
-        if should_send_new_request(service_metrics, num_errored_requests_handled):
+        if should_send_new_request(benchmark_tracker, num_errored_requests_handled):
             request_start_time = time.monotonic()
 
             # check if we should handle error request
-            if service_metrics.num_requests >= service_metrics.max_requests:
+            if benchmark_tracker.num_requests >= benchmark_tracker.max_requests:
                 num_errored_requests_handled += 1
 
             # get next request and its dispatch time
             try:
                 request_config = request_generator.get_request()
             except StopIteration as e:
-                service_metrics.notify_error(e)
+                benchmark_tracker.notify_error(e)
                 stop_event.set()
                 break
             request_dispatch_delay = request_config.dispatch_delay
@@ -83,7 +109,7 @@ def dispatch_requests(
                 logger.info(
                     "Benchmark ending early due to stop policy (generator sentinel received)."
                 )
-                service_metrics.request_stop()
+                benchmark_tracker.request_stop()
                 stop_event.set()
                 break
             elif request_dispatch_delay < 0:
@@ -108,7 +134,7 @@ def dispatch_requests(
                 continue
 
             # dispatch
-            service_metrics.register_launched_request()
+            benchmark_tracker.register_launched_request()
             input_queue.put(request_config)
             logger.info(f"Dispatched request {request_config.id}")
         else:
@@ -117,7 +143,7 @@ def dispatch_requests(
 
 def process_results(
     output_queue: Queue,
-    service_metrics: ServiceMetrics,
+    benchmark_tracker: BenchmarkTracker,
     generated_responses: List[Response],
     pbar: tqdm,
     stop_event: threading.Event,
@@ -128,8 +154,8 @@ def process_results(
     DRAIN_MAX_EMPTY_POLLS = 50  # ~5s
     consecutive_empty_polls_after_stop = 0
     while not stop_event.is_set() or (
-        service_metrics.error is None
-        and service_metrics.num_completed_requests < service_metrics.num_requests
+        benchmark_tracker.error is None
+        and benchmark_tracker.num_completed_requests < benchmark_tracker.num_requests
     ):
         try:
             result = output_queue.get(timeout=POLL_TIMEOUT_S)
@@ -149,17 +175,17 @@ def process_results(
             break
 
         request_metrics, generated_response = result
-        service_metrics.add_request_metrics(request_metrics)
+        benchmark_tracker.add_request_metrics(request_metrics)
         if generated_response is not None:
             generated_responses.append(generated_response)
 
-        pbar.update(service_metrics.num_completed_requests - pbar.n)
+        pbar.update(benchmark_tracker.num_completed_requests - pbar.n)
 
 
 def run_main_loop(
-    benchmark_config: BenchmarkConfig,
+    config: BenchmarkConfig,
     request_generator: BaseRequestGenerator,
-    service_metrics: ServiceMetrics,
+    benchmark_tracker: BenchmarkTracker,
     generated_responses: List[Response],
     pbar: tqdm,
 ):
@@ -174,7 +200,7 @@ def run_main_loop(
 
     # Initialize request launcher
     req_launcher = RequestsLauncher(
-        client_config=benchmark_config.client_config,
+        client_config=config.client_config,
         input_queue=input_queue,
         output_queue=output_queue,
     )
@@ -187,7 +213,7 @@ def run_main_loop(
         target=dispatch_requests,
         args=(
             input_queue,
-            service_metrics,
+            benchmark_tracker,
             request_generator,
             stop_event,
         ),
@@ -197,7 +223,7 @@ def run_main_loop(
         target=process_results,
         args=(
             output_queue,
-            service_metrics,
+            benchmark_tracker,
             generated_responses,
             pbar,
             stop_event,
@@ -208,11 +234,11 @@ def run_main_loop(
     processor_thread.start()
 
     # Monitor and wait for completion
-    with service_metrics:
-        while not service_metrics.should_stop():
+    with benchmark_tracker:
+        while not benchmark_tracker.should_stop():
             time.sleep(0.1)
         logger.info("Stopping the main loop.")
-        if service_metrics.stop_requested and service_metrics.error is None:
+        if benchmark_tracker.stop_requested and benchmark_tracker.error is None:
             logger.info(
                 "Main loop exited due to stop policy; partial metrics will be saved."
             )
@@ -230,129 +256,119 @@ def run_main_loop(
 
     pbar.close()
 
-    if service_metrics.error is None:
+    if benchmark_tracker.error is None:
         logger.info("Main loop completed.")
     else:
-        raise service_metrics.error
+        raise benchmark_tracker.error
 
 
 def run_benchmark(
-    benchmark_config: BenchmarkConfig,
+    config: BenchmarkConfig,
 ):
     """Run the benchmark and return the in-memory metrics object.
 
     Args:
-        benchmark_config: The benchmark configuration.
+        config: The benchmark configuration.
 
     Returns:
-        ServiceMetrics containing the collected metrics (including the `MetricStore`).
+        BenchmarkTracker containing the collected metrics (including the `MetricStore`).
     """
 
-    prepare_benchmark_output_dir(benchmark_config)
+    prepare_benchmark_output_dir(config)
+
     logger.info(
-        f"Benchmark output directory: {benchmark_config.metrics_config.output_dir}"
+        f"Benchmark output directory: {config.output_dir}"
     )
 
     setup_api_environment(
-        api_key=benchmark_config.api_key,
-        api_url=benchmark_config.api_url,
+        api_key=config.api_key,
+        api_url=config.api_url,
     )
 
     generated_responses: List[Response] = []
 
     assert (
-        benchmark_config.client_config.tokenizer is not None
+        config.client_config.tokenizer is not None
     ), "Tokenizer is required."
 
     tokenizer = get_tokenizer(
-        tokenizer_name=benchmark_config.client_config.tokenizer,
+        tokenizer_name=config.client_config.tokenizer,
         trust_remote_code=True,
     )
 
-    request_generator_params = {}
-    request_generator_config_type = benchmark_config.request_generator_config.get_type()
-
-    if (
-        request_generator_config_type == RequestGeneratorType.SYNTHETIC
-        or request_generator_config_type == RequestGeneratorType.TRACE
-    ):
-        request_generator_params = {
-            "corpus_lines": load_corpus(),
-        }
-
     request_generator = RequestGeneratorRegistry.get(
-        benchmark_config.request_generator_config.get_type(),
-        config=benchmark_config.request_generator_config,
+        config.request_generator_config.get_type(),
+        config=config.request_generator_config,
         tokenizer=tokenizer,
-        client_config=benchmark_config.client_config,
-        **request_generator_params,
+        client_config=config.client_config,
     )
 
     max_requests = (
         request_generator.num_requests
-        if benchmark_config.request_generator_config.get_type()
+        if config.request_generator_config.get_type()
         == RequestGeneratorType.LMEVAL
-        else benchmark_config.max_completed_requests
+        else config.max_completed_requests
     )
     pbar = tqdm(total=max_requests)
 
-    service_metrics = ServiceMetrics(
+    benchmark_tracker = BenchmarkTracker(
         max_requests=max_requests,
-        timeout=benchmark_config.timeout,
-        metrics_config=benchmark_config.metrics_config,
+        timeout=config.timeout,
+        metrics_config=config.metrics_config,
+        output_dir=config.output_dir,
     )
 
     run_main_loop(
-        benchmark_config=benchmark_config,
+        config=config,
         request_generator=request_generator,
-        service_metrics=service_metrics,
+        benchmark_tracker=benchmark_tracker,
         generated_responses=generated_responses,
         pbar=pbar,
     )
 
     logger.info(
-        f"Results for token benchmark for {benchmark_config.client_config.model} queried with the {benchmark_config.client_config.llm_api} api. {service_metrics}"
+        f"Results for token benchmark for {config.client_config.model} queried with the {config.client_config.llm_api} api. {benchmark_tracker}"
     )
 
-    service_metrics.store_output()
-    logger.info(f"Metrics stored to {service_metrics.output_dir}")
+    benchmark_tracker.store_output()
 
-    store_generated_texts(service_metrics.output_dir, generated_responses)
+    store_generated_texts(benchmark_tracker.output_dir, generated_responses)
 
     # lm-eval specific
     if (
-        benchmark_config.request_generator_config.get_type()
+        config.request_generator_config.get_type()
         == RequestGeneratorType.LMEVAL
     ):
         request_generator.get_responses(generated_responses)
         lmeval_results = request_generator.evaluate()
         logger.info(f"Results: {lmeval_results}")
 
-        store_lmeval_results(service_metrics.output_dir, lmeval_results)
+        store_lmeval_results(benchmark_tracker.output_dir, lmeval_results)
 
-    return service_metrics
+    return benchmark_tracker
+
+
+def main():
+    configs = BenchmarkConfig.create_from_cli_args()
+
+    logger.info(
+        f"Running {len(configs)} benchmark configurations sequentially."
+    )
+
+    for i, config in enumerate(configs):
+        logger.info(f"Running benchmark with config: {config}")
+        logger.info(f"Starting benchmark [{i+1}/{len(configs)}]")
+
+        random.seed(config.seed)
+        run_benchmark(config=config)
+
+        logger.info(f"Completed benchmark [{i+1}/{len(configs)}]")
+
+    logger.info("All benchmarks completed.")
 
 
 if __name__ == "__main__":
     if platform.system() == "Darwin":
         multiprocessing.set_start_method("fork", force=True)
 
-    benchmark_configs = BenchmarkConfig.create_from_cli_args()
-
-    if len(benchmark_configs) > 1:
-        logger.info(
-            f"Running {len(benchmark_configs)} benchmark configurations sequentially."
-        )
-
-    for i, benchmark_config in enumerate(benchmark_configs):
-        print(f"Running benchmark with config: {benchmark_config}")
-        if len(benchmark_configs) > 1:
-            logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
-
-        random.seed(benchmark_config.seed)
-        service_metrics = run_benchmark(benchmark_config=benchmark_config)
-
-        if len(benchmark_configs) > 1:
-            logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")
-
-    logger.info("All benchmarks completed.")
+    main()

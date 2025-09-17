@@ -20,7 +20,6 @@ class RequestConfig(BaseModel):
     dispatch_delay: float = 0.0
     sampling_params: Optional[Dict[str, Any]] = None
     llm_api: Optional[str] = None
-    address_append_value: Optional[str] = None
     id: Optional[int] = None
 
     def __str__(self) -> str:

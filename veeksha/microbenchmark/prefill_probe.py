@@ -5,18 +5,18 @@ from typing import Dict, List
 import numpy as np
 
 from veeksha.benchmark import run_benchmark
-from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.config.client import ClientConfig
-from veeksha.config.generators.interval_generator.static_generator import (
+from veeksha.config.benchmark_config import BenchmarkConfig
+from veeksha.config.client_config import ClientConfig
+from veeksha.config.generators.interval_generator.static_generator_config import (
     StaticRequestIntervalGeneratorConfig,
 )
-from veeksha.config.generators.length_generator.fixed_generator import (
+from veeksha.config.generators.length_generator.fixed_generator_config import (
     FixedRequestLengthGeneratorConfig,
 )
-from veeksha.config.generators.request_generator.synthetic_generator import (
+from veeksha.config.generators.request_generator.synthetic_generator_config import (
     SyntheticRequestGeneratorConfig,
 )
-from veeksha.config.metrics import MetricsConfig
+from veeksha.config.metrics_config import MetricsConfig
 from veeksha.config.microbenchmark import MicrobenchmarkConfig, PrefillProbeConfig
 from veeksha.logger import init_logger
 
@@ -99,10 +99,10 @@ class PrefillProbe:
 
                 os.makedirs(run_dir, exist_ok=True)
                 logger.info(f"Running profiling for prefill value = {prefill_value}...")
-                service_metrics = run_benchmark(config)
+                benchmark_tracker = run_benchmark(config)
                 logger.info(f"Run benchmark done")
 
-                benchmark_output_dir = service_metrics.output_dir
+                benchmark_output_dir = benchmark_tracker.output_dir
                 metrics_file = os.path.join(
                     benchmark_output_dir, "request_level_metrics.json"
                 )

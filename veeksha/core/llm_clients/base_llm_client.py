@@ -10,7 +10,7 @@ from veeksha.metrics.request_metrics import RequestMetrics
 
 
 class BaseLLMClient(ABC):
-    """A client for making requests to a LLM API e.g Anyscale Endpoints."""
+    """A client for making requests to a LLM API Endpoint."""
 
     def __init__(self, model_name: str, tokenizer_name: str) -> None:
         self.model_name = model_name

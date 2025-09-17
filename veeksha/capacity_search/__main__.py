@@ -4,7 +4,7 @@ import time
 from typing import List
 
 from veeksha.capacity_search.search_manager import SearchManager
-from veeksha.config.capacity_search import CapacitySearchConfig
+from veeksha.config.capacity_search_config import CapacitySearchConfig
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)

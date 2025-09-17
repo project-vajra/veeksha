@@ -8,7 +8,7 @@ import pandas as pd
 import rekha as rk
 import wandb
 
-from veeksha.config.metrics import MetricsConfig
+from veeksha.config.metrics_config import MetricsConfig
 from veeksha.logger import init_logger
 from veeksha.metrics.cdf_sketch import CDFSketch
 from veeksha.metrics.metric_utils import (

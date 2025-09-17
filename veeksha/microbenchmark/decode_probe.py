@@ -8,14 +8,14 @@ import numpy as np
 import wandb
 
 from veeksha.benchmark import run_benchmark
-from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.config.generators.interval_generator.static_generator import (
+from veeksha.config.benchmark_config import BenchmarkConfig
+from veeksha.config.generators.interval_generator.static_generator_config import (
     StaticRequestIntervalGeneratorConfig,
 )
-from veeksha.config.generators.length_generator.fixed_generator import (
+from veeksha.config.generators.length_generator.fixed_generator_config import (
     FixedRequestLengthGeneratorConfig,
 )
-from veeksha.config.generators.request_generator.synthetic_generator import (
+from veeksha.config.generators.request_generator.synthetic_generator_config import (
     SyntheticRequestGeneratorConfig,
 )
 from veeksha.config.microbenchmark import DecodeProbeConfig
@@ -37,7 +37,7 @@ class DecodeProbe:
         self.context_lengths = self.decode_config.context_lengths
         self.batch_sizes = self.decode_config.batch_sizes
         self.decode_times: Dict[Tuple[int, int], List[int]] = {}
-        self.base_dir = self.base_config.metrics_config.output_dir
+        self.base_dir = self.base_config.output_dir
 
     def extract_decode_times(self, output_dir: str, batch_size: int) -> list[int]:
         metrics_file = os.path.join(output_dir, "request_level_metrics.json")
@@ -164,7 +164,6 @@ class DecodeProbe:
                 self.base_config.client_config,
                 num_clients=num_clients,
                 llm_api="openai_chat",
-                address_append_value="chat/completions",
             )
 
             run_dir = os.path.join(
@@ -193,12 +192,12 @@ class DecodeProbe:
             logger.info(
                 f"Running profiling for decode context_length = {context_length} and batch_size = {batch_size}..."
             )
-            service_metrics = run_benchmark(config)
+            benchmark_tracker = run_benchmark(config)
             logger.info(f"Run benchmark done")
             if wandb.run:
                 wandb.finish()
 
-            benchmark_output_dir = service_metrics.output_dir
+            benchmark_output_dir = benchmark_tracker.output_dir
             self.decode_times[(context_length, batch_size)] = self.extract_decode_times(
                 benchmark_output_dir, batch_size
             )

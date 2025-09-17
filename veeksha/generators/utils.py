@@ -225,6 +225,15 @@ def process_request_interval_trace(
     return new_trace_df
 
 
+
+def load_corpus() -> List[str]:
+    """Load corpus lines from packaged corpus.txt file"""
+    corpus_resource = files("veeksha.data").joinpath("corpus.txt")
+    with corpus_resource.open("r", encoding="utf-8") as f:
+        return f.readlines()
+
+
+
 def generate_random_prompt(
     tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
     num_prompt_tokens: int = 1024,

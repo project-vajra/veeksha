@@ -13,11 +13,6 @@ primitive_types = {int, str, float, bool, type(None)}
 
 logger = logging.getLogger(__name__)
 
-
-def _get_hash(key):
-    return hashlib.sha1(key.encode("utf-8")).hexdigest()[:8]
-
-
 def get_all_subclasses(cls):
     subclasses = cls.__subclasses__()
     return subclasses + [g for s in subclasses for g in get_all_subclasses(s)]
@@ -82,7 +77,7 @@ def is_subclass(cls, parent: type) -> bool:
 from enum import Enum
 
 
-def dataclass_to_dict(obj):
+def dataclass_to_dict(obj) -> Dict[str, Any]:
     """
     Recursively convert a dataclass (or any nested structure containing
     dataclasses) into a JSON-serialisable structure composed only of
@@ -130,7 +125,7 @@ def dataclass_to_dict(obj):
     return obj
 
 
-def dict_to_args(class_dict):
+def dict_to_args(class_dict) -> str:
     args = []
     for key, value in class_dict.items():
         if value is not None:
@@ -190,7 +185,7 @@ def _strip_optional(t: Any) -> Any:
     return t
 
 
-def _issubclass_safe(cls: Any, parent: type) -> bool:
+def _is_subclass(cls: Any, parent: type) -> bool:
     """Safe variant of issubclass that returns False for non-class *cls*."""
     try:
         return isinstance(cls, type) and issubclass(cls, parent)
@@ -205,8 +200,6 @@ def _match_subclass_by_type(parent: type, type_val: Any) -> type:
     strings matching Enum names (case-insensitive) or the string or repr of the
     Enum value itself.
     """
-    from veeksha.config.utils import get_all_subclasses
-
     for subclass in get_all_subclasses(parent):
         subtype = subclass.get_type()
         if subtype == type_val:
@@ -280,7 +273,7 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
         origin = get_origin(field_type)
         if origin is list and isinstance(raw_value, list):
             inner_type = _strip_optional(get_args(field_type)[0])
-            if is_dataclass(inner_type) or _issubclass_safe(inner_type, BasePolyConfig):
+            if is_dataclass(inner_type) or _is_subclass(inner_type, BasePolyConfig):
                 assert isinstance(
                     inner_type, type
                 ), f"Expected type, got {type(inner_type)}"
@@ -296,7 +289,7 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
                 continue
         elif origin is dict and isinstance(raw_value, dict):
             key_type, val_type = get_args(field_type)
-            if is_dataclass(val_type) or _issubclass_safe(val_type, BasePolyConfig):
+            if is_dataclass(val_type) or _is_subclass(val_type, BasePolyConfig):
                 assert isinstance(
                     val_type, type
                 ), f"Expected type, got {type(val_type)}"
@@ -308,7 +301,7 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
                 continue
 
         # Polymorphic config: choose subclass based on "type" key
-        if _issubclass_safe(field_type, BasePolyConfig):
+        if _is_subclass(field_type, BasePolyConfig):
             if isinstance(raw_value, dict):
                 type_val = raw_value.get("type")
                 if type_val is not None:
@@ -495,7 +488,6 @@ def get_config_hash(config_dict: Dict[str, Any]) -> str:
     VOLATILE_KEYS = {
         "output_dir",
         "wandb_run_name",
-        "wandb_sweep_id",
         "wandb_group",
         "__flat_config__",
     }
@@ -510,47 +502,3 @@ def get_config_hash(config_dict: Dict[str, Any]) -> str:
     scrubbed = scrub(config_dict)
     stable_json = json.dumps(scrubbed, sort_keys=True, separators=(",", ":"))
     return hashlib.blake2s(stable_json.encode()).hexdigest()[:8]
-
-
-def _build_unique_output_dir(root: str, model_name: str, config_hash: str) -> str:
-    """Return a unique timestamped output directory path.
-
-    Format: <root>/<model>-<hash>-<timestamp>
-    """
-    timestamp = (
-        time.strftime("%Y%m%d-%H%M%S", time.localtime())
-        + f"-{int(time.time()*1000)%1000:03d}"
-    )
-    return os.path.join(root, f"{model_name}-{config_hash}-{timestamp}")
-
-
-def prepare_benchmark_output_dir(benchmark_config) -> None:
-    """Create a unique output subdirectory and persist config.
-    - Always create a unique subdirectory under `metrics_config.output_dir`,
-      named with model and config-hash plus a high-entropy timestamp.
-    - Save `config.json` in the final output directory.
-    """
-    from veeksha.config.utils import (  # local to avoid cycles
-        dataclass_to_dict,
-        get_config_hash,
-    )
-
-    base_output_dir = benchmark_config.metrics_config.output_dir
-    model_name = benchmark_config.client_config.model.split("/")[-1]
-
-    config_as_dict = dataclass_to_dict(benchmark_config)
-    assert isinstance(
-        config_as_dict, dict
-    ), f"Expected dict, got {type(config_as_dict)}"
-    cfg_hash = get_config_hash(config_as_dict)
-    unique_dir = _build_unique_output_dir(base_output_dir, model_name, cfg_hash)
-    object.__setattr__(benchmark_config.metrics_config, "output_dir", unique_dir)
-    os.makedirs(benchmark_config.metrics_config.output_dir, exist_ok=True)
-
-    # write config.json
-    with open(
-        os.path.join(benchmark_config.metrics_config.output_dir, "config.json"),
-        "w",
-        encoding="utf-8",
-    ) as f:
-        json.dump(dataclass_to_dict(benchmark_config), f, indent=4)

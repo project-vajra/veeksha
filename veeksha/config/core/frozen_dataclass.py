@@ -3,20 +3,17 @@ import typing
 
 
 @typing.dataclass_transform()
-def frozen_dataclass(_cls=None, **kwargs):
+def frozen_dataclass(_cls=None, allow_from_file=False, **kwargs):
     """
     A decorator that creates a frozen dataclass, allowing attribute modifications
     only during the __post_init__ method.
 
     Args:
         _cls: The class to decorate (for decorator syntax handling).
-        **kwargs: Additional keyword arguments to pass to dataclasses.dataclass.
         allow_from_file (bool): If True, mark the dataclass as allowing configuration
             to be loaded from a file.
+        **kwargs: Additional keyword arguments to pass to dataclasses.dataclass.
     """
-
-    # Extract custom keyword arguments handled by this decorator
-    allow_from_file = kwargs.pop("allow_from_file", False)
 
     def wrap(cls):
         # Apply dataclass with frozen=True

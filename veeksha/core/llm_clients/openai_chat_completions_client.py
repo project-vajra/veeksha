@@ -100,7 +100,8 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             raise ValueError("No host provided.")
         if not address.endswith("/"):
             address = address + "/"
-        address += request_config.address_append_value or "chat/completions"
+        
+        address += "chat/completions"
 
         inter_token_times = []
         error_msg = None

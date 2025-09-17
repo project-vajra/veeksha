@@ -7,7 +7,7 @@ from typing import Any, Callable, List, Optional
 
 import aiohttp
 
-from veeksha.config.client import ClientConfig
+from veeksha.config.client_config import ClientConfig
 from veeksha.core.llm_clients import construct_client
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
 from veeksha.logger import init_logger
