@@ -125,18 +125,21 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 "s",  # self.trace_df has already been converted to seconds
             )
 
-            # convert timestamps to milliseconds (default time units) before saving
-            session_df_for_saving = self.trace_df_with_sessions.copy()
-            session_df_for_saving["timestamp"] = (
-                session_df_for_saving["timestamp"] * 1000
-            )
-            save_suffix = ""
-            if self._remap_seed_for_save is not None:
-                save_suffix = f"_remapped_{self._remap_seed_for_save}"
-            self.session_generator.save_requests_as_trace(
-                session_df_for_saving,
-                save_suffix=save_suffix,
-            )
+            if self.config.session_generator_config.save_as_trace_file:
+                # convert timestamps to milliseconds (default time units) before saving
+                session_df_for_saving = self.trace_df_with_sessions.copy()
+                session_df_for_saving["timestamp"] = (
+                    session_df_for_saving["timestamp"] * 1000
+                )
+                save_suffix = (
+                    f"_remapped_{self._remap_seed_for_save}"
+                    if self._remap_seed_for_save is not None
+                    else ""
+                )
+                self.session_generator.save_requests_as_trace(
+                    session_df_for_saving,
+                    save_suffix=save_suffix,
+                )
 
         self.request_idx = 0
         self._wrap_warning_logged = False

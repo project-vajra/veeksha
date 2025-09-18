@@ -73,7 +73,7 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
             "help": "If True, veeksha will use prefix hash IDs of requests to generate request prompts. Trace file specified by interval or/and length generator must include hash_ids: list[int]."
         },
     )
-    remap_hash_ids: Optional[bool] = field(
+    remap_hash_ids: bool = field(
         default=False,
         metadata={
             "help": "If True and use_trace_prefix_hash_ids, randomly remap prefix hash IDs.",
