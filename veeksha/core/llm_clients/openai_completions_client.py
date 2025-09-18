@@ -1,11 +1,15 @@
 import asyncio
+import asyncio
 import os
 import time
 from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
+import aiohttp
 import aiohttp
 
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
+from veeksha.core.llm_clients.streaming_mixin import StreamingMixin
 from veeksha.core.llm_clients.streaming_mixin import StreamingMixin
 from veeksha.core.request_config import RequestConfig
 from veeksha.core.response import Response
@@ -15,6 +19,7 @@ from veeksha.metrics.request_metrics import RequestMetrics
 logger = init_logger(__name__)
 
 
+class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
 class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
     """Client for OpenAI Completions API."""
 
@@ -35,7 +40,11 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
         self.start_time = time.monotonic()
 
     def _update_metrics_from_chunk(
+    def _update_metrics_from_chunk(
         self,
+        data: Dict,
+        inter_token_times: list,
+        previous_responses: list,
         data: Dict,
         inter_token_times: list,
         previous_responses: list,
@@ -87,9 +96,11 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
             "model": model,
             "prompt": prompt,
             "stream": True,
+            "stream": True,
         }
         sampling_params = request_config.sampling_params
         body.update(sampling_params or {})
+        stream: bool = bool(body.get("stream", True))
 
         headers = {
             "Authorization": f"Bearer {self.key}",
@@ -199,6 +210,11 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
             logger.exception(
                 f"An unexpected error occurred: ({error_response_code}) {error_msg}"
             )
+            error_response_code = error_response_code or 520
+            error_msg = error_msg or str(e)
+            logger.exception(
+                f"An unexpected error occurred: ({error_response_code}) {error_msg}"
+            )
 
         metrics = RequestMetrics(
             request_dispatched_at=request_dispatched_at,
@@ -213,10 +229,16 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
         if error_msg or error_response_code:
             generated_response = None
         else:
+            response_logprobs: Optional[Dict]
+            if final_logprobs is not None:
+                response_logprobs = final_logprobs
+            else:
+                response_logprobs = {"chunks": logprobs}
+
             generated_response = Response(
                 id=request_config.id,
                 text=generated_text,
-                logprobs={"chunks": logprobs},
+                logprobs=response_logprobs,
             )
 
         return metrics, generated_response

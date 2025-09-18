@@ -68,12 +68,21 @@ class BenchmarkConfig:
                 self.request_generator_config, LmevalRequestGeneratorConfig
             )
 
-            if self.request_generator_config.is_logit_based:
-                self.client_config.llm_api = "openai_completions"
-                self.client_config.address_append_value = "completions"
+            # Import the utility function locally to avoid circular imports
+            from veeksha.generators.request_generator.lmeval_generator import (
+                detect_task_types,
+            )
+
+            if detect_task_types(self.request_generator_config.tasks):
+                object.__setattr__(self.client_config, "llm_api", "openai_completions")
+                object.__setattr__(
+                    self.client_config, "address_append_value", "completions"
+                )
             else:
-                self.client_config.llm_api = "openai_chat"
-                self.client_config.address_append_value = "chat/completions"
+                object.__setattr__(self.client_config, "llm_api", "openai_chat")
+                object.__setattr__(
+                    self.client_config, "address_append_value", "chat/completions"
+                )
 
     @classmethod
     def create_from_cli_args(cls):
@@ -92,8 +101,9 @@ class BenchmarkConfig:
         return instances
 
     def to_dict(self):
-        if not hasattr(self, "__flat_config__") or self.__flat_config__ is None:
+        flat_config = getattr(self, "__flat_config__", None)
+        if flat_config is None:
             logger.debug("Flat config not found or is None. Using dataclass_to_dict.")
             return dataclass_to_dict(self)
 
-        return self.__flat_config__.__dict__  # type: ignore
+        return flat_config.__dict__  # type: ignore

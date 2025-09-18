@@ -5,7 +5,7 @@ from itertools import accumulate
 from typing import DefaultDict, Dict, Optional
 
 import pandas as pd
-import plotly.express as px
+import rekha as rk
 import wandb
 
 from veeksha.config.metrics import MetricsConfig
@@ -345,13 +345,13 @@ class MetricStore:
             }
         )
         df = df.sort_values("prompt_length", key=lambda x: x.astype(int))
-        fig = px.violin(df, x="prompt_length", y="ttft", box=True, points="all")
-        fig.update_layout(
-            title="TTFT Violin Plot",
-            xaxis_title="Number of Prompt Tokens",
-            yaxis_title="TTFT (s)",
+        fig = rk.box(
+            df,
+            x="prompt_length",
+            y="ttft",
+            labels={"prompt_length": "Number of Prompt Tokens", "ttft": "TTFT (s)"},
         )
-        fig.write_image(os.path.join(output_dir, "ttft_violin_plot.png"))
+        fig.save(os.path.join(output_dir, "ttft_violin_plot.png"))
         if self.should_write_metrics_to_wandb and wandb.run:
             wandb.log({"ttft_violin_plot": fig})
             wandb.log({"ttft_violin_data": wandb.Table(dataframe=df)})
@@ -369,12 +369,12 @@ class MetricStore:
             "Time (s)": token_generated_times,
             "Tokens Generated": tokens_generated,
         }
-        fig = px.line(
-            data_frame=pd.DataFrame(data),
+        fig = rk.line(
+            pd.DataFrame(data),
             x="Time (s)",
             y="Tokens Generated",
             title="Tokens Generated vs Time",
         )
-        fig.write_image(os.path.join(output_dir, "tokens_generated_vs_time.png"))
+        fig.save(os.path.join(output_dir, "tokens_generated_vs_time.png"))
         if self.should_write_metrics_to_wandb and wandb.run:
             wandb.log({"tokens_generated_vs_time": fig})

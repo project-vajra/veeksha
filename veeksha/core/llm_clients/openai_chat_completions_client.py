@@ -1,11 +1,15 @@
 import asyncio
+import asyncio
 import os
 import time
 from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
+import aiohttp
 import aiohttp
 
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
+from veeksha.core.llm_clients.streaming_mixin import StreamingMixin
 from veeksha.core.llm_clients.streaming_mixin import StreamingMixin
 from veeksha.core.request_config import RequestConfig
 from veeksha.core.response import Response
@@ -15,6 +19,7 @@ from veeksha.metrics.request_metrics import RequestMetrics
 logger = init_logger(__name__)
 
 
+class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
 class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
     """Client for OpenAI Chat Completions API."""
 
@@ -35,11 +40,50 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         self.start_time = time.monotonic()
 
     def _update_metrics_from_chunk(
+    def _update_metrics_from_chunk(
         self,
         data: Dict,
         inter_token_times: list,
         previous_responses: list,
+        data: Dict,
+        inter_token_times: list,
+        previous_responses: list,
         previous_token_count: int,
+        most_recent_received_token_time: float,
+    ) -> Tuple[int, int, str, float]:
+        """Update metrics and generated text from a single data chunk."""
+        generated_text_chunk = ""
+        tokens_received_chunk = 0
+
+        delta = data.get("choices", [{}])[0].get("delta", {})
+        if content_chunk := delta.get("content"):
+            (
+                current_tokens_received,
+                previous_token_count,
+            ) = self.get_current_tokens_received(
+                previous_responses=previous_responses,
+                current_response=content_chunk,
+                previous_token_count=previous_token_count,
+            )
+
+            tokens_received_chunk += current_tokens_received
+            inter_token_times.append(time.monotonic() - most_recent_received_token_time)
+            if current_tokens_received > 1:
+                inter_token_times.extend([0] * (current_tokens_received - 1))
+
+            most_recent_received_token_time = time.monotonic()
+            generated_text_chunk = content_chunk
+
+        return (
+            tokens_received_chunk,
+            previous_token_count,
+            generated_text_chunk,
+            most_recent_received_token_time,
+        )
+
+    async def send_llm_request(
+        self, request_config: RequestConfig, session: aiohttp.ClientSession
+    ) -> Tuple[RequestMetrics, Optional[Response]]:
         most_recent_received_token_time: float,
     ) -> Tuple[int, int, str, float]:
         """Update metrics and generated text from a single data chunk."""
@@ -94,6 +138,11 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             "Content-Type": "application/json",
             "Accept": "text/event-stream",
         }
+        headers = {
+            "Authorization": f"Bearer {self.key}",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
         address = self.address
 
         if not address:
@@ -121,6 +170,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             async with session.post(address, json=body, headers=headers) as response:
                 response.raise_for_status()
 
+                async for data in self._process_stream(response):
                 async for data in self._process_stream(response):
                     if "error" in data:
                         err = data.get("error") or {}

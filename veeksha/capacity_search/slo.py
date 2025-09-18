@@ -37,6 +37,7 @@ class ConstantSlo(BaseSlo):
 
     def __init__(self, config: ConstantSloConfig):
         super().__init__(config)
+        self.config: ConstantSloConfig = config
 
     def evaluate(
         self,

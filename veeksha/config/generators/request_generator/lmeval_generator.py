@@ -1,4 +1,5 @@
 from dataclasses import field
+from typing import List
 
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.generators.interval_generator.base_generator import (
@@ -15,8 +16,8 @@ from veeksha.types.request_generator_type import RequestGeneratorType
 
 @frozen_dataclass
 class LmevalRequestGeneratorConfig(BaseRequestGeneratorConfig):
-    tasks: list = field(
-        default_factory=lambda: [],
+    tasks: List[str] = field(
+        default_factory=lambda: ["hellaswag"],
         metadata={"help": "The tasks to evaluate the language model on."},
     )
     num_fewshot: int = field(
@@ -27,15 +28,13 @@ class LmevalRequestGeneratorConfig(BaseRequestGeneratorConfig):
         default=10,
         metadata={"help": "The number of examples to evaluate on."},
     )
-    is_logit_based: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether the evaluation is logit based. If True, the task will be evaluated using OpenAI Completions API."
-        },
-    )
     interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
         default_factory=PoissonRequestIntervalGeneratorConfig
     )
+
+    def __post_init__(self):
+        if not self.tasks:
+            raise ValueError("LMEvalRequestGenerator requires at least one task.")
 
     @classmethod
     def get_type(cls):

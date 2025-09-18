@@ -1,4 +1,5 @@
 import ast
+import random
 from typing import Dict, List, Optional, Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
@@ -38,6 +39,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self.client_config = client_config
         self.past_prompts: Dict[int, str] = {}
         self.corpus_lines = corpus_lines
+        self._remap_seed_for_save: Optional[int] = None
 
         raw_trace_df = load_trace(self.config.trace_file)
 
@@ -78,6 +80,26 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
                         ast.literal_eval
                     )
+                if self.config.remap_hash_ids:
+                    unique_ids = set()
+                    for ids in self.trace_df["hash_ids"]:
+                        unique_ids.update(ids)
+                    # unbias permutation
+                    unique_list = sorted(unique_ids)
+                    chosen_seed = random.SystemRandom().randrange(2**32)
+                    rng = random.Random(chosen_seed)
+                    permuted = unique_list.copy()
+                    rng.shuffle(permuted)
+                    id_map: Dict[int, int] = {
+                        src: dst for src, dst in zip(unique_list, permuted)
+                    }
+                    logger.info(
+                        f"Applying hash-id remapping with seed {chosen_seed} to {len(unique_list)} unique ids"
+                    )
+                    self._remap_seed_for_save = chosen_seed
+                    self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
+                        lambda lst: [id_map[x] for x in lst]
+                    )
         else:
             if self.corpus_lines is None:
                 raise ValueError(
@@ -103,12 +125,21 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 "s",  # self.trace_df has already been converted to seconds
             )
 
-            # convert timestamps to milliseconds (default time units) before saving
-            session_df_for_saving = self.trace_df_with_sessions.copy()
-            session_df_for_saving["timestamp"] = (
-                session_df_for_saving["timestamp"] * 1000
-            )
-            self.session_generator.save_requests_as_trace(session_df_for_saving)
+            if self.config.session_generator_config.save_as_trace_file:
+                # convert timestamps to milliseconds (default time units) before saving
+                session_df_for_saving = self.trace_df_with_sessions.copy()
+                session_df_for_saving["timestamp"] = (
+                    session_df_for_saving["timestamp"] * 1000
+                )
+                save_suffix = (
+                    f"_remapped_{self._remap_seed_for_save}"
+                    if self._remap_seed_for_save is not None
+                    else ""
+                )
+                self.session_generator.save_requests_as_trace(
+                    session_df_for_saving,
+                    save_suffix=save_suffix,
+                )
 
         self.request_idx = 0
         self._wrap_warning_logged = False

@@ -281,6 +281,9 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
         if origin is list and isinstance(raw_value, list):
             inner_type = _strip_optional(get_args(field_type)[0])
             if is_dataclass(inner_type) or _issubclass_safe(inner_type, BasePolyConfig):
+                assert isinstance(
+                    inner_type, type
+                ), f"Expected type, got {type(inner_type)}"
                 processed_list = [
                     (
                         create_class_from_dict(inner_type, itm)
@@ -294,6 +297,9 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
         elif origin is dict and isinstance(raw_value, dict):
             key_type, val_type = get_args(field_type)
             if is_dataclass(val_type) or _issubclass_safe(val_type, BasePolyConfig):
+                assert isinstance(
+                    val_type, type
+                ), f"Expected type, got {type(val_type)}"
                 processed_dict = {
                     k: create_class_from_dict(val_type, v) if isinstance(v, dict) else v
                     for k, v in raw_value.items()
@@ -321,6 +327,9 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
 
         # Nested dataclass (non-poly)
         if is_dataclass(field_type):
+            assert isinstance(
+                field_type, type
+            ), f"Expected type, got {type(field_type)}"
             if isinstance(raw_value, dict):
                 kwargs[f.name] = create_class_from_dict(field_type, raw_value)
             else:
@@ -475,7 +484,7 @@ def get_trace_file_path(filename: str) -> Traversable:
     return importlib.resources.files("veeksha.data.processed_traces").joinpath(filename)
 
 
-def get_config_hash(config_dict: dict) -> str:
+def get_config_hash(config_dict: Dict[str, Any]) -> str:
     """Return a stable 8-char hash for config dictionaries.
 
     - Recursively removes volatile keys that can vary between runs
@@ -529,7 +538,11 @@ def prepare_benchmark_output_dir(benchmark_config) -> None:
     base_output_dir = benchmark_config.metrics_config.output_dir
     model_name = benchmark_config.client_config.model.split("/")[-1]
 
-    cfg_hash = get_config_hash(dataclass_to_dict(benchmark_config))
+    config_as_dict = dataclass_to_dict(benchmark_config)
+    assert isinstance(
+        config_as_dict, dict
+    ), f"Expected dict, got {type(config_as_dict)}"
+    cfg_hash = get_config_hash(config_as_dict)
     unique_dir = _build_unique_output_dir(base_output_dir, model_name, cfg_hash)
     object.__setattr__(benchmark_config.metrics_config, "output_dir", unique_dir)
     os.makedirs(benchmark_config.metrics_config.output_dir, exist_ok=True)

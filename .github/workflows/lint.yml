@@ -18,11 +18,9 @@ jobs:
         uses: actions/checkout@v3
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.12'
           cache: 'pip' # caching pip dependencies
       - name: "Install dependencies"
-        run: pip install -r requirements-dev.txt
-      - name: "Run black lint"
-        run: make lint/black
-      - name: "Run isort check"
-        run: make lint/isort
+        run: pip install -e .[dev]
+      - name: "Run all lint checks"
+        run: make lint
