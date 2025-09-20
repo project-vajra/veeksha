@@ -1,6 +1,6 @@
 import ast
 import random
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, cast
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
@@ -240,11 +240,14 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         prompt = ""
         remaining_prompt_tokens = request_to_send["input_length"]
-        instruction = f"Generate at least {int(request_to_send['output_length'])} tokens repeating the following text:\n"
-        instruction_token_count = len(self.tokenizer.encode(instruction))
-        remaining_prompt_tokens = max(
-            0, remaining_prompt_tokens - instruction_token_count
-        )
+        use_server_min_tokens = self.client_config.min_tokens_param is not None
+        instruction = ""
+        if not use_server_min_tokens:
+            instruction = f"Generate at least {int(request_to_send['output_length'])} tokens repeating the following text:\n"
+            instruction_token_count = len(self.tokenizer.encode(instruction))
+            remaining_prompt_tokens = max(
+                0, remaining_prompt_tokens - instruction_token_count
+            )
 
         if self.config.use_trace_prefix_hash_ids:
             for hash_id in request_to_send["hash_ids"]:
@@ -263,14 +266,17 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 corpus_lines=self.corpus_lines,
             )
 
-        prompt = instruction + prompt
-
+        prompt = (instruction + prompt) if instruction else prompt
         final_token_count = len(self.encode(prompt))
 
-        default_sampling_params = {
+        default_sampling_params: Dict[str, Any] = {
             "max_tokens": int(request_to_send["output_length"]),
-            self.client_config.min_token_param: int(request_to_send["output_length"]),
         }
+        if use_server_min_tokens:
+            min_token_value = int(request_to_send["output_length"])
+            min_tokens_param_name = cast(str, self.client_config.min_tokens_param)
+            default_sampling_params[min_tokens_param_name] = min_token_value
+        # else prompt already includes instruction
         default_sampling_params.update(
             self.client_config.additional_sampling_params_dict
         )

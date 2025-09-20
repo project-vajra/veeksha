@@ -48,4 +48,6 @@ _setup_logger()
 
 
 def init_logger(name: str):
+    if not name.startswith("veeksha"):
+        name = f"veeksha.{name}"
     return logging.getLogger(name)

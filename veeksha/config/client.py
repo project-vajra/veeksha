@@ -47,10 +47,10 @@ class ClientConfig:
         default=60,
         metadata={"help": "The timeout for each request to the LLM API (in seconds)."},
     )
-    min_token_param: str = field(
+    min_tokens_param: Optional[str] = field(
         default="min_tokens",
         metadata={
-            "help": "Server supported parameter representing minimum new tokens to be generated."
+            "help": "Name of server parameter for minimum tokens to be generated. If omitted or non accepted by the server,fallback to prompt-based minimum token request (append instruction to prompt to generate at least the requested number of tokens)."
         },
     )
 
