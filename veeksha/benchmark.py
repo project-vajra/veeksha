@@ -95,10 +95,28 @@ def _probe_min_tokens_param_support(client_config: ClientConfig) -> bool:
     if not send_probe_request({"invalid": "type"}):
         return True
 
-    logger.warning(
-        f"Server appears to ignore parameter '{min_param}'; falling back to prompt control."
-    )
     return False
+
+
+def _initialize_min_tokens_support(benchmark_config: BenchmarkConfig) -> None:
+    """Initialize min tokens parameter support by probing the server.
+
+    This function probes the server to determine if it supports the configured
+    min_tokens_param. If not supported, it disables the parameter and logs
+    a warning about falling back to prompt-based control.
+    """
+    if benchmark_config.client_config.min_tokens_param:
+        is_supported = _probe_min_tokens_param_support(benchmark_config.client_config)
+        min_tokens_param = benchmark_config.client_config.min_tokens_param
+        if not is_supported:
+            object.__setattr__(benchmark_config.client_config, "min_tokens_param", None)
+            logger.warning(
+                f"min_tokens_param '{min_tokens_param}' not supported by server; switching to prompt-based minimum token control. This will include, in each request, an instruction to generate at least the requested number of tokens. Might lead to inaccurate lengths being generated."
+            )
+        else:
+            logger.info(
+                f"min_tokens_param '{min_tokens_param}' supported in request body."
+            )
 
 
 def should_send_new_request(
@@ -316,17 +334,7 @@ def run_benchmark(
         api_url=benchmark_config.api_url,
     )
 
-    if benchmark_config.client_config.min_tokens_param:
-        is_supported = _probe_min_tokens_param_support(benchmark_config.client_config)
-        if not is_supported:
-            object.__setattr__(benchmark_config.client_config, "min_tokens_param", None)
-            logger.warning(
-                f"min_tokens_param '{benchmark_config.client_config.min_tokens_param}' not supported by server; switching to prompt-based minimum token control. This will include, in each request, an instruction to generate at least the requested number of tokens. Might lead to inaccurate lengths being generated."
-            )
-        else:
-            logger.info(
-                f"min_tokens_param '{benchmark_config.client_config.min_tokens_param}' supported in request body."
-            )
+    _initialize_min_tokens_support(benchmark_config)
 
     generated_responses: List[Response] = []
 

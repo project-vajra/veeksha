@@ -206,11 +206,6 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
             logger.exception(
                 f"An unexpected error occurred: ({error_response_code}) {error_msg}"
             )
-            error_response_code = error_response_code or 520
-            error_msg = error_msg or str(e)
-            logger.exception(
-                f"An unexpected error occurred: ({error_response_code}) {error_msg}"
-            )
 
         metrics = RequestMetrics(
             request_dispatched_at=request_dispatched_at,

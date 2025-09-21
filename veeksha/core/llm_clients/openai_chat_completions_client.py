@@ -94,11 +94,6 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             "Content-Type": "application/json",
             "Accept": "text/event-stream",
         }
-        headers = {
-            "Authorization": f"Bearer {self.key}",
-            "Content-Type": "application/json",
-            "Accept": "text/event-stream",
-        }
         address = self.address
 
         if not address:
