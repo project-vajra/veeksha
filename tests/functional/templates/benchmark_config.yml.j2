@@ -48,6 +48,25 @@ request_generator_config:
   {% elif request_generator_type == "trace" %}
     trace_file: {{ trace_file }}
     max_tokens: {{ max_tokens }}
+  {% elif request_generator_type == "lmeval" %}
+  tasks:
+  {% for t in lmeval_tasks %}
+    - {{ t }}
+  {% endfor %}
+  num_fewshot: {{ lmeval_num_fewshot }}
+  limit: {{ lmeval_limit }}
+  {% if interval_generator_type %}
+  interval_generator_config:
+    type: {{ interval_generator_type }}
+    {% if interval_generator_type == "poisson" %}
+    qps: {{ qps }}
+    {% elif interval_generator_type == "gamma" %}
+    qps: {{ qps }}
+    cv: {{ cv }}
+    {% elif interval_generator_type == "static" %}
+    duration: {{ duration }}
+    {% endif %}
+  {% endif %}
   {% endif %}
 
 metrics_config:

@@ -1,5 +1,8 @@
 """Functional tests for veeksha benchmark functionality."""
 
+import json
+from pathlib import Path
+
 import pytest
 
 from .template_utils import create_benchmark_config
@@ -140,3 +143,77 @@ max_completed_requests: 1
             expected_return_code=1,
             check_output_files=False
         )
+
+    @pytest.mark.gpu
+    def test_benchmark_lmeval_logit_task(
+        self, temp_output_dir: str, test_model: str, vllm_server
+    ) -> None:
+        """Test benchmark with lmeval request generator using a logit-based task (no extra deps)."""
+        runner = BenchmarkTestRunner(temp_output_dir)
+        config_content = create_benchmark_config(
+            model=test_model,
+            output_dir=temp_output_dir,
+            api_url=vllm_server.base_url,
+            max_completed_requests=5,
+            timeout=120,  # will be overridden to -1 for lmeval
+            request_generator_type="lmeval",
+            interval_generator_type="static",
+            duration=0.1,
+            lmeval_tasks=["hellaswag"],
+            lmeval_num_fewshot=0,
+            lmeval_limit=3,
+        )
+
+        runner.run_benchmark(config_content, "lmeval_logit.yml")
+
+        # Verify lmeval results presence and structure
+        results_files = list(Path(temp_output_dir).glob("**/lmeval_results.json"))
+        assert len(results_files) > 0, "lmeval_results.json not found in output"
+        data = json.loads(results_files[0].read_text())
+        for key in [
+            "results",
+            "configs",
+            "versions",
+            "n-shot",
+            "higher_is_better",
+            "n-samples",
+        ]:
+            assert key in data, f"Missing key in lmeval_results.json: {key}"
+        assert isinstance(data["results"], dict), "results must be a dict"
+
+    @pytest.mark.gpu
+    def test_benchmark_lmeval_generation_task(
+        self, temp_output_dir: str, test_model: str, vllm_server
+    ) -> None:
+        """Test benchmark with lmeval request generator using a generation-based task (no extra deps)."""
+        runner = BenchmarkTestRunner(temp_output_dir)
+        config_content = create_benchmark_config(
+            model=test_model,
+            output_dir=temp_output_dir,
+            api_url=vllm_server.base_url,
+            max_completed_requests=5,
+            timeout=120,
+            request_generator_type="lmeval",
+            interval_generator_type="static",
+            duration=0.1,
+            lmeval_tasks=["reversed_words"],
+            lmeval_num_fewshot=0,
+            lmeval_limit=2,
+        )
+
+        runner.run_benchmark(config_content, "lmeval_gen.yml")
+
+        # Verify lmeval results presence and structure
+        results_files = list(Path(temp_output_dir).glob("**/lmeval_results.json"))
+        assert len(results_files) > 0, "lmeval_results.json not found in output"
+        data = json.loads(results_files[0].read_text())
+        for key in [
+            "results",
+            "configs",
+            "versions",
+            "n-shot",
+            "higher_is_better",
+            "n-samples",
+        ]:
+            assert key in data, f"Missing key in lmeval_results.json: {key}"
+        assert isinstance(data["results"], dict), "results must be a dict"

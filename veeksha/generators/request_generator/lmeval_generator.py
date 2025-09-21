@@ -253,10 +253,26 @@ class LMEvalRequestGenerator:
             )
 
     def parse_logprobs(self, req: Instance, response: Response) -> Tuple[float, bool]:
-        # Parse OpenAI-style logprobs for completions. Support multiple shapes:
-        # 1) Non-stream OpenAI-compatible: {tokens, token_logprobs, top_logprobs, text_offset}
-        # 2) Some servers: {content: [{token, logprob, top_logprobs: [{token, logprob}, ...]}]}
-        # 3) Fallback: unsupported → raise
+        """Parse per-token logprobs for completions responses.
+
+        Supports multiple provider formats:
+        1) Non-stream OpenAI-compatible dict with keys: tokens, token_logprobs,
+           top_logprobs, text_offset. We sum token_logprobs after the context
+           boundary and check greediness against top_logprobs.
+        2) Non-stream content list: {"content": [{"token", "logprob",
+           "top_logprobs": [{"token", "logprob"}, ...]}, ...]}.
+        3) Streaming chunks list: {"chunks": [{"logprob" or "token_logprobs",
+           "top_logprobs": [...]}, ...]}.
+
+        If the structure is unrecognized, raises a KeyError.
+
+        Args:
+            req: The lm-eval request instance that produced the response.
+            response: The model response containing text and provider logprobs.
+
+        Returns:
+            Tuple of (sum_logprobs, is_greedy) for the generated segment.
+        """
         assert response.logprobs is not None
         lp = response.logprobs
         context, _ = req.args  # type: ignore
@@ -284,7 +300,7 @@ class LMEvalRequestGenerator:
                     break
             return (logprobs_sum, is_greedy)
 
-        # Case 2: content list with per-token objects
+        # Case 2: content list with per-token objects (non-stream)
         if isinstance(lp.get("content"), list):
             content = lp["content"]
             # Slice off context tokens using ctxlen as an approximate boundary
@@ -308,6 +324,36 @@ class LMEvalRequestGenerator:
 
             logprobs_sum = sum(logprobs_list) if logprobs_list else 0.0
             is_greedy = all(greedies) if greedies else False
+            return (logprobs_sum, is_greedy)
+
+        # Case 3: chunks list (streaming-style)
+        if isinstance(lp.get("chunks"), list):
+            chunks = lp["chunks"]
+            chunks_logprobs_list: List[float] = []
+            chunks_greedies: List[bool] = []
+            for entry in chunks:
+                # Some servers may provide either 'logprob' or 'token_logprobs'
+                tok_lp = entry.get("logprob")
+                if tok_lp is None and isinstance(entry.get("token_logprobs"), list):
+                    # Take the generated token's own logprob if provided as a single-element list
+                    try:
+                        tok_lp = float(entry["token_logprobs"][0])
+                    except Exception:
+                        tok_lp = None
+                if tok_lp is None:
+                    continue
+                chunks_logprobs_list.append(tok_lp)
+                top = entry.get("top_logprobs") or []
+                max_top = None
+                if isinstance(top, list) and top:
+                    try:
+                        max_top = max((t.get("logprob", float("-inf")) for t in top))
+                    except Exception:
+                        max_top = None
+                chunks_greedies.append(max_top is not None and tok_lp >= max_top)
+
+            logprobs_sum = sum(chunks_logprobs_list) if chunks_logprobs_list else 0.0
+            is_greedy = all(chunks_greedies) if chunks_greedies else False
             return (logprobs_sum, is_greedy)
 
         # Unsupported structure

@@ -1,7 +1,7 @@
 """Utilities for rendering Jinja templates in tests."""
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional, List
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -27,6 +27,7 @@ def create_benchmark_config(
     request_generator_type: str = "synthetic",
     length_generator_type: str = "fixed",
     interval_generator_type: str = "static",
+    # synthetic-specific
     prefill_tokens: int = 50,
     decode_tokens: int = 20,
     duration: float = 1.0,
@@ -38,8 +39,12 @@ def create_benchmark_config(
     scramble: bool = True,
     prefill_to_decode_ratio: float = 0.5,
     trace_file: str = "",
-    ttft_deadline: float = None,
-    tbt_deadline: float = None,
+    # lmeval-specific
+    lmeval_tasks: Optional[List[str]] = None,
+    lmeval_num_fewshot: int = 0,
+    lmeval_limit: int = 5,
+    ttft_deadline: Optional[float] = None,
+    tbt_deadline: Optional[float] = None,
 ) -> str:
     """Create a benchmark config using the template."""
     return render_config_template(
@@ -66,6 +71,9 @@ def create_benchmark_config(
         scramble=scramble,
         prefill_to_decode_ratio=prefill_to_decode_ratio,
         trace_file=trace_file,
+        lmeval_tasks=lmeval_tasks or ["hellaswag"],
+        lmeval_num_fewshot=lmeval_num_fewshot,
+        lmeval_limit=lmeval_limit,
         ttft_deadline=ttft_deadline,
         tbt_deadline=tbt_deadline,
     )
@@ -85,7 +93,7 @@ def create_capacity_search_config(
     request_generator_type: str = "synthetic",
     prompt_length: int = 30,
     output_length: int = 15,
-    interval_generator_config: dict = None,
+    interval_generator_config: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Create a capacity search config using the template."""
     if interval_generator_config is None:

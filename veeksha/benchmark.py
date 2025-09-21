@@ -400,7 +400,6 @@ def run_benchmark(
     ):
         request_generator.get_responses(generated_responses)
         lmeval_results = request_generator.evaluate()
-        logger.info(f"Results: {lmeval_results}")
 
         store_lmeval_results(service_metrics.output_dir, lmeval_results)
 
