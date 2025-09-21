@@ -112,6 +112,10 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
 
         most_recent_received_token_time = time.monotonic()
         request_dispatched_at = time.monotonic() - self.start_time
+        # Respect a local cap on tokens to avoid mismatches with server/tokenizer
+        max_tokens_limit = None
+        if isinstance(request_config.sampling_params, dict):
+            max_tokens_limit = request_config.sampling_params.get("max_tokens")
 
         try:
             async with session.post(address, json=body, headers=headers) as response:
@@ -126,21 +130,53 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                             code_value if isinstance(code_value, int) else 400
                         )
                         break  # Stop processing on error
+                    delta = data["choices"][0]["delta"]
+                    if delta.get("content", None):
+                        (
+                            current_tokens_received,
+                            previous_token_count,
+                        ) = self.get_current_tokens_received(
+                            previous_responses=previous_responses,
+                            current_response=delta["content"],
+                            previous_token_count=previous_token_count,
+                        )
 
-                    (
-                        tokens_received_chunk,
-                        previous_token_count,
-                        generated_text_chunk,
-                        most_recent_received_token_time,
-                    ) = self._update_metrics_from_chunk(
-                        data=data,
-                        inter_token_times=inter_token_times,
-                        previous_responses=previous_responses,
-                        previous_token_count=previous_token_count,
-                        most_recent_received_token_time=most_recent_received_token_time,
-                    )
-                    tokens_received += tokens_received_chunk
-                    generated_text += generated_text_chunk
+                        # Apply local cap against requested max_tokens
+                        allowable_to_add = current_tokens_received
+                        if isinstance(max_tokens_limit, int):
+                            allowable_to_add = max(
+                                0,
+                                min(
+                                    current_tokens_received,
+                                    max_tokens_limit - tokens_received,
+                                ),
+                            )
+
+                        if allowable_to_add > 0:
+                            inter_token_times.append(
+                                time.monotonic() - most_recent_received_token_time
+                            )
+                            if allowable_to_add > 1:
+                                inter_token_times.extend([0] * (allowable_to_add - 1))
+                            tokens_received += allowable_to_add
+                            most_recent_received_token_time = time.monotonic()
+                            # We still append full text; metrics cap governs counts/timings
+                            generated_text += delta["content"]
+
+                            # Truncate generated_text to exactly tokens_received tokens
+                            if isinstance(max_tokens_limit, int):
+                                output_token_ids = self.tokenizer.encode(generated_text)
+                                if len(output_token_ids) > tokens_received:
+                                    generated_text = self.tokenizer.decode(
+                                        output_token_ids[:tokens_received]
+                                    )
+
+                        # If we've reached or exceeded the cap, stop processing further chunks
+                        if (
+                            isinstance(max_tokens_limit, int)
+                            and tokens_received >= max_tokens_limit
+                        ):
+                            break
 
         except aiohttp.ClientResponseError as e:
             error_response_code = e.status

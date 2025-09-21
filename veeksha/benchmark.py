@@ -7,7 +7,7 @@ import time
 from multiprocessing import Queue
 from queue import Empty
 from threading import Thread
-from typing import List
+from typing import List, Optional
 
 from tqdm import tqdm  # type: ignore
 
@@ -17,6 +17,7 @@ from veeksha.benchmark_data_utils import (
     store_lmeval_results,
 )
 from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.client import ClientConfig
 from veeksha.config.utils import prepare_benchmark_output_dir
 from veeksha.core.hf_utils import get_tokenizer
 from veeksha.core.requests_launcher import RequestsLauncher
@@ -41,6 +42,81 @@ def setup_api_environment(
     assert api_url is not None, "API URL is required"
     os.environ["OPENAI_API_KEY"] = api_key
     os.environ["OPENAI_API_BASE"] = api_url
+
+
+def _probe_min_tokens_param_support(client_config: ClientConfig) -> bool:
+    """Probe if server accepts the configured min token parameter."""
+    import os
+
+    import requests  # type: ignore
+
+    min_param: Optional[str] = client_config.min_tokens_param
+    if not min_param:
+        return False
+
+    base_url = os.environ.get("OPENAI_API_BASE")
+    if not base_url:
+        logger.warning("OPENAI_API_BASE not set; cannot probe min token parameter.")
+        return False
+    if not base_url.endswith("/"):
+        base_url = base_url + "/"
+
+    url = base_url + (client_config.address_append_value or "chat/completions")
+    headers = {
+        "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY', '')}",
+        "Content-Type": "application/json",
+    }
+
+    body = {
+        "model": client_config.model,
+        "stream": False,
+        "max_tokens": 1,
+    }
+    if client_config.llm_api == "openai_completions":
+        body["prompt"] = "Hello"
+    else:
+        body["messages"] = [{"role": "user", "content": "Hello"}]
+
+    def send_probe_request(param_value):
+        test_body = body.copy()
+        test_body[min_param] = param_value
+        try:
+            resp = requests.post(url, headers=headers, json=test_body, timeout=10)
+            return 200 <= resp.status_code < 300
+        except Exception:
+            return False
+
+    if not send_probe_request(1):
+        logger.warning(
+            f"Server rejected parameter '{min_param}'; falling back to prompt control."
+        )
+        return False
+
+    if not send_probe_request({"invalid": "type"}):
+        return True
+
+    return False
+
+
+def _initialize_min_tokens_support(benchmark_config: BenchmarkConfig) -> None:
+    """Initialize min tokens parameter support by probing the server.
+
+    This function probes the server to determine if it supports the configured
+    min_tokens_param. If not supported, it disables the parameter and logs
+    a warning about falling back to prompt-based control.
+    """
+    if benchmark_config.client_config.min_tokens_param:
+        is_supported = _probe_min_tokens_param_support(benchmark_config.client_config)
+        min_tokens_param = benchmark_config.client_config.min_tokens_param
+        if not is_supported:
+            object.__setattr__(benchmark_config.client_config, "min_tokens_param", None)
+            logger.warning(
+                f"min_tokens_param '{min_tokens_param}' not supported by server; switching to prompt-based minimum token control. This will include, in each request, an instruction to generate at least the requested number of tokens. Might lead to inaccurate lengths being generated."
+            )
+        else:
+            logger.info(
+                f"min_tokens_param '{min_tokens_param}' supported in request body."
+            )
 
 
 def should_send_new_request(
@@ -258,6 +334,8 @@ def run_benchmark(
         api_url=benchmark_config.api_url,
     )
 
+    _initialize_min_tokens_support(benchmark_config)
+
     generated_responses: List[Response] = []
 
     assert (
@@ -308,10 +386,6 @@ def run_benchmark(
         service_metrics=service_metrics,
         generated_responses=generated_responses,
         pbar=pbar,
-    )
-
-    logger.info(
-        f"Results for token benchmark for {benchmark_config.client_config.model} queried with the {benchmark_config.client_config.llm_api} api. {service_metrics}"
     )
 
     service_metrics.store_output()

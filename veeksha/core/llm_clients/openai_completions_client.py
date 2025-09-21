@@ -41,11 +41,11 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
         previous_responses: list,
         previous_token_count: int,
         most_recent_received_token_time: float,
-    ) -> Tuple[int, int, str, float, List[Dict]]:
+    ) -> Tuple[int, int, str, float, list]:
         """Update metrics and generated text from a single data chunk."""
         generated_text_chunk = ""
         tokens_received_chunk = 0
-        logprobs: List[Dict] = []
+        logprobs = []
 
         choice = data.get("choices", [{}])[0]
         if text_chunk := choice.get("text"):
@@ -101,7 +101,7 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
         headers = {
             "Authorization": f"Bearer {self.key}",
             "Content-Type": "application/json",
-            "Accept": "text/event-stream" if stream else "application/json",
+            "Accept": "text/event-stream",
         }
         address = self.address
 
@@ -118,46 +118,21 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
         tokens_received = 0
         generated_text = ""
         logprobs: List[Dict] = []
-        final_logprobs: Optional[Dict] = None
         previous_responses = []
         previous_token_count = 0
 
         most_recent_received_token_time = time.monotonic()
         request_dispatched_at = time.monotonic() - self.start_time
+        # Respect a local cap on tokens to avoid mismatches with server/tokenizer
+        max_tokens_limit = None
+        if isinstance(request_config.sampling_params, dict):
+            max_tokens_limit = request_config.sampling_params.get("max_tokens")
 
         try:
             async with session.post(address, json=body, headers=headers) as response:
                 response.raise_for_status()
 
-                if stream:
-                    async for data in self._process_stream(response):
-                        if "error" in data:
-                            err = data.get("error") or {}
-                            error_msg = err.get("message", "Unknown error")
-                            code_value = err.get("code")
-                            error_response_code = (
-                                code_value if isinstance(code_value, int) else 400
-                            )
-                            break
-
-                        (
-                            tokens_received_chunk,
-                            previous_token_count,
-                            generated_text_chunk,
-                            most_recent_received_token_time,
-                            logprobs_chunk,
-                        ) = self._update_metrics_from_chunk(
-                            data=data,
-                            inter_token_times=inter_token_times,
-                            previous_responses=previous_responses,
-                            previous_token_count=previous_token_count,
-                            most_recent_received_token_time=most_recent_received_token_time,
-                        )
-                        tokens_received += tokens_received_chunk
-                        generated_text += generated_text_chunk
-                        logprobs.extend(logprobs_chunk)
-                else:
-                    data = await response.json()
+                async for data in self._process_stream(response):
                     if "error" in data:
                         err = data.get("error") or {}
                         error_msg = err.get("message", "Unknown error")
@@ -165,16 +140,51 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
                         error_response_code = (
                             code_value if isinstance(code_value, int) else 400
                         )
-                    else:
-                        choice = (data.get("choices") or [{}])[0]
-                        generated_text = choice.get("text", "") or ""
-                        logprobs_obj = choice.get("logprobs") or {}
-                        # token arrays
-                        if isinstance(logprobs_obj, dict):
-                            tokens_received = len(logprobs_obj.get("tokens", []))
-                            final_logprobs = logprobs_obj
-                        else:
-                            final_logprobs = {}
+                        break
+
+                    text_chunk = data["choices"][0].get("text", "")
+                    if text_chunk:
+                        current_tokens_received, previous_token_count = (
+                            self.get_current_tokens_received(
+                                previous_responses=previous_responses,
+                                current_response=text_chunk,
+                                previous_token_count=previous_token_count,
+                            )
+                        )
+                        allowable_to_add = current_tokens_received
+                        if isinstance(max_tokens_limit, int):
+                            allowable_to_add = max(
+                                0,
+                                min(
+                                    current_tokens_received,
+                                    max_tokens_limit - tokens_received,
+                                ),
+                            )
+                        if allowable_to_add > 0:
+                            inter_token_times.append(
+                                time.monotonic() - most_recent_received_token_time
+                            )
+                            if allowable_to_add > 1:
+                                inter_token_times.extend([0] * (allowable_to_add - 1))
+                            tokens_received += allowable_to_add
+                            most_recent_received_token_time = time.monotonic()
+                            generated_text += text_chunk
+
+                            # Truncate generated_text to exactly tokens_received tokens
+                            if isinstance(max_tokens_limit, int):
+                                output_token_ids = self.tokenizer.encode(generated_text)
+                                if len(output_token_ids) > tokens_received:
+                                    generated_text = self.tokenizer.decode(
+                                        output_token_ids[:tokens_received]
+                                    )
+
+                        if (
+                            isinstance(max_tokens_limit, int)
+                            and tokens_received >= max_tokens_limit
+                        ):
+                            break
+                        if "logprobs" in data["choices"][0]:
+                            logprobs = data["choices"][0]["logprobs"]
 
         except aiohttp.ClientResponseError as e:
             error_response_code = e.status
@@ -210,16 +220,10 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
         if error_msg or error_response_code:
             generated_response = None
         else:
-            response_logprobs: Optional[Dict]
-            if final_logprobs is not None:
-                response_logprobs = final_logprobs
-            else:
-                response_logprobs = {"chunks": logprobs}
-
             generated_response = Response(
                 id=request_config.id,
                 text=generated_text,
-                logprobs=response_logprobs,
+                logprobs={"chunks": logprobs},
             )
 
         return metrics, generated_response
