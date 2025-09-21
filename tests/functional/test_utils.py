@@ -3,7 +3,7 @@
 import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional, List
-import tempfile
+import os
 
 
 class BenchmarkTestRunner:
@@ -19,6 +19,7 @@ class BenchmarkTestRunner:
         timeout: Optional[int] = None,
         check_output_files: bool = True,
         expected_return_code: int = 0,
+        env: Optional[Dict[str, str]] = None,
     ) -> subprocess.CompletedProcess:
         """Run a benchmark test with the given configuration.
 
@@ -45,7 +46,8 @@ class BenchmarkTestRunner:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=timeout
+                timeout=timeout,
+                env={**os.environ, **(env or {})}
             )
         except subprocess.TimeoutExpired:
             # For invalid configs, timeout is expected

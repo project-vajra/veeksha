@@ -46,8 +46,62 @@ request_generator_config:
     {% endif %}
   {% endif %}
   {% elif request_generator_type == "trace" %}
-    trace_file: {{ trace_file }}
-    max_tokens: {{ max_tokens }}
+  {% if trace_file %}
+  trace_file: {{ trace_file }}
+  {% endif %}
+  {% if max_tokens is not none %}
+  max_tokens: {{ max_tokens }}
+  {% endif %}
+  {% if trace_input_length_column %}
+  input_length_column: {{ trace_input_length_column }}
+  {% endif %}
+  {% if trace_output_length_column %}
+  output_length_column: {{ trace_output_length_column }}
+  {% endif %}
+  {% if trace_block_size is not none %}
+  block_size: {{ trace_block_size }}
+  {% endif %}
+  {% if trace_timestamp_column %}
+  timestamp_column: {{ trace_timestamp_column }}
+  {% endif %}
+  {% if trace_timestamp_unit %}
+  timestamp_unit: {{ trace_timestamp_unit }}
+  {% endif %}
+  {% if trace_time_scale_factor is not none %}
+  time_scale_factor: {{ trace_time_scale_factor }}
+  {% endif %}
+  {% if trace_use_prefix_hash_ids is not none %}
+  use_trace_prefix_hash_ids: {{ trace_use_prefix_hash_ids }}
+  {% endif %}
+  {% if trace_remap_hash_ids is not none %}
+  remap_hash_ids: {{ trace_remap_hash_ids }}
+  {% endif %}
+  {% if trace_use_sessions is not none %}
+  use_trace_sessions: {{ trace_use_sessions }}
+  {% endif %}
+  {% if session_generator_config %}
+  session_generator_config:
+    {% if session_generator_config.seed is defined %}seed: {{ session_generator_config.seed }}{% endif %}
+    {% if session_generator_config.minimum_prefix_match is defined %}minimum_prefix_match: {{ session_generator_config.minimum_prefix_match }}{% endif %}
+    {% if session_generator_config.min_session_size is defined %}min_session_size: {{ session_generator_config.min_session_size }}{% endif %}
+    {% if session_generator_config.max_session_size is defined %}max_session_size: {{ session_generator_config.max_session_size }}{% endif %}
+    {% if session_generator_config.max_request_interval is defined %}max_request_interval: {{ session_generator_config.max_request_interval }}{% endif %}
+    {% if session_generator_config.save_as_trace_file is defined %}save_as_trace_file: {{ session_generator_config.save_as_trace_file }}{% endif %}
+    {% if session_generator_config.trace_file_save_dir is defined %}trace_file_save_dir: {{ session_generator_config.trace_file_save_dir }}{% endif %}
+    {% if session_generator_config.trace_file_name is defined %}trace_file_name: {{ session_generator_config.trace_file_name }}{% endif %}
+    {% if session_generator_config.session_interval_generator_config is defined %}
+    session_interval_generator_config:
+      type: {{ session_generator_config.session_interval_generator_config.type }}
+      {% if session_generator_config.session_interval_generator_config.type == "poisson" %}
+      {% if session_generator_config.session_interval_generator_config.qps is defined %}qps: {{ session_generator_config.session_interval_generator_config.qps }}{% endif %}
+      {% elif session_generator_config.session_interval_generator_config.type == "gamma" %}
+      {% if session_generator_config.session_interval_generator_config.qps is defined %}qps: {{ session_generator_config.session_interval_generator_config.qps }}{% endif %}
+      {% if session_generator_config.session_interval_generator_config.cv is defined %}cv: {{ session_generator_config.session_interval_generator_config.cv }}{% endif %}
+      {% elif session_generator_config.session_interval_generator_config.type == "static" %}
+      {% if session_generator_config.session_interval_generator_config.duration is defined %}duration: {{ session_generator_config.session_interval_generator_config.duration }}{% endif %}
+      {% endif %}
+    {% endif %}
+  {% endif %}
   {% elif request_generator_type == "lmeval" %}
   tasks:
   {% for t in lmeval_tasks %}
