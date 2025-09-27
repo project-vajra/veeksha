@@ -1,7 +1,7 @@
 """Utilities for rendering Jinja templates in tests."""
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional, List
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -27,6 +27,7 @@ def create_benchmark_config(
     request_generator_type: str = "synthetic",
     length_generator_type: str = "fixed",
     interval_generator_type: str = "static",
+    # synthetic-specific
     prefill_tokens: int = 50,
     decode_tokens: int = 20,
     duration: float = 1.0,
@@ -38,8 +39,23 @@ def create_benchmark_config(
     scramble: bool = True,
     prefill_to_decode_ratio: float = 0.5,
     trace_file: str = "",
-    ttft_deadline: float = None,
-    tbt_deadline: float = None,
+    # trace-specific
+    trace_input_length_column: str = "",
+    trace_output_length_column: str = "",
+    trace_block_size: int = 512,
+    trace_timestamp_column: str = "",
+    trace_timestamp_unit: str = "",
+    trace_time_scale_factor: float = 1.0,
+    trace_use_prefix_hash_ids: bool = False,
+    trace_remap_hash_ids: bool = False,
+    trace_use_sessions: bool = False,
+    session_generator_config: Optional[Dict[str, Any]] = None,
+    # lmeval-specific
+    lmeval_tasks: Optional[List[str]] = None,
+    lmeval_num_fewshot: int = 0,
+    lmeval_limit: int = 5,
+    ttft_deadline: Optional[float] = None,
+    tbt_deadline: Optional[float] = None,
 ) -> str:
     """Create a benchmark config using the template."""
     return render_config_template(
@@ -66,6 +82,19 @@ def create_benchmark_config(
         scramble=scramble,
         prefill_to_decode_ratio=prefill_to_decode_ratio,
         trace_file=trace_file,
+        trace_input_length_column=trace_input_length_column or None,
+        trace_output_length_column=trace_output_length_column or None,
+        trace_block_size=trace_block_size if trace_block_size is not None else None,
+        trace_timestamp_column=trace_timestamp_column or None,
+        trace_timestamp_unit=trace_timestamp_unit or None,
+        trace_time_scale_factor=trace_time_scale_factor if trace_time_scale_factor is not None else None,
+        trace_use_prefix_hash_ids=trace_use_prefix_hash_ids,
+        trace_remap_hash_ids=trace_remap_hash_ids,
+        trace_use_sessions=trace_use_sessions,
+        session_generator_config=session_generator_config,
+        lmeval_tasks=lmeval_tasks or ["hellaswag"],
+        lmeval_num_fewshot=lmeval_num_fewshot,
+        lmeval_limit=lmeval_limit,
         ttft_deadline=ttft_deadline,
         tbt_deadline=tbt_deadline,
     )
@@ -85,7 +114,7 @@ def create_capacity_search_config(
     request_generator_type: str = "synthetic",
     prompt_length: int = 30,
     output_length: int = 15,
-    interval_generator_config: dict = None,
+    interval_generator_config: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Create a capacity search config using the template."""
     if interval_generator_config is None:

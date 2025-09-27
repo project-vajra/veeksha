@@ -129,11 +129,12 @@ class SessionGenerator:
 
         return session, current_timestamp
 
-    def save_requests_as_trace(self, requests_df: pd.DataFrame):
+    def save_requests_as_trace(self, requests_df: pd.DataFrame, save_suffix: str = ""):
         """Save the trace to a jsonl trace file.
 
         Args:
             requests_df: DataFrame with timestamps in milliseconds (trace file format)
+            save_suffix: Optional suffix to append to the filename (before extension)
         """
 
         # append config params to file name
@@ -165,7 +166,8 @@ class SessionGenerator:
             if hasattr(interval_config, "seed"):
                 params.append(f"seed-{interval_config.seed}")
 
-            return f"{base_name}_{'_'.join(params)}.jsonl"
+            suffix = save_suffix if save_suffix else ""
+            return f"{base_name}_{'_'.join(params)}{suffix}.jsonl"
 
         target_dir = self.config.trace_file_save_dir
         file_name = os.path.join(target_dir, create_clean_filename())

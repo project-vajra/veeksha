@@ -10,6 +10,7 @@ client_config:
   llm_api: openai_chat
 
 request_generator_config:
-  type: trace # use default trace
+  type: trace # use default trace: swe_agent
   input_length_column: input_length
   output_length_column: output_length
+  use_trace_prefix_hash_ids: true

@@ -7,14 +7,12 @@ name = "veeksha"
 dynamic = ["version"]
 description = "A framework for benchmarking LLM Inference Systems"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = {text = "Apache-2.0"}
 authors = [
     {name = "Vajra Team"},
 ]
 classifiers = [
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: Apache Software License",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -86,6 +84,7 @@ local_scheme = "no-local-version"
 profile = "black"
 known_first_party = "veeksha"
 known_third_party = "wandb"
+extend_skip = ["veeksha/_version.py"]
 
 [tool.pyright]
 include = ["veeksha"]
@@ -93,3 +92,6 @@ exclude = [
     "**/__pycache__",
     "veeksha/lm_eval/**",
 ]
+
+[tool.black]
+extend-exclude = 'veeksha/_version\.py'

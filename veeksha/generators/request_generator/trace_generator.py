@@ -1,5 +1,6 @@
 import ast
-from typing import Dict, List, Optional, Union
+import random
+from typing import Any, Dict, List, Optional, Union, cast
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
@@ -38,6 +39,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self.client_config = client_config
         self.past_prompts: Dict[int, str] = {}
         self.corpus_lines = corpus_lines
+        self._remap_seed_for_save: Optional[int] = None
 
         raw_trace_df = load_trace(self.config.trace_file)
 
@@ -78,6 +80,26 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
                         ast.literal_eval
                     )
+                if self.config.remap_hash_ids:
+                    unique_ids = set()
+                    for ids in self.trace_df["hash_ids"]:
+                        unique_ids.update(ids)
+                    # unbias permutation
+                    unique_list = sorted(unique_ids)
+                    chosen_seed = random.SystemRandom().randrange(2**32)
+                    rng = random.Random(chosen_seed)
+                    permuted = unique_list.copy()
+                    rng.shuffle(permuted)
+                    id_map: Dict[int, int] = {
+                        src: dst for src, dst in zip(unique_list, permuted)
+                    }
+                    logger.info(
+                        f"Applying hash-id remapping with seed {chosen_seed} to {len(unique_list)} unique ids"
+                    )
+                    self._remap_seed_for_save = chosen_seed
+                    self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
+                        lambda lst: [id_map[x] for x in lst]
+                    )
         else:
             if self.corpus_lines is None:
                 raise ValueError(
@@ -103,12 +125,21 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 "s",  # self.trace_df has already been converted to seconds
             )
 
-            # convert timestamps to milliseconds (default time units) before saving
-            session_df_for_saving = self.trace_df_with_sessions.copy()
-            session_df_for_saving["timestamp"] = (
-                session_df_for_saving["timestamp"] * 1000
-            )
-            self.session_generator.save_requests_as_trace(session_df_for_saving)
+            if self.config.session_generator_config.save_as_trace_file:
+                # convert timestamps to milliseconds (default time units) before saving
+                session_df_for_saving = self.trace_df_with_sessions.copy()
+                session_df_for_saving["timestamp"] = (
+                    session_df_for_saving["timestamp"] * 1000
+                )
+                save_suffix = (
+                    f"_remapped_{self._remap_seed_for_save}"
+                    if self._remap_seed_for_save is not None
+                    else ""
+                )
+                self.session_generator.save_requests_as_trace(
+                    session_df_for_saving,
+                    save_suffix=save_suffix,
+                )
 
         self.request_idx = 0
         self._wrap_warning_logged = False
@@ -209,6 +240,15 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         prompt = ""
         remaining_prompt_tokens = request_to_send["input_length"]
+        use_server_min_tokens = self.client_config.min_tokens_param is not None
+        instruction = ""
+        if not use_server_min_tokens:
+            instruction = f"Generate at least {int(request_to_send['output_length'])} tokens repeating the following text:\n"
+            instruction_token_count = len(self.tokenizer.encode(instruction))
+            remaining_prompt_tokens = max(
+                0, remaining_prompt_tokens - instruction_token_count
+            )
+
         if self.config.use_trace_prefix_hash_ids:
             for hash_id in request_to_send["hash_ids"]:
                 if hash_id not in self.past_prompts:
@@ -220,21 +260,23 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 prompt += self.past_prompts[hash_id]
         else:
             # generate input random text
-            prompt_length_tokens = int(request_to_send["input_length"])
             prompt, _ = generate_random_prompt(
                 tokenizer=self.tokenizer,
-                num_prompt_tokens=prompt_length_tokens,
+                num_prompt_tokens=remaining_prompt_tokens,
                 corpus_lines=self.corpus_lines,
             )
 
-        instruction = f"Generate at least {int(request_to_send['output_length'])} tokens repeating the following text:\n"
-        prompt = instruction + prompt
-
+        prompt = (instruction + prompt) if instruction else prompt
         final_token_count = len(self.encode(prompt))
 
-        default_sampling_params = {
+        default_sampling_params: Dict[str, Any] = {
             "max_tokens": int(request_to_send["output_length"]),
         }
+        if use_server_min_tokens:
+            min_token_value = int(request_to_send["output_length"])
+            min_tokens_param_name = cast(str, self.client_config.min_tokens_param)
+            default_sampling_params[min_tokens_param_name] = min_token_value
+        # else prompt already includes instruction
         default_sampling_params.update(
             self.client_config.additional_sampling_params_dict
         )
