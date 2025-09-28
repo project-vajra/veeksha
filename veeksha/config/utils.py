@@ -562,9 +562,7 @@ def prepare_benchmark_output_dir(benchmark_config) -> None:
 
     # also write the yml file for rapid reproducibility
     with open(
-        os.path.join(
-            benchmark_config.metrics_config.output_dir, "benchmark_config.yml"
-        ),
+        os.path.join(benchmark_config.metrics_config.output_dir, "config.yml"),
         "w",
         encoding="utf-8",
     ) as f:
