@@ -9,9 +9,14 @@ from dataclasses import fields, is_dataclass
 from importlib.abc import Traversable
 from typing import Any, Dict, List, Union, get_args, get_origin
 
+import yaml
+
 primitive_types = {int, str, float, bool, type(None)}
 
 logger = logging.getLogger(__name__)
+
+
+_INTERNAL_CONFIG_KEYS = {"_in_post_init", "__flat_config__"}
 
 
 def _get_hash(key):
@@ -117,13 +122,13 @@ def dataclass_to_dict(obj):
             data[field.name] = dataclass_to_dict(value)
 
         for key, value in obj.__dict__.items():
-            if key not in data:
+            if key not in data and key not in _INTERNAL_CONFIG_KEYS:
                 data[key] = dataclass_to_dict(value)
 
         if hasattr(obj, "get_type") and callable(getattr(obj, "get_type", None)):
-            data["name"] = str(obj.get_type())  # type: ignore[attr-defined]
+            data["type"] = str(obj.get_type())  # type: ignore[attr-defined]
         elif hasattr(obj, "get_name") and callable(getattr(obj, "get_name", None)):
-            data["name"] = obj.get_name()  # type: ignore[attr-defined]
+            data["type"] = obj.get_name()  # type: ignore[attr-defined]
         return data
 
     # all other primitives
@@ -528,7 +533,7 @@ def prepare_benchmark_output_dir(benchmark_config) -> None:
     """Create a unique output subdirectory and persist config.
     - Always create a unique subdirectory under `metrics_config.output_dir`,
       named with model and config-hash plus a high-entropy timestamp.
-    - Save `config.json` in the final output directory.
+    - Save both `config.json` and `benchmark_config.yml` in the final output directory.
     """
     from veeksha.config.utils import (  # local to avoid cycles
         dataclass_to_dict,
@@ -553,4 +558,20 @@ def prepare_benchmark_output_dir(benchmark_config) -> None:
         "w",
         encoding="utf-8",
     ) as f:
-        json.dump(dataclass_to_dict(benchmark_config), f, indent=4)
+        json.dump(config_as_dict, f, indent=4)
+
+    # also write the yml file for rapid reproducibility
+    with open(
+        os.path.join(
+            benchmark_config.metrics_config.output_dir, "benchmark_config.yml"
+        ),
+        "w",
+        encoding="utf-8",
+    ) as f:
+        yaml.safe_dump(
+            config_as_dict,
+            f,
+            sort_keys=False,
+            default_flow_style=False,
+            allow_unicode=True,
+        )
