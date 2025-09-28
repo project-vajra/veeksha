@@ -533,7 +533,7 @@ def prepare_benchmark_output_dir(benchmark_config) -> None:
     """Create a unique output subdirectory and persist config.
     - Always create a unique subdirectory under `metrics_config.output_dir`,
       named with model and config-hash plus a high-entropy timestamp.
-    - Save both `config.json` and `benchmark_config.yml` in the final output directory.
+    - Save both `config.json` and `config.yml` in the final output directory.
     """
     from veeksha.config.utils import (  # local to avoid cycles
         dataclass_to_dict,
