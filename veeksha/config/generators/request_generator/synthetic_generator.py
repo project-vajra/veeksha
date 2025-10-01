@@ -27,16 +27,6 @@ class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
     interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
         default_factory=PoissonRequestIntervalGeneratorConfig
     )
-    save_to_trace: bool = field(
-        default=False,
-        metadata={
-            "help": "If True, save generated requests to a trace file for future use."
-        },
-    )
-    trace_file_path: str = field(
-        default="synthetic_requests_trace.jsonl",
-        metadata={"help": "Path to save the trace file when save_to_trace is True."},
-    )
 
     @classmethod
     def get_type(cls):

@@ -1,6 +1,3 @@
-import json
-import os
-import time
 from typing import Any, Dict, List, Optional, Union, cast
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
@@ -54,17 +51,8 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             rng=self.interval_rng_factory(),
         )
         self.corpus_lines = corpus_lines
-        self.rng = self.prompt_rng
 
         self.request_id = 0
-        self.start_time = time.time()
-        self.theoretical_timestamp_ms = 0  # Track theoretical time in milliseconds
-        self.trace_file = None
-
-        if self.config.save_to_trace:
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(self.config.trace_file_path), exist_ok=True)
-            self.trace_file = open(self.config.trace_file_path, "w")
 
     def get_request(self) -> RequestConfig:
         (
@@ -98,7 +86,7 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             tokenizer=self.tokenizer,
             num_prompt_tokens=body_token_count,
             corpus_lines=self.corpus_lines,
-            rng=self.rng,
+            rng=self.prompt_rng,
         )
 
         prompt = (instruction + prompt_body) if instruction else prompt_body
@@ -125,23 +113,6 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             id=self.request_id,
         )
 
-        # Save to trace file if enabled
-        if self.trace_file is not None:
-            trace_entry = {
-                "timestamp": self.theoretical_timestamp_ms,
-                "input_length": prompt_token_count,
-                "output_length": num_output_tokens,
-                "request_id": self.request_id,
-            }
-            self.trace_file.write(json.dumps(trace_entry) + "\n")
-
-        # Update theoretical timestamp for next request
-        self.theoretical_timestamp_ms += int(dispatch_delay * 1000)
-
         self.request_id += 1
 
         return request_config
-
-    def __del__(self):
-        if self.trace_file is not None:
-            self.trace_file.close()

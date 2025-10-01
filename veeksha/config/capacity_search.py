@@ -7,7 +7,6 @@ from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.slo import BaseSloConfig
-from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
