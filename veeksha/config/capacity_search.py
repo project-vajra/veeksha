@@ -18,10 +18,6 @@ class CapacitySearchConfig:
     """Configuration for capacity search benchmark. This is a special benchmark that runs multiple benchmarks with different QPS and
     finds the maximum QPS that can be sustained given the deadline constraints."""
 
-    seed: int = field(
-        default=DEFAULT_SEED,
-        metadata={"help": "Seed for the random number generator for capacity search."},
-    )
     start_qps: float = field(
         default=1,
         metadata={"help": "The starting QPS for the capacity search."},
