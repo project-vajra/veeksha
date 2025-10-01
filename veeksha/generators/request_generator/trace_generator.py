@@ -1,5 +1,4 @@
 import ast
-import random
 from typing import Any, Dict, List, Optional, Union, cast
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
@@ -45,8 +44,8 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self._remap_seed_for_save: Optional[int] = None
         sm = self.seed_manager
         self.prompt_rng = sm.random("prompt")
-        self.interval_rng_factory = sm.random_factory("interval")
-        self.session_rng_factory = sm.random_factory("session")
+        self.interval_rng_factory = sm.numpy_factory("interval")
+        self.session_rng_factory = sm.numpy_factory("session")
         self.rng = self.prompt_rng
 
         raw_trace_df = load_trace(self.config.trace_file)
@@ -138,11 +137,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 session_df_for_saving["timestamp"] = (
                     session_df_for_saving["timestamp"] * 1000
                 )
-                save_suffix = (
-                    f"_remapped"
-                    if self.config.remap_hash_ids
-                    else ""
-                )
+                save_suffix = f"_remapped" if self.config.remap_hash_ids else ""
                 session_generator.save_requests_as_trace(
                     session_df_for_saving,
                     save_suffix=save_suffix,

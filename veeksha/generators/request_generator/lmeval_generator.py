@@ -26,6 +26,7 @@ from veeksha.lm_eval.tasks import Task, TaskManager, get_task_dict
 from veeksha.logger import init_logger
 from veeksha.types import LMEvalOutputType
 from veeksha.utils.seeding import SeedManager
+
 logger = init_logger(__name__)
 
 
@@ -87,7 +88,7 @@ class LMEvalRequestGenerator:
         self.client_config = client_config
 
         self.seed_manager = seed_manager
-        self.interval_rng_factory = self.seed_manager.random_factory("interval")
+        self.interval_rng_factory = self.seed_manager.numpy_factory("interval")
         self.fewshot_rng = self.seed_manager.random("fewshot")
 
         self.requests_interval_generator = RequestIntervalGeneratorRegistry.get(

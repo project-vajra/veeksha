@@ -44,13 +44,13 @@ def test_seed_derivation_differs_with_root():
 
 def test_seed_manager_produces_stable_factories():
     manager = SeedManager(999)
-    factory = manager.random_factory("interval")
+    factory = manager.numpy_factory("interval")
 
     seq_first = [factory().random() for _ in range(3)]
     seq_second = [factory().random() for _ in range(3)]
 
     manager_again = SeedManager(999)
-    factory_again = manager_again.random_factory("interval")
+    factory_again = manager_again.numpy_factory("interval")
     seq_first_again = [factory_again().random() for _ in range(3)]
 
     assert seq_first == seq_first_again
@@ -62,12 +62,12 @@ def test_interval_generator_uses_seed_manager():
     manager = SeedManager(555)
 
     generator = RequestIntervalGeneratorRegistry.get(
-        config.get_type(), config=config, rng=manager.random_factory("interval")()
+        config.get_type(), config=config, rng=manager.numpy_factory("interval")()
     )
     values = [generator.get_next_inter_request_time() for _ in range(3)]
 
     generator2 = RequestIntervalGeneratorRegistry.get(
-        config.get_type(), config=config, rng=SeedManager(555).random_factory("interval")()
+        config.get_type(), config=config, rng=SeedManager(555).numpy_factory("interval")()
     )
     values2 = [generator2.get_next_inter_request_time() for _ in range(3)]
 
@@ -107,8 +107,8 @@ def test_synthetic_generator_reproducibility():
 
     generator = SyntheticRequestGenerator(
         config=config,
-        tokenizer=tokenizer,
-        client_config=ClientConfig(tokenizer="dummy-tokenizer"),
+        tokenizer=tokenizer,  # type: ignore[arg-type]
+        client_config=ClientConfig(),
         seed_manager=manager,
         corpus_lines=["hello world"],
     )
@@ -117,8 +117,8 @@ def test_synthetic_generator_reproducibility():
 
     generator2 = SyntheticRequestGenerator(
         config=config,
-        tokenizer=tokenizer,
-        client_config=ClientConfig(tokenizer="dummy-tokenizer"),
+        tokenizer=tokenizer,  # type: ignore[arg-type]
+        client_config=ClientConfig(),
         seed_manager=SeedManager(1234),
         corpus_lines=["hello world"],
     )

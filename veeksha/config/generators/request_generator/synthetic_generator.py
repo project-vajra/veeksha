@@ -29,7 +29,9 @@ class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
     )
     save_to_trace: bool = field(
         default=False,
-        metadata={"help": "If True, save generated requests to a trace file for future use."},
+        metadata={
+            "help": "If True, save generated requests to a trace file for future use."
+        },
     )
     trace_file_path: str = field(
         default="synthetic_requests_trace.jsonl",

@@ -23,10 +23,12 @@ def derive_seed(root_seed: int, *path: str) -> int:
 
 
 def random_from_seed(seed: int) -> random.Random:
+    # when something requires a random.Random, we use this function
     return random.Random(seed)
 
 
 def numpy_random_from_seed(seed: int) -> np.random.RandomState:
+    # when something requires a np.random.RandomState, we use this function
     return np.random.RandomState(seed)
 
 
@@ -42,10 +44,6 @@ def _make_factory(
         return initializer(seed)
 
     return factory
-
-
-def random_factory(root_seed: int, *path: str) -> Callable[[], random.Random]:
-    return _make_factory(root_seed, random_from_seed, path)
 
 
 def numpy_factory(root_seed: int, *path: str) -> Callable[[], np.random.RandomState]:

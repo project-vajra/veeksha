@@ -39,7 +39,7 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
 
         self.client_config = client_config
         sm = self.seed_manager
-        self.interval_rng_factory = sm.random_factory("interval")
+        self.interval_rng_factory = sm.numpy_factory("interval")
         self.length_rng_factory = sm.numpy_factory("length")
         self.prompt_rng = sm.random("prompt")
 
@@ -133,7 +133,7 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
                 "output_length": num_output_tokens,
                 "request_id": self.request_id,
             }
-            self.trace_file.write(json.dumps(trace_entry) + '\n')
+            self.trace_file.write(json.dumps(trace_entry) + "\n")
 
         # Update theoretical timestamp for next request
         self.theoretical_timestamp_ms += int(dispatch_delay * 1000)
