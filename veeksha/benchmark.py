@@ -22,6 +22,9 @@ from veeksha.config.utils import prepare_benchmark_output_dir
 from veeksha.core.hf_utils import get_tokenizer
 from veeksha.core.requests_launcher import RequestsLauncher
 from veeksha.core.response import Response
+from veeksha.core.seeding import (
+    SeedManager,
+)
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.generators.request_generator.generator_registry import (
     RequestGeneratorRegistry,
@@ -358,11 +361,14 @@ def run_benchmark(
             "corpus_lines": load_corpus(),
         }
 
+    seed_manager = SeedManager(benchmark_config.seed)
+
     request_generator = RequestGeneratorRegistry.get(
         benchmark_config.request_generator_config.get_type(),
         config=benchmark_config.request_generator_config,
         tokenizer=tokenizer,
         client_config=benchmark_config.client_config,
+        seed_manager=seed_manager,
         **request_generator_params,
     )
 

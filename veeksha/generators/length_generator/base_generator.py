@@ -7,8 +7,9 @@ from veeksha.config.generators.length_generator.base_generator import (
 
 
 class BaseRequestLengthGenerator(ABC):
-    def __init__(self, config: BaseRequestLengthGeneratorConfig):
+    def __init__(self, config: BaseRequestLengthGeneratorConfig, rng=None):
         self.config = config
+        self.rng = rng
 
     @abstractmethod
     def get_next_num_tokens(self) -> Tuple[float, float]:

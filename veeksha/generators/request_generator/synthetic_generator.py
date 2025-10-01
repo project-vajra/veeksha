@@ -7,6 +7,7 @@ from veeksha.config.generators.request_generator.synthetic_generator import (
     SyntheticRequestGeneratorConfig,
 )
 from veeksha.core.request_config import RequestConfig
+from veeksha.core.seeding import SeedManager
 from veeksha.generators.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
 )
@@ -26,19 +27,28 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         config: SyntheticRequestGeneratorConfig,
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         client_config: ClientConfig,
+        seed_manager: SeedManager,
         corpus_lines: Optional[List[str]] = None,
     ):
         self.config = config
         self.tokenizer = tokenizer
+        self.seed_manager = seed_manager
 
         self.client_config = client_config
+        sm = self.seed_manager
+        self.interval_rng_factory = sm.numpy_factory("interval")
+        self.length_rng_factory = sm.numpy_factory("length")
+        self.prompt_rng = sm.random("prompt")
+
         self.request_length_generator = RequestLengthGeneratorRegistry.get(
             self.config.length_generator_config.get_type(),
             self.config.length_generator_config,
+            rng=self.length_rng_factory(),
         )
         self.requests_interval_generator = RequestIntervalGeneratorRegistry.get(
             self.config.interval_generator_config.get_type(),
             self.config.interval_generator_config,
+            rng=self.interval_rng_factory(),
         )
         self.corpus_lines = corpus_lines
 
@@ -76,6 +86,7 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             tokenizer=self.tokenizer,
             num_prompt_tokens=body_token_count,
             corpus_lines=self.corpus_lines,
+            rng=self.prompt_rng,
         )
 
         prompt = (instruction + prompt_body) if instruction else prompt_body

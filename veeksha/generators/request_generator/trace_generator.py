@@ -1,5 +1,4 @@
 import ast
-import random
 from typing import Any, Dict, List, Optional, Union, cast
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
@@ -9,6 +8,7 @@ from veeksha.config.generators.request_generator.trace_generator import (
     TraceRequestGeneratorConfig,
 )
 from veeksha.core.request_config import RequestConfig
+from veeksha.core.seeding import SeedManager
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.generators.utils import (
     generate_random_prompt,
@@ -27,6 +27,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         config: TraceRequestGeneratorConfig,
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         client_config: ClientConfig,
+        seed_manager: SeedManager,
         corpus_lines: Optional[List[str]] = None,
     ):
         from veeksha.generators.session_generator import (
@@ -35,11 +36,17 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         self.config = config
         self.tokenizer = tokenizer
+        self.seed_manager = seed_manager
         self.request_id = 0
         self.client_config = client_config
         self.past_prompts: Dict[int, str] = {}
         self.corpus_lines = corpus_lines
         self._remap_seed_for_save: Optional[int] = None
+        sm = self.seed_manager
+        self.prompt_rng = sm.random("prompt")
+        self.interval_rng_factory = sm.numpy_factory("interval")
+        self.session_rng_factory = sm.numpy_factory("session")
+        self.rng = self.prompt_rng
 
         raw_trace_df = load_trace(self.config.trace_file)
 
@@ -86,17 +93,15 @@ class TraceRequestGenerator(BaseRequestGenerator):
                         unique_ids.update(ids)
                     # unbias permutation
                     unique_list = sorted(unique_ids)
-                    chosen_seed = random.SystemRandom().randrange(2**32)
-                    rng = random.Random(chosen_seed)
                     permuted = unique_list.copy()
+                    rng = self.session_rng_factory()
                     rng.shuffle(permuted)
                     id_map: Dict[int, int] = {
                         src: dst for src, dst in zip(unique_list, permuted)
                     }
                     logger.info(
-                        f"Applying hash-id remapping with seed {chosen_seed} to {len(unique_list)} unique ids"
+                        f"Applying hash-id remapping with session RNG to {len(unique_list)} unique ids"
                     )
-                    self._remap_seed_for_save = chosen_seed
                     self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
                         lambda lst: [id_map[x] for x in lst]
                     )
@@ -110,12 +115,13 @@ class TraceRequestGenerator(BaseRequestGenerator):
             if "session_id" not in self.trace_df.columns:
                 raise ValueError("Trace file does not contain session_id of requests")
         elif self.config.session_generator_config is not None:
-            self.session_generator = SessionGenerator(
-                self.config.session_generator_config
+            session_generator = SessionGenerator(
+                self.config.session_generator_config,
+                seed_manager=self.seed_manager.child("session"),
             )
 
             self.trace_df_with_sessions = self.trace_df.pipe(
-                self.session_generator.generate_sessions,
+                session_generator.generate_sessions,
             ).pipe(
                 # get next request intervals again because session sampling shuffles sessions
                 process_request_interval_trace,
@@ -131,12 +137,8 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 session_df_for_saving["timestamp"] = (
                     session_df_for_saving["timestamp"] * 1000
                 )
-                save_suffix = (
-                    f"_remapped_{self._remap_seed_for_save}"
-                    if self._remap_seed_for_save is not None
-                    else ""
-                )
-                self.session_generator.save_requests_as_trace(
+                save_suffix = f"_remapped" if self.config.remap_hash_ids else ""
+                session_generator.save_requests_as_trace(
                     session_df_for_saving,
                     save_suffix=save_suffix,
                 )
@@ -264,6 +266,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 tokenizer=self.tokenizer,
                 num_prompt_tokens=remaining_prompt_tokens,
                 corpus_lines=self.corpus_lines,
+                rng=self.rng,
             )
 
         prompt = (instruction + prompt) if instruction else prompt

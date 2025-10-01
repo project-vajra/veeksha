@@ -16,7 +16,11 @@ class TraceRequestIntervalGenerator(BaseRequestIntervalGenerator):
     inter-request times, number of tokens.
     """
 
-    def __init__(self, config: TraceRequestIntervalGeneratorConfig):
+    def __init__(
+        self,
+        config: TraceRequestIntervalGeneratorConfig,
+        rng=None,
+    ):
         self.config = config
 
         raw_trace_df = load_trace(self.config.trace_file)

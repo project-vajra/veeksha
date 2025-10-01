@@ -7,6 +7,7 @@ from veeksha.config.generators.request_generator.base_generator import (
 )
 from veeksha.core.request_config import RequestConfig
 from veeksha.core.response import Response
+from veeksha.core.seeding import SeedManager
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
@@ -17,9 +18,11 @@ class BaseRequestGenerator:
         self,
         config: BaseRequestGeneratorConfig,
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+        seed_manager: Optional[SeedManager] = None,
     ):
         self.config = config
         self.tokenizer = tokenizer
+        self.seed_manager = seed_manager or SeedManager(0)
 
     def encode(self, text: str) -> List[int]:
         return self.tokenizer.encode(text, add_special_tokens=False)

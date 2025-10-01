@@ -7,7 +7,6 @@ from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.slo import BaseSloConfig
-from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
@@ -18,10 +17,6 @@ class CapacitySearchConfig:
     """Configuration for capacity search benchmark. This is a special benchmark that runs multiple benchmarks with different QPS and
     finds the maximum QPS that can be sustained given the deadline constraints."""
 
-    seed: int = field(
-        default=DEFAULT_SEED,
-        metadata={"help": "Seed for the random number generator for capacity search."},
-    )
     start_qps: float = field(
         default=1,
         metadata={"help": "The starting QPS for the capacity search."},

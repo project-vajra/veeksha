@@ -9,6 +9,7 @@ from veeksha.config.generators.request_generator.lmeval_generator import (
 )
 from veeksha.core.request_config import RequestConfig
 from veeksha.core.response import Response
+from veeksha.core.seeding import SeedManager
 from veeksha.generators.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
 )
@@ -79,15 +80,21 @@ class LMEvalRequestGenerator:
         config: LmevalRequestGeneratorConfig,
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         client_config: ClientConfig,
+        seed_manager: SeedManager,
     ):
         self.config = config
         self.limit = self.config.limit
         self.tokenizer = tokenizer
         self.client_config = client_config
 
+        self.seed_manager = seed_manager
+        self.interval_rng_factory = self.seed_manager.numpy_factory("interval")
+        self.fewshot_rng = self.seed_manager.random("fewshot")
+
         self.requests_interval_generator = RequestIntervalGeneratorRegistry.get(
             self.config.interval_generator_config.get_type(),
             self.config.interval_generator_config,
+            rng=self.interval_rng_factory(),
         )
 
         self.task_manager = TaskManager()
@@ -104,6 +111,8 @@ class LMEvalRequestGenerator:
         self.bootstrap_iters = 100000
 
         self.task_dict = self._adjust_config(self.task_dict)
+
+        # fewshot_rng already initialized via seed manager
 
         # now generate requests
         self.requests: Dict[str, List[Instance]] = defaultdict(list)
@@ -159,7 +168,7 @@ class LMEvalRequestGenerator:
                     ) is None:
                         task_obj.set_config(key="num_fewshot", value=0)
                 # fewshot_random_seed set for tasks, even with a default num_fewshot (e.g. in the YAML file)
-                task_obj.set_fewshot_seed(seed=self.config.seed)
+                task_obj.set_fewshot_seed(seed=self.fewshot_rng.randint(0, 2**32 - 1))
 
                 adjusted_task_dict[task_name] = task_obj
 
