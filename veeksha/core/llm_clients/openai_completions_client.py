@@ -34,17 +34,17 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
 
     def __init__(self, model_name: str, tokenizer_name: str) -> None:
         super().__init__(model_name, tokenizer_name)
-        self.address = os.environ.get("INFERENCE_API_BASE")
+        self.address = os.environ.get("OPENAI_API_BASE")
         if not self.address:
             self.address = "http://localhost:8000/v1"
             logger.warning(
-                "Warning: INFERENCE_API_BASE environment variable not set. Defaulting to localhost."
+                "Warning: OPENAI_API_BASE environment variable not set. Defaulting to localhost."
             )
-        self.key = os.environ.get("INFERENCE_API_KEY")
+        self.key = os.environ.get("OPENAI_API_KEY")
         if not self.key:
             self.key = ""
             logger.warning(
-                "Warning: INFERENCE_API_KEY environment variable not set. Defaulting to empty string."
+                "Warning: OPENAI_API_KEY environment variable not set. Defaulting to empty string."
             )
         self.start_time = time.monotonic()
 

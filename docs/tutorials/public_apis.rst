@@ -10,8 +10,8 @@ Export API Key and URL
 ~~~~~~~~~~~~~~~~~~~~~~
 .. code-block:: shell
 
-    export INFERENCE_API_BASE=https://api.endpoints.anyscale.com/v1
-    export INFERENCE_API_KEY=secret_abcdefg
+    export OPENAI_API_BASE=https://api.endpoints.anyscale.com/v1
+    export OPENAI_API_KEY=secret_abcdefg
 
 Running Benchmark
 ~~~~~~~~~~~~~~~~~
