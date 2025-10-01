@@ -35,8 +35,8 @@ To opt out of wandb, do any of the following:
 ### Running with Public APIs
 #### Export API Key and URL
 ```bash
-export INFERENCE_API_KEY=secret_abcdefg
-export INFERENCE_API_BASE=https://api.endpoints.anyscale.com/v1
+export OPENAI_API_KEY=secret_abcdefg
+export OPENAI_API_BASE=https://api.endpoints.anyscale.com/v1
 ```
 #### Running Benchmark
 ```bash
@@ -79,8 +79,8 @@ If we need higher context length than supported by the model with certain scale 
 
 #### Export API Key and URL
 ```bash
-export INFERENCE_API_KEY=token-abc123
-export INFERENCE_API_BASE=http://localhost:8000/v1
+export OPENAI_API_KEY=token-abc123
+export OPENAI_API_BASE=http://localhost:8000/v1
 ```
 
 And then we can run the benchmark as shown [here](#running-benchmark). Be sure to update `--model` flag to same model used to launch vLLM.
