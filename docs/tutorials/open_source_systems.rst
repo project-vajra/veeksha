@@ -23,8 +23,8 @@ Export API Key and URL
 
 .. code-block:: shell
 
-    export INFERENCE_API_BASE=http://localhost:8000/v1
-    export INFERENCE_API_KEY=token-abc123
+    export OPENAI_API_BASE=http://localhost:8000/v1
+    export OPENAI_API_KEY=token-abc123
 
 Running Benchmark
 ~~~~~~~~~~~~~~~~~
