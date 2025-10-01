@@ -13,8 +13,9 @@ logger = init_logger(__name__)
 
 
 class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
-    def __init__(self, config: TraceRequestLengthGeneratorConfig):
+    def __init__(self, config: TraceRequestLengthGeneratorConfig, rng=None):
         self.config = config
+        self.rng = rng
 
         raw_trace_df = load_trace(self.config.trace_file)
 

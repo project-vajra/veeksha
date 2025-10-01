@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 
@@ -13,7 +13,13 @@ from veeksha.generators.length_generator.base_generator import (
 
 class ZipfGenerator:
     def __init__(
-        self, min: int, max: int, theta: float, scramble: bool, seed: int
+        self,
+        min: int,
+        max: int,
+        theta: float,
+        scramble: bool,
+        rng: np.random.RandomState,
+        scramble_seed: Optional[int],
     ) -> None:
         self.min = min
         self.max = max
@@ -26,14 +32,14 @@ class ZipfGenerator:
             1 - self.zeta_2 / (self.zetan + ZIPF_REQUEST_GENERATOR_EPS)
         )
         self.scramble = scramble
-        self.seed = seed
-        self.generator = np.random.RandomState(seed)
+        self.rng = rng
+        self.scramble_seed = scramble_seed
 
     def _zeta(self, count: float, theta: float) -> float:
         return np.sum(1 / (np.power(np.arange(1, count), theta)))
 
     def _next(self) -> int:
-        u = self.generator.random_sample()
+        u = self.rng.random_sample()
         uz = u * self.zetan
 
         if uz < 1.0:
@@ -48,22 +54,32 @@ class ZipfGenerator:
 
     def next(self) -> int:
         retval = self._next()
-        if self.scramble:
-            retval = self.min + hash(str(retval) + str(self.seed)) % self.items
+        if self.scramble and self.scramble_seed is not None:
+            retval = self.min + hash((retval, self.scramble_seed)) % self.items
 
         return retval
 
 
 class ZipfRequestLengthGenerator(BaseRequestLengthGenerator):
-    def __init__(self, config: ZipfRequestLengthGeneratorConfig):
+    def __init__(
+        self,
+        config: ZipfRequestLengthGeneratorConfig,
+        rng: np.random.RandomState,
+    ):
         self.config = config
+        self.rng = rng
+
+        scramble_seed: Optional[int] = None
+        if self.config.scramble:
+            scramble_seed = int(rng.randint(0, 2**32 - 1))
 
         self._zipf_generator = ZipfGenerator(
             self.config.min_tokens,
             self.config.max_tokens,
             self.config.theta,
             self.config.scramble,
-            self.config.seed,
+            rng,
+            scramble_seed,
         )
 
     def get_next_num_tokens(self) -> Tuple[float, float]:

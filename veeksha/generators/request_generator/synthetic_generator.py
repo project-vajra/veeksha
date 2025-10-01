@@ -1,3 +1,6 @@
+import json
+import os
+import time
 from typing import Any, Dict, List, Optional, Union, cast
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
@@ -16,6 +19,7 @@ from veeksha.generators.length_generator.generator_registry import (
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.generators.utils import generate_random_prompt
 from veeksha.logger import init_logger
+from veeksha.utils.seeding import SeedManager
 
 logger = init_logger(__name__)
 
@@ -26,23 +30,41 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         config: SyntheticRequestGeneratorConfig,
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         client_config: ClientConfig,
+        seed_manager: SeedManager,
         corpus_lines: Optional[List[str]] = None,
     ):
         self.config = config
         self.tokenizer = tokenizer
+        self.seed_manager = seed_manager
 
         self.client_config = client_config
+        sm = self.seed_manager
+        self.interval_rng_factory = sm.random_factory("interval")
+        self.length_rng_factory = sm.numpy_factory("length")
+        self.prompt_rng = sm.random("prompt")
+
         self.request_length_generator = RequestLengthGeneratorRegistry.get(
             self.config.length_generator_config.get_type(),
             self.config.length_generator_config,
+            rng=self.length_rng_factory(),
         )
         self.requests_interval_generator = RequestIntervalGeneratorRegistry.get(
             self.config.interval_generator_config.get_type(),
             self.config.interval_generator_config,
+            rng=self.interval_rng_factory(),
         )
         self.corpus_lines = corpus_lines
+        self.rng = self.prompt_rng
 
         self.request_id = 0
+        self.start_time = time.time()
+        self.theoretical_timestamp_ms = 0  # Track theoretical time in milliseconds
+        self.trace_file = None
+
+        if self.config.save_to_trace:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(self.config.trace_file_path), exist_ok=True)
+            self.trace_file = open(self.config.trace_file_path, "w")
 
     def get_request(self) -> RequestConfig:
         (
@@ -76,6 +98,7 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             tokenizer=self.tokenizer,
             num_prompt_tokens=body_token_count,
             corpus_lines=self.corpus_lines,
+            rng=self.rng,
         )
 
         prompt = (instruction + prompt_body) if instruction else prompt_body
@@ -102,6 +125,23 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             id=self.request_id,
         )
 
+        # Save to trace file if enabled
+        if self.trace_file is not None:
+            trace_entry = {
+                "timestamp": self.theoretical_timestamp_ms,
+                "input_length": prompt_token_count,
+                "output_length": num_output_tokens,
+                "request_id": self.request_id,
+            }
+            self.trace_file.write(json.dumps(trace_entry) + '\n')
+
+        # Update theoretical timestamp for next request
+        self.theoretical_timestamp_ms += int(dispatch_delay * 1000)
+
         self.request_id += 1
 
         return request_config
+
+    def __del__(self):
+        if self.trace_file is not None:
+            self.trace_file.close()

@@ -10,11 +10,12 @@ from veeksha.generators.length_generator.base_generator import (
 
 
 class UniformRequestLengthGenerator(BaseRequestLengthGenerator):
-    def __init__(self, config: UniformRequestLengthGeneratorConfig):
+    def __init__(self, config: UniformRequestLengthGeneratorConfig, rng: random.Random):
         self.config = config
+        self.rng = rng
 
     def get_next_num_tokens(self) -> Tuple[float, float]:
-        total_tokens = random.uniform(
+        total_tokens = self.rng.uniform(
             self.config.min_tokens,
             self.config.max_tokens,
         )

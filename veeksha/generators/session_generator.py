@@ -1,6 +1,5 @@
 import copy
 import os
-import random
 from typing import Dict, List
 
 import numpy as np
@@ -57,11 +56,15 @@ class SessionGenerator:
     def __init__(
         self,
         config: SessionGeneratorConfig,
+        seed_manager,
     ):
         self.config = config
+        self.seed_manager = seed_manager
+        self.rng_factory = seed_manager.random_factory("sessions")
         self.session_interval_generator = RequestIntervalGeneratorRegistry.get(
             self.config.session_interval_generator_config.get_type(),
             self.config.session_interval_generator_config,
+            rng=self.rng_factory(),
         )
 
     @staticmethod
@@ -82,7 +85,7 @@ class SessionGenerator:
 
         return running_hashes
 
-    def rejection_sample(self, remaining_sessions, current_timestamp, seed=None):
+    def rejection_sample(self, remaining_sessions, current_timestamp, rng=None):
         """Rejection sample a session.
 
         Args:
@@ -91,7 +94,7 @@ class SessionGenerator:
         """
         assert remaining_sessions, "No sessions remaining to sample from"
 
-        rng = random.Random(seed)
+        rng = rng or self.rng_factory()
 
         next_interval = self.session_interval_generator.get_next_inter_request_time()
 
@@ -162,9 +165,6 @@ class SessionGenerator:
                 ),
             ):
                 params.append(f"qps-{interval_config.qps}")
-
-            if hasattr(interval_config, "seed"):
-                params.append(f"seed-{interval_config.seed}")
 
             suffix = save_suffix if save_suffix else ""
             return f"{base_name}_{'_'.join(params)}{suffix}.jsonl"
@@ -275,20 +275,11 @@ class SessionGenerator:
         timestamp = 0  # Start at time 0 (in seconds)
         sampled_sessions = []
 
-        # Create a deterministic seed sequence for all sampling operations
-        if self.config.seed is not None:
-            # Create a seed sequence to generate multiple seeds
-            seed_seq = random.Random(self.config.seed).randrange(2**32)
-            seed_generator = random.Random(seed_seq)
-        else:
-            seed_generator = None
-
         session_id = 0
+        current_rng = self.rng_factory()
         while remaining_sessions:
-            # Generate a new seed for each rejection_sample call
-            current_seed = seed_generator.randrange(2**32) if seed_generator else None
             session, timestamp = self.rejection_sample(
-                remaining_sessions, timestamp, current_seed
+                remaining_sessions, timestamp, current_rng
             )
             # Make a deep copy of the session to avoid modifying the original data
             session_copy = copy.deepcopy(session)

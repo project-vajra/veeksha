@@ -29,6 +29,9 @@ from veeksha.generators.request_generator.generator_registry import (
 from veeksha.logger import init_logger
 from veeksha.metrics.service_metrics import ServiceMetrics
 from veeksha.types import RequestGeneratorType
+from veeksha.utils.seeding import (
+    SeedManager,
+)
 
 logger = init_logger(__name__)
 
@@ -358,11 +361,14 @@ def run_benchmark(
             "corpus_lines": load_corpus(),
         }
 
+    seed_manager = SeedManager(benchmark_config.seed)
+
     request_generator = RequestGeneratorRegistry.get(
         benchmark_config.request_generator_config.get_type(),
         config=benchmark_config.request_generator_config,
         tokenizer=tokenizer,
         client_config=benchmark_config.client_config,
+        seed_manager=seed_manager,
         **request_generator_params,
     )
 

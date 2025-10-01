@@ -12,7 +12,7 @@ client_config:
 request_generator_config:
   type: synthetic
   interval_generator_config:
-    type: poisson
+    type: gamma
   length_generator_config:
     type: uniform
 
