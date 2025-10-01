@@ -181,15 +181,9 @@ def get_formatted_test_name(report: TestReport) -> str:
     category = test_category_style(report.nodeid)
 
     if params:
-        if category:
-            return f"[{category}]{report.nodeid.split('[')[0]}[/{category}] [bold]({params})[/bold]"
-        else:
-            return f"{report.nodeid.split('[')[0]} [bold]({params})[/bold]"
+        return f"[{category}]{report.nodeid.split('[')[0]}[/{category}] [bold]({params})[/bold]"
     else:
-        if category:
-            return f"[{category}]{report.nodeid}[/{category}]"
-        else:
-            return report.nodeid
+        return f"[{category}]{report.nodeid}[/{category}]"
 
 
 def update_progress(outcome: str) -> None:
