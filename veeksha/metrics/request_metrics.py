@@ -18,6 +18,7 @@ class RequestMetrics:
     error_code: Optional[int] = None
     # Request id for correlation when Response is None
     request_id: Optional[int] = None
+    benchmark_id: str = "default"
 
     @cached_property
     def num_total_tokens(self):

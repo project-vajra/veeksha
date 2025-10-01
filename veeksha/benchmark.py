@@ -146,6 +146,7 @@ def dispatch_requests(
     request_generator: BaseRequestGenerator,
     stop_event: threading.Event,
     scheduler: DispatchScheduler,
+    benchmark_id: str = "default",
 ) -> None:
     """Thread function to generate and dispatch requests."""
     num_errored_requests_handled = 0
@@ -189,6 +190,8 @@ def dispatch_requests(
                     scheduler.add_request(request_config)
                     scheduled_backlog += 1
                 next_prefetch_time = now + PREFETCH_INTERVAL_S
+                
+        request_config.benchmark_id = benchmark_id
 
         # Attempt to pop a ready request
         ready = scheduler.pop_ready()
@@ -196,7 +199,8 @@ def dispatch_requests(
             emit_dashboard_event(RequestStartedEvent(
                 request_id = request_config.id,
                 timestamp = time.time(),
-                input_tokens = request_config.prompt[1]
+                input_tokens = request_config.prompt[1],
+                benchmark_id = benchmark_id
             ))
 
             service_metrics.register_launched_request()
@@ -264,6 +268,7 @@ def process_results(
             request_id = request_metrics.request_id,
             timestamp = time.time(),
             final_metrics = request_metrics,
+            benchmark_id = request_metrics.benchmark_id,
         ))
 
         # TODO: maybe add benchmark status event here?
@@ -277,6 +282,7 @@ def run_main_loop(
     service_metrics: ServiceMetrics,
     generated_responses: List[Response],
     pbar: tqdm,
+    benchmark_id: str = "default",
 ):
     """Run the main loop for the benchmark."""
 
@@ -307,6 +313,7 @@ def run_main_loop(
             request_generator,
             stop_event,
             scheduler,
+            benchmark_id,
         ),
     )
 
@@ -367,8 +374,12 @@ def run_benchmark(
     """
 
     prepare_benchmark_output_dir(benchmark_config)
+
+    # Generate unique benchmark ID from output directory
+    import os
+    benchmark_id = os.path.basename(benchmark_config.metrics_config.output_dir)
     logger.info(
-        f"Benchmark output directory: {benchmark_config.metrics_config.output_dir}"
+        f"Benchmark ID: {benchmark_id}, Output directory: {benchmark_config.metrics_config.output_dir}"
     )
 
     setup_api_environment(
@@ -440,6 +451,7 @@ def run_benchmark(
         service_metrics=service_metrics,
         generated_responses=generated_responses,
         pbar=pbar,
+        benchmark_id=benchmark_id,
     )
 
     service_metrics.store_output()
