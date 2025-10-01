@@ -10,6 +10,7 @@ from veeksha.config.generators.request_generator.synthetic_generator import (
     SyntheticRequestGeneratorConfig,
 )
 from veeksha.core.request_config import RequestConfig
+from veeksha.core.seeding import SeedManager
 from veeksha.generators.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
 )
@@ -19,7 +20,6 @@ from veeksha.generators.length_generator.generator_registry import (
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.generators.utils import generate_random_prompt
 from veeksha.logger import init_logger
-from veeksha.utils.seeding import SeedManager
 
 logger = init_logger(__name__)
 

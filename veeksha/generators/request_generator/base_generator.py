@@ -7,8 +7,8 @@ from veeksha.config.generators.request_generator.base_generator import (
 )
 from veeksha.core.request_config import RequestConfig
 from veeksha.core.response import Response
+from veeksha.core.seeding import SeedManager
 from veeksha.logger import init_logger
-from veeksha.utils.seeding import SeedManager
 
 logger = init_logger(__name__)
 

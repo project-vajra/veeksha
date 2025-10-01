@@ -19,7 +19,7 @@ from veeksha.generators.length_generator.generator_registry import (
 from veeksha.generators.request_generator.synthetic_generator import (
     SyntheticRequestGenerator,
 )
-from veeksha.utils.seeding import SeedManager, derive_seed
+from veeksha.core.seeding import SeedManager, derive_seed
 
 
 class DummyTokenizer:

@@ -22,6 +22,9 @@ from veeksha.config.utils import prepare_benchmark_output_dir
 from veeksha.core.hf_utils import get_tokenizer
 from veeksha.core.requests_launcher import RequestsLauncher
 from veeksha.core.response import Response
+from veeksha.core.seeding import (
+    SeedManager,
+)
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.generators.request_generator.generator_registry import (
     RequestGeneratorRegistry,
@@ -29,9 +32,6 @@ from veeksha.generators.request_generator.generator_registry import (
 from veeksha.logger import init_logger
 from veeksha.metrics.service_metrics import ServiceMetrics
 from veeksha.types import RequestGeneratorType
-from veeksha.utils.seeding import (
-    SeedManager,
-)
 
 logger = init_logger(__name__)
 

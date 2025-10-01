@@ -8,6 +8,7 @@ from veeksha.config.generators.request_generator.trace_generator import (
     TraceRequestGeneratorConfig,
 )
 from veeksha.core.request_config import RequestConfig
+from veeksha.core.seeding import SeedManager
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.generators.utils import (
     generate_random_prompt,
@@ -16,7 +17,6 @@ from veeksha.generators.utils import (
     process_request_length_trace,
 )
 from veeksha.logger import init_logger
-from veeksha.utils.seeding import SeedManager
 
 logger = init_logger(__name__)
 
