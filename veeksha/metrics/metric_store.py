@@ -353,7 +353,13 @@ class MetricStore:
         )
         fig.save(os.path.join(output_dir, "ttft_violin_plot.png"))
         if self.should_write_metrics_to_wandb and wandb.run:
-            wandb.log({"ttft_violin_plot": wandb.Image(os.path.join(output_dir, "ttft_violin_plot.png"))})
+            wandb.log(
+                {
+                    "ttft_violin_plot": wandb.Image(
+                        os.path.join(output_dir, "ttft_violin_plot.png")
+                    )
+                }
+            )
             wandb.log({"ttft_violin_data": wandb.Table(dataframe=df)})
 
     def store_generation_stalls(self, output_dir: str, request_idx: int = 0):
@@ -377,4 +383,10 @@ class MetricStore:
         )
         fig.save(os.path.join(output_dir, "tokens_generated_vs_time.png"))
         if self.should_write_metrics_to_wandb and wandb.run:
-            wandb.log({"tokens_generated_vs_time": wandb.Image(os.path.join(output_dir, "tokens_generated_vs_time.png"))})
+            wandb.log(
+                {
+                    "tokens_generated_vs_time": wandb.Image(
+                        os.path.join(output_dir, "tokens_generated_vs_time.png")
+                    )
+                }
+            )
