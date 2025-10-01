@@ -206,8 +206,8 @@ def setup_test_env(request) -> Iterator[None]:
             vllm_server = request.getfixturevalue("vllm_server")
             logger.info(f"✅ Got vllm_server fixture, updating env vars...")
             new_env.update({
-                "INFERENCE_API_KEY": "",
-                "INFERENCE_API_BASE": vllm_server.base_url,
+                "OPENAI_API_KEY": "",
+                "OPENAI_API_BASE": vllm_server.base_url,
             })
         except Exception as e:
             # vLLM not available, skip if GPU test

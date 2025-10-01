@@ -43,8 +43,8 @@ def setup_api_environment(
     """Set up environment variables for OpenAI API"""
     assert api_key is not None, "API key is required"
     assert api_url is not None, "API URL is required"
-    os.environ["INFERENCE_API_KEY"] = api_key
-    os.environ["INFERENCE_API_BASE"] = api_url
+    os.environ["OPENAI_API_KEY"] = api_key
+    os.environ["OPENAI_API_BASE"] = api_url
 
 
 def _probe_min_tokens_param_support(client_config: ClientConfig) -> bool:
@@ -57,16 +57,16 @@ def _probe_min_tokens_param_support(client_config: ClientConfig) -> bool:
     if not min_param:
         return False
 
-    base_url = os.environ.get("INFERENCE_API_BASE")
+    base_url = os.environ.get("OPENAI_API_BASE")
     if not base_url:
-        logger.warning("INFERENCE_API_BASE not set; cannot probe min token parameter.")
+        logger.warning("OPENAI_API_BASE not set; cannot probe min token parameter.")
         return False
     if not base_url.endswith("/"):
         base_url = base_url + "/"
 
     url = base_url + (client_config.address_append_value or "chat/completions")
     headers = {
-        "Authorization": f"Bearer {os.environ.get('INFERENCE_API_KEY', '')}",
+        "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY', '')}",
         "Content-Type": "application/json",
     }
 
