@@ -108,7 +108,6 @@ class TestSeeding:
             length_generator_config=UniformRequestLengthGeneratorConfig(
                 min_tokens=5, max_tokens=5, prefill_to_decode_ratio=1.0
             ),
-            save_to_trace=False,
         )
 
         generator = SyntheticRequestGenerator(
