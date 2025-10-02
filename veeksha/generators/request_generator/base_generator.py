@@ -1,6 +1,7 @@
-from typing import List, Optional, Union
+from typing import TYPE_CHECKING, List, Optional, Union
 
-from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
+if TYPE_CHECKING:
+    from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 from veeksha.config.generators.request_generator.base_generator import (
     BaseRequestGeneratorConfig,
@@ -17,7 +18,7 @@ class BaseRequestGenerator:
     def __init__(
         self,
         config: BaseRequestGeneratorConfig,
-        tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+        tokenizer: Union["PreTrainedTokenizer", "PreTrainedTokenizerFast"],
         seed_manager: Optional[SeedManager] = None,
     ):
         self.config = config
