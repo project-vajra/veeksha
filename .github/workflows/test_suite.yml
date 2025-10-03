@@ -1,0 +1,171 @@
+name: "Test Suite"
+on:
+  push:
+    branches: [main, "release/*", "users/himanish/ci-pipeline"]
+  pull_request:
+    branches: [main, "release/*"]
+    types: [labeled, synchronize]
+  workflow_dispatch:
+    inputs:
+      overwrite_baseline:
+        description: >
+          Overwrite baseline results? This will make the test suite succeed even if a regression is detected.
+
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+permissions:
+  contents: read
+  packages: write
+  issues: read
+  checks: write
+  pull-requests: write
+  actions: write
+defaults:
+  run:
+    shell: bash -l {0}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !contains(github.ref, 'main/')}}
+  # we want concurrent jobs on main
+env:
+  CONTAINER_NAME: nvidia/cuda:12.9.0-cudnn-devel-ubuntu24.04
+jobs:
+  test_suite:
+    if: ${{ github.event_name != 'pull_request' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ready')) }}
+    runs-on: [self-hosted, 4xL40]
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: "recursive"
+      - name: "Run test image"
+        run: |
+          docker run -d \
+          --gpus "\"device=${NVIDIA_VISIBLE_DEVICES}\""  \
+          --shm-size=12gb \
+          --cpus=24 \
+          --name vajra-testsuite-${{ github.run_id }} \
+          -w /repo \
+          -v "${{ github.workspace }}:/repo" \
+          $CONTAINER_NAME sleep infinity
+      - name: "Setup build environment"
+        run: |
+          docker exec \
+          vajra-testsuite-${{ github.run_id }} \
+          bash /repo/scripts/containers/dev/setup_env.sh
+      - name: "Build vajra"
+        id: build_vajra
+        run: |
+          docker exec \
+          -e VAJRA_IS_CI_CONTEXT="true" \
+          vajra-testsuite-${{ github.run_id }} \
+          make build
+      - name: "Run pyright"
+        id: run_pyright
+        run: |
+          docker exec \
+          -e VAJRA_IS_CI_CONTEXT="true" \
+          -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
+          vajra-testsuite-${{ github.run_id }} \
+          make lint/pyright
+      - name: "Run all unit tests"
+        id: run_unit_tests
+        run: |
+          docker exec \
+          -e VAJRA_IS_CI_CONTEXT="true" \
+          -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
+          vajra-testsuite-${{ github.run_id }} \
+          make test/unit
+      - name: "Run all integration tests"
+        id: run_integration_tests
+        run: |
+          docker exec \
+          -e VAJRA_IS_CI_CONTEXT="true" \
+          -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
+          vajra-testsuite-${{ github.run_id }} \
+          make test/integration
+      - name: "Run functional tests"
+        id: run_functional_tests
+        run: |
+          docker exec \
+          -e VAJRA_IS_CI_CONTEXT="true" \
+          -e GITHUB_RUN_ID="${{ github.run_id }}" \
+          -e GITHUB_SHA="${{ github.sha }}" \
+          -e BASELINE_BRANCH="main" \
+          -e GITHUB_TOKEN="${{ github.token }}" \
+          -e GITHUB_REPOSITORY="${{ github.repository }}" \
+          -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
+          -e BASELINE_WORKFLOW_FILENAME="test_suite" \
+          -e BASELINE_WORKFLOW_NAME="Test Suite" \
+          -e OVERWRITE_BASELINE="${{ inputs.overwrite_baseline }}" \
+          vajra-testsuite-${{ github.run_id }} \
+          make test/functional
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v5
+        if: always()
+        with:
+          report_paths: "test_reports/*-results.xml"
+          comment: true
+          include_passed: true
+      - name: Code Coverage Report
+        uses: irongut/CodeCoverageSummary@v1.3.0
+        if: always()
+        with:
+          filename: test_reports/**_coverage.xml
+          badge: true
+          fail_below_min: true
+          format: markdown
+          hide_branch_rate: false
+          hide_complexity: true
+          indicators: true
+          output: both
+          thresholds: "10 30"
+      - name: Add Coverage PR Comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        if: github.event_name == 'pull_request'
+        with:
+          recreate: true
+          path: code-coverage-results.md
+      - name: "Upload performance test results"
+        uses: actions/upload-artifact@v4
+        id: upload_perf_results
+        if: always()
+        with:
+          name: perf_results_${{ github.run_id }}
+          path: >
+            test_output/performance/perf_results_${{ github.run_id }}.json
+
+      - name: "Upload comparison results"
+        uses: actions/upload-artifact@v4
+        id: upload_comparison_results
+        if: always()
+        with:
+          name: comparison_results_${{ github.run_id }}
+          path: >
+            test_output/performance/comparison_results_${{ github.run_id }}.json
+
+      - name: "Stop Docker container"
+        id: stop_docker_container
+        if: always()
+        run: |
+          docker stop vajra-testsuite-${{ github.run_id }}
+          docker rm vajra-testsuite-${{ github.run_id }}
+      - name: Notify on Discord
+        if: failure() && github.ref == 'refs/heads/main'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        uses: Ilshidur/action-discord@master
+        with:
+          args: |
+            ❌ Functional test suite failed on main branch!
+
+            • Commit: ${{ github.sha }}
+            • Run:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            This needs immediate attention.
