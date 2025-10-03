@@ -17,6 +17,7 @@ from veeksha.config.generators.session_generator import (
 from veeksha.generators.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
 )
+from veeksha.core.seeding import SeedManager
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
@@ -56,11 +57,11 @@ class SessionGenerator:
     def __init__(
         self,
         config: SessionGeneratorConfig,
-        seed_manager,
+        seed_manager: SeedManager,
     ):
         self.config = config
         self.seed_manager = seed_manager
-        self.rng_factory = seed_manager.random_factory("sessions")
+        self.rng_factory = seed_manager.numpy_factory("sessions")
         self.session_interval_generator = RequestIntervalGeneratorRegistry.get(
             self.config.session_interval_generator_config.get_type(),
             self.config.session_interval_generator_config,
@@ -105,7 +106,7 @@ class SessionGenerator:
 
         while iteration_count < max_iterations:
             # Propose a session randomly from remaining sessions
-            proposed_idx = rng.randint(0, len(remaining_sessions) - 1)
+            proposed_idx = rng.randint(0, len(remaining_sessions))
             proposed_session = remaining_sessions[proposed_idx]
 
             acceptance_prob = len(proposed_session) / self.config.max_session_size
@@ -117,7 +118,7 @@ class SessionGenerator:
 
         # fallback: take a random session if max iterations reached
         if session is None:
-            proposed_idx = rng.randint(0, len(remaining_sessions) - 1)
+            proposed_idx = rng.randint(0, len(remaining_sessions))
             session = remaining_sessions.pop(proposed_idx)
 
         session_original_timestamp = None
