@@ -17,9 +17,8 @@ def get_tokenizer(
     **kwargs,
 ) -> Union["PreTrainedTokenizer", "PreTrainedTokenizerFast"]:
     """Gets a tokenizer for the given model name via Huggingface."""
-    # Lazy import - only load transformers when actually getting a tokenizer
     from transformers import AutoTokenizer, PreTrainedTokenizerFast
-    
+
     if tokenizer_mode == "slow":
         if kwargs.get("use_fast", False):
             raise ValueError("Cannot use the fast tokenizer in slow tokenizer mode.")
