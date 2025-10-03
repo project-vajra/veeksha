@@ -1,6 +1,8 @@
-from typing import Union
+from typing import TYPE_CHECKING, Union
 
-from transformers import AutoTokenizer, PreTrainedTokenizer, PreTrainedTokenizerFast
+# defer importing transformers at module load time
+if TYPE_CHECKING:
+    from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 from veeksha.logger import init_logger
 
@@ -13,8 +15,10 @@ def get_tokenizer(
     tokenizer_mode: str = "auto",
     trust_remote_code: bool = False,
     **kwargs,
-) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast]:
+) -> Union["PreTrainedTokenizer", "PreTrainedTokenizerFast"]:
     """Gets a tokenizer for the given model name via Huggingface."""
+    from transformers import AutoTokenizer, PreTrainedTokenizerFast
+
     if tokenizer_mode == "slow":
         if kwargs.get("use_fast", False):
             raise ValueError("Cannot use the fast tokenizer in slow tokenizer mode.")
