@@ -6,9 +6,10 @@
 
 Add the following to any benchmark config:
 
-```
+```yaml
 dashboard_config:
   enabled: true
+  # ...
 ```
 
 The dashboard will automatically start at `http://localhost:5000` and remain open until you press Ctrl+C.
