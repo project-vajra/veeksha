@@ -1,8 +1,6 @@
-from typing import Any
-
+from veeksha.core.lazy_loader import _LazyLoader
 from veeksha.types import RequestGeneratorType
 from veeksha.types.base_registry import BaseRegistry
-from veeksha.core.lazy_loader import _LazyLoader
 
 
 class RequestGeneratorRegistry(BaseRegistry):
