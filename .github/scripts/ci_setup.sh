@@ -21,7 +21,7 @@ echo "CI context: $VAJRA_IS_CI_CONTEXT"
 # Install uv if not present
 if ! command -v uv &> /dev/null; then
     echo "Installing uv..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
+    wget -qO- https://astral.sh/uv/install.sh | sh
     export PATH="$HOME/.cargo/bin:$PATH"
 fi
 
