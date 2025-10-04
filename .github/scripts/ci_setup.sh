@@ -18,25 +18,32 @@ echo "=== Vajra CI Setup ==="
 echo "Project root: $_project_root"
 echo "CI context: $VAJRA_IS_CI_CONTEXT"
 
-# Setup environment (create conda environment if needed)
+# Install uv if not present
+if ! command -v uv &> /dev/null; then
+    echo "Installing uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.cargo/bin:$PATH"
+fi
+
+# Setup environment (create virtual environment if needed)
 echo "=== Setting up environment ==="
 if [ ! -d "./env" ]; then
-    conda create -p ./env python=3.12 -y
+    uv venv --python 3.12 ./env
 else
     echo "Environment already exists"
 fi
 
 # Activate environment
 echo "=== Activating environment ==="
-conda activate ./env
+source ./env/bin/activate
 
 # Install dependencies
 echo "=== Installing dependencies ==="
-pip install -e .
+uv pip install -e .
 
 # Build the project
 echo "=== Building project ==="
-# Build is part of pip install -e, no separate build needed
+# Build is part of uv pip install -e, no separate build needed
 
 # Run tests
 echo "=== Running tests ==="
