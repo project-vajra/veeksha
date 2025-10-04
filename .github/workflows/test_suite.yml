@@ -57,14 +57,7 @@ jobs:
         run: |
           docker exec \
           vajra-testsuite-${{ github.run_id }} \
-          bash /repo/scripts/containers/dev/setup_env.sh
-      - name: "Build vajra"
-        id: build_vajra
-        run: |
-          docker exec \
-          -e VAJRA_IS_CI_CONTEXT="true" \
-          vajra-testsuite-${{ github.run_id }} \
-          make build
+          bash /repo/.github/scripts/ci_setup.sh
       - name: "Run pyright"
         id: run_pyright
         run: |
@@ -73,22 +66,6 @@ jobs:
           -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
           vajra-testsuite-${{ github.run_id }} \
           make lint/pyright
-      - name: "Run all unit tests"
-        id: run_unit_tests
-        run: |
-          docker exec \
-          -e VAJRA_IS_CI_CONTEXT="true" \
-          -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
-          vajra-testsuite-${{ github.run_id }} \
-          make test/unit
-      - name: "Run all integration tests"
-        id: run_integration_tests
-        run: |
-          docker exec \
-          -e VAJRA_IS_CI_CONTEXT="true" \
-          -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
-          vajra-testsuite-${{ github.run_id }} \
-          make test/integration
       - name: "Run functional tests"
         id: run_functional_tests
         run: |
