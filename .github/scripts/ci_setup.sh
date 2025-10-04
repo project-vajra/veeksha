@@ -20,25 +20,23 @@ echo "CI context: $VAJRA_IS_CI_CONTEXT"
 
 # Setup environment (create conda environment if needed)
 echo "=== Setting up environment ==="
-make setup/environment
+if [ ! -d "./env" ]; then
+    conda create -p ./env python=3.12 -y
+else
+    echo "Environment already exists"
+fi
 
 # Activate environment
 echo "=== Activating environment ==="
-if [ -d "./env" ]; then
-    conda activate ./env
-else
-    echo "Environment not found, creating it first..."
-    make setup/environment
-    conda activate ./env
-fi
+conda activate ./env
 
 # Install dependencies
 echo "=== Installing dependencies ==="
-make setup/dependencies
+pip install -e .
 
 # Build the project
 echo "=== Building project ==="
-make build
+# Build is part of pip install -e, no separate build needed
 
 # Run tests
 echo "=== Running tests ==="
