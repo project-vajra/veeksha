@@ -15,9 +15,10 @@ SHELL ["/bin/bash", "-c"]
 ENV VAJRA_IS_CI_CONTEXT=1
 
 # Create virtual environment
-RUN uv venv --python 3.12 ./env
+RUN uv venv --python 3.12 .venv
 
 # Activate environment and install dependencies
-RUN source ./env/bin/activate && uv pip install -e ".[dev]"
+ENV PATH="/repo/.venv/bin:$PATH"
+RUN uv pip install -e ".[dev]"
 
 # The container is now ready for running tests or other commands
