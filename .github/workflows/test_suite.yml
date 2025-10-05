@@ -43,21 +43,17 @@ jobs:
         with:
           fetch-depth: 0
           submodules: "recursive"
-      - name: "Run test image"
+      - name: "Build CI image"
+        run: |
+          docker build -t vajra-ci .
+      - name: "Run test container"
         run: |
           docker run -d \
           --gpus "\"device=${NVIDIA_VISIBLE_DEVICES}\""  \
           --shm-size=12gb \
           --cpus=24 \
           --name vajra-testsuite-${{ github.run_id }} \
-          -w /repo \
-          -v "${{ github.workspace }}:/repo" \
-          $CONTAINER_NAME sleep infinity
-      - name: "Setup build environment"
-        run: |
-          docker exec \
-          vajra-testsuite-${{ github.run_id }} \
-          bash /repo/.github/scripts/ci_setup.sh
+          vajra-ci sleep infinity
       - name: "Run pyright"
         id: run_pyright
         run: |
