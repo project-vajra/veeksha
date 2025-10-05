@@ -6,6 +6,7 @@ COPY . /repo
 
 # Set working directory
 WORKDIR /repo
+SHELL ["/bin/bash", "-c"]  
 
 # Set CI context
 ENV VAJRA_IS_CI_CONTEXT=1
