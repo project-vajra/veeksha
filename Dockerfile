@@ -18,6 +18,6 @@ ENV VAJRA_IS_CI_CONTEXT=1
 RUN uv venv --python 3.12 ./env
 
 # Activate environment and install dependencies
-RUN source ./env/bin/activate && uv pip install -e .
+RUN source ./env/bin/activate && uv pip install -e ".[dev]"
 
 # The container is now ready for running tests or other commands
