@@ -62,6 +62,22 @@ jobs:
           -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
           vajra-testsuite-${{ github.run_id }} \
           make lint/pyright
+      - name: "Run all unit tests"
+        id: run_unit_tests
+        run: |
+          docker exec \
+          -e VAJRA_IS_CI_CONTEXT="true" \
+          -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
+          vajra-testsuite-${{ github.run_id }} \
+          make test/unit
+      - name: "Run all integration tests"
+        id: run_integration_tests
+        run: |
+          docker exec \
+          -e VAJRA_IS_CI_CONTEXT="true" \
+          -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
+          vajra-testsuite-${{ github.run_id }} \
+          make test/integration
       - name: "Run functional tests"
         id: run_functional_tests
         run: |
