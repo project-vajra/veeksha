@@ -1,11 +1,5 @@
 FROM nvidia/cuda:12.9.0-cudnn-devel-ubuntu24.04
-
-# Install wget for uv installation
-RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
-
-# Install uv
-RUN wget -qO- https://astral.sh/uv/install.sh | sh
-ENV PATH="$HOME/.cargo/bin:$PATH"
+COPY --from=ghcr.io/astral-sh/uv:0.8.23 /uv /uvx /bin/
 
 # Copy the repository
 COPY . /repo
