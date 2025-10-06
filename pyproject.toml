@@ -34,8 +34,8 @@ dependencies = [
     "pytablewriter",
     "Pillow",
     "rekha",
-    "flask",
-    "flask-cors",
+    "textual",
+    "plotext",
 ]
 
 [project.urls]

@@ -473,19 +473,18 @@ def run_benchmark(
 
 
 def run_benchmark_with_dashboard(benchmark_config: BenchmarkConfig):
-    """Run benchmark with Flask web dashboard"""
-    logger.info("Starting Flask web dashboard with benchmark")
+    """Run benchmark with TUI dashboard"""
+    logger.info("Starting TUI dashboard with benchmark")
 
-    # Enable Flask frontend for this run (using object.__setattr__ for frozen dataclass)
+    # Enable TUI frontend for this run (using object.__setattr__ for frozen dataclass)
     object.__setattr__(benchmark_config, "_enable_console_dashboard", True)
 
-    # Run the benchmark - Flask dashboard starts automatically
+    # Run the benchmark - TUI dashboard starts automatically
     # via init_dashboard_event_processor in run_benchmark()
     service_metrics = run_benchmark(benchmark_config)
 
-    # Keep the process alive to maintain Flask server
-    logger.info("Benchmark complete. Flask dashboard still running at http://localhost:5000")
-    logger.info("Press Ctrl+C to exit")
+    # Keep the process alive to maintain TUI
+    logger.info("Benchmark complete. Press 'q' in the TUI to exit")
 
     try:
         import time
@@ -556,8 +555,8 @@ if __name__ == "__main__":
 
         # If multiple benchmarks with dashboard enabled, keep it open for viewing
         if len(benchmark_configs) > 1 and has_dashboard_enabled:
-            logger.info("All benchmarks complete. Flask dashboard still running at http://localhost:5000")
-            logger.info("Press Ctrl+C to exit")
+            logger.info("All benchmarks complete. TUI dashboard still running")
+            logger.info("Press 'q' in the TUI to exit")
             try:
                 import time
                 while True:

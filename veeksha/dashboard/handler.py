@@ -104,13 +104,13 @@ def init_dashboard_event_processor(enabled: bool = True, enable_frontend: bool =
             _dashboard_event_processor = DashboardEventHandlerProcessor(**kwargs)
             dashboard_state = _dashboard_event_processor.start()
 
-            # Launch Flask frontend if requested and not already running
+            # Launch TUI frontend if requested and not already running
             if enable_frontend and _dashboard_frontend_thread is None:
                 try:
-                    from veeksha.dashboard.flask_app import run_dashboard_flask
-                    _dashboard_frontend_thread = run_dashboard_flask(dashboard_state)
+                    from veeksha.dashboard.tui_dashboard import run_dashboard_tui
+                    _dashboard_frontend_thread = run_dashboard_tui(dashboard_state)
                 except ImportError as e:
-                    # Log warning but don't fail if flask not available
+                    # Log warning but don't fail if textual not available
                     import logging
                     logger = logging.getLogger(__name__)
                     logger.warning(f"Dashboard frontend not available: {e}")

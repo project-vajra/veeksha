@@ -1,0 +1,394 @@
+"""Textual-based TUI dashboard for Veeksha benchmarks.
+
+Displays real-time metrics, graphs, and request information with proper log capture.
+"""
+
+import threading
+import logging
+from datetime import datetime
+from typing import Optional, List
+from collections import deque
+import io
+
+from textual.app import App, ComposeResult
+from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
+from textual.widgets import Header, Footer, Static, Label, DataTable, RichLog, TabbedContent, TabPane
+from textual.reactive import reactive
+from rich.text import Text
+import plotext as plt
+
+from veeksha.dashboard.state import DashboardState, LiveRequestInfo
+
+
+class MetricCard(Static):
+    """A card displaying a single metric"""
+
+    value = reactive("0")
+
+    def __init__(self, title: str, border_color: str = "blue", *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.title = title
+        self.border_color = border_color
+
+    def compose(self) -> ComposeResult:
+        yield Label(self.title, classes="metric-title")
+        yield Label(self.value, classes="metric-value")
+
+
+class PlotextChart(Static):
+    """Plotext-based line chart for metrics"""
+
+    data = reactive(list)
+
+    def __init__(self, title: str, max_points: int = 100, color: str = "cyan", *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.title = title
+        self.max_points = max_points
+        self.color = color
+        self.data = []
+
+    def render(self) -> str:
+        if not self.data or len(self.data) == 0:
+            return f"[bold]{self.title}[/bold]\n\n[dim]Waiting for data...[/dim]"
+
+        # Get recent data points
+        recent_data = list(self.data)[-self.max_points:]
+
+        if len(recent_data) < 2:
+            return f"[bold]{self.title}[/bold]\n\nCollecting data..."
+
+        max_val = max(recent_data)
+        min_val = min(recent_data)
+        avg_val = sum(recent_data) / len(recent_data)
+
+        # Use plotext to create chart
+        plt.clf()  # Clear previous plot
+        plt.plotsize(70, 10)  # Set plot size
+        plt.theme('dark')  # Dark theme
+        plt.title(self.title)
+
+        # Plot the data
+        x_vals = list(range(len(recent_data)))
+        plt.plot(x_vals, recent_data, marker="dot")
+
+        # Add statistics as xlabel
+        plt.xlabel(f"Max: {max_val:.1f} | Min: {min_val:.1f} | Avg: {avg_val:.1f} | Samples: {len(recent_data)}")
+
+        # Build the plot as a string
+        plot_str = plt.build()
+
+        return plot_str
+
+
+class LogCapture(logging.Handler):
+    """Custom logging handler that captures logs for TUI display"""
+
+    def __init__(self, rich_log_widget: RichLog):
+        super().__init__()
+        self.rich_log = rich_log_widget
+        self.buffer = deque(maxlen=1000)  # Keep last 1000 log entries
+
+    def emit(self, record: logging.LogRecord):
+        try:
+            msg = self.format(record)
+            # Skip dashboard events to avoid clutter
+            if hasattr(record, 'dashboard_event'):
+                return
+
+            # Add to buffer for later display
+            self.buffer.append(msg)
+
+            # Try to write to widget (may fail if not yet mounted)
+            try:
+                self.rich_log.write(msg)
+            except:
+                pass  # Widget not ready yet
+        except Exception:
+            self.handleError(record)
+
+
+class VeekshaDashboard(App):
+    """Textual TUI dashboard for Veeksha benchmarks"""
+
+    CSS = """
+    Screen {
+        background: $surface;
+    }
+
+    .metric-card {
+        height: 5;
+        border: solid $primary;
+        padding: 0 1;
+        margin: 0 1;
+    }
+
+    .metric-title {
+        text-align: center;
+        text-style: bold;
+        color: $text-muted;
+    }
+
+    .metric-value {
+        text-align: center;
+        text-style: bold;
+        color: $primary;
+        height: 3;
+        content-align: center middle;
+    }
+
+    .chart {
+        height: 15;
+        border: solid $accent;
+        padding: 1;
+        margin: 0 1;
+    }
+
+    #live-requests {
+        height: 15;
+        border: solid $success;
+    }
+
+    #completed-requests {
+        height: 15;
+        border: solid $warning;
+    }
+
+    #logs {
+        height: 100%;
+        border: solid $error;
+    }
+
+    .benchmark-selector {
+        height: 3;
+        border: solid $accent;
+        padding: 0 1;
+        margin: 1;
+    }
+    """
+
+    BINDINGS = [
+        ("q", "quit", "Quit"),
+        ("d", "toggle_dark", "Toggle Dark Mode"),
+        ("l", "focus_logs", "Focus Logs"),
+        ("n", "next_benchmark", "Next Benchmark"),
+        ("p", "prev_benchmark", "Previous Benchmark"),
+    ]
+
+    def __init__(self, dashboard_state: DashboardState):
+        super().__init__()
+        self.dashboard_state = dashboard_state
+        self.update_interval = 1.0  # Update every second
+        self.log_handler: Optional[LogCapture] = None
+
+        # Metric cards
+        self.total_requests_card = MetricCard("Total Requests", "blue")
+        self.completed_card = MetricCard("Completed", "green")
+        self.errors_card = MetricCard("Errors", "red")
+        self.duration_card = MetricCard("Duration", "yellow")
+        self.ttft_card = MetricCard("Avg TTFT (ms)", "cyan")
+        self.tpot_card = MetricCard("Avg TPOT (ms)", "green")
+        self.tbt_card = MetricCard("Avg TBT (ms)", "yellow")
+        self.latency_card = MetricCard("Avg Latency (ms)", "magenta")
+
+        # Charts
+        self.ttft_chart = PlotextChart("📈 Time to First Token (TTFT)", color="cyan")
+        self.tpot_chart = PlotextChart("📉 Time per Output Token (TPOT)", color="green")
+        self.tbt_chart = PlotextChart("⏱️  Time Between Tokens (TBT)", color="yellow")
+        self.latency_chart = PlotextChart("📊 End-to-End Latency", color="magenta")
+
+        # Tables
+        self.live_table: Optional[DataTable] = None
+        self.completed_table: Optional[DataTable] = None
+
+        # Logs
+        self.log_view: Optional[RichLog] = None
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+
+        with TabbedContent():
+            with TabPane("📊 Metrics", id="metrics-tab"):
+                with ScrollableContainer():
+                    # Benchmark selector
+                    yield Static("🎯 Active Benchmark: [bold cyan]Loading...[/bold cyan]",
+                               classes="benchmark-selector", id="benchmark-selector")
+
+                    # Metric cards in rows
+                    with Horizontal():
+                        yield self.total_requests_card
+                        yield self.completed_card
+                        yield self.errors_card
+                        yield self.duration_card
+
+                    with Horizontal():
+                        yield self.ttft_card
+                        yield self.tpot_card
+                        yield self.tbt_card
+                        yield self.latency_card
+
+                    # Charts in 2x2 grid
+                    with Horizontal():
+                        yield self.ttft_chart.add_class("chart")
+                        yield self.tpot_chart.add_class("chart")
+
+                    with Horizontal():
+                        yield self.tbt_chart.add_class("chart")
+                        yield self.latency_chart.add_class("chart")
+
+            with TabPane("🔴 Live Requests", id="live-tab"):
+                self.live_table = DataTable(id="live-requests")
+                self.live_table.add_column("Request ID", key="id")
+                self.live_table.add_column("Input Tokens", key="input")
+                self.live_table.add_column("Output Tokens", key="output")
+                self.live_table.add_column("TTFT (ms)", key="ttft")
+                self.live_table.add_column("TPOT (ms)", key="tpot")
+                self.live_table.add_column("Progress", key="progress")
+                yield self.live_table
+
+            with TabPane("✅ Completed", id="completed-tab"):
+                self.completed_table = DataTable(id="completed-requests")
+                self.completed_table.add_column("Request ID", key="id")
+                self.completed_table.add_column("Input Tokens", key="input")
+                self.completed_table.add_column("Output Tokens", key="output")
+                self.completed_table.add_column("TTFT (ms)", key="ttft")
+                self.completed_table.add_column("TPOT (ms)", key="tpot")
+                yield self.completed_table
+
+            with TabPane("📝 Logs", id="logs-tab"):
+                self.log_view = RichLog(id="logs", highlight=True, markup=True)
+                yield self.log_view
+
+        yield Footer()
+
+    def on_mount(self) -> None:
+        """Set up log capture and start update timer"""
+        # Set up log capture
+        if self.log_view:
+            self.log_handler = LogCapture(self.log_view)
+            self.log_handler.setFormatter(
+                logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            )
+
+            # Add handler to root logger to capture all logs
+            root_logger = logging.getLogger()
+            root_logger.addHandler(self.log_handler)
+
+            # Flush any buffered logs
+            for msg in self.log_handler.buffer:
+                self.log_view.write(msg)
+
+        # Start update timer
+        self.set_interval(self.update_interval, self.update_dashboard)
+
+    def update_dashboard(self) -> None:
+        """Update all dashboard elements"""
+        active_id = self.dashboard_state.active_benchmark_id
+
+        # Update benchmark selector
+        benchmarks = self.dashboard_state.get_benchmark_ids()
+        if benchmarks:
+            selector = self.query_one("#benchmark-selector", Static)
+            selector.update(f"🎯 Active Benchmark: [bold cyan]{active_id}[/bold cyan] | "
+                          f"Press [bold]n[/bold]/[bold]p[/bold] to switch ({len(benchmarks)} total)")
+
+        # Get stats
+        stats = self.dashboard_state.get_aggregate_stats(active_id)
+        duration = self.dashboard_state.get_benchmark_duration(active_id)
+
+        # Update metric cards
+        self.total_requests_card.value = str(stats.total_requests)
+        self.completed_card.value = str(stats.completed_count)
+        self.errors_card.value = str(stats.error_count)
+        self.duration_card.value = f"{duration:.1f}s"
+        self.ttft_card.value = f"{stats.avg_ttft_ms:.1f}ms"
+        self.tpot_card.value = f"{stats.avg_tpot_ms:.1f}ms"
+        self.tbt_card.value = f"{stats.avg_tbt_ms:.1f}ms"
+        self.latency_card.value = f"{stats.avg_latency_ms:.0f}ms"
+
+        # Update charts
+        self.ttft_chart.data = list(stats.recent_ttft_ms)
+        self.tpot_chart.data = list(stats.recent_tpot_ms)
+        self.tbt_chart.data = list(stats.recent_tbt_ms)
+        self.latency_chart.data = list(stats.recent_latency_ms)
+
+        # Update live requests table
+        if self.live_table:
+            self.live_table.clear()
+            live_requests = self.dashboard_state.get_live_requests(active_id)
+            for req in live_requests[:10]:  # Top 10
+                self.live_table.add_row(
+                    str(req.request_id),
+                    str(req.input_tokens),
+                    str(req.current_output_tokens),
+                    f"{req.ttft_ms:.1f}" if req.ttft_ms else "-",
+                    f"{req.current_tpot_ms:.1f}" if req.current_tpot_ms else "-",
+                    f"{req.progress_pct:.0f}%" if req.progress_pct else "-"
+                )
+
+        # Update completed requests table
+        if self.completed_table:
+            self.completed_table.clear()
+            completed = self.dashboard_state.get_completed_requests(active_id)
+            for req in list(completed)[-20:]:  # Last 20
+                self.completed_table.add_row(
+                    str(req.request_id),
+                    str(req.input_tokens),
+                    str(req.current_output_tokens),
+                    f"{req.ttft_ms:.1f}" if req.ttft_ms else "-",
+                    f"{req.current_tpot_ms:.1f}" if req.current_tpot_ms else "-"
+                )
+
+    def action_focus_logs(self) -> None:
+        """Switch to logs tab"""
+        tabbed = self.query_one(TabbedContent)
+        tabbed.active = "logs-tab"
+
+    def action_next_benchmark(self) -> None:
+        """Switch to next benchmark"""
+        benchmarks = self.dashboard_state.get_benchmark_ids()
+        if len(benchmarks) <= 1:
+            return
+
+        current_idx = benchmarks.index(self.dashboard_state.active_benchmark_id)
+        next_idx = (current_idx + 1) % len(benchmarks)
+        self.dashboard_state.set_active_benchmark(benchmarks[next_idx])
+
+    def action_prev_benchmark(self) -> None:
+        """Switch to previous benchmark"""
+        benchmarks = self.dashboard_state.get_benchmark_ids()
+        if len(benchmarks) <= 1:
+            return
+
+        current_idx = benchmarks.index(self.dashboard_state.active_benchmark_id)
+        prev_idx = (current_idx - 1) % len(benchmarks)
+        self.dashboard_state.set_active_benchmark(benchmarks[prev_idx])
+
+    def on_unmount(self) -> None:
+        """Clean up log handler"""
+        if self.log_handler:
+            root_logger = logging.getLogger()
+            root_logger.removeHandler(self.log_handler)
+
+
+def run_dashboard_tui(dashboard_state: DashboardState) -> threading.Thread:
+    """Run the Textual TUI dashboard in a background thread.
+
+    Args:
+        dashboard_state: The shared dashboard state object
+
+    Returns:
+        Thread object running the TUI
+    """
+
+    def run_app():
+        app = VeekshaDashboard(dashboard_state)
+        app.run()
+
+    thread = threading.Thread(target=run_app, daemon=True)
+    thread.start()
+
+    # Give TUI a moment to start
+    import time
+    time.sleep(0.5)
+
+    return thread
