@@ -38,9 +38,11 @@ jobs:
       - name: "Run test container"
         run: |
           docker run -d \
-          --gpus "device=${NVIDIA_VISIBLE_DEVICES}"  \
+          --gpus "\"device=${NVIDIA_VISIBLE_DEVICES}\""  \
           --shm-size=12gb \
           --cpus=24 \
+          -v "${GITHUB_WORKSPACE}:/repo" \  
+          -w /repo \  
           --name veeksha-testsuite-${{ github.run_id }} \
           veeksha-ci sleep infinity
       - name: "Run pyright"
@@ -77,7 +79,6 @@ jobs:
           -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
           -e BASELINE_WORKFLOW_FILENAME="test_suite" \
           -e BASELINE_WORKFLOW_NAME="Test Suite" \
-          -e OVERWRITE_BASELINE="${{ inputs.overwrite_baseline }}" \
           veeksha-testsuite-${{ github.run_id }} \
           make test/functional
       - name: Publish Test Report
