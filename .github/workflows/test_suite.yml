@@ -1,22 +1,11 @@
 name: "Test Suite"
 on:
   push:
-    branches: [main, "release/*", "users/himanish/ci-pipeline"]
+    branches: ["release/*", "users/himanish/ci-pipeline"]
   pull_request:
     branches: [main, "release/*"]
     types: [labeled, synchronize]
-  workflow_dispatch:
-    inputs:
-      overwrite_baseline:
-        description: >
-          Overwrite baseline results? This will make the test suite succeed even if a regression is detected.
 
-        required: true
-        default: "false"
-        type: choice
-        options:
-          - "true"
-          - "false"
 permissions:
   contents: read
   packages: write
@@ -29,7 +18,7 @@ defaults:
     shell: bash -l {0}
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ !contains(github.ref, 'main/')}}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}  
   # we want concurrent jobs on main
 env:
   CONTAINER_NAME: nvidia/cuda:12.9.0-cudnn-devel-ubuntu24.04
@@ -45,22 +34,21 @@ jobs:
           submodules: "recursive"
       - name: "Build CI image"
         run: |
-          docker build -t vajra-ci .
+          docker build -t veeksha-ci .
       - name: "Run test container"
         run: |
           docker run -d \
-          --gpus "\"device=${NVIDIA_VISIBLE_DEVICES}\""  \
+          --gpus "device=${NVIDIA_VISIBLE_DEVICES}"  \
           --shm-size=12gb \
           --cpus=24 \
-          --name vajra-testsuite-${{ github.run_id }} \
-          vajra-ci sleep infinity
+          --name veeksha-testsuite-${{ github.run_id }} \
+          veeksha-ci sleep infinity
       - name: "Run pyright"
         id: run_pyright
         run: |
           docker exec \
-          -e VAJRA_IS_CI_CONTEXT="true" \
           -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
-          vajra-testsuite-${{ github.run_id }} \
+          veeksha-testsuite-${{ github.run_id }} \
           make lint/pyright
       - name: "Run all unit tests"
         id: run_unit_tests
@@ -68,7 +56,7 @@ jobs:
           docker exec \
           -e VAJRA_IS_CI_CONTEXT="true" \
           -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
-          vajra-testsuite-${{ github.run_id }} \
+          veeksha-testsuite-${{ github.run_id }} \
           make test/unit
       - name: "Run all integration tests"
         id: run_integration_tests
@@ -76,7 +64,7 @@ jobs:
           docker exec \
           -e VAJRA_IS_CI_CONTEXT="true" \
           -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
-          vajra-testsuite-${{ github.run_id }} \
+          veeksha-testsuite-${{ github.run_id }} \
           make test/integration
       - name: "Run functional tests"
         id: run_functional_tests
@@ -92,7 +80,7 @@ jobs:
           -e BASELINE_WORKFLOW_FILENAME="test_suite" \
           -e BASELINE_WORKFLOW_NAME="Test Suite" \
           -e OVERWRITE_BASELINE="${{ inputs.overwrite_baseline }}" \
-          vajra-testsuite-${{ github.run_id }} \
+          veeksha-testsuite-${{ github.run_id }} \
           make test/functional
       - name: Publish Test Report
         uses: mikepenz/action-junit-report@v5
@@ -142,8 +130,8 @@ jobs:
         id: stop_docker_container
         if: always()
         run: |
-          docker stop vajra-testsuite-${{ github.run_id }}
-          docker rm vajra-testsuite-${{ github.run_id }}
+          docker stop veeksha-testsuite-${{ github.run_id }}
+          docker rm veeksha-testsuite-${{ github.run_id }}
       - name: Notify on Discord
         if: failure() && github.ref == 'refs/heads/main'
         env:
