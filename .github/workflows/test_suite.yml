@@ -62,7 +62,6 @@ jobs:
         id: run_integration_tests
         run: |
           docker exec \
-          -e VAJRA_IS_CI_CONTEXT="true" \
           -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
           veeksha-testsuite-${{ github.run_id }} \
           make test/integration
@@ -70,7 +69,6 @@ jobs:
         id: run_functional_tests
         run: |
           docker exec \
-          -e VAJRA_IS_CI_CONTEXT="true" \
           -e GITHUB_RUN_ID="${{ github.run_id }}" \
           -e GITHUB_SHA="${{ github.sha }}" \
           -e BASELINE_BRANCH="main" \
