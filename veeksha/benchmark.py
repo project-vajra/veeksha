@@ -525,6 +525,21 @@ if __name__ == "__main__":
 
     benchmark_configs = BenchmarkConfig.create_from_cli_args()
 
+    # Suppress all output if dashboard is enabled
+    has_dashboard_enabled = any(bc.dashboard_config.enabled for bc in benchmark_configs)
+    if has_dashboard_enabled:
+        import sys
+        import os
+        import logging as log_module
+
+        # Redirect stdout/stderr to devnull
+        devnull = open(os.devnull, 'w')
+        sys.stdout = devnull
+        sys.stderr = devnull
+
+        # Suppress all logging
+        log_module.getLogger().setLevel(log_module.CRITICAL + 1)
+
     if len(benchmark_configs) > 1:
         logger.info(
             f"Running {len(benchmark_configs)} benchmark configurations sequentially."
@@ -532,7 +547,6 @@ if __name__ == "__main__":
         logger.info("Using console dashboard for multiple configurations.")
 
     try:
-        has_dashboard_enabled = any(bc.dashboard_config.enabled for bc in benchmark_configs)
 
         for i, benchmark_config in enumerate(benchmark_configs):
             print(f"Running benchmark with config: {benchmark_config}")
