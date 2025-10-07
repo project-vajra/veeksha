@@ -36,7 +36,7 @@ test/unit: ## Run unit tests
 	@echo "Running unit tests..."
 	python -m pytest -s tests -v -m "unit" --tb=short
 	
-test/integration: ## Run unit tests
+test/integration: ## Run integration tests
 	@echo "Integration tests not yet implemented..."
 
 test/functional: ## Run functional tests
