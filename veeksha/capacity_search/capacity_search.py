@@ -174,7 +174,24 @@ class CapacitySearch:
         best_run_id = None
         found_valid_qps = False
 
-        for _ in range(self.capacity_search_config.max_iterations):
+        # Emit start event
+        from veeksha.dashboard.handler import emit_dashboard_event
+        from veeksha.dashboard.events import CapacitySearchEvent
+        emit_dashboard_event(CapacitySearchEvent(
+            current_qps=0.0,
+            is_under_sla=False,
+            slo_metrics={},
+            slo_target=str(self.slo_evaluator.slo_set),
+            iteration=0,
+            total_iterations=self.capacity_search_config.max_iterations,
+            search_left=left,
+            search_right=right,
+            best_qps=None,
+            best_slo_metrics=None,
+            is_complete=False
+        ))
+
+        for iteration in range(self.capacity_search_config.max_iterations):
             logger.info(f"Searching between {left} and {right}")
             # stopping condition - we have reached the minimum granularity
             if (
@@ -210,6 +227,21 @@ class CapacitySearch:
                 right = qps
                 min_qps_over_sla = min(min_qps_over_sla, qps)
 
+            # Emit event after each iteration
+            emit_dashboard_event(CapacitySearchEvent(
+                current_qps=qps,
+                is_under_sla=is_under_sla,
+                slo_metrics=metrics_dict or {},
+                slo_target=str(self.slo_evaluator.slo_set),
+                iteration=iteration + 1,
+                total_iterations=self.capacity_search_config.max_iterations,
+                search_left=left,
+                search_right=right,
+                best_qps=max_qps_under_sla,
+                best_slo_metrics=slo_metrics_at_max_qps,
+                is_complete=False
+            ))
+
         if not found_valid_qps:
             logger.info(
                 f"No valid QPS found.",
@@ -241,6 +273,21 @@ class CapacitySearch:
             slo_metrics_at_max_qps=slo_metrics_at_max_qps,
             best_run_id=best_run_id,
         )
+
+        # Emit final completion event
+        emit_dashboard_event(CapacitySearchEvent(
+            current_qps=max_qps_under_sla or 0.0,
+            is_under_sla=True,
+            slo_metrics=slo_metrics_at_max_qps or {},
+            slo_target=str(self.slo_evaluator.slo_set),
+            iteration=self.capacity_search_config.max_iterations,
+            total_iterations=self.capacity_search_config.max_iterations,
+            search_left=left,
+            search_right=right,
+            best_qps=max_qps_under_sla,
+            best_slo_metrics=slo_metrics_at_max_qps,
+            is_complete=True
+        ))
 
         return {
             "max_qps_under_sla": max_qps_under_sla,

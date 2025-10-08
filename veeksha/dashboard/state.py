@@ -51,10 +51,16 @@ class CapacitySearchState:
     current_qps: float = 0.0
     current_iteration: int = 0
     total_iterations: int = 0
+    search_left: float = 0.0
+    search_right: float = 0.0
     is_under_sla: bool = False
     slo_target: str = ""
     slo_metrics: Dict[str, float] = field(default_factory=dict)
-    qps_history: List[tuple[float, bool]] = field(default_factory=list)  # list of (qps, under_sla) pairs
+    qps_history: List[Dict[str, any]] = field(default_factory=list)  # list of dicts with qps, under_sla, slo_metrics
+    best_qps: Optional[float] = None
+    best_slo_metrics: Optional[Dict[str, float]] = None
+    is_active: bool = False  # Whether capacity search is currently running
+    is_complete: bool = False
 
 @dataclass
 class SingleBenchmarkState:
@@ -180,13 +186,29 @@ class DashboardState:
             benchmark.aggregate_stats.recent_latency_ms.append(metrics.end_to_end_latency * 1000)
     
     def _handle_capacity_search(self, event: CapacitySearchEvent) -> None:
+        # Mark capacity search as active on first event
+        if not self.capacity_search.is_active:
+            self.capacity_search.is_active = True
+
         self.capacity_search.current_qps = event.current_qps
         self.capacity_search.current_iteration = event.iteration
         self.capacity_search.total_iterations = event.total_iterations
+        self.capacity_search.search_left = event.search_left
+        self.capacity_search.search_right = event.search_right
         self.capacity_search.is_under_sla = event.is_under_sla
         self.capacity_search.slo_target = event.slo_target
         self.capacity_search.slo_metrics = event.slo_metrics.copy()
-        self.capacity_search.qps_history.append((event.current_qps, event.is_under_sla))
+        self.capacity_search.best_qps = event.best_qps
+        self.capacity_search.best_slo_metrics = event.best_slo_metrics.copy() if event.best_slo_metrics else None
+        self.capacity_search.is_complete = event.is_complete
+
+        # Add to history (avoid duplicates by checking if QPS already exists)
+        if not any(h.get('qps') == event.current_qps for h in self.capacity_search.qps_history):
+            self.capacity_search.qps_history.append({
+                'qps': event.current_qps,
+                'under_sla': event.is_under_sla,
+                'slo_metrics': event.slo_metrics.copy()
+            })
     
     def _handle_benchmark_status(self, event: BenchmarkStatusEvent) -> None:
         benchmark = self._get_or_create_benchmark(event.benchmark_id)

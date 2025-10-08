@@ -16,6 +16,24 @@ def run():
         CapacitySearchConfig.create_from_cli_args()
     )
 
+    # Suppress all output if dashboard is enabled
+    has_dashboard_enabled = any(
+        config.get_dashboard_config().enabled
+        for config in capacity_search_configs
+    )
+    if has_dashboard_enabled:
+        import sys
+        import os
+        import logging as log_module
+
+        # Redirect stdout/stderr to devnull
+        devnull = open(os.devnull, 'w')
+        sys.stdout = devnull
+        sys.stderr = devnull
+
+        # Suppress all logging
+        log_module.getLogger().setLevel(log_module.CRITICAL + 1)
+
     search_manager = SearchManager(capacity_search_configs)
     start_time = time.time()
     all_results = search_manager.run()

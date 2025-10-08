@@ -37,6 +37,11 @@ class CapacitySearchEvent:
     slo_target: str
     iteration: int
     total_iterations: int
+    search_left: float = 0.0
+    search_right: float = 0.0
+    best_qps: Optional[float] = None
+    best_slo_metrics: Optional[Dict[str, float]] = None
+    is_complete: bool = False  # True when search is finished
 
 @dataclass
 class BenchmarkStatusEvent:

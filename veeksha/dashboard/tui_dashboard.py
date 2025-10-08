@@ -290,6 +290,23 @@ class VeekshaDashboard(App):
                     self.completed_table.add_column("TPOT (ms)", key="tpot")
                     yield self.completed_table
 
+            with TabPane("🔍 Capacity Search", id="capacity-search-tab"):
+                with ScrollableContainer():
+                    # Status section
+                    yield Static("🔍 Capacity Search Status", classes="section-title")
+                    yield Static("Status: [dim]Inactive[/dim]", classes="capacity-status", id="capacity-status")
+                    yield Static("", classes="capacity-progress", id="capacity-progress")
+                    yield Static("", classes="capacity-range", id="capacity-range")
+                    yield Static("", classes="capacity-best", id="capacity-best")
+
+                    # History table
+                    yield Static("📊 Test History", classes="section-title")
+                    self.capacity_history_table = DataTable(id="capacity-history")
+                    self.capacity_history_table.add_column("QPS", key="qps")
+                    self.capacity_history_table.add_column("Status", key="status")
+                    self.capacity_history_table.add_column("SLO Metrics", key="slo_metrics")
+                    yield self.capacity_history_table
+
         yield Footer()
 
     def on_mount(self) -> None:
@@ -373,6 +390,52 @@ class VeekshaDashboard(App):
                     f"{req.ttft_ms:.1f}" if req.ttft_ms else "-",
                     f"{req.current_tpot_ms:.1f}" if req.current_tpot_ms else "-"
                 )
+
+        # Update capacity search tab
+        cs_state = self.dashboard_state.capacity_search
+        if cs_state.is_active:
+            # Update status
+            status_widget = self.query_one("#capacity-status", Static)
+            if cs_state.is_complete:
+                status_widget.update("Status: [bold green]✓ Complete[/bold green]")
+            else:
+                status_widget.update(f"Status: [bold yellow]⚙ Running[/bold yellow]")
+
+            # Update progress
+            progress_widget = self.query_one("#capacity-progress", Static)
+            progress_widget.update(
+                f"Progress: Iteration {cs_state.current_iteration}/{cs_state.total_iterations} | "
+                f"Testing QPS: [bold]{cs_state.current_qps:.1f}[/bold]"
+            )
+
+            # Update search range
+            range_widget = self.query_one("#capacity-range", Static)
+            range_widget.update(
+                f"Search Range: [{cs_state.search_left:.1f} - {cs_state.search_right:.1f}]"
+            )
+
+            # Update best result
+            best_widget = self.query_one("#capacity-best", Static)
+            if cs_state.best_qps is not None:
+                best_widget.update(
+                    f"Best QPS: [bold green]{cs_state.best_qps:.1f}[/bold green] ✓"
+                )
+            else:
+                best_widget.update("Best QPS: [dim]Not found yet[/dim]")
+
+            # Update history table
+            if self.capacity_history_table:
+                self.capacity_history_table.clear()
+                for entry in cs_state.qps_history:
+                    status_icon = "✓" if entry['under_sla'] else "✗"
+                    status_color = "green" if entry['under_sla'] else "red"
+                    slo_metrics_str = ", ".join(f"{k}={v:.2f}" for k, v in entry['slo_metrics'].items())
+
+                    self.capacity_history_table.add_row(
+                        f"{entry['qps']:.1f}",
+                        f"[{status_color}]{status_icon} {'Pass' if entry['under_sla'] else 'Fail'}[/{status_color}]",
+                        slo_metrics_str or "-"
+                    )
 
     def action_focus_requests(self) -> None:
         """Switch to requests tab"""
