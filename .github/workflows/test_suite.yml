@@ -56,7 +56,6 @@ jobs:
         id: run_unit_tests
         run: |
           docker exec \
-          -e VAJRA_IS_CI_CONTEXT="true" \
           -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
           veeksha-testsuite-${{ github.run_id }} \
           make test/unit

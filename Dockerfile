@@ -12,10 +12,10 @@ WORKDIR /repo
 SHELL ["/bin/bash", "-c"]
 
 # Create virtual environment
-RUN uv venv --python 3.12 /venv
+RUN uv venv --python 3.12 .venv
 
 # Activate environment and install dependencies
-ENV PATH="/venv/bin:$PATH"
+ENV PATH="/repo/.venv/bin:$PATH"
 RUN uv pip install -e ".[dev, test]"
 
 # The container is now ready for running tests or other commands
