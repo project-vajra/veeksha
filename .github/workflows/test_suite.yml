@@ -58,7 +58,7 @@ jobs:
           docker exec \
           -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
           veeksha-testsuite-${{ github.run_id }} \
-          make test/unit
+          make test/coverage
       - name: "Run all integration tests"
         id: run_integration_tests
         run: |

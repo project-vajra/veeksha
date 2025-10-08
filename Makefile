@@ -34,10 +34,7 @@ test: test/unit test/functional ## Run all tests
 
 test/unit: ## Run unit tests
 	@echo "Running unit tests..."
-	python -m pytest -s tests -v -m "unit" --tb=short \
-        --cov-report=xml:test_reports/python_coverage.xml \
-        --cov-report=html:test_reports/python_coverage_html \
-        --junitxml=test_reports/pytest-unit-results.xml 
+	python -m pytest -s tests -v -m "unit" --tb=short
 	
 test/integration: ## Run integration tests
 	@echo "Integration tests not yet implemented..."
