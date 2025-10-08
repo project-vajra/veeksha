@@ -30,7 +30,7 @@ format/autoflake: ## remove unused imports
 format: format/isort format/autoflake format/black ## format code
 
 # Test targets
-test: test/unit test/functional ## Run all tests
+test: test/unit test/functional test/gpu ## Run all tests
 
 test/unit: ## Run unit tests
 	@echo "Running unit tests..."
@@ -50,11 +50,6 @@ test/gpu: ## Run GPU tests
 test/all: ## Run all tests including GPU
 	@echo "Running all tests..."
 	python -m pytest -s tests -v --tb=short
-
-# Test with coverage
-test/coverage: ## Run tests with coverage report
-	@echo "Running tests with coverage..."
-	python -m pytest -s tests --cov=veeksha --cov-report=xml --cov-report=html --cov-report=term
 
 # Rerun failed tests
 test/failed-only: ## Rerun only failed tests
