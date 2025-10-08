@@ -196,7 +196,7 @@ max_completed_requests: 1
             request_generator_type="lmeval",
             interval_generator_type="static",
             duration=0.1,
-            lmeval_tasks=["reversed_words"],
+            lmeval_tasks=["triviaqa"],
             lmeval_num_fewshot=0,
             lmeval_limit=2,
         )
