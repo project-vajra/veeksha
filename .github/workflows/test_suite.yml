@@ -73,13 +73,26 @@ jobs:
           -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
           veeksha-testsuite-${{ github.run_id }} \
           make test/integration
+      - name: "Generate coverage reports"
+        id: generate_test_reports
+        run: |
+          docker exec veeksha-testsuite-${{ github.run_id }} make coverage/report
+
       - name: Publish Test Report
         uses: mikepenz/action-junit-report@v5
         if: always()
         with:
-          report_paths: "test_reports/*-results.xml"
+          report_paths: "test_output/*-results.xml"
           comment: true
           include_passed: true
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            test_output/python_coverage.xml
+            test_output/python_coverage_html/**
 
       - name: "Stop Docker container"
         id: stop_docker_container
