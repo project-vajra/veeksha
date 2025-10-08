@@ -41,8 +41,8 @@ jobs:
           --gpus "\"device=${NVIDIA_VISIBLE_DEVICES}\""  \
           --shm-size=12gb \
           --cpus=24 \
-          -v "${GITHUB_WORKSPACE}:/repo" \
-          -w /repo \
+          -v "${GITHUB_WORKSPACE}:/repo/test_output" \
+          -w /repo/test_output \
           --name veeksha-testsuite-${{ github.run_id }} \
           veeksha-ci sleep infinity
       - name: "Run pyright"
