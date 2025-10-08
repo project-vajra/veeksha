@@ -50,6 +50,10 @@ class PlotextChart(PlotextPlot):
         """Configure the plot when widget is mounted"""
         self.configure_plot()
 
+    def on_resize(self) -> None:
+        """Reconfigure plot when widget is resized"""
+        self.configure_plot()
+
     def watch_data(self, new_data: list) -> None:
         """React to data changes and update the plot"""
         self.refresh()
@@ -154,10 +158,14 @@ class VeekshaDashboard(App):
     }
 
     .chart {
-        height: 28;
+        height: 1fr;
         border: solid $accent;
         padding: 0;
         margin: 0 1;
+    }
+
+    .chart-row {
+        height: 1fr;
     }
 
     .section-title {
@@ -249,11 +257,11 @@ class VeekshaDashboard(App):
                         yield self.duration_card
 
                     # Charts in 2x2 grid
-                    with Horizontal():
+                    with Horizontal(classes="chart-row"):
                         yield self.ttft_chart.add_class("chart")
                         yield self.tpot_chart.add_class("chart")
 
-                    with Horizontal():
+                    with Horizontal(classes="chart-row"):
                         yield self.tbt_chart.add_class("chart")
                         yield self.latency_chart.add_class("chart")
 
