@@ -35,7 +35,7 @@ from veeksha.generators.request_generator.generator_registry import (
 from veeksha.logger import init_logger
 from veeksha.metrics.service_metrics import ServiceMetrics
 from veeksha.types import RequestGeneratorType
-from veeksha.dashboard.handler import init_dashboard_event_processor, stop_dashboard_event_processor
+from veeksha.dashboard.handler import stop_dashboard_event_processor
 
 logger = init_logger(__name__)
 
@@ -388,20 +388,9 @@ def run_benchmark(
     )
 
     _initialize_min_tokens_support(benchmark_config)
-    
-    # Check if dashboard initialization should be skipped (e.g., when called from run_benchmark_with_dashboard)
-    disable_dashboard_init = getattr(benchmark_config, "_disable_dashboard_init", False)
-    
-    if not disable_dashboard_init:
-        # Check if we should enable console dashboard (for multi-config runs)
-        enable_console = getattr(benchmark_config, "_enable_console_dashboard", False)
-        
-        init_dashboard_event_processor(
-            enabled=benchmark_config.dashboard_config.enabled,
-            enable_frontend=enable_console,  # Enable console for multi-config runs
-            max_queue_size=benchmark_config.dashboard_config.max_queue_size,
-            max_live_requests=benchmark_config.dashboard_config.max_live_requests,
-        )
+
+    # Dashboard initialization is now handled by the caller
+    # (either run_benchmark_with_dashboard or run_benchmark_console_only)
 
     generated_responses: List[Response] = []
 
@@ -499,9 +488,6 @@ def run_benchmark_with_dashboard(benchmark_config: BenchmarkConfig):
         max_live_requests=benchmark_config.dashboard_config.max_live_requests,
     )
 
-    # Disable dashboard init in run_benchmark since we're doing it here
-    object.__setattr__(benchmark_config, "_disable_dashboard_init", True)
-
     # Result container to capture service_metrics from background thread
     result_container = {"service_metrics": None, "error": None}
 
@@ -546,11 +532,16 @@ def run_benchmark_console_only(benchmark_config: BenchmarkConfig, stop_processor
     """
     try:
         random.seed(benchmark_config.seed)
-        # Temporarily enable console frontend for this run
-        original_enabled = benchmark_config.dashboard_config.enabled
-        if original_enabled:
-            # Override the init call in run_benchmark to enable console frontend
-            object.__setattr__(benchmark_config, "_enable_console_dashboard", True)
+
+        # Initialize dashboard if enabled
+        if benchmark_config.dashboard_config.enabled:
+            from veeksha.dashboard.handler import init_dashboard_event_processor
+            init_dashboard_event_processor(
+                enabled=True,
+                enable_frontend=False,
+                max_queue_size=benchmark_config.dashboard_config.max_queue_size,
+                max_live_requests=benchmark_config.dashboard_config.max_live_requests,
+            )
 
         service_metrics = run_benchmark(benchmark_config=benchmark_config)
         return service_metrics
