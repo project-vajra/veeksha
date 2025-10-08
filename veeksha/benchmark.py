@@ -431,7 +431,8 @@ def run_benchmark(
         == RequestGeneratorType.LMEVAL
         else benchmark_config.max_completed_requests
     )
-    pbar = tqdm(total=max_requests)
+    # Disable tqdm progress bar if dashboard is enabled to prevent output conflicts
+    pbar = tqdm(total=max_requests, disable=benchmark_config.dashboard_config.enabled)
 
     service_metrics = ServiceMetrics(
         max_requests=max_requests,

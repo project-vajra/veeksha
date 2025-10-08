@@ -56,11 +56,12 @@ class CapacitySearchState:
     is_under_sla: bool = False
     slo_target: str = ""
     slo_metrics: Dict[str, float] = field(default_factory=dict)
-    qps_history: List[Dict[str, any]] = field(default_factory=list)  # list of dicts with qps, under_sla, slo_metrics
+    qps_history: List[Dict[str, any]] = field(default_factory=list)  # list of dicts with qps, under_sla, slo_metrics, from_cache
     best_qps: Optional[float] = None
     best_slo_metrics: Optional[Dict[str, float]] = None
     is_active: bool = False  # Whether capacity search is currently running
     is_complete: bool = False
+    current_from_cache: bool = False  # Whether current iteration used cached results
 
 @dataclass
 class SingleBenchmarkState:
@@ -186,28 +187,33 @@ class DashboardState:
             benchmark.aggregate_stats.recent_latency_ms.append(metrics.end_to_end_latency * 1000)
     
     def _handle_capacity_search(self, event: CapacitySearchEvent) -> None:
+        benchmark = self._get_or_create_benchmark(event.benchmark_id)
+        cs = benchmark.capacity_search
+        
         # Mark capacity search as active on first event
-        if not self.capacity_search.is_active:
-            self.capacity_search.is_active = True
+        if not cs.is_active:
+            cs.is_active = True
 
-        self.capacity_search.current_qps = event.current_qps
-        self.capacity_search.current_iteration = event.iteration
-        self.capacity_search.total_iterations = event.total_iterations
-        self.capacity_search.search_left = event.search_left
-        self.capacity_search.search_right = event.search_right
-        self.capacity_search.is_under_sla = event.is_under_sla
-        self.capacity_search.slo_target = event.slo_target
-        self.capacity_search.slo_metrics = event.slo_metrics.copy()
-        self.capacity_search.best_qps = event.best_qps
-        self.capacity_search.best_slo_metrics = event.best_slo_metrics.copy() if event.best_slo_metrics else None
-        self.capacity_search.is_complete = event.is_complete
+        cs.current_qps = event.current_qps
+        cs.current_iteration = event.iteration
+        cs.total_iterations = event.total_iterations
+        cs.search_left = event.search_left
+        cs.search_right = event.search_right
+        cs.is_under_sla = event.is_under_sla
+        cs.slo_target = event.slo_target
+        cs.slo_metrics = event.slo_metrics.copy()
+        cs.best_qps = event.best_qps
+        cs.best_slo_metrics = event.best_slo_metrics.copy() if event.best_slo_metrics else None
+        cs.is_complete = event.is_complete
+        cs.current_from_cache = event.from_cache
 
         # Add to history (avoid duplicates by checking if QPS already exists)
-        if not any(h.get('qps') == event.current_qps for h in self.capacity_search.qps_history):
-            self.capacity_search.qps_history.append({
+        if not any(h.get('qps') == event.current_qps for h in cs.qps_history):
+            cs.qps_history.append({
                 'qps': event.current_qps,
                 'under_sla': event.is_under_sla,
-                'slo_metrics': event.slo_metrics.copy()
+                'slo_metrics': event.slo_metrics.copy(),
+                'from_cache': event.from_cache
             })
     
     def _handle_benchmark_status(self, event: BenchmarkStatusEvent) -> None:
@@ -292,6 +298,11 @@ class DashboardState:
             if bid in self.benchmarks:
                 return self.benchmarks[bid].capacity_search
             return CapacitySearchState()
+
+    @property
+    def capacity_search(self) -> CapacitySearchState:
+        """Get capacity search state for the active benchmark (convenience property)"""
+        return self.get_capacity_search_state()
 
     def get_benchmark_duration(self, benchmark_id: Optional[str] = None) -> float:
         """Get benchmark duration for a specific benchmark"""

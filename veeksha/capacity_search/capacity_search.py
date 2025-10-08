@@ -96,7 +96,7 @@ class CapacitySearch:
 
     def _run_capacity_search_benchmark(
         self, qps: float
-    ) -> Tuple[bool, Optional[Dict[str, float]], str]:
+    ) -> Tuple[bool, Optional[Dict[str, float]], str, bool]:
         qps_key = str(qps)
 
         cached_iter = self._capsearch_cache.get("iterations", {}).get(qps_key)
@@ -106,6 +106,7 @@ class CapacitySearch:
                 bool(cached_iter.get("is_under_sla", False)),
                 cached_iter.get("slo_metrics", {}),
                 qps_key,
+                True,  # from_cache = True
             )
 
         # no cache: ensure per-run dir exists now
@@ -130,7 +131,7 @@ class CapacitySearch:
             run_id=qps_key,
         )
 
-        return is_under_sla, slo_metrics_dict, qps_key
+        return is_under_sla, slo_metrics_dict, qps_key, False  # from_cache = False
 
     def _get_result_file(self, run_dir: str, metric_name: str) -> Optional[str]:
         files = glob.glob(os.path.join(run_dir, f"{metric_name}.csv"))
@@ -174,6 +175,10 @@ class CapacitySearch:
         best_run_id = None
         found_valid_qps = False
 
+        # Generate benchmark_id from base config for dashboard tracking
+        import os
+        benchmark_id = os.path.basename(self.base_benchmark_config.metrics_config.output_dir)
+
         # Emit start event
         from veeksha.dashboard.handler import emit_dashboard_event
         from veeksha.dashboard.events import CapacitySearchEvent
@@ -188,7 +193,8 @@ class CapacitySearch:
             search_right=right,
             best_qps=None,
             best_slo_metrics=None,
-            is_complete=False
+            is_complete=False,
+            benchmark_id=benchmark_id
         ))
 
         for iteration in range(self.capacity_search_config.max_iterations):
@@ -211,6 +217,7 @@ class CapacitySearch:
                 is_under_sla,
                 metrics_dict,
                 run_id,
+                from_cache,
             ) = self._run_capacity_search_benchmark(qps)
 
             if is_under_sla:
@@ -239,7 +246,9 @@ class CapacitySearch:
                 search_right=right,
                 best_qps=max_qps_under_sla,
                 best_slo_metrics=slo_metrics_at_max_qps,
-                is_complete=False
+                is_complete=False,
+                from_cache=from_cache,
+                benchmark_id=benchmark_id
             ))
 
         if not found_valid_qps:
@@ -286,7 +295,8 @@ class CapacitySearch:
             search_right=right,
             best_qps=max_qps_under_sla,
             best_slo_metrics=slo_metrics_at_max_qps,
-            is_complete=True
+            is_complete=True,
+            benchmark_id=benchmark_id
         ))
 
         return {

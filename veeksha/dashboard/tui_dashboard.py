@@ -304,6 +304,7 @@ class VeekshaDashboard(App):
                     self.capacity_history_table = DataTable(id="capacity-history")
                     self.capacity_history_table.add_column("QPS", key="qps")
                     self.capacity_history_table.add_column("Status", key="status")
+                    self.capacity_history_table.add_column("Source", key="source")
                     self.capacity_history_table.add_column("SLO Metrics", key="slo_metrics")
                     yield self.capacity_history_table
 
@@ -403,9 +404,10 @@ class VeekshaDashboard(App):
 
             # Update progress
             progress_widget = self.query_one("#capacity-progress", Static)
+            cache_indicator = " [dim](📦 cached)[/dim]" if cs_state.current_from_cache else ""
             progress_widget.update(
                 f"Progress: Iteration {cs_state.current_iteration}/{cs_state.total_iterations} | "
-                f"Testing QPS: [bold]{cs_state.current_qps:.1f}[/bold]"
+                f"Testing QPS: [bold]{cs_state.current_qps:.1f}[/bold]{cache_indicator}"
             )
 
             # Update search range
@@ -429,11 +431,13 @@ class VeekshaDashboard(App):
                 for entry in cs_state.qps_history:
                     status_icon = "✓" if entry['under_sla'] else "✗"
                     status_color = "green" if entry['under_sla'] else "red"
+                    source = "📦 Cache" if entry.get('from_cache', False) else "🔧 Run"
                     slo_metrics_str = ", ".join(f"{k}={v:.2f}" for k, v in entry['slo_metrics'].items())
 
                     self.capacity_history_table.add_row(
                         f"{entry['qps']:.1f}",
                         f"[{status_color}]{status_icon} {'Pass' if entry['under_sla'] else 'Fail'}[/{status_color}]",
+                        source,
                         slo_metrics_str or "-"
                     )
 

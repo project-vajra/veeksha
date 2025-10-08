@@ -1,4 +1,5 @@
 import multiprocessing
+import os
 import platform
 import time
 from typing import List
@@ -16,23 +17,32 @@ def run():
         CapacitySearchConfig.create_from_cli_args()
     )
 
-    # Suppress all output if dashboard is enabled
+    # Check if dashboard is enabled
     has_dashboard_enabled = any(
         config.get_dashboard_config().enabled
         for config in capacity_search_configs
     )
     if has_dashboard_enabled:
-        import sys
-        import os
+        # Set environment variable to suppress console logging in child processes
+        os.environ["VEEKSHA_SUPPRESS_CONSOLE_LOGS"] = "1"
+        # Suppress tokenizers parallelism warning when forking processes
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+        
+        # Remove stream handlers from loggers (but don't redirect stdout/stderr)
+        # This allows the TUI to start properly and LogCapture to buffer logs
         import logging as log_module
-
-        # Redirect stdout/stderr to devnull
-        devnull = open(os.devnull, 'w')
-        sys.stdout = devnull
-        sys.stderr = devnull
-
-        # Suppress all logging
-        log_module.getLogger().setLevel(log_module.CRITICAL + 1)
+        
+        # Remove handlers from root logger
+        root_logger = log_module.getLogger()
+        for handler in root_logger.handlers[:]:
+            if isinstance(handler, log_module.StreamHandler):
+                root_logger.removeHandler(handler)
+        
+        # Remove handlers from veeksha logger specifically (which has its own handler)
+        veeksha_logger = log_module.getLogger("veeksha")
+        for handler in veeksha_logger.handlers[:]:
+            if isinstance(handler, log_module.StreamHandler):
+                veeksha_logger.removeHandler(handler)
 
     search_manager = SearchManager(capacity_search_configs)
     start_time = time.time()

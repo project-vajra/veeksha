@@ -42,6 +42,8 @@ class CapacitySearchEvent:
     best_qps: Optional[float] = None
     best_slo_metrics: Optional[Dict[str, float]] = None
     is_complete: bool = False  # True when search is finished
+    from_cache: bool = False  # True if this iteration used cached results
+    benchmark_id: str = "default"
 
 @dataclass
 class BenchmarkStatusEvent:
