@@ -159,6 +159,7 @@ class VeekshaDashboard(App):
 
     .chart {
         height: 1fr;
+        min-height: 15;
         border: solid $accent;
         padding: 0;
         margin: 0 1;
@@ -166,6 +167,7 @@ class VeekshaDashboard(App):
 
     .chart-row {
         height: 1fr;
+        min-height: 15;
     }
 
     .section-title {
