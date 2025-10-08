@@ -486,8 +486,9 @@ def run_benchmark_with_dashboard(benchmark_config: BenchmarkConfig):
     """
     logger.info("Starting TUI dashboard with benchmark")
 
-    # Ensure environment variable is set to suppress console logging in child processes
+    # Ensure environment variables are set to suppress console output
     os.environ["VEEKSHA_SUPPRESS_CONSOLE_LOGS"] = "1"
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     # Initialize dashboard event processor without frontend
     from veeksha.dashboard.handler import init_dashboard_event_processor
@@ -569,6 +570,8 @@ if __name__ == "__main__":
     if has_dashboard_enabled:
         # Set environment variable to suppress console logging in child processes
         os.environ["VEEKSHA_SUPPRESS_CONSOLE_LOGS"] = "1"
+        # Suppress tokenizers parallelism warning when forking processes
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
         
         # Remove stream handlers from loggers (but don't redirect stdout/stderr yet)
         # This allows the TUI to start properly
@@ -593,37 +596,55 @@ if __name__ == "__main__":
         logger.info("Using console dashboard for multiple configurations.")
 
     try:
-
-        for i, benchmark_config in enumerate(benchmark_configs):
-            if not has_dashboard_enabled:
+        # Check if we should launch dashboard for single or multiple configs
+        if has_dashboard_enabled and len(benchmark_configs) == 1:
+            # Single benchmark with dashboard - launch interactive TUI
+            run_benchmark_with_dashboard(benchmark_configs[0])
+        elif has_dashboard_enabled and len(benchmark_configs) > 1:
+            # Multiple benchmarks with dashboard - run all in thread, then show TUI
+            logger.info(f"Running {len(benchmark_configs)} benchmarks with dashboard")
+            
+            # Ensure environment variables are set
+            os.environ["VEEKSHA_SUPPRESS_CONSOLE_LOGS"] = "1"
+            os.environ["TOKENIZERS_PARALLELISM"] = "false"
+            
+            def run_all_benchmarks():
+                """Run all benchmarks sequentially in background"""
+                for i, benchmark_config in enumerate(benchmark_configs):
+                    logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
+                    is_last = (i == len(benchmark_configs) - 1)
+                    run_benchmark_console_only(benchmark_config, stop_processor_after=is_last)
+                    logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")
+            
+            # Start all benchmarks in background thread
+            benchmark_thread = Thread(target=run_all_benchmarks, daemon=False)
+            benchmark_thread.start()
+            
+            # Give benchmarks a moment to initialize
+            time.sleep(0.5)
+            
+            # Launch TUI dashboard
+            from veeksha.dashboard.handler import get_dashboard_event_processor
+            processor = get_dashboard_event_processor()
+            if processor and processor.dashboard_state:
+                from veeksha.dashboard.tui_dashboard import run_dashboard_tui
+                run_dashboard_tui(processor.dashboard_state)
+            
+            # Wait for all benchmarks to complete
+            benchmark_thread.join()
+            logger.info("All benchmarks completed")
+        else:
+            # No dashboard - console only mode
+            for i, benchmark_config in enumerate(benchmark_configs):
                 print(f"Running benchmark with config: {benchmark_config}")
-            if len(benchmark_configs) > 1:
-                logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
-
-            # Check if we should launch interactive dashboard
-            if (benchmark_config.dashboard_config.enabled and
-                len(benchmark_configs) == 1):
-                # Single benchmark with dashboard - launch interactive TUI
-                run_benchmark_with_dashboard(benchmark_config)
-            else:
-                # Multiple benchmarks or dashboard disabled - console only
-                # Only stop processor after the last benchmark
+                if len(benchmark_configs) > 1:
+                    logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
+                
                 is_last = (i == len(benchmark_configs) - 1)
                 run_benchmark_console_only(benchmark_config, stop_processor_after=is_last)
-
-            if len(benchmark_configs) > 1:
-                logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")
-
-        # If multiple benchmarks with dashboard enabled, keep it open for viewing
-        if len(benchmark_configs) > 1 and has_dashboard_enabled:
-            logger.info("All benchmarks complete. TUI dashboard still running")
-            logger.info("Press 'q' in the TUI to exit")
-            try:
-                import time
-                while True:
-                    time.sleep(1)
-            except KeyboardInterrupt:
-                logger.info("Dashboard stopped")
+                
+                if len(benchmark_configs) > 1:
+                    logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")
     finally:
         logger.info("All benchmarks completed.")
         # Ensure processor is stopped even if there's an exception
