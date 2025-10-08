@@ -55,6 +55,27 @@ def frozen_dataclass(_cls=None, **kwargs):
 
         datacls.__setattr__ = __setattr__
 
+        # Define pickle support methods
+        def __getstate__(self):
+            # Return only the dataclass fields for pickling
+            return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+        datacls.__getstate__ = __getstate__
+
+        def __setstate__(self, state):
+            # Restore from pickled state
+            object.__setattr__(self, "_in_post_init", True)
+            for key, value in state.items():
+                object.__setattr__(self, key, value)
+            # Call __post_init__ to initialize derived attributes
+            if hasattr(self, '__post_init__'):
+                self.__post_init__()
+            else:
+                # If no __post_init__, just clear the flag
+                object.__setattr__(self, "_in_post_init", False)
+
+        datacls.__setstate__ = __setstate__
+
         return datacls
 
     # Support both @frozen_dataclass and @frozen_dataclass() syntax

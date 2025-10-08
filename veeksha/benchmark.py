@@ -1,9 +1,12 @@
+import collections
 import multiprocessing
 import os
 import platform
 import random
+import sys
 import threading
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import Queue
 from queue import Empty
 from threading import Thread
@@ -412,26 +415,62 @@ def run_benchmark(
     return service_metrics
 
 
-if __name__ == "__main__":
+def _run_benchmarks_for_endpoint(configs_for_endpoint: List[BenchmarkConfig]):
     if platform.system() == "Darwin":
         multiprocessing.set_start_method("fork", force=True)
 
-    benchmark_configs = BenchmarkConfig.create_from_cli_args()
+    endpoint = configs_for_endpoint[0].api_url
 
-    if len(benchmark_configs) > 1:
+    if len(configs_for_endpoint) > 1:
         logger.info(
-            f"Running {len(benchmark_configs)} benchmark configurations sequentially."
+            f"Running {len(configs_for_endpoint)} benchmark configurations sequentially for endpoint '{endpoint}'"
         )
 
-    for i, benchmark_config in enumerate(benchmark_configs):
+    for i, benchmark_config in enumerate(configs_for_endpoint):
         print(f"Running benchmark with config: {benchmark_config}")
-        if len(benchmark_configs) > 1:
-            logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
+        if len(configs_for_endpoint) > 1:
+            logger.info(f"Starting benchmark {i+1}/{len(configs_for_endpoint)}")
 
         random.seed(benchmark_config.seed)
         service_metrics = run_benchmark(benchmark_config=benchmark_config)
 
-        if len(benchmark_configs) > 1:
-            logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")
+        if len(configs_for_endpoint) > 1:
+            logger.info(f"Completed benchmark {i+1}/{len(configs_for_endpoint)}")
+
+
+if __name__ == "__main__":
+
+    benchmark_configs = BenchmarkConfig.create_from_cli_args()
+
+    grouped_configs = collections.defaultdict(list)
+    for cfg in benchmark_configs:
+        grouped_configs[cfg.api_url].append(cfg)
+
+    num_parallel_jobs = len(grouped_configs)
+
+    if num_parallel_jobs > 1:
+        logger.info(f"Running {num_parallel_jobs} jobs in parallel.")
+
+        with ProcessPoolExecutor(max_workers=num_parallel_jobs) as executor:
+            future_to_endpoint = {
+                executor.submit(_run_benchmarks_for_endpoint, configs): endpoint
+                for endpoint, configs in grouped_configs.items()
+            }
+
+            all_succeeded = True
+            for future in as_completed(future_to_endpoint):
+                endpoint = future_to_endpoint[future]
+                try:
+                    future.result()
+                    logger.info(f"Completed benchmarks for endpoint {endpoint}")
+                except Exception as e:
+                    logger.error(f"Endpoint '{endpoint}' generated an exception: {e}")
+                    all_succeeded = False
+
+        if not all_succeeded:
+            logger.error("Some benchmarks failed.")
+            sys.exit(1)
+    else:
+        _run_benchmarks_for_endpoint(benchmark_configs)
 
     logger.info("All benchmarks completed.")
