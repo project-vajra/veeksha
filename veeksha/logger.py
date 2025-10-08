@@ -29,13 +29,21 @@ _default_handler = None
 def _setup_logger():
     _root_logger.setLevel(logging.DEBUG)
     global _default_handler
-    if _default_handler is None:
+    
+    # Check if console logging should be suppressed (for TUI dashboard mode)
+    import os
+    suppress_console = os.environ.get("VEEKSHA_SUPPRESS_CONSOLE_LOGS", "0") == "1"
+    
+    if _default_handler is None and not suppress_console:
         _default_handler = logging.StreamHandler(sys.stdout)
         _default_handler.flush = sys.stdout.flush  # type: ignore
         _default_handler.setLevel(logging.INFO)
         _root_logger.addHandler(_default_handler)
-    fmt = NewLineFormatter(_FORMAT, datefmt=_DATE_FORMAT)
-    _default_handler.setFormatter(fmt)
+    
+    if _default_handler is not None:
+        fmt = NewLineFormatter(_FORMAT, datefmt=_DATE_FORMAT)
+        _default_handler.setFormatter(fmt)
+    
     # Setting this will avoid the message
     # being propagated to the parent logger.
     _root_logger.propagate = False

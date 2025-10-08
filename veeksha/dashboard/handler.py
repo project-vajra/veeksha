@@ -74,7 +74,6 @@ class DashboardEventHandlerProcessor:
 # Global event processor singleton
 _dashboard_event_processor: Optional[DashboardEventHandlerProcessor] = None
 _dashboard_init_lock = threading.Lock()
-_dashboard_frontend_thread: Optional[threading.Thread] = None
 
 def get_dashboard_event_processor() -> Optional[DashboardEventHandlerProcessor]:
     """Get the global dashboard processor instance"""
@@ -83,17 +82,28 @@ def get_dashboard_event_processor() -> Optional[DashboardEventHandlerProcessor]:
 
 def stop_dashboard_event_processor() -> None:
     """Stop the global dashboard event processor"""
-    global _dashboard_event_processor, _dashboard_frontend_thread
+    global _dashboard_event_processor
     if _dashboard_event_processor:
         _dashboard_event_processor.stop()
         _dashboard_event_processor = None
+
+
+def init_dashboard_event_processor(enabled: bool = True, enable_frontend: bool = False, **kwargs) -> Optional[DashboardState]:
+    """Initialize the global dashboard event processor. This is thread-safe and idempotent.
     
-    # Note: Dashboard frontend thread is daemon thread and will stop automatically
-
-
-def init_dashboard_event_processor(enabled: bool = True, enable_frontend: bool = True, **kwargs) -> Optional[DashboardState]:
-    """Initialize the global dashboard event processor. This is thread-safe and idempotent."""
-    global _dashboard_event_processor, _dashboard_frontend_thread
+    Args:
+        enabled: Whether to enable the dashboard event processor
+        enable_frontend: Whether to launch TUI (not used anymore - kept for compatibility)
+        **kwargs: Additional arguments passed to DashboardEventHandlerProcessor
+        
+    Returns:
+        DashboardState object if enabled, None otherwise
+        
+    Note:
+        The TUI frontend must be launched separately in the main thread using
+        run_dashboard_tui() from veeksha.dashboard.tui_dashboard.
+    """
+    global _dashboard_event_processor
 
     if not enabled:
         _dashboard_event_processor = None
@@ -103,22 +113,6 @@ def init_dashboard_event_processor(enabled: bool = True, enable_frontend: bool =
         if _dashboard_event_processor is None:
             _dashboard_event_processor = DashboardEventHandlerProcessor(**kwargs)
             dashboard_state = _dashboard_event_processor.start()
-
-            # Launch TUI frontend if requested and not already running
-            if enable_frontend and _dashboard_frontend_thread is None:
-                try:
-                    from veeksha.dashboard.tui_dashboard import run_dashboard_tui
-                    _dashboard_frontend_thread = run_dashboard_tui(dashboard_state)
-                except ImportError as e:
-                    # Log warning but don't fail if textual not available
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.warning(f"Dashboard frontend not available: {e}")
-                except Exception as e:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.error(f"Failed to start dashboard frontend: {e}")
-
             return dashboard_state
         return _dashboard_event_processor.dashboard_state
 

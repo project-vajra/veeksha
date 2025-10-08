@@ -388,15 +388,20 @@ def run_benchmark(
     )
 
     _initialize_min_tokens_support(benchmark_config)
-    # Check if we should enable console dashboard (for multi-config runs)
-    enable_console = getattr(benchmark_config, "_enable_console_dashboard", False)
     
-    init_dashboard_event_processor(
-        enabled=benchmark_config.dashboard_config.enabled,
-        enable_frontend=enable_console,  # Enable console for multi-config runs
-        max_queue_size=benchmark_config.dashboard_config.max_queue_size,
-        max_live_requests=benchmark_config.dashboard_config.max_live_requests,
-    )
+    # Check if dashboard initialization should be skipped (e.g., when called from run_benchmark_with_dashboard)
+    disable_dashboard_init = getattr(benchmark_config, "_disable_dashboard_init", False)
+    
+    if not disable_dashboard_init:
+        # Check if we should enable console dashboard (for multi-config runs)
+        enable_console = getattr(benchmark_config, "_enable_console_dashboard", False)
+        
+        init_dashboard_event_processor(
+            enabled=benchmark_config.dashboard_config.enabled,
+            enable_frontend=enable_console,  # Enable console for multi-config runs
+            max_queue_size=benchmark_config.dashboard_config.max_queue_size,
+            max_live_requests=benchmark_config.dashboard_config.max_live_requests,
+        )
 
     generated_responses: List[Response] = []
 
@@ -473,27 +478,61 @@ def run_benchmark(
 
 
 def run_benchmark_with_dashboard(benchmark_config: BenchmarkConfig):
-    """Run benchmark with TUI dashboard"""
+    """Run benchmark with TUI dashboard in main thread.
+    
+    The benchmark runs in a background thread while the TUI runs in the main thread.
+    This is required because Textual needs to register signal handlers which can only
+    be done in the main thread.
+    """
     logger.info("Starting TUI dashboard with benchmark")
 
-    # Enable TUI frontend for this run (using object.__setattr__ for frozen dataclass)
-    object.__setattr__(benchmark_config, "_enable_console_dashboard", True)
+    # Ensure environment variable is set to suppress console logging in child processes
+    os.environ["VEEKSHA_SUPPRESS_CONSOLE_LOGS"] = "1"
 
-    # Run the benchmark - TUI dashboard starts automatically
-    # via init_dashboard_event_processor in run_benchmark()
-    service_metrics = run_benchmark(benchmark_config)
+    # Initialize dashboard event processor without frontend
+    from veeksha.dashboard.handler import init_dashboard_event_processor
+    dashboard_state = init_dashboard_event_processor(
+        enabled=benchmark_config.dashboard_config.enabled,
+        enable_frontend=False,  # We'll launch TUI manually in main thread
+        max_queue_size=benchmark_config.dashboard_config.max_queue_size,
+        max_live_requests=benchmark_config.dashboard_config.max_live_requests,
+    )
 
-    # Keep the process alive to maintain TUI
-    logger.info("Benchmark complete. Press 'q' in the TUI to exit")
+    # Disable dashboard init in run_benchmark since we're doing it here
+    object.__setattr__(benchmark_config, "_disable_dashboard_init", True)
 
-    try:
-        import time
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        logger.info("Dashboard stopped")
+    # Result container to capture service_metrics from background thread
+    result_container = {"service_metrics": None, "error": None}
 
-    return service_metrics
+    def run_benchmark_thread():
+        """Run benchmark in background thread"""
+        try:
+            service_metrics = run_benchmark(benchmark_config)
+            result_container["service_metrics"] = service_metrics
+        except Exception as e:
+            result_container["error"] = e
+            logger.error(f"Benchmark error: {e}", exc_info=True)
+
+    # Start benchmark in background thread
+    benchmark_thread = Thread(target=run_benchmark_thread, daemon=False)
+    benchmark_thread.start()
+
+    # Give benchmark a moment to initialize
+    time.sleep(0.5)
+
+    # Run TUI in main thread (blocking)
+    if dashboard_state:
+        from veeksha.dashboard.tui_dashboard import run_dashboard_tui
+        run_dashboard_tui(dashboard_state)
+
+    # Wait for benchmark thread to complete
+    benchmark_thread.join()
+
+    # Check for errors
+    if result_container["error"]:
+        raise result_container["error"]
+
+    return result_container["service_metrics"]
 
 
 def run_benchmark_console_only(benchmark_config: BenchmarkConfig, stop_processor_after: bool = True):
@@ -525,20 +564,27 @@ if __name__ == "__main__":
 
     benchmark_configs = BenchmarkConfig.create_from_cli_args()
 
-    # Suppress all output if dashboard is enabled
+    # Check if dashboard is enabled
     has_dashboard_enabled = any(bc.dashboard_config.enabled for bc in benchmark_configs)
     if has_dashboard_enabled:
-        import sys
-        import os
+        # Set environment variable to suppress console logging in child processes
+        os.environ["VEEKSHA_SUPPRESS_CONSOLE_LOGS"] = "1"
+        
+        # Remove stream handlers from loggers (but don't redirect stdout/stderr yet)
+        # This allows the TUI to start properly
         import logging as log_module
-
-        # Redirect stdout/stderr to devnull
-        devnull = open(os.devnull, 'w')
-        sys.stdout = devnull
-        sys.stderr = devnull
-
-        # Suppress all logging
-        log_module.getLogger().setLevel(log_module.CRITICAL + 1)
+        
+        # Remove handlers from root logger
+        root_logger = log_module.getLogger()
+        for handler in root_logger.handlers[:]:
+            if isinstance(handler, log_module.StreamHandler):
+                root_logger.removeHandler(handler)
+        
+        # Remove handlers from veeksha logger specifically (which has its own handler)
+        veeksha_logger = log_module.getLogger("veeksha")
+        for handler in veeksha_logger.handlers[:]:
+            if isinstance(handler, log_module.StreamHandler):
+                veeksha_logger.removeHandler(handler)
 
     if len(benchmark_configs) > 1:
         logger.info(
@@ -549,7 +595,8 @@ if __name__ == "__main__":
     try:
 
         for i, benchmark_config in enumerate(benchmark_configs):
-            print(f"Running benchmark with config: {benchmark_config}")
+            if not has_dashboard_enabled:
+                print(f"Running benchmark with config: {benchmark_config}")
             if len(benchmark_configs) > 1:
                 logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
 

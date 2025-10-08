@@ -8,14 +8,13 @@ import logging
 from datetime import datetime
 from typing import Optional, List
 from collections import deque
-import io
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
 from textual.widgets import Header, Footer, Static, Label, DataTable, RichLog, TabbedContent, TabPane
 from textual.reactive import reactive
 from rich.text import Text
-import plotext as plt
+from textual_plotext import PlotextPlot
 
 from veeksha.dashboard.state import DashboardState, LiveRequestInfo
 
@@ -35,58 +34,71 @@ class MetricCard(Static):
         yield Label(self.value, classes="metric-value")
 
 
-class PlotextChart(Static):
-    """Plotext-based line chart for metrics"""
+class PlotextChart(PlotextPlot):
+    """Plotext-based line chart for metrics using textual-plotext"""
 
     data = reactive(list)
 
     def __init__(self, title: str, max_points: int = 100, color: str = "cyan", *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.title = title
+        self.chart_title = title
         self.max_points = max_points
-        self.color = color
+        self.chart_color = color
         self.data = []
 
-    def render(self) -> str:
+    def on_mount(self) -> None:
+        """Configure the plot when widget is mounted"""
+        self.configure_plot()
+
+    def watch_data(self, new_data: list) -> None:
+        """React to data changes and update the plot"""
+        self.refresh()
+
+    def configure_plot(self) -> None:
+        """Configure and render the plot"""
         if not self.data or len(self.data) == 0:
-            return f"[bold]{self.title}[/bold]\n\n[dim]Waiting for data...[/dim]"
+            return
 
         # Get recent data points
         recent_data = list(self.data)[-self.max_points:]
 
         if len(recent_data) < 2:
-            return f"[bold]{self.title}[/bold]\n\nCollecting data..."
+            return
 
         max_val = max(recent_data)
         min_val = min(recent_data)
         avg_val = sum(recent_data) / len(recent_data)
 
-        # Use plotext to create chart
-        plt.clf()  # Clear previous plot
-        plt.plotsize(70, 10)  # Set plot size
-        plt.theme('dark')  # Dark theme
-        plt.title(self.title)
+        # Clear and configure the plot
+        self.plt.clear_data()
+        self.plt.clear_figure()
+        
+        # Set dark theme
+        self.plt.theme('clear')
+        self.plt.canvas_color('black')
+        self.plt.axes_color('black')
+        self.plt.ticks_color('white')
+        
+        # Set title
+        self.plt.title(self.chart_title)
 
-        # Plot the data
+        # Plot the data with smooth line
         x_vals = list(range(len(recent_data)))
-        plt.plot(x_vals, recent_data, marker="dot")
+        self.plt.plot(x_vals, recent_data, color=self.chart_color + '+', marker='braille')
 
         # Add statistics as xlabel
-        plt.xlabel(f"Max: {max_val:.1f} | Min: {min_val:.1f} | Avg: {avg_val:.1f} | Samples: {len(recent_data)}")
-
-        # Build the plot as a string
-        plot_str = plt.build()
-
-        return plot_str
+        self.plt.xlabel(f"Max: {max_val:.1f} | Min: {min_val:.1f} | Avg: {avg_val:.1f} | Samples: {len(recent_data)}")
+        
+        # Enable grid
+        self.plt.grid(True, True)
 
 
 class LogCapture(logging.Handler):
-    """Custom logging handler that captures logs for TUI display"""
+    """Custom logging handler that captures logs to print after dashboard exits"""
 
-    def __init__(self, rich_log_widget: RichLog):
+    def __init__(self):
         super().__init__()
-        self.rich_log = rich_log_widget
-        self.buffer = deque(maxlen=1000)  # Keep last 1000 log entries
+        self.buffer = []  # Keep all log entries
 
     def emit(self, record: logging.LogRecord):
         try:
@@ -97,14 +109,19 @@ class LogCapture(logging.Handler):
 
             # Add to buffer for later display
             self.buffer.append(msg)
-
-            # Try to write to widget (may fail if not yet mounted)
-            try:
-                self.rich_log.write(msg)
-            except:
-                pass  # Widget not ready yet
         except Exception:
-            self.handleError(record)
+            # Silently ignore errors
+            pass
+    
+    def print_logs(self):
+        """Print all captured logs to stdout"""
+        if self.buffer:
+            print("\n" + "="*80)
+            print("BENCHMARK LOGS")
+            print("="*80)
+            for msg in self.buffer:
+                print(msg)
+            print("="*80 + "\n")
 
 
 class VeekshaDashboard(App):
@@ -116,9 +133,9 @@ class VeekshaDashboard(App):
     }
 
     .metric-card {
-        height: 5;
+        height: 4;
         border: solid $primary;
-        padding: 0 1;
+        padding: 0;
         margin: 0 1;
     }
 
@@ -132,44 +149,54 @@ class VeekshaDashboard(App):
         text-align: center;
         text-style: bold;
         color: $primary;
-        height: 3;
+        height: 2;
         content-align: center middle;
     }
 
     .chart {
-        height: 15;
+        height: 28;
         border: solid $accent;
-        padding: 1;
+        padding: 0;
         margin: 0 1;
     }
 
+    .section-title {
+        text-style: bold;
+        color: $accent;
+        padding: 1 2;
+        margin: 1 0;
+        background: $panel;
+    }
+
     #live-requests {
-        height: 15;
+        height: 20;
         border: solid $success;
+        margin: 0 1 1 1;
     }
 
     #completed-requests {
-        height: 15;
+        height: 20;
         border: solid $warning;
-    }
-
-    #logs {
-        height: 100%;
-        border: solid $error;
+        margin: 0 1 1 1;
     }
 
     .benchmark-selector {
-        height: 3;
-        border: solid $accent;
+        height: 2;
+        border: none;
         padding: 0 1;
-        margin: 1;
+        margin: 0;
+    }
+    
+    .metric-row {
+        height: 4;
+        margin: 0;
     }
     """
 
     BINDINGS = [
         ("q", "quit", "Quit"),
         ("d", "toggle_dark", "Toggle Dark Mode"),
-        ("l", "focus_logs", "Focus Logs"),
+        ("r", "focus_requests", "Requests Tab"),
         ("n", "next_benchmark", "Next Benchmark"),
         ("p", "prev_benchmark", "Previous Benchmark"),
     ]
@@ -193,15 +220,15 @@ class VeekshaDashboard(App):
         # Charts
         self.ttft_chart = PlotextChart("📈 Time to First Token (TTFT)", color="cyan")
         self.tpot_chart = PlotextChart("📉 Time per Output Token (TPOT)", color="green")
-        self.tbt_chart = PlotextChart("⏱️  Time Between Tokens (TBT)", color="yellow")
+        self.tbt_chart = PlotextChart("⏱️  Time Between Tokens (TBT)", color="orange")
         self.latency_chart = PlotextChart("📊 End-to-End Latency", color="magenta")
 
         # Tables
         self.live_table: Optional[DataTable] = None
         self.completed_table: Optional[DataTable] = None
 
-        # Logs
-        self.log_view: Optional[RichLog] = None
+        # Log capture handler
+        self.log_handler: Optional[LogCapture] = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -213,18 +240,13 @@ class VeekshaDashboard(App):
                     yield Static("🎯 Active Benchmark: [bold cyan]Loading...[/bold cyan]",
                                classes="benchmark-selector", id="benchmark-selector")
 
-                    # Metric cards in rows
-                    with Horizontal():
+                    # Compact metric row - only essential metrics
+                    with Horizontal(classes="metric-row"):
                         yield self.total_requests_card
+                        yield self.ttft_card
                         yield self.completed_card
                         yield self.errors_card
                         yield self.duration_card
-
-                    with Horizontal():
-                        yield self.ttft_card
-                        yield self.tpot_card
-                        yield self.tbt_card
-                        yield self.latency_card
 
                     # Charts in 2x2 grid
                     with Horizontal():
@@ -235,47 +257,44 @@ class VeekshaDashboard(App):
                         yield self.tbt_chart.add_class("chart")
                         yield self.latency_chart.add_class("chart")
 
-            with TabPane("🔴 Live Requests", id="live-tab"):
-                self.live_table = DataTable(id="live-requests")
-                self.live_table.add_column("Request ID", key="id")
-                self.live_table.add_column("Input Tokens", key="input")
-                self.live_table.add_column("Output Tokens", key="output")
-                self.live_table.add_column("TTFT (ms)", key="ttft")
-                self.live_table.add_column("TPOT (ms)", key="tpot")
-                self.live_table.add_column("Progress", key="progress")
-                yield self.live_table
+            with TabPane("📋 Requests", id="requests-tab"):
+                with ScrollableContainer():
+                    # Live Requests section
+                    yield Static("🔴 Live Requests (In Progress)", classes="section-title")
+                    self.live_table = DataTable(id="live-requests")
+                    self.live_table.add_column("Request ID", key="id")
+                    self.live_table.add_column("Input Tokens", key="input")
+                    self.live_table.add_column("Output Tokens", key="output")
+                    self.live_table.add_column("TTFT (ms)", key="ttft")
+                    self.live_table.add_column("TPOT (ms)", key="tpot")
+                    self.live_table.add_column("Progress", key="progress")
+                    yield self.live_table
 
-            with TabPane("✅ Completed", id="completed-tab"):
-                self.completed_table = DataTable(id="completed-requests")
-                self.completed_table.add_column("Request ID", key="id")
-                self.completed_table.add_column("Input Tokens", key="input")
-                self.completed_table.add_column("Output Tokens", key="output")
-                self.completed_table.add_column("TTFT (ms)", key="ttft")
-                self.completed_table.add_column("TPOT (ms)", key="tpot")
-                yield self.completed_table
-
-            with TabPane("📝 Logs", id="logs-tab"):
-                self.log_view = RichLog(id="logs", highlight=True, markup=True)
-                yield self.log_view
+                    # Completed Requests section
+                    yield Static("✅ Completed Requests", classes="section-title")
+                    self.completed_table = DataTable(id="completed-requests")
+                    self.completed_table.add_column("Request ID", key="id")
+                    self.completed_table.add_column("Input Tokens", key="input")
+                    self.completed_table.add_column("Output Tokens", key="output")
+                    self.completed_table.add_column("TTFT (ms)", key="ttft")
+                    self.completed_table.add_column("TPOT (ms)", key="tpot")
+                    yield self.completed_table
 
         yield Footer()
 
     def on_mount(self) -> None:
         """Set up log capture and start update timer"""
         # Set up log capture
-        if self.log_view:
-            self.log_handler = LogCapture(self.log_view)
-            self.log_handler.setFormatter(
-                logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            )
+        self.log_handler = LogCapture()
+        self.log_handler.setFormatter(
+            logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        )
+        # Set log level to INFO to avoid overwhelming the system
+        self.log_handler.setLevel(logging.INFO)
 
-            # Add handler to root logger to capture all logs
-            root_logger = logging.getLogger()
-            root_logger.addHandler(self.log_handler)
-
-            # Flush any buffered logs
-            for msg in self.log_handler.buffer:
-                self.log_view.write(msg)
+        # Add handler to veeksha logger directly (has propagate=False)
+        veeksha_logger = logging.getLogger('veeksha')
+        veeksha_logger.addHandler(self.log_handler)
 
         # Start update timer
         self.set_interval(self.update_interval, self.update_dashboard)
@@ -307,9 +326,16 @@ class VeekshaDashboard(App):
 
         # Update charts
         self.ttft_chart.data = list(stats.recent_ttft_ms)
+        self.ttft_chart.configure_plot()
+        
         self.tpot_chart.data = list(stats.recent_tpot_ms)
+        self.tpot_chart.configure_plot()
+        
         self.tbt_chart.data = list(stats.recent_tbt_ms)
+        self.tbt_chart.configure_plot()
+        
         self.latency_chart.data = list(stats.recent_latency_ms)
+        self.latency_chart.configure_plot()
 
         # Update live requests table
         if self.live_table:
@@ -338,10 +364,10 @@ class VeekshaDashboard(App):
                     f"{req.current_tpot_ms:.1f}" if req.current_tpot_ms else "-"
                 )
 
-    def action_focus_logs(self) -> None:
-        """Switch to logs tab"""
+    def action_focus_requests(self) -> None:
+        """Switch to requests tab"""
         tabbed = self.query_one(TabbedContent)
-        tabbed.active = "logs-tab"
+        tabbed.active = "requests-tab"
 
     def action_next_benchmark(self) -> None:
         """Switch to next benchmark"""
@@ -366,29 +392,24 @@ class VeekshaDashboard(App):
     def on_unmount(self) -> None:
         """Clean up log handler"""
         if self.log_handler:
-            root_logger = logging.getLogger()
-            root_logger.removeHandler(self.log_handler)
+            veeksha_logger = logging.getLogger('veeksha')
+            veeksha_logger.removeHandler(self.log_handler)
 
 
-def run_dashboard_tui(dashboard_state: DashboardState) -> threading.Thread:
-    """Run the Textual TUI dashboard in a background thread.
+def run_dashboard_tui(dashboard_state: DashboardState) -> None:
+    """Run the Textual TUI dashboard in the main thread (blocking).
 
     Args:
         dashboard_state: The shared dashboard state object
 
-    Returns:
-        Thread object running the TUI
+    Note:
+        This function blocks until the TUI is closed. It must be called
+        from the main thread as Textual requires signal handler registration.
+        Logs are captured during execution and printed after the dashboard exits.
     """
-
-    def run_app():
-        app = VeekshaDashboard(dashboard_state)
-        app.run()
-
-    thread = threading.Thread(target=run_app, daemon=True)
-    thread.start()
-
-    # Give TUI a moment to start
-    import time
-    time.sleep(0.5)
-
-    return thread
+    app = VeekshaDashboard(dashboard_state)
+    app.run()
+    
+    # Print captured logs after dashboard exits
+    if app.log_handler:
+        app.log_handler.print_logs()
