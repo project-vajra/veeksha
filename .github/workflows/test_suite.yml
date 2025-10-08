@@ -1,7 +1,7 @@
 name: "Test Suite"
 on:
   push:
-    branches: ["release/*", "users/himanish/ci-pipeline"]
+    branches: [main, "release/*", "users/himanish/ci-pipeline"]
   pull_request:
     branches: [main, "release/*"]
     types: [labeled, synchronize]
@@ -38,7 +38,7 @@ jobs:
       - name: "Run test container"
         run: |
           docker run -d \
-          --gpus "\"device=${NVIDIA_VISIBLE_DEVICES}\""  \
+          --gpus "\device=${NVIDIA_VISIBLE_DEVICES}\"  \
           --shm-size=12gb \
           --cpus=24 \
           -v "${GITHUB_WORKSPACE}/test_output:/repo/test_output" \
