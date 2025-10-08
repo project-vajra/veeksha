@@ -45,14 +45,14 @@ jobs:
           -w /repo \
           --name veeksha-testsuite-${{ github.run_id }} \
           veeksha-ci sleep infinity
-      - name: "Run all unit tests"
+      - name: "Run unit tests"
         id: run_unit_tests
         run: |
           docker exec \
           -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
           veeksha-testsuite-${{ github.run_id }} \
           make test/unit
-      - name: "Run all functional (nongpu) tests"
+      - name: "Run functional (nongpu) tests"
         id: run_functional_tests_nogpu
         run: |
           docker exec \
@@ -66,6 +66,13 @@ jobs:
           -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
           veeksha-testsuite-${{ github.run_id }} \
           make test/gpu
+      - name: "Run integration tests"
+        id: run_integration_tests
+        run: |
+          docker exec \
+          -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
+          veeksha-testsuite-${{ github.run_id }} \
+          make test/integration
       - name: Publish Test Report
         uses: mikepenz/action-junit-report@v5
         if: always()
