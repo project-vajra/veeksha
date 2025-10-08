@@ -1,7 +1,7 @@
 name: "Test Suite"
 on:
   push:
-    branches: [main, "release/*", "users/himanish/ci-pipeline"]
+    branches: [main, "release/*"]
   pull_request:
     branches: [main, "release/*"]
     types: [labeled, synchronize]
