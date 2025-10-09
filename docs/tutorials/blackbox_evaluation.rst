@@ -7,9 +7,43 @@ Check out the following resources to learn how to run ``veeksha`` with both prop
 
 .. toctree::
     :maxdepth: 2
-    
+
     public_apis
     open_source_systems
+
+Running Benchmarks Against Multiple Endpoints in Parallel
+----------------------------------------------------------
+
+``veeksha`` supports running benchmarks against multiple API endpoints simultaneously. This is useful for comparing different inference systems, testing load balancing setups, or benchmarking multiple model deployments concurrently.
+
+Using Configuration Files
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+You can specify multiple endpoints using YAML configuration files with list syntax for ``api_url`` and ``api_key``:
+
+.. code-block:: yaml
+
+    # example_parallel.yml
+    api_url: [http://localhost:30000/v1, http://localhost:30002/v1, http://localhost:30004/v1]
+    api_key: [token-abc123, token-def456, token-ghi789]
+
+    client_config:
+      model: meta-llama/Meta-Llama-3-8B-Instruct
+      num_clients: 15
+      ...
+
+Run the benchmark with:
+
+.. code-block:: bash
+
+    python -m veeksha.benchmark --config veeksha/benchmark_config_files/example_parallel.yml
+
+How It Works
+^^^^^^^^^^^^
+
+- **API URL/Key Pairing**: When both ``api_url`` and ``api_key`` are specified as lists, they are automatically paired together (zipped). The lists must be the same length.
+- **Parallel Execution**: Benchmarks are grouped by endpoint and executed in parallel using separate processes. Each endpoint runs its benchmark configurations sequentially, but different endpoints run simultaneously.
+- **Other List Fields**: Any other configuration fields specified as lists will expand via cartesian product as usual, creating multiple benchmark runs per endpoint.
 
 Following figures show evaluations by ``veeksha``:
 

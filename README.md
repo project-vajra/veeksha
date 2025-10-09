@@ -91,6 +91,18 @@ And then we can run the benchmark as shown [here](#running-benchmark). Be sure t
 
 The results of the benchmark are saved in the results directory specified by the `--output-dir` argument.
 
+### Running Benchmarks Against Multiple Endpoints in Parallel
+
+Veeksha supports running benchmarks against multiple API endpoints simultaneously. You can specify multiple endpoints using YAML configuration files with list syntax for `api_url` and `api_key`:
+
+```yaml
+# example_parallel.yml
+api_url: [http://localhost:30000/v1, http://localhost:30002/v1, http://localhost:30004/v1]
+api_key: [token-abc123, token-def456, token-ghi789]
+```
+
+For more details, see the [black-box evaluation documentation](docs/tutorials/blackbox_evaluation.rst).
+
 ## Running Capacity Search
 Refer to [readme](veeksha/capacity_search/README.md) file of `veeksha/capacity_search` folder to know more about how to run capacity search.
 
