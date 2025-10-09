@@ -135,8 +135,8 @@ def main():
     """Run example based on command line argument or run all."""
     import sys
     
-    if len(sys.argv) > 1:
-        example = sys.argv[1]
+    if len(sys.argv) > 2:
+        example = sys.argv[2]
         if example == "prefill":
             # Start server for prefill (or use existing)
             server_config = ServerConfig(
