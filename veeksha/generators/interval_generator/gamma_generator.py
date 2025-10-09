@@ -1,3 +1,4 @@
+import numpy as np
 from scipy.stats import gamma
 
 from veeksha.config.generators.interval_generator.gamma_generator import (
@@ -9,8 +10,13 @@ from veeksha.generators.interval_generator.base_generator import (
 
 
 class GammaRequestIntervalGenerator(BaseRequestIntervalGenerator):
-    def __init__(self, config: GammaRequestIntervalGeneratorConfig):
+    def __init__(
+        self,
+        config: GammaRequestIntervalGeneratorConfig,
+        rng: np.random.RandomState,
+    ):
         self.config = config
+        self.rng = rng
 
         cv = self.config.cv
         self.qps = self.config.qps
@@ -18,4 +24,4 @@ class GammaRequestIntervalGenerator(BaseRequestIntervalGenerator):
 
     def get_next_inter_request_time(self) -> float:
         gamma_scale = 1.0 / (self.qps * self.gamma_shape)
-        return gamma.rvs(self.gamma_shape, scale=gamma_scale)
+        return gamma.rvs(self.gamma_shape, scale=gamma_scale, random_state=self.rng)

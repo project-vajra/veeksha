@@ -1,9 +1,6 @@
+from veeksha.core.lazy_loader import _LazyLoader
 from veeksha.types import RequestGeneratorType
 from veeksha.types.base_registry import BaseRegistry
-
-from .lmeval_generator import LMEvalRequestGenerator
-from .synthetic_generator import SyntheticRequestGenerator
-from .trace_generator import TraceRequestGenerator
 
 
 class RequestGeneratorRegistry(BaseRegistry):
@@ -12,8 +9,24 @@ class RequestGeneratorRegistry(BaseRegistry):
         return RequestGeneratorType.from_str(key_str)  # type: ignore
 
 
+# Use lazy imports to avoid loading heavy dependencies (transformers, etc.) at module import time
 RequestGeneratorRegistry.register(
-    RequestGeneratorType.SYNTHETIC, SyntheticRequestGenerator
+    RequestGeneratorType.SYNTHETIC,
+    _LazyLoader(
+        "veeksha.generators.request_generator.synthetic_generator",
+        "SyntheticRequestGenerator",
+    ),
 )
-RequestGeneratorRegistry.register(RequestGeneratorType.TRACE, TraceRequestGenerator)
-RequestGeneratorRegistry.register(RequestGeneratorType.LMEVAL, LMEvalRequestGenerator)
+RequestGeneratorRegistry.register(
+    RequestGeneratorType.TRACE,
+    _LazyLoader(
+        "veeksha.generators.request_generator.trace_generator", "TraceRequestGenerator"
+    ),
+)
+RequestGeneratorRegistry.register(
+    RequestGeneratorType.LMEVAL,
+    _LazyLoader(
+        "veeksha.generators.request_generator.lmeval_generator",
+        "LMEvalRequestGenerator",
+    ),
+)

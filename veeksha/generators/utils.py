@@ -229,14 +229,20 @@ def generate_random_prompt(
     tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
     num_prompt_tokens: int = 1024,
     corpus_lines: Optional[List[str]] = None,
+    rng: Optional[random.Random] = None,
 ) -> Tuple[str, int]:
     """Generate a random prompt with a given number of tokens.
     Args:
         num_prompt_tokens: The number of tokens to generate in the prompt.
+        corpus_lines: List of corpus lines to generate the prompt from.
+        rng: Optional random number generator for reproducibility. If None, uses global random.
     Returns:
         A random prompt with the given number of tokens.
     """
     assert corpus_lines is not None, "corpus_lines must be provided"
+
+    if rng is None:
+        rng = random.Random()
 
     if num_prompt_tokens < 0:
         raise ValueError("num_prompt_tokens must be >= 0")
@@ -254,7 +260,7 @@ def generate_random_prompt(
         raise ValueError("All corpus_lines tokenize to zero tokens.")
 
     prompt_token_ids: List[int] = []
-    random.shuffle(token_lines)  # randomness in the first pass
+    rng.shuffle(token_lines)  # randomness in the first pass
     idx = 0
     while remaining_prompt_tokens > 0:
         tokens = token_lines[idx]
@@ -265,7 +271,7 @@ def generate_random_prompt(
         idx += 1
         if idx == len(token_lines):
             idx = 0
-            random.shuffle(token_lines)  # reshuffle each full pass
+            rng.shuffle(token_lines)  # reshuffle each full pass
 
     prompt = tokenizer.decode(prompt_token_ids, skip_special_tokens=False)
     return (prompt, num_prompt_tokens)

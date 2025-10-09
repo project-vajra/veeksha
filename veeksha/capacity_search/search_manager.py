@@ -1,5 +1,4 @@
 import os
-import random
 from typing import List
 
 import wandb
@@ -14,7 +13,6 @@ logger = init_logger(__name__)
 def run_search(
     capacity_search_config: CapacitySearchConfig,
 ):
-    random.seed(capacity_search_config.seed)
     if (
         capacity_search_config.wandb_project
         and capacity_search_config.enable_wandb_sweep
@@ -23,11 +21,6 @@ def run_search(
             capacity_search_config.wandb_sweep_id
             or capacity_search_config.wandb_sweep_name
         ), "wandb-sweep-name/id is required with wandb-project"
-
-    # assert (
-    #     capacity_search_config.deadline_miss_rate_slo >= 0
-    #     and capacity_search_config.deadline_miss_rate_slo <= 1
-    # )
 
     os.makedirs(capacity_search_config.output_dir, exist_ok=True)
 

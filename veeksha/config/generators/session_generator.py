@@ -14,10 +14,6 @@ logger = init_logger(__name__)
 
 @frozen_dataclass(allow_from_file=True)  # either dataclass or frozen dataclass
 class SessionGeneratorConfig:
-    seed: int = field(
-        default=42,
-        metadata={"help": "Seed for the random number generator."},
-    )
     session_interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
         default_factory=PoissonRequestIntervalGeneratorConfig,
         metadata={
