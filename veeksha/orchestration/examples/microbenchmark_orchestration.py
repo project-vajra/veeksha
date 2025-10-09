@@ -17,31 +17,24 @@ from veeksha.config.microbenchmark import MicrobenchmarkConfig, PrefillProbeConf
 from veeksha.config.server import ServerConfig
 from veeksha.logger import init_logger
 from veeksha.orchestration import run_microbenchmark_with_server
+from veeksha.orchestration.benchmark_orchestrator import create_server_manager
+from veeksha.microbenchmark import Microbenchmark
 
 logger = init_logger(__name__)
 
 
-def example_prefill_probe():
-    """Run prefill probe with automatic server orchestration."""
+def example_prefill_probe(api_url: str, api_key: str):
+    """Run prefill probe with common server."""
     
     logger.info("=" * 80)
-    logger.info("Example: Prefill Probe with Server Orchestration")
+    logger.info("Example: Prefill Probe with Common Server")
     logger.info("=" * 80)
-    
-    # Configure server
-    server_config = ServerConfig(
-        engine="vllm",
-        model="Qwen/Qwen3-1.7B",
-        host="localhost",
-        port=8000,
-        tensor_parallel_size=1,
-        auto_shutdown=True,
-        startup_timeout=300,
-    )
     
     # Configure microbenchmark with prefill probe
     microbenchmark_config = MicrobenchmarkConfig(
         model="Qwen/Qwen3-1.7B",
+        api_url=api_url,
+        api_key=api_key,
         output_dir="./microbenchmark_results/prefill_probe",
         probe_config=PrefillProbeConfig(
             prefill_lengths=[128, 256, 512, 1024],
@@ -50,36 +43,25 @@ def example_prefill_probe():
         timeout=600,
     )
     
-    # Run with orchestration
-    run_microbenchmark_with_server(
-        microbenchmark_config=microbenchmark_config,
-        server_config=server_config,
-    )
+    # Run directly
+    microbenchmark = Microbenchmark(microbenchmark_config)
+    microbenchmark.run()
     
     logger.info("Prefill probe completed!")
 
 
-def example_decode_probe():
-    """Run decode probe with automatic server orchestration."""
+def example_decode_probe(api_url: str, api_key: str):
+    """Run decode probe with common server."""
     
     logger.info("=" * 80)
-    logger.info("Example: Decode Probe with Server Orchestration")
+    logger.info("Example: Decode Probe with Common Server")
     logger.info("=" * 80)
-    
-    # Configure server
-    server_config = ServerConfig(
-        engine="vllm",
-        model="Qwen/Qwen3-1.7B",
-        host="localhost",
-        port=8001,
-        tensor_parallel_size=1,
-        auto_shutdown=True,
-        startup_timeout=300,
-    )
     
     # Configure microbenchmark with decode probe
     microbenchmark_config = MicrobenchmarkConfig(
         model="Qwen/Qwen3-1.7B",
+        api_url=api_url,
+        api_key=api_key,
         output_dir="./microbenchmark_results/decode_probe",
         probe_config=DecodeProbeConfig(
             context_lengths=[128, 512],
@@ -89,11 +71,9 @@ def example_decode_probe():
         timeout=600,
     )
     
-    # Run with orchestration
-    run_microbenchmark_with_server(
-        microbenchmark_config=microbenchmark_config,
-        server_config=server_config,
-    )
+    # Run directly
+    microbenchmark = Microbenchmark(microbenchmark_config)
+    microbenchmark.run()
     
     logger.info("Decode probe completed!")
 
@@ -158,9 +138,41 @@ def main():
     if len(sys.argv) > 1:
         example = sys.argv[1]
         if example == "prefill":
-            example_prefill_probe()
+            # Start server for prefill (or use existing)
+            server_config = ServerConfig(
+                engine="vllm",
+                model="Qwen/Qwen3-1.7B",
+                host="localhost",
+                port=8000,
+                tensor_parallel_size=1,
+                auto_shutdown=False,
+            )
+            server_manager = create_server_manager(server_config)
+            try:
+                server_manager.launch()
+                server_manager.wait_for_ready()
+                logger.info("Server started for prefill")
+            except Exception as e:
+                logger.info("Server already running on port 8000, using existing server")
+            example_prefill_probe(server_config.get_api_base_url(), server_config.api_key)
         elif example == "decode":
-            example_decode_probe()
+            # Start server for decode (or use existing)
+            server_config = ServerConfig(
+                engine="vllm",
+                model="Qwen/Qwen3-1.7B",
+                host="localhost",
+                port=8000,
+                tensor_parallel_size=1,
+                auto_shutdown=False,
+            )
+            server_manager = create_server_manager(server_config)
+            try:
+                server_manager.launch()
+                server_manager.wait_for_ready()
+                logger.info("Server started for decode")
+            except Exception as e:
+                logger.info("Server already running on port 8000, using existing server")
+            example_decode_probe(server_config.get_api_base_url(), server_config.api_key)
         elif example == "sweep":
             example_parameter_sweep()
         else:
@@ -171,10 +183,29 @@ def main():
         logger.info("To run a specific example: python microbenchmark_orchestration.py [prefill|decode|sweep]")
         logger.info("")
         
-        example_prefill_probe()
+        # Start common server for prefill and decode
+        common_server_config = ServerConfig(
+            engine="vllm",
+            model="Qwen/Qwen3-1.7B",
+            host="localhost",
+            port=8000,
+            tensor_parallel_size=1,
+            auto_shutdown=False,
+        )
+        server_manager = create_server_manager(common_server_config)
+        server_manager.launch()
+        server_manager.wait_for_ready()
+        logger.info("Common server ready at {}".format(common_server_config.get_api_base_url()))
+        
+        example_prefill_probe(common_server_config.get_api_base_url(), common_server_config.api_key)
         logger.info("\n" * 2)
         
-        example_decode_probe()
+        example_decode_probe(common_server_config.get_api_base_url(), common_server_config.api_key)
+        logger.info("\n" * 2)
+        
+        # Shutdown common server
+        server_manager.shutdown()
+        logger.info("Common server shut down.")
         logger.info("\n" * 2)
         
         example_parameter_sweep()

@@ -18,7 +18,7 @@ from veeksha.config.generators.length_generator.fixed_generator import (
 from veeksha.config.generators.request_generator.synthetic_generator import (
     SyntheticRequestGeneratorConfig,
 )
-from veeksha.config.microbenchmark import DecodeProbeConfig
+from veeksha.config.microbenchmark import DecodeProbeConfig, MicrobenchmarkConfig
 from veeksha.logger import init_logger
 
 # pyright: reportCallIssue=false, reportArgumentType=false
@@ -29,11 +29,15 @@ DECODE_PROFILING_ITERATIONS = None  # deprecated: use config
 
 
 class DecodeProbe:
-    def __init__(
-        self, base_config: BenchmarkConfig, probe_config: DecodeProbeConfig
-    ) -> None:
-        self.base_config = base_config
-        self.decode_config = probe_config
+    def __init__(self, microbenchmark_config: MicrobenchmarkConfig) -> None:
+        assert isinstance(
+            microbenchmark_config.probe_config, DecodeProbeConfig
+        ), "DecodeProbe requires DecodeProbeConfig"
+
+        self.micro_config = microbenchmark_config
+        self.probe_config: DecodeProbeConfig = microbenchmark_config.probe_config
+        self.base_config = microbenchmark_config.create_benchmark_config()
+        self.decode_config = self.probe_config
         self.context_lengths = self.decode_config.context_lengths
         self.batch_sizes = self.decode_config.batch_sizes
         self.decode_times: Dict[Tuple[int, int], List[int]] = {}
@@ -199,9 +203,13 @@ class DecodeProbe:
                 wandb.finish()
 
             benchmark_output_dir = service_metrics.output_dir
-            self.decode_times[(context_length, batch_size)] = self.extract_decode_times(
-                benchmark_output_dir, batch_size
-            )
+            try:
+                self.decode_times[(context_length, batch_size)] = self.extract_decode_times(
+                    benchmark_output_dir, batch_size
+                )
+            except Exception as e:
+                logger.warning(f"Failed to extract decode times for {context_length}_{batch_size}: {e}")
+                self.decode_times[(context_length, batch_size)] = []
 
         # log all the decode times with their length
         tbt_stats = {}
