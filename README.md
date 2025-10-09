@@ -91,6 +91,47 @@ And then we can run the benchmark as shown [here](#running-benchmark). Be sure t
 
 The results of the benchmark are saved in the results directory specified by the `--output-dir` argument.
 
+## Running Microbenchmarks with Server Orchestration
+
+Veeksha now supports automatic server lifecycle management for running microbenchmarks! This is especially useful when you have limited GPU resources and need to run many experiments.
+
+### Quick Start
+
+Run a benchmark with automatic vLLM server management:
+
+```bash
+python -m veeksha.orchestration.run_microbenchmark \
+    --model meta-llama/Meta-Llama-3-8B-Instruct \
+    --tensor-parallel-size 1 \
+    --max-completed-requests 50 \
+    --output-dir ./results
+```
+
+Run a parameter sweep across different configurations:
+
+```bash
+python -m veeksha.orchestration.run_microbenchmark \
+    --model meta-llama/Meta-Llama-3-8B-Instruct \
+    --sweep-tensor-parallel 1 2 4 \
+    --max-completed-requests 50 \
+    --output-dir ./results
+```
+
+The system will automatically:
+1. Launch the server with your specified configuration
+2. Wait for the server to become ready
+3. Run the benchmark
+4. Shutdown the server and free resources
+
+### Features
+
+- **Resource Awareness**: Specify GPU allocation, tensor parallelism, and resource constraints
+- **Automatic Lifecycle**: Launch, health check, and shutdown servers automatically  
+- **Parameter Sweeps**: Run benchmarks across multiple configurations efficiently
+- **Multiple Systems**: Support for vLLM (more systems coming soon)
+
+For detailed documentation, see [veeksha/orchestration/README.md](veeksha/orchestration/README.md)
+
 ## Running Capacity Search
 Refer to [readme](veeksha/capacity_search/README.md) file of `veeksha/capacity_search` folder to know more about how to run capacity search.
 
