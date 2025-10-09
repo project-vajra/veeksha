@@ -68,7 +68,7 @@ def frozen_dataclass(_cls=None, **kwargs):
             for key, value in state.items():
                 object.__setattr__(self, key, value)
             # Call __post_init__ to initialize derived attributes
-            if hasattr(self, '__post_init__'):
+            if hasattr(self, "__post_init__"):
                 self.__post_init__()
             else:
                 # If no __post_init__, just clear the flag
