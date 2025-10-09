@@ -1,23 +1,30 @@
-# Server Orchestration for Microbenchmarks
+# Server Orchestration for Benchmarks
 
-This module provides resource-aware server orchestration capabilities for running LLM inference benchmarks. It allows you to automatically launch, manage, and shut down inference servers (like vLLM) as part of your benchmarking workflow.
+This module provides resource-aware server orchestration capabilities for running LLM inference workloads. It allows you to automatically launch, manage, and shut down inference servers (like vLLM) as part of your benchmarking workflow.
 
 ## Features
 
 - **Automatic Server Lifecycle Management**: Launch, health check, and shutdown servers automatically
+- **Multiple Workload Types**: Support for standard benchmarks, microbenchmarks, and lm_eval tasks
 - **Resource Awareness**: Specify GPU allocation, tensor parallelism, and other resource constraints
 - **Multiple Server Support**: Extensible architecture supports vLLM and can be extended to other systems
 - **Parameter Sweeps**: Run benchmarks across multiple configurations efficiently
 - **Context Manager Support**: Clean resource management with Python context managers
 
+## Supported Workload Types
+
+1. **Standard Benchmarks**: Traditional throughput/latency benchmarks with request generators
+2. **Microbenchmarks**: Prefill and decode probes for performance profiling
+3. **LM-Eval**: Run evaluation harness tasks (HellaSwag, MMLU, etc.)
+
 ## Quick Start
 
-### Basic Example
+### Standard Benchmark Example
 
 ```python
 from veeksha.config.server import ServerConfig
 from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.orchestration.benchmark_orchestrator import run_benchmark_with_server
+from veeksha.orchestration import run_benchmark_with_server
 
 # Configure server
 server_config = ServerConfig(
@@ -25,6 +32,7 @@ server_config = ServerConfig(
     model="meta-llama/Meta-Llama-3-8B-Instruct",
     port=8000,
     tensor_parallel_size=1,
+    auto_shutdown=True,
 )
 
 # Configure benchmark (use your existing benchmark config)
@@ -32,6 +40,80 @@ benchmark_config = BenchmarkConfig(...)
 
 # Run benchmark with automatic server management
 metrics = run_benchmark_with_server(
+    benchmark_config=benchmark_config,
+    server_config=server_config,
+)
+```
+
+### Microbenchmark Example
+
+```python
+from veeksha.config.microbenchmark import MicrobenchmarkConfig, PrefillProbeConfig
+from veeksha.config.server import ServerConfig
+from veeksha.orchestration import run_microbenchmark_with_server
+
+# Configure server
+server_config = ServerConfig(
+    engine="vllm",
+    model="meta-llama/Meta-Llama-3-8B-Instruct",
+    port=8000,
+    auto_shutdown=True,
+)
+
+# Configure microbenchmark
+microbenchmark_config = MicrobenchmarkConfig(
+    model="meta-llama/Meta-Llama-3-8B-Instruct",
+    output_dir="./microbenchmark_results",
+    probe_config=PrefillProbeConfig(
+        prefill_lengths=[128, 256, 512, 1024],
+        num_requests_per_prefill_length=10,
+    ),
+)
+
+# Run microbenchmark with automatic server management
+run_microbenchmark_with_server(
+    microbenchmark_config=microbenchmark_config,
+    server_config=server_config,
+)
+```
+
+### LM-Eval Example
+
+```python
+from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.client import ClientConfig
+from veeksha.config.generators.request_generator.lmeval_generator import (
+    LmevalRequestGeneratorConfig,
+)
+from veeksha.config.metrics import MetricsConfig
+from veeksha.config.server import ServerConfig
+from veeksha.orchestration import run_lmeval_with_server
+
+# Configure server
+server_config = ServerConfig(
+    engine="vllm",
+    model="meta-llama/Meta-Llama-3-8B-Instruct",
+    port=8000,
+    auto_shutdown=True,
+)
+
+# Configure lm_eval benchmark
+benchmark_config = BenchmarkConfig(
+    client_config=ClientConfig(
+        model="meta-llama/Meta-Llama-3-8B-Instruct",
+    ),
+    request_generator_config=LmevalRequestGeneratorConfig(
+        tasks=["hellaswag", "winogrande"],
+        num_fewshot=5,
+        limit=100,
+    ),
+    metrics_config=MetricsConfig(
+        output_dir="./lmeval_results",
+    ),
+)
+
+# Run lm_eval with automatic server management
+results = run_lmeval_with_server(
     benchmark_config=benchmark_config,
     server_config=server_config,
 )
@@ -178,6 +260,7 @@ for model, tp_size in configs:
         model=model,
         tensor_parallel_size=tp_size,
         gpu_ids=list(range(tp_size)),  # Use first N GPUs
+        auto_shutdown=True,
     )
     
     # Server launches, runs benchmark, shuts down
@@ -185,18 +268,73 @@ for model, tp_size in configs:
     run_benchmark_with_server(benchmark_config, server_config)
 ```
 
-### 2. Microbenchmark Sweeps
+### 2. Microbenchmark Parameter Sweeps
 
-Test different server parameters:
+Test performance across different tensor parallelism configurations:
 
 ```python
-# Sweep batch sizes
-for max_seqs in [128, 256, 512]:
+from veeksha.config.microbenchmark import MicrobenchmarkConfig, PrefillProbeConfig
+from veeksha.orchestration import run_microbenchmark_with_server
+
+model = "meta-llama/Meta-Llama-3-8B-Instruct"
+probe_config = PrefillProbeConfig(
+    prefill_lengths=[256, 512, 1024],
+    num_requests_per_prefill_length=10,
+)
+
+for tp_size in [1, 2, 4]:
     server_config = ServerConfig(
-        model="meta-llama/Meta-Llama-3-8B-Instruct",
-        additional_args={"max_num_seqs": max_seqs}
+        model=model,
+        tensor_parallel_size=tp_size,
+        port=8000 + tp_size,
+        gpu_ids=list(range(tp_size)),
+        auto_shutdown=True,
     )
-    run_benchmark_with_server(benchmark_config, server_config)
+    
+    microbenchmark_config = MicrobenchmarkConfig(
+        model=model,
+        output_dir=f"./results/tp{tp_size}",
+        probe_config=probe_config,
+    )
+    
+    run_microbenchmark_with_server(
+        microbenchmark_config=microbenchmark_config,
+        server_config=server_config,
+    )
+```
+
+### 3. Model Evaluation Campaigns
+
+Evaluate multiple models on standard benchmarks:
+
+```python
+from veeksha.orchestration import run_lmeval_with_server
+
+models = [
+    "meta-llama/Meta-Llama-3-8B-Instruct",
+    "Qwen/Qwen2-7B-Instruct",
+]
+
+for i, model in enumerate(models):
+    server_config = ServerConfig(
+        model=model,
+        port=8000 + i,
+        auto_shutdown=True,
+    )
+    
+    benchmark_config = BenchmarkConfig(
+        client_config=ClientConfig(model=model),
+        request_generator_config=LmevalRequestGeneratorConfig(
+            tasks=["hellaswag", "winogrande", "arc_easy"],
+            num_fewshot=5,
+        ),
+        metrics_config=MetricsConfig(
+            output_dir=f"./eval_results/{model.replace('/', '_')}",
+        ),
+    )
+    
+    results = run_lmeval_with_server(benchmark_config, server_config)
+    print(f"{model}: {results}")
 ```
 
 ### 3. Manual Server Management
@@ -261,7 +399,13 @@ class TGIServerManager(BaseServerManager):
 See `veeksha/orchestration/examples/` for complete working examples:
 
 - `simple_example.py`: Basic single benchmark with server orchestration
-- More examples coming soon!
+- `microbenchmark_orchestration.py`: Run prefill/decode probes with orchestration
+- `lmeval_orchestration.py`: Run lm_eval tasks with orchestration
+
+Each example demonstrates:
+- How to configure servers and workloads
+- Parameter sweep patterns
+- Error handling and best practices
 
 ## Troubleshooting
 

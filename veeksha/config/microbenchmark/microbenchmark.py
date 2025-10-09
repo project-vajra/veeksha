@@ -8,10 +8,8 @@ from veeksha.config.client import ClientConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.metrics import MetricsConfig
-from veeksha.config.microbenchmark import (
-    BaseMicrobenchmarkProbeConfig,
-    PrefillProbeConfig,
-)
+from veeksha.config.microbenchmark.base_microbenchmark import BaseMicrobenchmarkProbeConfig
+from veeksha.config.microbenchmark.prefill_probe import PrefillProbeConfig
 from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
 
