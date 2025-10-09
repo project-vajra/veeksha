@@ -197,17 +197,15 @@ def explode_dict(
         list_keys: List[str], processed_list_values: List[List[Any]]
     ) -> Tuple[Optional[List[Tuple[str, str]]], List[str], List[List[Any]]]:
         """Extract and zip api_url/api_key if both are present as primitive lists."""
-        # Check if both fields are present
+
         if "api_url" not in list_keys or "api_key" not in list_keys:
             return None, list_keys, processed_list_values
 
-        # Get indices and values
         url_idx = list_keys.index("api_url")
         key_idx = list_keys.index("api_key")
         url_values = processed_list_values[url_idx]
         key_values = processed_list_values[key_idx]
 
-        # Only zip if both are primitive lists (not dict expansions)
         if not (
             isinstance(url_values, list)
             and isinstance(key_values, list)
@@ -218,17 +216,13 @@ def explode_dict(
         ):
             return None, list_keys, processed_list_values
 
-        # Validate same length
         if len(url_values) != len(key_values):
             raise ValueError(
                 f"api_url and api_key lists must have the same length. "
                 f"Got {len(url_values)} URLs and {len(key_values)} keys."
             )
 
-        # Zip the values
         zipped_endpoints = list(zip(url_values, key_values))
-
-        # Create remaining keys/values lists (excluding api_url and api_key)
         remaining_keys = [k for k in list_keys if k not in ["api_url", "api_key"]]
         remaining_values = [
             v
@@ -261,30 +255,30 @@ def explode_dict(
 
         result = []
 
-        # Check if api_url and api_key should be zipped together
         zipped_endpoints, remaining_keys, remaining_values = _extract_zipped_api_fields(
             list_keys, processed_list_values
         )
 
         if zipped_endpoints is not None:
-            # Special case: zip api_url/api_key, cartesian product with other fields
-            for combination in product(*remaining_values) if remaining_values else [()]:
+            # zip api_url/api_key together, cartesian product with other fields
+            remaining_combinations = (
+                product(*remaining_values) if remaining_values else [()]
+            )
+
+            for combination in remaining_combinations:
                 for url, key in zipped_endpoints:
                     for dict_combo in dict_combinations:
                         new_config = non_list_items.copy()
                         new_config.update(dict_combo)
-
-                        # Add zipped values
                         new_config["api_url"] = url
                         new_config["api_key"] = key
 
-                        # Add other list values
-                        for k, v in zip(remaining_keys, combination):
-                            new_config[k] = v
+                        if remaining_keys:
+                            for k, v in zip(remaining_keys, combination):
+                                new_config[k] = v
 
                         result.append(new_config)
         else:
-            # Normal cartesian product for all other cases
             for combination in product(*processed_list_values):
                 for dict_combo in dict_combinations:
                     new_config = non_list_items.copy()

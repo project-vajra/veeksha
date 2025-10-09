@@ -463,8 +463,8 @@ if __name__ == "__main__":
                 try:
                     future.result()
                     logger.info(f"Completed benchmarks for endpoint {endpoint}")
-                except Exception as e:
-                    logger.error(f"Endpoint '{endpoint}' generated an exception: {e}")
+                except Exception:
+                    logger.exception(f"Endpoint '{endpoint}' generated an exception")
                     all_succeeded = False
 
         if not all_succeeded:
