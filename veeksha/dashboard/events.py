@@ -1,7 +1,8 @@
 from dataclasses import dataclass
-from typing import Optional, Dict, List, Union
-import time
+from typing import Dict, List, Optional, Union
+
 from veeksha.metrics.request_metrics import RequestMetrics
+
 
 @dataclass
 class RequestStartedEvent:
@@ -9,6 +10,7 @@ class RequestStartedEvent:
     timestamp: float
     input_tokens: int
     benchmark_id: str = "default"
+
 
 @dataclass
 class TokenBatchEvent:
@@ -22,12 +24,14 @@ class TokenBatchEvent:
     recent_tbt_ms: Optional[List[float]] = None  # Recent TBT values in this batch
     benchmark_id: str = "default"
 
+
 @dataclass
 class RequestCompletedEvent:
     request_id: Union[str, int]
     timestamp: float
     final_metrics: RequestMetrics
     benchmark_id: str = "default"
+
 
 @dataclass
 class CapacitySearchEvent:
@@ -45,6 +49,7 @@ class CapacitySearchEvent:
     from_cache: bool = False  # True if this iteration used cached results
     benchmark_id: str = "default"
 
+
 @dataclass
 class BenchmarkStatusEvent:
     total_requests: int
@@ -55,6 +60,7 @@ class BenchmarkStatusEvent:
     elapsed_time: float
     benchmark_id: str = "default"
 
+
 @dataclass
 class RequestErrorEvent:
     request_id: Union[str, int]
@@ -63,11 +69,12 @@ class RequestErrorEvent:
     error_msg: str
     benchmark_id: str = "default"
 
+
 DashboardEvent = Union[
-    RequestStartedEvent, 
+    RequestStartedEvent,
     TokenBatchEvent,
     RequestCompletedEvent,
     RequestErrorEvent,
-    CapacitySearchEvent, 
-    BenchmarkStatusEvent
+    CapacitySearchEvent,
+    BenchmarkStatusEvent,
 ]

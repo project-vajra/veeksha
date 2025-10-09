@@ -40,6 +40,7 @@ def run_search(
     dashboard_cfg = capacity_search_config.get_dashboard_config()
     if dashboard_cfg.enabled:
         from veeksha.dashboard.handler import init_dashboard_event_processor
+
         dashboard_state = init_dashboard_event_processor(
             enabled=True,
             enable_frontend=False,
@@ -49,6 +50,7 @@ def run_search(
 
         # Run capacity search in background thread, TUI in main thread
         import threading
+
         result_container = {"result": None}
 
         def run_search_thread():
@@ -60,6 +62,7 @@ def run_search(
 
         # Run TUI in main thread
         from veeksha.dashboard.tui_dashboard import run_dashboard_tui
+
         run_dashboard_tui(dashboard_state)
 
         # Wait for search to complete

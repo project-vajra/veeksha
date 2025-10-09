@@ -3,9 +3,10 @@ import os
 from dataclasses import field
 from typing import List, Optional
 
-from veeksha.config.benchmark import BenchmarkConfig, DashboardConfig
+from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from veeksha.config.dashboard import DashboardConfig
 from veeksha.config.slo import BaseSloConfig
 from veeksha.logger import init_logger
 
@@ -19,7 +20,9 @@ class CapacitySearchConfig:
 
     dashboard_config: Optional[DashboardConfig] = field(
         default=None,
-        metadata={"help": "Dashboard configuration for capacity search. If not specified, falls back to benchmark_config.dashboard_config."},
+        metadata={
+            "help": "Dashboard configuration for capacity search. If not specified, falls back to benchmark_config.dashboard_config."
+        },
     )
     start_qps: float = field(
         default=1,

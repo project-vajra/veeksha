@@ -19,25 +19,24 @@ def run():
 
     # Check if dashboard is enabled
     has_dashboard_enabled = any(
-        config.get_dashboard_config().enabled
-        for config in capacity_search_configs
+        config.get_dashboard_config().enabled for config in capacity_search_configs
     )
     if has_dashboard_enabled:
         # Set environment variable to suppress console logging in child processes
         os.environ["VEEKSHA_SUPPRESS_CONSOLE_LOGS"] = "1"
         # Suppress tokenizers parallelism warning when forking processes
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        
+
         # Remove stream handlers from loggers (but don't redirect stdout/stderr)
         # This allows the TUI to start properly and LogCapture to buffer logs
         import logging as log_module
-        
+
         # Remove handlers from root logger
         root_logger = log_module.getLogger()
         for handler in root_logger.handlers[:]:
             if isinstance(handler, log_module.StreamHandler):
                 root_logger.removeHandler(handler)
-        
+
         # Remove handlers from veeksha logger specifically (which has its own handler)
         veeksha_logger = log_module.getLogger("veeksha")
         for handler in veeksha_logger.handlers[:]:

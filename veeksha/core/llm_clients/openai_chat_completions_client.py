@@ -9,10 +9,10 @@ from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
 from veeksha.core.llm_clients.streaming_mixin import StreamingMixin
 from veeksha.core.request_config import RequestConfig
 from veeksha.core.response import Response
+from veeksha.dashboard.events import TokenBatchEvent
+from veeksha.dashboard.handler import emit_dashboard_event
 from veeksha.logger import init_logger
 from veeksha.metrics.request_metrics import RequestMetrics
-from veeksha.dashboard.handler import emit_dashboard_event
-from veeksha.dashboard.events import TokenBatchEvent
 
 logger = init_logger(__name__)
 
@@ -159,7 +159,9 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                             )
 
                         if allowable_to_add > 0:
-                            tokens_received_chunk += allowable_to_add  # Track tokens for this chunk
+                            tokens_received_chunk += (
+                                allowable_to_add  # Track tokens for this chunk
+                            )
                             inter_token_times.append(
                                 time.monotonic() - most_recent_received_token_time
                             )
@@ -185,29 +187,41 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                         ):
                             break
 
-                    if tokens_received_chunk > 0 and (tokens_received - last_token_batch_emission) >= 10: # TODO: make this configurable/a constant
-                        current_ttft_ms = inter_token_times[0] * 1000 if inter_token_times else None
+                    if (
+                        tokens_received_chunk > 0
+                        and (tokens_received - last_token_batch_emission) >= 10
+                    ):  # TODO: make this configurable/a constant
+                        current_ttft_ms = (
+                            inter_token_times[0] * 1000 if inter_token_times else None
+                        )
                         current_tpot_ms = None
                         recent_tbt_ms = None
                         if len(inter_token_times) > 1:
                             from statistics import mean
+
                             current_tpot_ms = mean(inter_token_times[1:]) * 1000
                             # Get recent TBT values (last 10 or all available)
-                            recent_tbt_ms = [t * 1000 for t in inter_token_times[1:][-10:]]
+                            recent_tbt_ms = [
+                                t * 1000 for t in inter_token_times[1:][-10:]
+                            ]
 
-                        emit_dashboard_event(TokenBatchEvent(
-                            request_id=request_config.id,
-                            timestamp=time.time(),
-                            tokens_received_this_batch=tokens_received_chunk,
-                            total_output_tokens=tokens_received,
-                            ttft_ms=current_ttft_ms,
-                            current_tpot_ms=current_tpot_ms,
-                            is_first_token=is_first_emission,
-                            recent_tbt_ms=recent_tbt_ms,
-                            benchmark_id=request_config.benchmark_id
-                        ))
+                        emit_dashboard_event(
+                            TokenBatchEvent(
+                                request_id=request_config.id,
+                                timestamp=time.time(),
+                                tokens_received_this_batch=tokens_received_chunk,
+                                total_output_tokens=tokens_received,
+                                ttft_ms=current_ttft_ms,
+                                current_tpot_ms=current_tpot_ms,
+                                is_first_token=is_first_emission,
+                                recent_tbt_ms=recent_tbt_ms,
+                                benchmark_id=request_config.benchmark_id,
+                            )
+                        )
                         last_token_batch_emission = tokens_received
-                        is_first_emission = False  # After first emission, no longer first
+                        is_first_emission = (
+                            False  # After first emission, no longer first
+                        )
 
         except aiohttp.ClientResponseError as e:
             error_response_code = e.status

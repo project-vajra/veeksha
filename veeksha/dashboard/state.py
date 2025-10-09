@@ -1,12 +1,20 @@
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Deque, Union
-from collections import deque
-import time
 import threading
+import time
+from collections import deque
+from dataclasses import dataclass, field
 from statistics import mean
+from typing import Deque, Dict, List, Optional, Union
 
-from veeksha.dashboard.events import DashboardEvent, RequestStartedEvent, TokenBatchEvent, RequestCompletedEvent, RequestErrorEvent, CapacitySearchEvent, BenchmarkStatusEvent
-from veeksha.metrics.request_metrics import RequestMetrics
+from veeksha.dashboard.events import (
+    BenchmarkStatusEvent,
+    CapacitySearchEvent,
+    DashboardEvent,
+    RequestCompletedEvent,
+    RequestErrorEvent,
+    RequestStartedEvent,
+    TokenBatchEvent,
+)
+
 
 @dataclass
 class LiveRequestInfo:
@@ -18,6 +26,7 @@ class LiveRequestInfo:
     current_tpot_ms: Optional[float] = None
     progress_pct: float = 0.0
     is_waiting_first_token: bool = True
+
 
 @dataclass
 class AggregateStats:
@@ -46,6 +55,7 @@ class AggregateStats:
     def avg_latency_ms(self) -> float:
         return mean(self.recent_latency_ms) if self.recent_latency_ms else 0.0
 
+
 @dataclass
 class CapacitySearchState:
     current_qps: float = 0.0
@@ -56,16 +66,20 @@ class CapacitySearchState:
     is_under_sla: bool = False
     slo_target: str = ""
     slo_metrics: Dict[str, float] = field(default_factory=dict)
-    qps_history: List[Dict[str, any]] = field(default_factory=list)  # list of dicts with qps, under_sla, slo_metrics, from_cache
+    qps_history: List[Dict[str, any]] = field(
+        default_factory=list
+    )  # list of dicts with qps, under_sla, slo_metrics, from_cache
     best_qps: Optional[float] = None
     best_slo_metrics: Optional[Dict[str, float]] = None
     is_active: bool = False  # Whether capacity search is currently running
     is_complete: bool = False
     current_from_cache: bool = False  # Whether current iteration used cached results
 
+
 @dataclass
 class SingleBenchmarkState:
     """State for a single benchmark run"""
+
     benchmark_id: str
     live_requests: Dict[str, LiveRequestInfo] = field(default_factory=dict)
     completed_requests: Dict[str, LiveRequestInfo] = field(default_factory=dict)
@@ -74,6 +88,7 @@ class SingleBenchmarkState:
     benchmark_start_time: Optional[float] = None
     benchmark_end_time: Optional[float] = None
     current_qps: float = 0.0
+
 
 class DashboardState:
     def __init__(self, max_live_requests: int = 50):
@@ -87,7 +102,9 @@ class DashboardState:
     def _get_or_create_benchmark(self, benchmark_id: str) -> SingleBenchmarkState:
         """Get existing benchmark state or create a new one"""
         if benchmark_id not in self.benchmarks:
-            self.benchmarks[benchmark_id] = SingleBenchmarkState(benchmark_id=benchmark_id)
+            self.benchmarks[benchmark_id] = SingleBenchmarkState(
+                benchmark_id=benchmark_id
+            )
             # Set as active if it's the first benchmark
             if len(self.benchmarks) == 1:
                 self.active_benchmark_id = benchmark_id
@@ -109,7 +126,7 @@ class DashboardState:
                     self._handle_benchmark_status(event)
                 case RequestErrorEvent():
                     self._handle_request_error(event)
-    
+
     def _handle_request_started(self, event: RequestStartedEvent) -> None:
         benchmark = self._get_or_create_benchmark(event.benchmark_id)
 
@@ -117,9 +134,13 @@ class DashboardState:
         if benchmark.benchmark_start_time is None:
             benchmark.benchmark_start_time = event.timestamp
 
-        if len(benchmark.live_requests) >= self.max_live_requests: # throttle number of live requests
-            oldest_id = min(benchmark.live_requests.keys(),
-                          key=lambda k: benchmark.live_requests[k].start_timestamp)
+        if (
+            len(benchmark.live_requests) >= self.max_live_requests
+        ):  # throttle number of live requests
+            oldest_id = min(
+                benchmark.live_requests.keys(),
+                key=lambda k: benchmark.live_requests[k].start_timestamp,
+            )
             del benchmark.live_requests[oldest_id]
 
         benchmark.live_requests[event.request_id] = LiveRequestInfo(
@@ -129,7 +150,7 @@ class DashboardState:
         )
 
         benchmark.aggregate_stats.total_requests += 1
-    
+
     def _handle_token_batch(self, event: TokenBatchEvent) -> None:
         benchmark = self._get_or_create_benchmark(event.benchmark_id)
 
@@ -139,7 +160,9 @@ class DashboardState:
             req.current_output_tokens = event.total_output_tokens
             req.ttft_ms = event.ttft_ms
             req.current_tpot_ms = event.current_tpot_ms
-            req.is_waiting_first_token = not event.is_first_token and req.ttft_ms is None
+            req.is_waiting_first_token = (
+                not event.is_first_token and req.ttft_ms is None
+            )
 
         # Add live metrics to aggregate stats for graphing
         # Only add TTFT on first token to avoid duplicates
@@ -156,7 +179,7 @@ class DashboardState:
             for tbt in event.recent_tbt_ms:
                 if tbt > 0:
                     benchmark.aggregate_stats.recent_tbt_ms.append(tbt)
-    
+
     def _handle_request_completed(self, event: RequestCompletedEvent) -> None:
         benchmark = self._get_or_create_benchmark(event.benchmark_id)
 
@@ -184,12 +207,14 @@ class DashboardState:
         # Note: TTFT, TPOT, and TBT are already added during TokenBatchEvent streaming
         # We only add end-to-end latency here since it's only available at completion
         if metrics.end_to_end_latency > 0:
-            benchmark.aggregate_stats.recent_latency_ms.append(metrics.end_to_end_latency * 1000)
-    
+            benchmark.aggregate_stats.recent_latency_ms.append(
+                metrics.end_to_end_latency * 1000
+            )
+
     def _handle_capacity_search(self, event: CapacitySearchEvent) -> None:
         benchmark = self._get_or_create_benchmark(event.benchmark_id)
         cs = benchmark.capacity_search
-        
+
         # Mark capacity search as active on first event
         if not cs.is_active:
             cs.is_active = True
@@ -203,19 +228,23 @@ class DashboardState:
         cs.slo_target = event.slo_target
         cs.slo_metrics = event.slo_metrics.copy()
         cs.best_qps = event.best_qps
-        cs.best_slo_metrics = event.best_slo_metrics.copy() if event.best_slo_metrics else None
+        cs.best_slo_metrics = (
+            event.best_slo_metrics.copy() if event.best_slo_metrics else None
+        )
         cs.is_complete = event.is_complete
         cs.current_from_cache = event.from_cache
 
         # Add to history (avoid duplicates by checking if QPS already exists)
-        if not any(h.get('qps') == event.current_qps for h in cs.qps_history):
-            cs.qps_history.append({
-                'qps': event.current_qps,
-                'under_sla': event.is_under_sla,
-                'slo_metrics': event.slo_metrics.copy(),
-                'from_cache': event.from_cache
-            })
-    
+        if not any(h.get("qps") == event.current_qps for h in cs.qps_history):
+            cs.qps_history.append(
+                {
+                    "qps": event.current_qps,
+                    "under_sla": event.is_under_sla,
+                    "slo_metrics": event.slo_metrics.copy(),
+                    "from_cache": event.from_cache,
+                }
+            )
+
     def _handle_benchmark_status(self, event: BenchmarkStatusEvent) -> None:
         benchmark = self._get_or_create_benchmark(event.benchmark_id)
 
@@ -226,9 +255,11 @@ class DashboardState:
         benchmark.aggregate_stats.error_count = event.errored_requests
 
         # If all requests are completed or errored, mark benchmark as ended
-        if (event.completed_requests + event.errored_requests == event.total_requests
+        if (
+            event.completed_requests + event.errored_requests == event.total_requests
             and event.total_requests > 0
-            and benchmark.benchmark_end_time is None):
+            and benchmark.benchmark_end_time is None
+        ):
             benchmark.benchmark_end_time = time.time()
 
     def _handle_request_error(self, event: RequestErrorEvent) -> None:
@@ -237,7 +268,7 @@ class DashboardState:
         if event.request_id in benchmark.live_requests:
             del benchmark.live_requests[event.request_id]
         benchmark.aggregate_stats.error_count += 1
-    
+
     # Getter methods for stats with locking for thread safety
     def get_benchmark_ids(self) -> List[str]:
         """Get list of all benchmark IDs"""
@@ -255,7 +286,9 @@ class DashboardState:
             if benchmark_id in self.benchmarks:
                 self.active_benchmark_id = benchmark_id
 
-    def get_live_requests(self, benchmark_id: Optional[str] = None) -> List[LiveRequestInfo]:
+    def get_live_requests(
+        self, benchmark_id: Optional[str] = None
+    ) -> List[LiveRequestInfo]:
         """Get live requests for a specific benchmark or the active one"""
         with self._lock:
             bid = benchmark_id or self.active_benchmark_id
@@ -263,7 +296,9 @@ class DashboardState:
                 return list(self.benchmarks[bid].live_requests.values())
             return []
 
-    def get_all_requests(self, benchmark_id: Optional[str] = None) -> List[LiveRequestInfo]:
+    def get_all_requests(
+        self, benchmark_id: Optional[str] = None
+    ) -> List[LiveRequestInfo]:
         """Get list of all requests (live + completed) for a specific benchmark"""
         with self._lock:
             bid = benchmark_id or self.active_benchmark_id
@@ -275,7 +310,9 @@ class DashboardState:
                 return all_requests
             return []
 
-    def get_completed_requests(self, benchmark_id: Optional[str] = None) -> List[LiveRequestInfo]:
+    def get_completed_requests(
+        self, benchmark_id: Optional[str] = None
+    ) -> List[LiveRequestInfo]:
         """Get list of completed requests for a specific benchmark"""
         with self._lock:
             bid = benchmark_id or self.active_benchmark_id
@@ -291,7 +328,9 @@ class DashboardState:
                 return self.benchmarks[bid].aggregate_stats
             return AggregateStats()
 
-    def get_capacity_search_state(self, benchmark_id: Optional[str] = None) -> CapacitySearchState:
+    def get_capacity_search_state(
+        self, benchmark_id: Optional[str] = None
+    ) -> CapacitySearchState:
         """Get capacity search state for a specific benchmark"""
         with self._lock:
             bid = benchmark_id or self.active_benchmark_id

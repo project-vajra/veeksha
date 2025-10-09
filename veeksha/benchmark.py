@@ -26,8 +26,14 @@ from veeksha.core.response import Response
 from veeksha.core.seeding import (
     SeedManager,
 )
-from veeksha.dashboard.handler import emit_dashboard_event
-from veeksha.dashboard.events import RequestStartedEvent, BenchmarkStatusEvent, RequestCompletedEvent
+from veeksha.dashboard.events import (
+    RequestCompletedEvent,
+    RequestStartedEvent,
+)
+from veeksha.dashboard.handler import (
+    emit_dashboard_event,
+    stop_dashboard_event_processor,
+)
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.generators.request_generator.generator_registry import (
     RequestGeneratorRegistry,
@@ -35,7 +41,6 @@ from veeksha.generators.request_generator.generator_registry import (
 from veeksha.logger import init_logger
 from veeksha.metrics.service_metrics import ServiceMetrics
 from veeksha.types import RequestGeneratorType
-from veeksha.dashboard.handler import stop_dashboard_event_processor
 
 logger = init_logger(__name__)
 
@@ -263,13 +268,15 @@ def process_results(
         )
         if generated_response is not None:
             generated_responses.append(generated_response)
-        
-        emit_dashboard_event(RequestCompletedEvent(
-            request_id = request_metrics.request_id,
-            timestamp = time.time(),
-            final_metrics = request_metrics,
-            benchmark_id = request_metrics.benchmark_id,
-        ))
+
+        emit_dashboard_event(
+            RequestCompletedEvent(
+                request_id=request_metrics.request_id,
+                timestamp=time.time(),
+                final_metrics=request_metrics,
+                benchmark_id=request_metrics.benchmark_id,
+            )
+        )
 
         # TODO: maybe add benchmark status event here?
 
@@ -377,6 +384,7 @@ def run_benchmark(
 
     # Generate unique benchmark ID from output directory
     import os
+
     benchmark_id = os.path.basename(benchmark_config.metrics_config.output_dir)
     logger.info(
         f"Benchmark ID: {benchmark_id}, Output directory: {benchmark_config.metrics_config.output_dir}"
@@ -469,7 +477,7 @@ def run_benchmark(
 
 def run_benchmark_with_dashboard(benchmark_config: BenchmarkConfig):
     """Run benchmark with TUI dashboard in main thread.
-    
+
     The benchmark runs in a background thread while the TUI runs in the main thread.
     This is required because Textual needs to register signal handlers which can only
     be done in the main thread.
@@ -482,6 +490,7 @@ def run_benchmark_with_dashboard(benchmark_config: BenchmarkConfig):
 
     # Initialize dashboard event processor without frontend
     from veeksha.dashboard.handler import init_dashboard_event_processor
+
     dashboard_state = init_dashboard_event_processor(
         enabled=benchmark_config.dashboard_config.enabled,
         enable_frontend=False,  # We'll launch TUI manually in main thread
@@ -511,6 +520,7 @@ def run_benchmark_with_dashboard(benchmark_config: BenchmarkConfig):
     # Run TUI in main thread (blocking)
     if dashboard_state:
         from veeksha.dashboard.tui_dashboard import run_dashboard_tui
+
         run_dashboard_tui(dashboard_state)
 
     # Wait for benchmark thread to complete
@@ -523,7 +533,9 @@ def run_benchmark_with_dashboard(benchmark_config: BenchmarkConfig):
     return result_container["service_metrics"]
 
 
-def run_benchmark_console_only(benchmark_config: BenchmarkConfig, stop_processor_after: bool = True):
+def run_benchmark_console_only(
+    benchmark_config: BenchmarkConfig, stop_processor_after: bool = True
+):
     """Run benchmark with console-only output
 
     Args:
@@ -537,6 +549,7 @@ def run_benchmark_console_only(benchmark_config: BenchmarkConfig, stop_processor
         # Initialize dashboard if enabled
         if benchmark_config.dashboard_config.enabled:
             from veeksha.dashboard.handler import init_dashboard_event_processor
+
             init_dashboard_event_processor(
                 enabled=True,
                 enable_frontend=False,
@@ -564,17 +577,17 @@ if __name__ == "__main__":
         os.environ["VEEKSHA_SUPPRESS_CONSOLE_LOGS"] = "1"
         # Suppress tokenizers parallelism warning when forking processes
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        
+
         # Remove stream handlers from loggers (but don't redirect stdout/stderr yet)
         # This allows the TUI to start properly
         import logging as log_module
-        
+
         # Remove handlers from root logger
         root_logger = log_module.getLogger()
         for handler in root_logger.handlers[:]:
             if isinstance(handler, log_module.StreamHandler):
                 root_logger.removeHandler(handler)
-        
+
         # Remove handlers from veeksha logger specifically (which has its own handler)
         veeksha_logger = log_module.getLogger("veeksha")
         for handler in veeksha_logger.handlers[:]:
@@ -595,33 +608,37 @@ if __name__ == "__main__":
         elif has_dashboard_enabled and len(benchmark_configs) > 1:
             # Multiple benchmarks with dashboard - run all in thread, then show TUI
             logger.info(f"Running {len(benchmark_configs)} benchmarks with dashboard")
-            
+
             # Ensure environment variables are set
             os.environ["VEEKSHA_SUPPRESS_CONSOLE_LOGS"] = "1"
             os.environ["TOKENIZERS_PARALLELISM"] = "false"
-            
+
             def run_all_benchmarks():
                 """Run all benchmarks sequentially in background"""
                 for i, benchmark_config in enumerate(benchmark_configs):
                     logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
-                    is_last = (i == len(benchmark_configs) - 1)
-                    run_benchmark_console_only(benchmark_config, stop_processor_after=is_last)
+                    is_last = i == len(benchmark_configs) - 1
+                    run_benchmark_console_only(
+                        benchmark_config, stop_processor_after=is_last
+                    )
                     logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")
-            
+
             # Start all benchmarks in background thread
             benchmark_thread = Thread(target=run_all_benchmarks, daemon=False)
             benchmark_thread.start()
-            
+
             # Give benchmarks a moment to initialize
             time.sleep(0.5)
-            
+
             # Launch TUI dashboard
             from veeksha.dashboard.handler import get_dashboard_event_processor
+
             processor = get_dashboard_event_processor()
             if processor and processor.dashboard_state:
                 from veeksha.dashboard.tui_dashboard import run_dashboard_tui
+
                 run_dashboard_tui(processor.dashboard_state)
-            
+
             # Wait for all benchmarks to complete
             benchmark_thread.join()
             logger.info("All benchmarks completed")
@@ -631,10 +648,12 @@ if __name__ == "__main__":
                 print(f"Running benchmark with config: {benchmark_config}")
                 if len(benchmark_configs) > 1:
                     logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
-                
-                is_last = (i == len(benchmark_configs) - 1)
-                run_benchmark_console_only(benchmark_config, stop_processor_after=is_last)
-                
+
+                is_last = i == len(benchmark_configs) - 1
+                run_benchmark_console_only(
+                    benchmark_config, stop_processor_after=is_last
+                )
+
                 if len(benchmark_configs) > 1:
                     logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")
     finally:

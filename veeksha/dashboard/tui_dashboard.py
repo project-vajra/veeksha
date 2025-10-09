@@ -3,20 +3,24 @@
 Displays real-time metrics, graphs, and request information with proper log capture.
 """
 
-import threading
 import logging
-from datetime import datetime
-from typing import Optional, List
-from collections import deque
+from typing import Optional
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
-from textual.widgets import Header, Footer, Static, Label, DataTable, RichLog, TabbedContent, TabPane
+from textual.containers import Horizontal, ScrollableContainer
 from textual.reactive import reactive
-from rich.text import Text
+from textual.widgets import (
+    DataTable,
+    Footer,
+    Header,
+    Label,
+    Static,
+    TabbedContent,
+    TabPane,
+)
 from textual_plotext import PlotextPlot
 
-from veeksha.dashboard.state import DashboardState, LiveRequestInfo
+from veeksha.dashboard.state import DashboardState
 
 
 class MetricCard(Static):
@@ -39,7 +43,9 @@ class PlotextChart(PlotextPlot):
 
     data = reactive(list)
 
-    def __init__(self, title: str, max_points: int = 100, color: str = "cyan", *args, **kwargs):
+    def __init__(
+        self, title: str, max_points: int = 100, color: str = "cyan", *args, **kwargs
+    ):
         super().__init__(*args, **kwargs)
         self.chart_title = title
         self.max_points = max_points
@@ -64,7 +70,7 @@ class PlotextChart(PlotextPlot):
             return
 
         # Get recent data points
-        recent_data = list(self.data)[-self.max_points:]
+        recent_data = list(self.data)[-self.max_points :]
 
         if len(recent_data) < 2:
             return
@@ -76,23 +82,27 @@ class PlotextChart(PlotextPlot):
         # Clear and configure the plot
         self.plt.clear_data()
         self.plt.clear_figure()
-        
+
         # Set dark theme
-        self.plt.theme('clear')
-        self.plt.canvas_color('black')
-        self.plt.axes_color('black')
-        self.plt.ticks_color('white')
-        
+        self.plt.theme("clear")
+        self.plt.canvas_color("black")
+        self.plt.axes_color("black")
+        self.plt.ticks_color("white")
+
         # Set title
         self.plt.title(self.chart_title)
 
         # Plot the data with smooth line
         x_vals = list(range(len(recent_data)))
-        self.plt.plot(x_vals, recent_data, color=self.chart_color + '+', marker='braille')
+        self.plt.plot(
+            x_vals, recent_data, color=self.chart_color + "+", marker="braille"
+        )
 
         # Add statistics as xlabel
-        self.plt.xlabel(f"Max: {max_val:.1f} | Min: {min_val:.1f} | Avg: {avg_val:.1f} | Samples: {len(recent_data)}")
-        
+        self.plt.xlabel(
+            f"Max: {max_val:.1f} | Min: {min_val:.1f} | Avg: {avg_val:.1f} | Samples: {len(recent_data)}"
+        )
+
         # Enable grid
         self.plt.grid(True, True)
 
@@ -108,7 +118,7 @@ class LogCapture(logging.Handler):
         try:
             msg = self.format(record)
             # Skip dashboard events to avoid clutter
-            if hasattr(record, 'dashboard_event'):
+            if hasattr(record, "dashboard_event"):
                 return
 
             # Add to buffer for later display
@@ -116,16 +126,16 @@ class LogCapture(logging.Handler):
         except Exception:
             # Silently ignore errors
             pass
-    
+
     def print_logs(self):
         """Print all captured logs to stdout"""
         if self.buffer:
-            print("\n" + "="*80)
+            print("\n" + "=" * 80)
             print("BENCHMARK LOGS")
-            print("="*80)
+            print("=" * 80)
             for msg in self.buffer:
                 print(msg)
-            print("="*80 + "\n")
+            print("=" * 80 + "\n")
 
 
 class VeekshaDashboard(App):
@@ -247,8 +257,11 @@ class VeekshaDashboard(App):
             with TabPane("📊 Metrics", id="metrics-tab"):
                 with ScrollableContainer():
                     # Benchmark selector
-                    yield Static("🎯 Active Benchmark: [bold cyan]Loading...[/bold cyan]",
-                               classes="benchmark-selector", id="benchmark-selector")
+                    yield Static(
+                        "🎯 Active Benchmark: [bold cyan]Loading...[/bold cyan]",
+                        classes="benchmark-selector",
+                        id="benchmark-selector",
+                    )
 
                     # Compact metric row - only essential metrics
                     with Horizontal(classes="metric-row"):
@@ -270,7 +283,9 @@ class VeekshaDashboard(App):
             with TabPane("📋 Requests", id="requests-tab"):
                 with ScrollableContainer():
                     # Live Requests section
-                    yield Static("🔴 Live Requests (In Progress)", classes="section-title")
+                    yield Static(
+                        "🔴 Live Requests (In Progress)", classes="section-title"
+                    )
                     self.live_table = DataTable(id="live-requests")
                     self.live_table.add_column("Request ID", key="id")
                     self.live_table.add_column("Input Tokens", key="input")
@@ -294,8 +309,14 @@ class VeekshaDashboard(App):
                 with ScrollableContainer():
                     # Status section
                     yield Static("🔍 Capacity Search Status", classes="section-title")
-                    yield Static("Status: [dim]Inactive[/dim]", classes="capacity-status", id="capacity-status")
-                    yield Static("", classes="capacity-progress", id="capacity-progress")
+                    yield Static(
+                        "Status: [dim]Inactive[/dim]",
+                        classes="capacity-status",
+                        id="capacity-status",
+                    )
+                    yield Static(
+                        "", classes="capacity-progress", id="capacity-progress"
+                    )
                     yield Static("", classes="capacity-range", id="capacity-range")
                     yield Static("", classes="capacity-best", id="capacity-best")
 
@@ -305,7 +326,9 @@ class VeekshaDashboard(App):
                     self.capacity_history_table.add_column("QPS", key="qps")
                     self.capacity_history_table.add_column("Status", key="status")
                     self.capacity_history_table.add_column("Source", key="source")
-                    self.capacity_history_table.add_column("SLO Metrics", key="slo_metrics")
+                    self.capacity_history_table.add_column(
+                        "SLO Metrics", key="slo_metrics"
+                    )
                     yield self.capacity_history_table
 
         yield Footer()
@@ -315,13 +338,13 @@ class VeekshaDashboard(App):
         # Set up log capture
         self.log_handler = LogCapture()
         self.log_handler.setFormatter(
-            logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         )
         # Set log level to INFO to avoid overwhelming the system
         self.log_handler.setLevel(logging.INFO)
 
         # Add handler to veeksha logger directly (has propagate=False)
-        veeksha_logger = logging.getLogger('veeksha')
+        veeksha_logger = logging.getLogger("veeksha")
         veeksha_logger.addHandler(self.log_handler)
 
         # Start update timer
@@ -335,8 +358,10 @@ class VeekshaDashboard(App):
         benchmarks = self.dashboard_state.get_benchmark_ids()
         if benchmarks:
             selector = self.query_one("#benchmark-selector", Static)
-            selector.update(f"🎯 Active Benchmark: [bold cyan]{active_id}[/bold cyan] | "
-                          f"Press [bold]n[/bold]/[bold]p[/bold] to switch ({len(benchmarks)} total)")
+            selector.update(
+                f"🎯 Active Benchmark: [bold cyan]{active_id}[/bold cyan] | "
+                f"Press [bold]n[/bold]/[bold]p[/bold] to switch ({len(benchmarks)} total)"
+            )
 
         # Get stats
         stats = self.dashboard_state.get_aggregate_stats(active_id)
@@ -355,13 +380,13 @@ class VeekshaDashboard(App):
         # Update charts
         self.ttft_chart.data = list(stats.recent_ttft_ms)
         self.ttft_chart.configure_plot()
-        
+
         self.tpot_chart.data = list(stats.recent_tpot_ms)
         self.tpot_chart.configure_plot()
-        
+
         self.tbt_chart.data = list(stats.recent_tbt_ms)
         self.tbt_chart.configure_plot()
-        
+
         self.latency_chart.data = list(stats.recent_latency_ms)
         self.latency_chart.configure_plot()
 
@@ -376,7 +401,7 @@ class VeekshaDashboard(App):
                     str(req.current_output_tokens),
                     f"{req.ttft_ms:.1f}" if req.ttft_ms else "-",
                     f"{req.current_tpot_ms:.1f}" if req.current_tpot_ms else "-",
-                    f"{req.progress_pct:.0f}%" if req.progress_pct else "-"
+                    f"{req.progress_pct:.0f}%" if req.progress_pct else "-",
                 )
 
         # Update completed requests table
@@ -389,7 +414,7 @@ class VeekshaDashboard(App):
                     str(req.input_tokens),
                     str(req.current_output_tokens),
                     f"{req.ttft_ms:.1f}" if req.ttft_ms else "-",
-                    f"{req.current_tpot_ms:.1f}" if req.current_tpot_ms else "-"
+                    f"{req.current_tpot_ms:.1f}" if req.current_tpot_ms else "-",
                 )
 
         # Update capacity search tab
@@ -404,7 +429,9 @@ class VeekshaDashboard(App):
 
             # Update progress
             progress_widget = self.query_one("#capacity-progress", Static)
-            cache_indicator = " [dim](📦 cached)[/dim]" if cs_state.current_from_cache else ""
+            cache_indicator = (
+                " [dim](📦 cached)[/dim]" if cs_state.current_from_cache else ""
+            )
             progress_widget.update(
                 f"Progress: Iteration {cs_state.current_iteration}/{cs_state.total_iterations} | "
                 f"Testing QPS: [bold]{cs_state.current_qps:.1f}[/bold]{cache_indicator}"
@@ -429,16 +456,18 @@ class VeekshaDashboard(App):
             if self.capacity_history_table:
                 self.capacity_history_table.clear()
                 for entry in cs_state.qps_history:
-                    status_icon = "✓" if entry['under_sla'] else "✗"
-                    status_color = "green" if entry['under_sla'] else "red"
-                    source = "📦 Cache" if entry.get('from_cache', False) else "🔧 Run"
-                    slo_metrics_str = ", ".join(f"{k}={v:.2f}" for k, v in entry['slo_metrics'].items())
+                    status_icon = "✓" if entry["under_sla"] else "✗"
+                    status_color = "green" if entry["under_sla"] else "red"
+                    source = "📦 Cache" if entry.get("from_cache", False) else "🔧 Run"
+                    slo_metrics_str = ", ".join(
+                        f"{k}={v:.2f}" for k, v in entry["slo_metrics"].items()
+                    )
 
                     self.capacity_history_table.add_row(
                         f"{entry['qps']:.1f}",
                         f"[{status_color}]{status_icon} {'Pass' if entry['under_sla'] else 'Fail'}[/{status_color}]",
                         source,
-                        slo_metrics_str or "-"
+                        slo_metrics_str or "-",
                     )
 
     def action_focus_requests(self) -> None:
@@ -469,7 +498,7 @@ class VeekshaDashboard(App):
     def on_unmount(self) -> None:
         """Clean up log handler"""
         if self.log_handler:
-            veeksha_logger = logging.getLogger('veeksha')
+            veeksha_logger = logging.getLogger("veeksha")
             veeksha_logger.removeHandler(self.log_handler)
 
 
@@ -486,7 +515,7 @@ def run_dashboard_tui(dashboard_state: DashboardState) -> None:
     """
     app = VeekshaDashboard(dashboard_state)
     app.run()
-    
+
     # Print captured logs after dashboard exits
     if app.log_handler:
         app.log_handler.print_logs()
