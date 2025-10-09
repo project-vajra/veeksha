@@ -194,24 +194,28 @@ def explode_dict(
         return result
 
     def _extract_zipped_api_fields(
-        list_keys: List[str],
-        processed_list_values: List[List[Any]]
+        list_keys: List[str], processed_list_values: List[List[Any]]
     ) -> Tuple[Optional[List[Tuple[str, str]]], List[str], List[List[Any]]]:
         """Extract and zip api_url/api_key if both are present as primitive lists."""
         # Check if both fields are present
-        if 'api_url' not in list_keys or 'api_key' not in list_keys:
+        if "api_url" not in list_keys or "api_key" not in list_keys:
             return None, list_keys, processed_list_values
 
         # Get indices and values
-        url_idx = list_keys.index('api_url')
-        key_idx = list_keys.index('api_key')
+        url_idx = list_keys.index("api_url")
+        key_idx = list_keys.index("api_key")
         url_values = processed_list_values[url_idx]
         key_values = processed_list_values[key_idx]
 
         # Only zip if both are primitive lists (not dict expansions)
-        if not (isinstance(url_values, list) and isinstance(key_values, list) and
-                url_values and key_values and
-                not isinstance(url_values[0], dict) and not isinstance(key_values[0], dict)):
+        if not (
+            isinstance(url_values, list)
+            and isinstance(key_values, list)
+            and url_values
+            and key_values
+            and not isinstance(url_values[0], dict)
+            and not isinstance(key_values[0], dict)
+        ):
             return None, list_keys, processed_list_values
 
         # Validate same length
@@ -225,10 +229,11 @@ def explode_dict(
         zipped_endpoints = list(zip(url_values, key_values))
 
         # Create remaining keys/values lists (excluding api_url and api_key)
-        remaining_keys = [k for k in list_keys if k not in ['api_url', 'api_key']]
+        remaining_keys = [k for k in list_keys if k not in ["api_url", "api_key"]]
         remaining_values = [
-            v for i, v in enumerate(processed_list_values)
-            if list_keys[i] not in ['api_url', 'api_key']
+            v
+            for i, v in enumerate(processed_list_values)
+            if list_keys[i] not in ["api_url", "api_key"]
         ]
 
         return zipped_endpoints, remaining_keys, remaining_values
@@ -270,8 +275,8 @@ def explode_dict(
                         new_config.update(dict_combo)
 
                         # Add zipped values
-                        new_config['api_url'] = url
-                        new_config['api_key'] = key
+                        new_config["api_url"] = url
+                        new_config["api_key"] = key
 
                         # Add other list values
                         for k, v in zip(remaining_keys, combination):
