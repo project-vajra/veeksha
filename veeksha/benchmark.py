@@ -261,6 +261,8 @@ def run_main_loop(
     # Start the request launcher processes
     req_launcher.start()
 
+    os.environ["TOKENIZERS_PARALLELISM"] = "true"
+
     # Create and start producer-consumer threads
     dispatcher_thread = Thread(
         target=dispatch_requests,
@@ -344,6 +346,8 @@ def run_benchmark(
     assert (
         benchmark_config.client_config.tokenizer is not None
     ), "Tokenizer is required."
+
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     tokenizer = get_tokenizer(
         tokenizer_name=benchmark_config.client_config.tokenizer,

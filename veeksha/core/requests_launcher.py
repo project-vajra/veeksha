@@ -2,6 +2,7 @@ import asyncio
 import functools
 from multiprocessing import Process
 from multiprocessing import Queue as MPQueue
+import os
 from queue import Empty
 from typing import Any, Callable, List, Optional
 
@@ -47,6 +48,8 @@ class RequestsLauncher:
     async def run_async_worker(self, client_id: int) -> None:
         """Run the async worker that processes requests."""
         logger.debug("Starting async worker %s", client_id)
+
+        os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
         # Create LLM client for this worker process
         llm_client = construct_client(
