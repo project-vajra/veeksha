@@ -58,10 +58,10 @@ class SessionGeneratorConfig:
             "help": "If save_as_trace_file is true, this is the name of the trace file, without the extension. Config params will be appended to the file name."
         },
     )
-    session_dispatch_policy: str = field(
+    in_session_request_dispatch_policy: str = field(
         default="after_prev_response",
         metadata={
-            "help": "Policy for session dispatch timing. Options: 'absolute' (use inter-request timestamps only) or 'after_prev_response' (dispatch each request after the previous response plus the within-session gap)."
+            "help": "Policy for in-session request dispatch timing. Options: 'absolute' (follow timestamps without waiting for previous response of session) or 'after_prev_response' (dispatch each request after the previous response plus the inter-request interval)."
         },
     )
     cancel_session_on_failure: bool = field(

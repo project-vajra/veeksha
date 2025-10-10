@@ -28,7 +28,7 @@ def test_scheduler_first_in_session_anchor_ready() -> None:
         dispatch_delay=0.0,
         id=1,
         session_id=10,
-        session_sequence_index=0,make format
+        session_sequence_index=0,
         anchor_at_s=0.05,
     )
 
@@ -159,5 +159,3 @@ def test_request_level_metrics_record_errored_and_successful_requests() -> None:
     assert len(rlm.request_dispatched_at) == 2
     assert rlm.request_dispatched_at[0] == 0.01
     assert rlm.request_dispatched_at[1] == 0.05
-
-
