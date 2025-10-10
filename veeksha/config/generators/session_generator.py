@@ -72,6 +72,12 @@ class SessionGeneratorConfig:
     )
 
     def __post_init__(self):
+        valid_policies = {"absolute", "after_prev_response"}
+        if self.in_session_request_dispatch_policy not in valid_policies:
+            raise ValueError(
+                f"in_session_request_dispatch_policy must be one of {valid_policies}, "
+                f"got '{self.in_session_request_dispatch_policy}'"
+            )
         if self.trace_file_name != "" and not self.save_as_trace_file:
             logger.warning(
                 "trace_file_name is provided but save_as_trace_file is false. trace_file_name will be ignored."

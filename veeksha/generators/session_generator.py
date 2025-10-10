@@ -456,7 +456,7 @@ class SessionGenerator:
                 g = g.sort_values("timestamp").copy()
                 g["session_sequence_index"] = range(len(g))
                 g["wait_after_prev_response_s"] = g["timestamp"].diff().fillna(0.0)
-                g["anchor_at_s"] = 0.0
+                g["anchor_at_s"] = None
                 if not g.empty:
                     g.loc[g.index[0], "anchor_at_s"] = float(g.iloc[0]["timestamp"])  # type: ignore
                 return g
@@ -468,4 +468,3 @@ class SessionGenerator:
         self.trace_df = result_df
 
         return result_df
-        # unreachable

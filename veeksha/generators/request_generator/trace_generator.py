@@ -163,7 +163,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
             g = g.sort_values("timestamp").copy()
             g["session_sequence_index"] = range(len(g))
             g["wait_after_prev_response_s"] = g["timestamp"].diff().fillna(0.0)
-            g["anchor_at_s"] = 0.0
+            g["anchor_at_s"] = None
             if not g.empty:
                 g.loc[g.index[0], "anchor_at_s"] = float(g.iloc[0]["timestamp"])  # type: ignore
             return g
@@ -188,21 +188,19 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 self.config.session_generator_config.cancel_session_on_failure  # type: ignore[union-attr]
             )
 
-            # Always tag session id and cancel policy
             request_config.session_id = int(request_to_send.get("session_id"))
             request_config.cancel_session_on_failure = bool(cancel_on_failure)
 
             if session_policy == "absolute":
-                # Do NOT set sequence/anchor/wait; scheduler will treat as non-session
-                # and dispatch by inter-arrival times (current behavior)
+                # scheduler will treat as non-session dispatch by inter-arrival times
                 return
 
             # after_prev_response policy
             seq_idx = int(request_to_send.get("session_sequence_index", 0))
             request_config.session_sequence_index = seq_idx
-            anchor = float(request_to_send.get("anchor_at_s", 0.0))
-            if seq_idx == 0 and anchor > 0.0:
-                request_config.anchor_at_s = anchor
+            anchor = request_to_send.get("anchor_at_s")
+            if seq_idx == 0 and anchor is not None:
+                request_config.anchor_at_s = float(anchor)
             wait_gap = float(request_to_send.get("wait_after_prev_response_s", 0.0))
             if seq_idx > 0:
                 request_config.wait_after_prev_response_s = wait_gap
@@ -212,9 +210,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 request_config.session_id = int(session_id_val)
             seq_idx = int(request_to_send.get("session_sequence_index", 0))
             request_config.session_sequence_index = seq_idx
-            anchor = float(request_to_send.get("anchor_at_s", 0.0))
-            if seq_idx == 0 and anchor > 0.0:
-                request_config.anchor_at_s = anchor
+            anchor = request_to_send.get("anchor_at_s")
+            if seq_idx == 0 and anchor is not None:
+                request_config.anchor_at_s = float(anchor)
             wait_gap = float(request_to_send.get("wait_after_prev_response_s", 0.0))
             if seq_idx > 0:
                 request_config.wait_after_prev_response_s = wait_gap

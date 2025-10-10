@@ -147,6 +147,7 @@ def dispatch_requests(
     next_prefetch_time = 0.0
     generator_exhausted = False
     PREFETCH_BATCH = 1
+    PREFETCH_INTERVAL_S = 0.001
 
     while not stop_event.is_set():
         now = time.monotonic()
@@ -176,7 +177,7 @@ def dispatch_requests(
                         )
 
                     scheduler.add_request(request_config)
-                next_prefetch_time = now + 0.001
+                next_prefetch_time = now + PREFETCH_INTERVAL_S
 
         # Attempt to pop a ready request
         ready = scheduler.pop_ready()
@@ -228,12 +229,10 @@ def process_results(
         request_metrics, generated_response = result
         service_metrics.add_request_metrics(request_metrics)
         # notify scheduler about completion for session-aware sequencing
-        try:
-            success = (request_metrics.error_code is None) and (
-                request_metrics.error_msg is None
-            )
-        except Exception:
-            success = True
+        success = (
+            getattr(request_metrics, "error_code", "unknown") is None
+            and getattr(request_metrics, "error_msg", "unknown") is None
+        )
         scheduler.notify_completion(
             request_id=request_metrics.request_id,
             completed_at_monotonic=time.monotonic(),
