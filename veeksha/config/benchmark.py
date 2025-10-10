@@ -68,12 +68,17 @@ class BenchmarkConfig:
                 self.request_generator_config, LmevalRequestGeneratorConfig
             )
 
-            if self.request_generator_config.is_logit_based:
-                self.client_config.llm_api = "openai_completions"
-                self.client_config.address_append_value = "completions"
-            else:
-                self.client_config.llm_api = "openai_chat"
-                self.client_config.address_append_value = "chat/completions"
+            # Allow modifications to client_config during post_init
+            object.__setattr__(self.client_config, "_in_post_init", True)
+            try:
+                if self.request_generator_config.is_logit_based:
+                    self.client_config.llm_api = "openai_completions"
+                    self.client_config.address_append_value = "completions"
+                else:
+                    self.client_config.llm_api = "openai_chat"
+                    self.client_config.address_append_value = "chat/completions"
+            finally:
+                object.__setattr__(self.client_config, "_in_post_init", False)
 
     @classmethod
     def create_from_cli_args(cls):

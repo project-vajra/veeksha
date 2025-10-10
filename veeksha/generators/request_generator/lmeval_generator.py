@@ -46,7 +46,17 @@ class LMEvalRequestGenerator:
             self.config.interval_generator_config,
         )
 
-        self.task_manager = TaskManager()
+        # Include lm_eval tasks if available
+        import_path = []
+        try:
+            import lm_eval.tasks
+            import os
+            lm_eval_tasks_path = os.path.dirname(lm_eval.tasks.__file__)
+            import_path.append(lm_eval_tasks_path)
+        except ImportError:
+            pass
+        
+        self.task_manager = TaskManager(include_path=import_path)
         self.task_dict = get_task_dict(self.config.tasks, self.task_manager)  # type: ignore
 
         # some parameters that can be set later or ignored

@@ -36,7 +36,7 @@ def example_hellaswag():
     # Configure server
     server_config = ServerConfig(
         engine="vllm",
-        model="meta-llama/Meta-Llama-3-8B-Instruct",
+        model="Qwen/Qwen3-1.7B",
         host="localhost",
         port=8000,
         tensor_parallel_size=1,
@@ -50,13 +50,14 @@ def example_hellaswag():
         timeout=1800,  # 30 minutes
         max_completed_requests=100,  # Limit for demo
         client_config=ClientConfig(
-            model="meta-llama/Meta-Llama-3-8B-Instruct",
+            model="Qwen/Qwen3-1.7B",
             num_clients=1,
         ),
         request_generator_config=LmevalRequestGeneratorConfig(
             tasks=["hellaswag"],
             num_fewshot=5,
             limit=100,  # Evaluate on subset for demo
+            is_logit_based=True,  # HellaSwag is a multiple choice task
         ),
         metrics_config=MetricsConfig(
             output_dir="./lmeval_results/hellaswag",
@@ -83,7 +84,7 @@ def example_multiple_tasks():
     # Configure server
     server_config = ServerConfig(
         engine="vllm",
-        model="meta-llama/Meta-Llama-3-8B-Instruct",
+        model="Qwen/Qwen3-1.7B",
         host="localhost",
         port=8001,
         tensor_parallel_size=1,
@@ -97,7 +98,7 @@ def example_multiple_tasks():
         timeout=3600,  # 1 hour
         max_completed_requests=500,
         client_config=ClientConfig(
-            model="meta-llama/Meta-Llama-3-8B-Instruct",
+            model="Qwen/Qwen3-1.7B",
             num_clients=1,
         ),
         request_generator_config=LmevalRequestGeneratorConfig(
@@ -135,7 +136,7 @@ def example_model_comparison():
     logger.info("=" * 80)
     
     models = [
-        "meta-llama/Meta-Llama-3-8B-Instruct",
+        "Qwen/Qwen3-1.7B",
         "Qwen/Qwen2-7B-Instruct",
     ]
     
