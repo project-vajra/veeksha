@@ -68,25 +68,12 @@ class DispatchScheduler:
                             ready_at=ready_at, request_id=int(req_id), request=request
                         ),
                     )
-                    logger.info(
-                        "Scheduler: scheduled first-in-session id=%s session=%s ready_at=%.3f",
-                        req_id,
-                        request.session_id,
-                        ready_at,
-                    )
                 else:
                     # Queue until prior is completed; then we can compute ready time
                     session_map = self._pending_by_session.setdefault(
                         request.session_id, {}
                     )
                     session_map[request.session_sequence_index] = request
-                    logger.info(
-                        "Scheduler: queued pending id=%s session=%s seq=%s wait=%.3f",
-                        req_id,
-                        request.session_id,
-                        request.session_sequence_index,
-                        float(request.wait_after_prev_response_s or 0.0),
-                    )
                     self._maybe_release_next_locked(request.session_id)
             else:
                 # Non-session request: schedule by dispatch_delay
@@ -96,11 +83,6 @@ class DispatchScheduler:
                     _ScheduledItem(
                         ready_at=ready_at, request_id=int(req_id), request=request
                     ),
-                )
-                logger.info(
-                    "Scheduler: scheduled non-session id=%s ready_at=%.3f",
-                    req_id,
-                    ready_at,
                 )
 
     def _maybe_release_next_locked(self, session_id: int) -> None:
@@ -126,15 +108,6 @@ class DispatchScheduler:
                 _ScheduledItem(
                     ready_at=ready_at, request_id=int(next_req_id), request=req
                 ),
-            )
-            logger.info(
-                "Scheduler: released session=%s seq=%s id=%s ready_at=%.3f (last=%.3f + wait=%.3f)",
-                session_id,
-                next_seq,
-                req.id,
-                ready_at,
-                last_completion,
-                wait,
             )
             # Try to cascade only one step; caller may call again after completions
 
@@ -167,14 +140,7 @@ class DispatchScheduler:
                 return
             # Convert absolute monotonic to scheduler time base
             completed_at = completed_at_monotonic - self._start_monotonic
-            logger.info(
-                "Scheduler: completion id=%s session=%s seq=%s success=%s at=%.3f",
-                request_id,
-                session_id,
-                seq_idx,
-                success,
-                completed_at,
-            )
+
             if not success:
                 if self._cancel_policy_by_session.get(session_id, False):
                     # Cancel remaining requests in this session

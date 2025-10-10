@@ -172,6 +172,41 @@ class TraceRequestGenerator(BaseRequestGenerator):
             _annotate_group
         )
 
+    def _apply_session_fields(
+        self,
+        request_to_send,
+        request_config,
+        set_sequence_fields: bool,
+        cancel_on_failure: Optional[bool] = None,
+    ) -> None:
+        """Apply session-related fields from a trace row to a RequestConfig.
+
+        Args:
+            request_to_send: Row-like object with session annotations.
+            request_config: Mutable RequestConfig to populate.
+            set_sequence_fields: Whether to set sequencing fields (anchor, sequence index, wait gap).
+            cancel_on_failure: Optional cancel-on-failure policy to attach to the session.
+        """
+        session_id_val = request_to_send.get("session_id", None)
+        if session_id_val is not None:
+            request_config.session_id = int(session_id_val)
+        if cancel_on_failure is not None:
+            request_config.cancel_session_on_failure = bool(cancel_on_failure)
+
+        if not set_sequence_fields:
+            return
+
+        seq_idx = int(request_to_send.get("session_sequence_index", 0))
+        request_config.session_sequence_index = seq_idx
+
+        anchor = request_to_send.get("anchor_at_s")
+        if seq_idx == 0 and anchor is not None:
+            request_config.anchor_at_s = float(anchor)
+
+        wait_gap = float(request_to_send.get("wait_after_prev_response_s", 0.0))
+        if seq_idx > 0:
+            request_config.wait_after_prev_response_s = wait_gap
+
     def _attach_session_metadata(self, request_to_send, request_config) -> None:
         """Attach session metadata to `request_config` for both modes.
 
@@ -188,34 +223,31 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 self.config.session_generator_config.cancel_session_on_failure  # type: ignore[union-attr]
             )
 
-            request_config.session_id = int(request_to_send.get("session_id"))
-            request_config.cancel_session_on_failure = bool(cancel_on_failure)
-
             if session_policy == "absolute":
-                # scheduler will treat as non-session dispatch by inter-arrival times
+                # Only tag the session and cancel policy; do not set sequencing fields
+                self._apply_session_fields(
+                    request_to_send,
+                    request_config,
+                    set_sequence_fields=False,
+                    cancel_on_failure=cancel_on_failure,
+                )
                 return
 
             # after_prev_response policy
-            seq_idx = int(request_to_send.get("session_sequence_index", 0))
-            request_config.session_sequence_index = seq_idx
-            anchor = request_to_send.get("anchor_at_s")
-            if seq_idx == 0 and anchor is not None:
-                request_config.anchor_at_s = float(anchor)
-            wait_gap = float(request_to_send.get("wait_after_prev_response_s", 0.0))
-            if seq_idx > 0:
-                request_config.wait_after_prev_response_s = wait_gap
+            self._apply_session_fields(
+                request_to_send,
+                request_config,
+                set_sequence_fields=True,
+                cancel_on_failure=cancel_on_failure,
+            )
         elif self.config.use_trace_sessions:
-            session_id_val = request_to_send.get("session_id", None)
-            if session_id_val is not None:
-                request_config.session_id = int(session_id_val)
-            seq_idx = int(request_to_send.get("session_sequence_index", 0))
-            request_config.session_sequence_index = seq_idx
-            anchor = request_to_send.get("anchor_at_s")
-            if seq_idx == 0 and anchor is not None:
-                request_config.anchor_at_s = float(anchor)
-            wait_gap = float(request_to_send.get("wait_after_prev_response_s", 0.0))
-            if seq_idx > 0:
-                request_config.wait_after_prev_response_s = wait_gap
+            # Always treat trace-provided sessions as after_prev_response
+            self._apply_session_fields(
+                request_to_send,
+                request_config,
+                set_sequence_fields=True,
+                cancel_on_failure=None,
+            )
 
     def is_stable_encoding(
         self,
