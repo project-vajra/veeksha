@@ -23,5 +23,12 @@ class RequestConfig(BaseModel):
     address_append_value: Optional[str] = None
     id: Optional[int] = None
 
+    # session/scheduling metadata
+    session_id: Optional[int] = None
+    session_sequence_index: Optional[int] = None
+    anchor_at_s: Optional[float] = None  # absolute anchor for first-in-session requests
+    wait_after_prev_response_s: Optional[float] = None
+    cancel_session_on_failure: Optional[bool] = None
+
     def __str__(self) -> str:
         return f"RequestConfig(id={self.id})"
