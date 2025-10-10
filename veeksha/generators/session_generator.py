@@ -445,6 +445,27 @@ class SessionGenerator:
             if col not in result_df.columns:
                 raise ValueError(f"Column {col} not found in generated trace")
 
+        # Add per-session sequence, within-session gaps, and anchor timestamp for first request
+        if (
+            not result_df.empty
+            and "session_id" in result_df.columns
+            and "timestamp" in result_df.columns
+        ):
+
+            def _annotate_group(g):
+                g = g.sort_values("timestamp").copy()
+                g["session_sequence_index"] = range(len(g))
+                g["wait_after_prev_response_s"] = g["timestamp"].diff().fillna(0.0)
+                g["anchor_at_s"] = 0.0
+                if not g.empty:
+                    g.loc[g.index[0], "anchor_at_s"] = float(g.iloc[0]["timestamp"])  # type: ignore
+                return g
+
+            result_df = result_df.groupby("session_id", group_keys=False).apply(
+                _annotate_group
+            )
+
         self.trace_df = result_df
 
         return result_df
+        # unreachable

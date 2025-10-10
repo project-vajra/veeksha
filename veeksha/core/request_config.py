@@ -22,6 +22,15 @@ class RequestConfig(BaseModel):
     llm_api: Optional[str] = None
     address_append_value: Optional[str] = None
     id: Optional[int] = None
+    # Session/scheduling metadata (optional)
+    session_id: Optional[int] = None
+    session_sequence_index: Optional[int] = None
+    # Absolute anchor for first-in-session requests (seconds since benchmark start)
+    anchor_at_s: Optional[float] = None
+    # Delay after previous response within the same session (seconds)
+    wait_after_prev_response_s: Optional[float] = None
+    # Propagate policy to scheduler
+    cancel_session_on_failure: Optional[bool] = None
 
     def __str__(self) -> str:
         return f"RequestConfig(id={self.id})"

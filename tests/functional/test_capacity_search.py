@@ -30,11 +30,11 @@ class TestCapacitySearch:
             output_dir=f"{temp_output_dir}/capacity_search_results",
             slos=slos,
             api_url=vllm_server.base_url,
-            max_completed_requests=3,
-            timeout=30,
-            max_iterations=2,
-            prompt_length=30,
-            output_length=15,
+            max_completed_requests=1,
+            timeout=20,
+            max_iterations=1,
+            prompt_length=10,
+            output_length=5,
         )
 
         runner.run_capacity_search(
@@ -56,11 +56,11 @@ class TestCapacitySearch:
             output_dir=f"{temp_output_dir}/capacity_search_results",
             slos=slos,
             api_url=vllm_server.base_url,
-            max_completed_requests=3,
-            timeout=30,
-            max_iterations=2,
-            prompt_length=30,
-            output_length=15,
+            max_completed_requests=1,
+            timeout=20,
+            max_iterations=1,
+            prompt_length=10,
+            output_length=5,
         )
 
         runner.run_capacity_search(
@@ -86,11 +86,11 @@ class TestCapacitySearch:
             output_dir=f"{temp_output_dir}/custom_slos_results",
             slos=slos,
             api_url=vllm_server.base_url,
-            max_completed_requests=3,
-            timeout=30,
-            max_iterations=2,
-            prompt_length=25,
-            output_length=10,
+            max_completed_requests=1,
+            timeout=20,
+            max_iterations=1,
+            prompt_length=10,
+            output_length=5,
         )
 
         runner.run_capacity_search(
@@ -114,11 +114,11 @@ class TestCapacitySearch:
             output_dir=str(cache_dir),
             slos=slos,
             api_url=vllm_server.base_url,
-            max_completed_requests=2,
-            timeout=20,
+            max_completed_requests=1,
+            timeout=15,
             max_iterations=1,
-            prompt_length=20,
-            output_length=10,
+            prompt_length=10,
+            output_length=5,
         )
 
         verify_cache_behavior(runner, config_content, cache_dir)

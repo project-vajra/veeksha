@@ -294,6 +294,29 @@ class TraceRequestGenerator(BaseRequestGenerator):
             id=self.request_idx,
         )
 
+        # attach session scheduling metadata when enabled
+        if self.config.session_generator_config is not None:
+            session_policy = (
+                self.config.session_generator_config.session_dispatch_policy
+            )
+            cancel_on_failure = (
+                self.config.session_generator_config.cancel_session_on_failure
+            )
+
+            request_config.session_id = int(request_to_send.get("session_id"))
+            seq_idx = int(request_to_send.get("session_sequence_index", 0))
+            request_config.session_sequence_index = seq_idx
+            request_config.cancel_session_on_failure = bool(cancel_on_failure)
+
+            if session_policy == "after_prev_response":
+                # Only first-in-session gets anchor; others use wait_after_prev_response
+                anchor = float(request_to_send.get("anchor_at_s", 0.0))
+                if seq_idx == 0 and anchor > 0.0:
+                    request_config.anchor_at_s = anchor
+                wait_gap = float(request_to_send.get("wait_after_prev_response_s", 0.0))
+                if seq_idx > 0:
+                    request_config.wait_after_prev_response_s = wait_gap
+
         self.request_idx += 1
 
         return request_config
