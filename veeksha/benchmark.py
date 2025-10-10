@@ -36,6 +36,9 @@ from veeksha.types import RequestGeneratorType
 
 logger = init_logger(__name__)
 
+PREFETCH_BATCH_SIZE = 1
+PREFETCH_INTERVAL_S = 0.001
+
 
 def setup_api_environment(
     api_key=None,
@@ -146,8 +149,6 @@ def dispatch_requests(
     # scheduler provided by caller
     next_prefetch_time = 0.0
     generator_exhausted = False
-    PREFETCH_BATCH = 1
-    PREFETCH_INTERVAL_S = 0.001
 
     while not stop_event.is_set():
         now = time.monotonic()
@@ -156,10 +157,10 @@ def dispatch_requests(
             service_metrics, num_errored_requests_handled
         ):
             if now >= next_prefetch_time:
-                for _ in range(PREFETCH_BATCH):
+                for _ in range(PREFETCH_BATCH_SIZE):
                     try:
                         request_config = request_generator.get_request()
-                    except StopIteration as e:
+                    except StopIteration:
                         # stop prefetching but keep dispatching already-scheduled
                         generator_exhausted = True
                         break
@@ -230,8 +231,8 @@ def process_results(
         service_metrics.add_request_metrics(request_metrics)
         # notify scheduler about completion for session-aware sequencing
         success = (
-            getattr(request_metrics, "error_code", "unknown") is None
-            and getattr(request_metrics, "error_msg", "unknown") is None
+            getattr(request_metrics, "error_code", None) is None
+            and getattr(request_metrics, "error_msg", None) is None
         )
         scheduler.notify_completion(
             request_id=request_metrics.request_id,
