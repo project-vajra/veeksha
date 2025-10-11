@@ -4,6 +4,9 @@ from typing import List
 from veeksha.lm_eval.api.filter import FilterEnsemble
 from veeksha.lm_eval.api.registry import get_filter
 
+# Import filter modules to register them
+from . import selection, transformation, extraction, decontamination, custom
+
 
 def build_filter_ensemble(
     filter_name: str, components: List[List[str]]
