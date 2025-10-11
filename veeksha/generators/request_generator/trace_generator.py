@@ -311,6 +311,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     self._wrap_warning_logged = True
                 if self.config.remap_hash_ids:
                     self._remap_trace_hash_ids()
+                    self.past_prompts.clear()
                 self.request_idx = 0
 
         request_to_send = self.trace_df.iloc[self.request_idx]

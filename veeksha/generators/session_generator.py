@@ -461,10 +461,9 @@ class SessionGenerator:
                     g.loc[g.index[0], "anchor_at_s"] = float(g.iloc[0]["timestamp"])  # type: ignore
                 return g
 
-            result_df = (
-                result_df.groupby("session_id", group_keys=False)[list(result_df.columns)]
-                .apply(_annotate_group)
-            )
+            result_df = result_df.groupby("session_id", group_keys=False)[
+                list(result_df.columns)
+            ].apply(_annotate_group)
 
         self.trace_df = result_df
 
