@@ -12,13 +12,13 @@ Example usage:
     from veeksha.orchestration import run_benchmark_with_server
     from veeksha.config.server import ServerConfig
     from veeksha.config.benchmark import BenchmarkConfig
-    
+
     server_config = ServerConfig(
         engine="vllm",
         model="meta-llama/Meta-Llama-3-8B-Instruct",
         port=8000,
     )
-    
+
     benchmark_config = BenchmarkConfig.create_from_cli_args()[0]
     metrics = run_benchmark_with_server(benchmark_config, server_config)
     ```
@@ -30,7 +30,10 @@ from veeksha.orchestration.benchmark_orchestrator import (
     run_microbenchmark_with_server,
 )
 from veeksha.orchestration.server_manager import BaseServerManager
-from veeksha.orchestration.vllm_server import VLLMServerManager, create_vllm_server_manager
+from veeksha.orchestration.vllm_server import (
+    VLLMServerManager,
+    create_vllm_server_manager,
+)
 
 __all__ = [
     # Server managers

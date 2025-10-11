@@ -9,7 +9,7 @@ from veeksha.config.server import ServerConfig
 
 __all__ = [
     "BenchmarkConfig",
-    "ClientConfig", 
+    "ClientConfig",
     "MetricsConfig",
     "ServerConfig",
 ]
