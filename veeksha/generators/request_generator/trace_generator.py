@@ -88,23 +88,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                         ast.literal_eval
                     )
                 if self.config.remap_hash_ids:
-                    unique_ids = set()
-                    for ids in self.trace_df["hash_ids"]:
-                        unique_ids.update(ids)
-                    # unbias permutation
-                    unique_list = sorted(unique_ids)
-                    permuted = unique_list.copy()
-                    rng = self.session_rng_factory()
-                    rng.shuffle(permuted)
-                    id_map: Dict[int, int] = {
-                        src: dst for src, dst in zip(unique_list, permuted)
-                    }
-                    logger.info(
-                        f"Applying hash-id remapping with session RNG to {len(unique_list)} unique ids"
-                    )
-                    self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
-                        lambda lst: [id_map[x] for x in lst]
-                    )
+                    self._remap_trace_hash_ids()
         else:
             if self.corpus_lines is None:
                 raise ValueError(
@@ -121,7 +105,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 seed_manager=self.seed_manager.child("session"),
             )
 
-            self.trace_df_with_sessions = self.trace_df.pipe(
+            self.trace_df = self.trace_df.pipe(
                 session_generator.generate_sessions,
             ).pipe(
                 # get next request intervals again because session sampling shuffles sessions
@@ -134,7 +118,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
             if self.config.session_generator_config.save_as_trace_file:
                 # convert timestamps to milliseconds (default time units) before saving
-                session_df_for_saving = self.trace_df_with_sessions.copy()
+                session_df_for_saving = self.trace_df.copy()
                 session_df_for_saving["timestamp"] = (
                     session_df_for_saving["timestamp"] * 1000
                 )
@@ -325,12 +309,11 @@ class TraceRequestGenerator(BaseRequestGenerator):
                         f"Request trace exhausted at index {self.request_idx}; wrapping to start."
                     )
                     self._wrap_warning_logged = True
+                if self.config.remap_hash_ids:
+                    self._remap_trace_hash_ids()
                 self.request_idx = 0
 
-        if self.config.session_generator_config is not None:
-            request_to_send = self.trace_df_with_sessions.iloc[self.request_idx]
-        else:
-            request_to_send = self.trace_df.iloc[self.request_idx]
+        request_to_send = self.trace_df.iloc[self.request_idx]
 
         dispatch_delay = request_to_send["inter_request_time"]
 
@@ -405,8 +388,33 @@ class TraceRequestGenerator(BaseRequestGenerator):
         return request_config
 
     def capacity(self) -> int:
-        return (
-            len(self.trace_df)
-            if self.config.session_generator_config is None
-            else len(self.trace_df_with_sessions)
+        return len(self.trace_df)
+
+    def _remap_trace_hash_ids(self) -> None:
+        """Remap prefix hash IDs in-place for the unified trace dataframe.
+
+        This is called on wrap when `remap_hash_ids` is enabled to vary prompts across
+        epochs. It is a no-op unless `use_trace_prefix_hash_ids` is True and the
+        dataframe contains a `hash_ids` column with list[int] entries.
+        """
+
+        unique_ids = set()
+        for ids in self.trace_df["hash_ids"]:
+            unique_ids.update(ids)
+
+        unique_list = sorted(unique_ids)
+        if not unique_list:
+            return
+
+        permuted = unique_list.copy()
+        rng = self.session_rng_factory()
+        rng.shuffle(permuted)
+        id_map: Dict[int, int] = {src: dst for src, dst in zip(unique_list, permuted)}
+
+        logger.info(
+            f"Remapping prefix hash IDs on wrap for {len(unique_list)} unique ids"
+        )
+
+        self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
+            lambda lst: [id_map[x] for x in lst]
         )
