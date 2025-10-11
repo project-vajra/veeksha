@@ -51,6 +51,8 @@ class PlotextChart(PlotextPlot):
         self.max_points = max_points
         self.chart_color = color
         self.data = []
+        self.start_time = None  # Track when first data point arrives
+        self.data_with_timestamps = []  # Store (timestamp, value) tuples
 
     def on_mount(self) -> None:
         """Configure the plot when widget is mounted"""
@@ -64,47 +66,70 @@ class PlotextChart(PlotextPlot):
         """React to data changes and update the plot"""
         self.refresh()
 
+    def add_data_point(self, value: float, timestamp: float = None):
+        """Add a data point with timestamp"""
+        import time
+        if timestamp is None:
+            timestamp = time.time()
+
+        if self.start_time is None:
+            self.start_time = timestamp
+
+        self.data_with_timestamps.append((timestamp, value))
+        # Keep only recent points
+        if len(self.data_with_timestamps) > self.max_points:
+            self.data_with_timestamps = self.data_with_timestamps[-self.max_points:]
+
     def configure_plot(self) -> None:
         """Configure and render the plot"""
-        if not self.data or len(self.data) == 0:
+        if not self.data_with_timestamps or len(self.data_with_timestamps) == 0:
             return
 
-        # Get recent data points
-        recent_data = list(self.data)[-self.max_points :]
+        # Get recent data points with timestamps
+        recent_data_with_time = self.data_with_timestamps[-self.max_points:]
 
-        if len(recent_data) < 2:
+        if len(recent_data_with_time) < 2:
             return
 
-        max_val = max(recent_data)
-        min_val = min(recent_data)
-        avg_val = sum(recent_data) / len(recent_data)
+        # Extract values and compute time offsets from start
+        timestamps, values = zip(*recent_data_with_time)
+        if self.start_time is None:
+            self.start_time = timestamps[0]
+
+        time_offsets = [(t - self.start_time) for t in timestamps]
+
+        max_val = max(values)
+        min_val = min(values)
+        avg_val = sum(values) / len(values)
 
         # Clear and configure the plot
         self.plt.clear_data()
         self.plt.clear_figure()
 
-        # Set dark theme
+        # Set cleaner theme with less contrast
         self.plt.theme("clear")
         self.plt.canvas_color("black")
         self.plt.axes_color("black")
-        self.plt.ticks_color("white")
+        self.plt.ticks_color("gray")  # Changed from white to gray for less contrast
 
         # Set title
         self.plt.title(self.chart_title)
 
-        # Plot the data with smooth line
-        x_vals = list(range(len(recent_data)))
+        # Plot the data with time-based X-axis
         self.plt.plot(
-            x_vals, recent_data, color=self.chart_color + "+", marker="braille"
+            time_offsets, values, color=self.chart_color, marker="braille"
         )
 
-        # Add statistics as xlabel
-        self.plt.xlabel(
-            f"Max: {max_val:.1f} | Min: {min_val:.1f} | Avg: {avg_val:.1f} | Samples: {len(recent_data)}"
-        )
+        # Set fixed Y-axis bounds based on min/max with some padding
+        y_range = max_val - min_val
+        y_padding = y_range * 0.1 if y_range > 0 else 1
+        self.plt.ylim(min_val - y_padding, max_val + y_padding)
 
-        # Enable grid
-        self.plt.grid(True, True)
+        # X-axis label shows time
+        self.plt.xlabel(f"Time (s) | Avg: {avg_val:.1f} | Min: {min_val:.1f} | Max: {max_val:.1f}")
+
+        # Minimal grid for cleaner look
+        self.plt.grid(False, False)  # Disable grid for cleaner appearance
 
 
 class LogCapture(logging.Handler):
@@ -215,8 +240,9 @@ class VeekshaDashboard(App):
 
     BINDINGS = [
         ("q", "quit", "Quit"),
-        ("d", "toggle_dark", "Toggle Dark Mode"),
+        ("m", "focus_metrics", "Metrics Tab"),
         ("r", "focus_requests", "Requests Tab"),
+        ("c", "focus_capacity", "Capacity Search Tab"),
         ("n", "next_benchmark", "Next Benchmark"),
         ("p", "prev_benchmark", "Previous Benchmark"),
     ]
@@ -253,7 +279,7 @@ class VeekshaDashboard(App):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
 
-        with TabbedContent():
+        with TabbedContent(initial="requests-tab"):
             with TabPane("📊 Metrics", id="metrics-tab"):
                 with ScrollableContainer():
                     # Benchmark selector
@@ -354,12 +380,22 @@ class VeekshaDashboard(App):
         """Update all dashboard elements"""
         active_id = self.dashboard_state.active_benchmark_id
 
-        # Update benchmark selector
+        # Update benchmark selector with running/finished status
         benchmarks = self.dashboard_state.get_benchmark_ids()
         if benchmarks:
             selector = self.query_one("#benchmark-selector", Static)
+
+            # Determine if benchmark is running or finished
+            active_benchmark = self.dashboard_state.get_active_benchmark()
+            if active_benchmark:
+                is_finished = active_benchmark.benchmark_end_time is not None
+                status_indicator = "[bold green]✓ Finished[/bold green]" if is_finished else "[bold yellow]⚙ Running[/bold yellow]"
+            else:
+                status_indicator = "[dim]No benchmark[/dim]"
+
             selector.update(
                 f"🎯 Active Benchmark: [bold cyan]{active_id}[/bold cyan] | "
+                f"Status: {status_indicator} | "
                 f"Press [bold]n[/bold]/[bold]p[/bold] to switch ({len(benchmarks)} total)"
             )
 
@@ -377,38 +413,61 @@ class VeekshaDashboard(App):
         self.tbt_card.value = f"{stats.avg_tbt_ms:.1f}ms"
         self.latency_card.value = f"{stats.avg_latency_ms:.0f}ms"
 
-        # Update charts
-        self.ttft_chart.data = list(stats.recent_ttft_ms)
-        self.ttft_chart.configure_plot()
+        # Update charts with time-based data points
+        import time
+        current_time = time.time()
 
-        self.tpot_chart.data = list(stats.recent_tpot_ms)
-        self.tpot_chart.configure_plot()
+        # Add latest data points to charts (only if there's new data)
+        if stats.recent_ttft_ms:
+            latest_ttft = stats.recent_ttft_ms[-1] if len(stats.recent_ttft_ms) > 0 else 0
+            if not self.ttft_chart.data_with_timestamps or self.ttft_chart.data_with_timestamps[-1][1] != latest_ttft:
+                self.ttft_chart.add_data_point(latest_ttft, current_time)
+                self.ttft_chart.configure_plot()
 
-        self.tbt_chart.data = list(stats.recent_tbt_ms)
-        self.tbt_chart.configure_plot()
+        if stats.recent_tpot_ms:
+            latest_tpot = stats.recent_tpot_ms[-1] if len(stats.recent_tpot_ms) > 0 else 0
+            if not self.tpot_chart.data_with_timestamps or self.tpot_chart.data_with_timestamps[-1][1] != latest_tpot:
+                self.tpot_chart.add_data_point(latest_tpot, current_time)
+                self.tpot_chart.configure_plot()
 
-        self.latency_chart.data = list(stats.recent_latency_ms)
-        self.latency_chart.configure_plot()
+        if stats.recent_tbt_ms:
+            latest_tbt = stats.recent_tbt_ms[-1] if len(stats.recent_tbt_ms) > 0 else 0
+            if not self.tbt_chart.data_with_timestamps or self.tbt_chart.data_with_timestamps[-1][1] != latest_tbt:
+                self.tbt_chart.add_data_point(latest_tbt, current_time)
+                self.tbt_chart.configure_plot()
+
+        if stats.recent_latency_ms:
+            latest_latency = stats.recent_latency_ms[-1] if len(stats.recent_latency_ms) > 0 else 0
+            if not self.latency_chart.data_with_timestamps or self.latency_chart.data_with_timestamps[-1][1] != latest_latency:
+                self.latency_chart.add_data_point(latest_latency, current_time)
+                self.latency_chart.configure_plot()
 
         # Update live requests table
         if self.live_table:
             self.live_table.clear()
             live_requests = self.dashboard_state.get_live_requests(active_id)
             for req in live_requests[:10]:  # Top 10
+                # Create htop-like progress bar
+                progress_pct = req.progress_pct if req.progress_pct else 0
+                bar_width = 20
+                filled = int((progress_pct / 100) * bar_width)
+                empty = bar_width - filled
+                progress_bar = f"[{'█' * filled}{'░' * empty}] {progress_pct:.0f}%"
+
                 self.live_table.add_row(
                     str(req.request_id),
                     str(req.input_tokens),
                     str(req.current_output_tokens),
                     f"{req.ttft_ms:.1f}" if req.ttft_ms else "-",
                     f"{req.current_tpot_ms:.1f}" if req.current_tpot_ms else "-",
-                    f"{req.progress_pct:.0f}%" if req.progress_pct else "-",
+                    progress_bar,
                 )
 
         # Update completed requests table
         if self.completed_table:
             self.completed_table.clear()
             completed = self.dashboard_state.get_completed_requests(active_id)
-            for req in list(completed)[-20:]:  # Last 20
+            for req in list(completed)[-100:]:  # Last 100
                 self.completed_table.add_row(
                     str(req.request_id),
                     str(req.input_tokens),
@@ -470,10 +529,20 @@ class VeekshaDashboard(App):
                         slo_metrics_str or "-",
                     )
 
+    def action_focus_metrics(self) -> None:
+        """Switch to metrics tab"""
+        tabbed = self.query_one(TabbedContent)
+        tabbed.active = "metrics-tab"
+
     def action_focus_requests(self) -> None:
         """Switch to requests tab"""
         tabbed = self.query_one(TabbedContent)
         tabbed.active = "requests-tab"
+
+    def action_focus_capacity(self) -> None:
+        """Switch to capacity search tab"""
+        tabbed = self.query_one(TabbedContent)
+        tabbed.active = "capacity-search-tab"
 
     def action_next_benchmark(self) -> None:
         """Switch to next benchmark"""
