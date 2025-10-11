@@ -12,97 +12,90 @@ from typing import Any, Dict, List, Optional
 @dataclass
 class ServerConfig:
     """Configuration for server launch and management.
-    
-    This class defines all parameters needed to launch, manage, and 
+
+    This class defines all parameters needed to launch, manage, and
     connect to an LLM inference server.
     """
-    
+
     # Server identification
     engine: str = field(
         default="vllm",
-        metadata={"help": "The inference engine to use (e.g., 'vllm', 'tgi', 'sglang')"}
+        metadata={
+            "help": "The inference engine to use (e.g., 'vllm', 'tgi', 'sglang')"
+        },
     )
-    
+
     # Model configuration
     model: str = field(
         default="meta-llama/Meta-Llama-3-8B-Instruct",
-        metadata={"help": "Model name or path"}
+        metadata={"help": "Model name or path"},
     )
-    
+
     # Server connection
     host: str = field(
-        default="localhost",
-        metadata={"help": "Host address for the server"}
+        default="localhost", metadata={"help": "Host address for the server"}
     )
-    
-    port: int = field(
-        default=8000,
-        metadata={"help": "Port number for the server"}
-    )
-    
+
+    port: int = field(default=8000, metadata={"help": "Port number for the server"})
+
     api_key: str = field(
-        default="token-abc123",
-        metadata={"help": "API key for server authentication"}
+        default="token-abc123", metadata={"help": "API key for server authentication"}
     )
-    
+
     # Hardware/Resource configuration
     tensor_parallel_size: int = field(
-        default=1,
-        metadata={"help": "Number of GPUs for tensor parallelism"}
+        default=1, metadata={"help": "Number of GPUs for tensor parallelism"}
     )
-    
+
     gpu_ids: Optional[List[int]] = field(
         default=None,
-        metadata={"help": "List of GPU IDs to use (None means auto-assign)"}
+        metadata={"help": "List of GPU IDs to use (None means auto-assign)"},
     )
-    
+
     # Server-specific arguments
     dtype: str = field(
         default="auto",
-        metadata={"help": "Data type for model weights (auto, float16, bfloat16, etc.)"}
+        metadata={
+            "help": "Data type for model weights (auto, float16, bfloat16, etc.)"
+        },
     )
-    
+
     max_model_len: Optional[int] = field(
-        default=None,
-        metadata={"help": "Maximum model context length"}
+        default=None, metadata={"help": "Maximum model context length"}
     )
-    
+
     additional_args: Dict[str, Any] = field(
-        default_factory=dict,
-        metadata={"help": "Additional engine-specific arguments"}
+        default_factory=dict, metadata={"help": "Additional engine-specific arguments"}
     )
-    
+
     # Startup configuration
     startup_timeout: int = field(
-        default=300,
-        metadata={"help": "Timeout in seconds for server startup"}
+        default=300, metadata={"help": "Timeout in seconds for server startup"}
     )
-    
+
     health_check_interval: float = field(
-        default=2.0,
-        metadata={"help": "Interval in seconds between health checks"}
+        default=2.0, metadata={"help": "Interval in seconds between health checks"}
     )
-    
+
     # Lifecycle management
     auto_shutdown: bool = field(
-        default=True,
-        metadata={"help": "Automatically shutdown server after benchmark"}
+        default=True, metadata={"help": "Automatically shutdown server after benchmark"}
     )
-    
+
     def get_api_base_url(self) -> str:
         """Get the full API base URL."""
         return f"http://{self.host}:{self.port}/v1"
-    
+
     def get_health_check_url(self) -> str:
         """Get the health check endpoint URL."""
         return f"http://{self.host}:{self.port}/health"
-    
+
     def get_gpu_env_var(self) -> Optional[str]:
         """Get CUDA_VISIBLE_DEVICES value if gpu_ids is specified."""
         if self.gpu_ids is not None:
             return ",".join(map(str, self.gpu_ids))
         return None
-    
+
     def to_dict(self) -> Dict:
         """Convert config to dictionary."""
         return {

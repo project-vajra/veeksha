@@ -28,11 +28,11 @@ logger = init_logger(__name__)
 
 def example_hellaswag():
     """Run HellaSwag benchmark with automatic server orchestration."""
-    
+
     logger.info("=" * 80)
     logger.info("Example: HellaSwag Benchmark with Server Orchestration")
     logger.info("=" * 80)
-    
+
     # Configure server
     server_config = ServerConfig(
         engine="vllm",
@@ -43,7 +43,7 @@ def example_hellaswag():
         auto_shutdown=True,
         startup_timeout=300,
     )
-    
+
     # Configure lm_eval benchmark
     benchmark_config = BenchmarkConfig(
         seed=42,
@@ -63,24 +63,24 @@ def example_hellaswag():
             output_dir="./lmeval_results/hellaswag",
         ),
     )
-    
+
     # Run with orchestration
     results = run_lmeval_with_server(
         benchmark_config=benchmark_config,
         server_config=server_config,
     )
-    
+
     logger.info("HellaSwag evaluation completed!")
     logger.info(f"Results: {results}")
 
 
 def example_multiple_tasks():
     """Run multiple lm_eval tasks with automatic server orchestration."""
-    
+
     logger.info("=" * 80)
     logger.info("Example: Multiple Tasks with Server Orchestration")
     logger.info("=" * 80)
-    
+
     # Configure server
     server_config = ServerConfig(
         engine="vllm",
@@ -91,7 +91,7 @@ def example_multiple_tasks():
         auto_shutdown=True,
         startup_timeout=300,
     )
-    
+
     # Configure lm_eval benchmark with multiple tasks
     benchmark_config = BenchmarkConfig(
         seed=42,
@@ -110,15 +110,15 @@ def example_multiple_tasks():
             output_dir="./lmeval_results/multiple_tasks",
         ),
     )
-    
+
     # Run with orchestration
     results = run_lmeval_with_server(
         benchmark_config=benchmark_config,
         server_config=server_config,
     )
-    
+
     logger.info("Multi-task evaluation completed!")
-    
+
     # Display summary of results
     if "results" in results:
         logger.info("\nTask Results:")
@@ -130,23 +130,23 @@ def example_multiple_tasks():
 
 def example_model_comparison():
     """Compare multiple models on the same task."""
-    
+
     logger.info("=" * 80)
     logger.info("Example: Model Comparison")
     logger.info("=" * 80)
-    
+
     models = [
         "Qwen/Qwen3-1.7B",
         "Qwen/Qwen2-7B-Instruct",
     ]
-    
+
     all_results = {}
-    
+
     for i, model in enumerate(models):
         logger.info(f"\n{'=' * 80}")
         logger.info(f"Evaluating model: {model}")
         logger.info(f"{'=' * 80}")
-        
+
         # Create server config for this model
         server_config = ServerConfig(
             engine="vllm",
@@ -157,7 +157,7 @@ def example_model_comparison():
             auto_shutdown=True,
             startup_timeout=300,
         )
-        
+
         # Create benchmark config
         benchmark_config = BenchmarkConfig(
             seed=42,
@@ -176,7 +176,7 @@ def example_model_comparison():
                 output_dir=f"./lmeval_results/comparison/{model.replace('/', '_')}",
             ),
         )
-        
+
         try:
             results = run_lmeval_with_server(
                 benchmark_config=benchmark_config,
@@ -187,7 +187,7 @@ def example_model_comparison():
         except Exception as e:
             logger.error(f"✗ {model} failed: {e}")
             continue
-    
+
     # Print comparison
     logger.info("\n" + "=" * 80)
     logger.info("MODEL COMPARISON RESULTS")
@@ -204,7 +204,7 @@ def example_model_comparison():
 def main():
     """Run example based on command line argument or run all."""
     import sys
-    
+
     if len(sys.argv) > 1:
         example = sys.argv[1]
         if example == "hellaswag":
@@ -218,15 +218,17 @@ def main():
             logger.info("Available examples: hellaswag, multiple, comparison")
     else:
         logger.info("Running all examples...")
-        logger.info("To run a specific example: python lmeval_orchestration.py [hellaswag|multiple|comparison]")
+        logger.info(
+            "To run a specific example: python lmeval_orchestration.py [hellaswag|multiple|comparison]"
+        )
         logger.info("")
-        
+
         example_hellaswag()
         logger.info("\n" * 2)
-        
+
         example_multiple_tasks()
         logger.info("\n" * 2)
-        
+
         example_model_comparison()
 
 

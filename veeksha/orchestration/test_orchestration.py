@@ -13,7 +13,6 @@ Usage:
 """
 
 import tempfile
-from pathlib import Path
 
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.client import ClientConfig
