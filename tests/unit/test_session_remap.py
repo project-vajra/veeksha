@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import List
 
 import pandas as pd
+import pytest
 
 from veeksha.config.client import ClientConfig
 from veeksha.config.generators.request_generator.trace_generator import (
@@ -102,6 +103,7 @@ def _build_generator(
     )
 
 
+@pytest.mark.unit
 def test_hash_ids_remap_on_wrap_with_sessions_and_save_suffix(tmp_path):
     trace_file = _write_trace_jsonl(tmp_path)
 
@@ -130,6 +132,7 @@ def test_hash_ids_remap_on_wrap_with_sessions_and_save_suffix(tmp_path):
     assert saved, "Expected a saved trace file with '_remapped' suffix when remapping is enabled"
 
 
+@pytest.mark.unit
 def test_hash_ids_not_remapped_when_disabled_on_wrap(tmp_path):
     trace_file = _write_trace_jsonl(tmp_path)
 
