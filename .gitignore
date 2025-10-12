@@ -262,6 +262,8 @@ veeksha/capacity_search/capsearch_config_files/
 veeksha/_version.py
 test_output/
 .coverage
+lmeval_results/
+microbenchmark_results/
 
 # cursor
 .cursorrules
