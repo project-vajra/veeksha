@@ -143,8 +143,12 @@ def run_microbenchmark_with_server(
     """
     # from veeksha.microbenchmark import Microbenchmark
 
-    server_manager = None
-
+    # server_manager = None
+    # For MVP, this functionality is not yet implemented
+    raise NotImplementedError(
+        "Microbenchmark sweep is not implemented. "
+        "See run_microbenchmark.py for manual implementation examples."
+    )
     # try:
     #     # Setup server if config provided
     #     if server_config is not None:
