@@ -14,6 +14,7 @@ Usage:
 
 import tempfile
 
+from veeksha.benchmark import run_benchmark
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.client import ClientConfig
 from veeksha.config.generators.interval_generator.poisson_generator import (
@@ -28,7 +29,7 @@ from veeksha.config.generators.request_generator.synthetic_generator import (
 from veeksha.config.metrics import MetricsConfig
 from veeksha.config.server import ServerConfig
 from veeksha.logger import init_logger
-from veeksha.orchestration.benchmark_orchestrator import run_benchmark_with_server
+from veeksha.orchestration import managed_server
 
 logger = init_logger(__name__)
 
@@ -101,22 +102,25 @@ def test_orchestration():
     # Run the orchestration
     logger.info("Starting orchestration test...")
     try:
-        metrics = run_benchmark_with_server(
-            benchmark_config=benchmark_config,
-            server_config=server_config,
-        )
+        logger.info("Launching server...")
+        with managed_server(server_config) as info:
+            logger.info(f"Server ready at {info['api_base']}")
+            logger.info("Running benchmark...")
+            
+            metrics = run_benchmark(benchmark_config)
 
-        # Display results
-        logger.info("=" * 80)
-        logger.info("TEST PASSED - Orchestration successful!")
-        logger.info("=" * 80)
+            # Display results
+            logger.info("=" * 80)
+            logger.info("TEST PASSED - Orchestration successful!")
+            logger.info("=" * 80)
 
-        summary = metrics.get_aggregated_summary()
-        for key, value in summary.items():
-            logger.info(f"{key}: {value}")
+            summary = metrics.get_aggregated_summary()
+            for key, value in summary.items():
+                logger.info(f"{key}: {value}")
 
-        logger.info(f"\nResults saved to: {benchmark_config.metrics_config.output_dir}")
-
+            logger.info(f"\nResults saved to: {benchmark_config.metrics_config.output_dir}")
+        
+        logger.info("Server shut down")
         return True
 
     except Exception as e:

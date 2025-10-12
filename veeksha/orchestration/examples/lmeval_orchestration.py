@@ -13,6 +13,10 @@ This is useful for:
 - Automating evaluation workflows
 """
 
+import json
+import os
+
+from veeksha.benchmark import run_benchmark
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.client import ClientConfig
 from veeksha.config.generators.request_generator.lmeval_generator import (
@@ -21,7 +25,7 @@ from veeksha.config.generators.request_generator.lmeval_generator import (
 from veeksha.config.metrics import MetricsConfig
 from veeksha.config.server import ServerConfig
 from veeksha.logger import init_logger
-from veeksha.orchestration import run_lmeval_with_server
+from veeksha.orchestration import managed_server
 
 logger = init_logger(__name__)
 
@@ -65,13 +69,27 @@ def example_hellaswag():
     )
 
     # Run with orchestration
-    results = run_lmeval_with_server(
-        benchmark_config=benchmark_config,
-        server_config=server_config,
-    )
-
-    logger.info("HellaSwag evaluation completed!")
-    logger.info(f"Results: {results}")
+    logger.info("Launching server...")
+    with managed_server(server_config) as info:
+        logger.info(f"Server ready at {info['api_base']}")
+        logger.info("Running lm_eval tasks...")
+        
+        run_benchmark(benchmark_config)
+        
+        # Load results
+        results_path = os.path.join(
+            benchmark_config.metrics_config.output_dir, "lmeval_results.json"
+        )
+        if os.path.exists(results_path):
+            with open(results_path, "r") as f:
+                results = json.load(f)
+        else:
+            results = {}
+        
+        logger.info("HellaSwag evaluation completed!")
+        logger.info(f"Results: {results}")
+    
+    logger.info("Server shut down")
 
 
 def example_multiple_tasks():
@@ -112,20 +130,34 @@ def example_multiple_tasks():
     )
 
     # Run with orchestration
-    results = run_lmeval_with_server(
-        benchmark_config=benchmark_config,
-        server_config=server_config,
-    )
+    logger.info("Launching server...")
+    with managed_server(server_config) as info:
+        logger.info(f"Server ready at {info['api_base']}")
+        logger.info("Running lm_eval tasks...")
+        
+        run_benchmark(benchmark_config)
+        
+        # Load results
+        results_path = os.path.join(
+            benchmark_config.metrics_config.output_dir, "lmeval_results.json"
+        )
+        if os.path.exists(results_path):
+            with open(results_path, "r") as f:
+                results = json.load(f)
+        else:
+            results = {}
+        
+        logger.info("Multi-task evaluation completed!")
 
-    logger.info("Multi-task evaluation completed!")
-
-    # Display summary of results
-    if "results" in results:
-        logger.info("\nTask Results:")
-        for task, metrics in results["results"].items():
-            logger.info(f"  {task}:")
-            for metric, value in metrics.items():
-                logger.info(f"    {metric}: {value}")
+        # Display summary of results
+        if "results" in results:
+            logger.info("\nTask Results:")
+            for task, metrics in results["results"].items():
+                logger.info(f"  {task}:")
+                for metric, value in metrics.items():
+                    logger.info(f"    {metric}: {value}")
+    
+    logger.info("Server shut down")
 
 
 def example_model_comparison():
@@ -178,12 +210,26 @@ def example_model_comparison():
         )
 
         try:
-            results = run_lmeval_with_server(
-                benchmark_config=benchmark_config,
-                server_config=server_config,
-            )
-            all_results[model] = results
-            logger.info(f"✓ {model} completed successfully")
+            logger.info(f"Launching server for {model}...")
+            with managed_server(server_config) as info:
+                logger.info(f"Server ready at {info['api_base']}")
+                logger.info("Running lm_eval tasks...")
+                
+                run_benchmark(benchmark_config)
+                
+                # Load results
+                results_path = os.path.join(
+                    benchmark_config.metrics_config.output_dir, "lmeval_results.json"
+                )
+                if os.path.exists(results_path):
+                    with open(results_path, "r") as f:
+                        results = json.load(f)
+                else:
+                    results = {}
+                
+                all_results[model] = results
+                logger.info(f"✓ {model} completed successfully")
+            logger.info(f"Server shut down for {model}")
         except Exception as e:
             logger.error(f"✗ {model} failed: {e}")
             continue
