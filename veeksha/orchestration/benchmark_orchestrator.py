@@ -141,63 +141,64 @@ def run_microbenchmark_with_server(
         microbenchmark_config: Microbenchmark configuration
         server_config: Server configuration (None means use existing server)
     """
-    from veeksha.microbenchmark import Microbenchmark
+    pass
+    # from veeksha.microbenchmark import Microbenchmark
 
-    server_manager = None
+    # server_manager = None
 
-    try:
-        # Setup server if config provided
-        if server_config is not None:
-            logger.info("=" * 80)
-            logger.info("STEP 1: Launching server for microbenchmark")
-            logger.info("=" * 80)
+    # try:
+    #     # Setup server if config provided
+    #     if server_config is not None:
+    #         logger.info("=" * 80)
+    #         logger.info("STEP 1: Launching server for microbenchmark")
+    #         logger.info("=" * 80)
 
-            server_manager = create_server_manager(server_config)
+    #         server_manager = create_server_manager(server_config)
 
-            # Launch server
-            if not server_manager.launch():
-                raise RuntimeError("Failed to launch server")
+    #         # Launch server
+    #         if not server_manager.launch():
+    #             raise RuntimeError("Failed to launch server")
 
-            # Wait for ready
-            if not server_manager.wait_for_ready():
-                raise RuntimeError("Server failed to become ready")
+    #         # Wait for ready
+    #         if not server_manager.wait_for_ready():
+    #             raise RuntimeError("Server failed to become ready")
 
-            logger.info(f"Server ready at {server_config.get_api_base_url()}")
+    #         logger.info(f"Server ready at {server_config.get_api_base_url()}")
 
-            # Update microbenchmark config to use the launched server
-            object.__setattr__(
-                microbenchmark_config, "api_url", server_config.get_api_base_url()
-            )
-            object.__setattr__(microbenchmark_config, "api_key", server_config.api_key)
+    #         # Update microbenchmark config to use the launched server
+    #         object.__setattr__(
+    #             microbenchmark_config, "api_url", server_config.get_api_base_url()
+    #         )
+    #         object.__setattr__(microbenchmark_config, "api_key", server_config.api_key)
 
-        # Run microbenchmark
-        logger.info("=" * 80)
-        logger.info("STEP 2: Running microbenchmark probes")
-        logger.info("=" * 80)
+    #     # Run microbenchmark
+    #     logger.info("=" * 80)
+    #     logger.info("STEP 2: Running microbenchmark probes")
+    #     logger.info("=" * 80)
 
-        microbenchmark = Microbenchmark(microbenchmark_config)
-        microbenchmark.run()
+    #     microbenchmark = Microbenchmark(microbenchmark_config)
+    #     microbenchmark.run()
 
-        logger.info("=" * 80)
-        logger.info("STEP 3: Microbenchmark complete")
-        logger.info("=" * 80)
-        logger.info(f"Results saved to: {microbenchmark_config.output_dir}")
+    #     logger.info("=" * 80)
+    #     logger.info("STEP 3: Microbenchmark complete")
+    #     logger.info("=" * 80)
+    #     logger.info(f"Results saved to: {microbenchmark_config.output_dir}")
 
-    except Exception as e:
-        logger.error(f"Error during microbenchmark with server orchestration: {e}")
-        raise
+    # except Exception as e:
+    #     logger.error(f"Error during microbenchmark with server orchestration: {e}")
+    #     raise
 
-    finally:
-        # Cleanup server
-        if (
-            server_manager is not None
-            and server_config is not None
-            and server_config.auto_shutdown
-        ):
-            logger.info("=" * 80)
-            logger.info("STEP 4: Shutting down server")
-            logger.info("=" * 80)
-            server_manager.shutdown()
+    # finally:
+    #     # Cleanup server
+    #     if (
+    #         server_manager is not None
+    #         and server_config is not None
+    #         and server_config.auto_shutdown
+    #     ):
+    #         logger.info("=" * 80)
+    #         logger.info("STEP 4: Shutting down server")
+    #         logger.info("=" * 80)
+    #         server_manager.shutdown()
 
 
 def run_lmeval_with_server(
