@@ -13,6 +13,7 @@ This is useful for:
 - Automating benchmark workflows
 """
 
+from veeksha.benchmark import run_benchmark
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.client import ClientConfig
 from veeksha.config.generators.interval_generator.poisson_generator import (
@@ -27,7 +28,7 @@ from veeksha.config.generators.request_generator.synthetic_generator import (
 from veeksha.config.metrics import MetricsConfig
 from veeksha.config.server import ServerConfig
 from veeksha.logger import init_logger
-from veeksha.orchestration import run_benchmark_with_server
+from veeksha.orchestration import managed_server
 
 logger = init_logger(__name__)
 
@@ -75,15 +76,19 @@ def example_synthetic_benchmark():
     )
 
     # Run with orchestration
-    metrics = run_benchmark_with_server(
-        benchmark_config=benchmark_config,
-        server_config=server_config,
-    )
-
-    logger.info("Synthetic benchmark completed!")
-    logger.info(f"Results saved to: {metrics.output_dir}")
-    logger.info(f"Total requests: {metrics.num_requests}")
-    logger.info(f"Completed requests: {metrics.num_completed_requests}")
+    logger.info("Launching server...")
+    with managed_server(server_config) as info:
+        logger.info(f"Server ready at {info['api_base']}")
+        logger.info("Running benchmark...")
+        
+        metrics = run_benchmark(benchmark_config)
+        
+        logger.info("Synthetic benchmark completed!")
+        logger.info(f"Results saved to: {metrics.output_dir}")
+        logger.info(f"Total requests: {metrics.num_requests}")
+        logger.info(f"Completed requests: {metrics.num_completed_requests}")
+    
+    logger.info("Server shut down")
 
 
 if __name__ == "__main__":

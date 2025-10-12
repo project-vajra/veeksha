@@ -11,7 +11,8 @@ Key Pattern:
 
 Example usage pattern:
     ```python
-    from veeksha.orchestration.benchmark_orchestrator import run_benchmark_with_server
+    from veeksha.orchestration import managed_server
+    from veeksha.benchmark import run_benchmark
     from veeksha.config.server import ServerConfig
     from veeksha.config.benchmark import BenchmarkConfig
 
@@ -26,15 +27,17 @@ Example usage pattern:
             port=8000 + tp_size,  # Different port for each
         )
 
-        metrics = run_benchmark_with_server(base_config, server_config)
-        print(f"TP{tp_size} results:", metrics.get_aggregated_summary())
+        with managed_server(server_config) as info:
+            metrics = run_benchmark(base_config)
+            print(f"TP{tp_size} results:", metrics.get_aggregated_summary())
     ```
 """
 
+from veeksha.benchmark import run_benchmark
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.server import ServerConfig
 from veeksha.logger import init_logger
-from veeksha.orchestration.benchmark_orchestrator import run_benchmark_with_server
+from veeksha.orchestration import managed_server
 
 logger = init_logger(__name__)
 
@@ -74,20 +77,23 @@ def example_parameter_sweep():
 
         try:
             # Run benchmark with this server configuration
-            metrics = run_benchmark_with_server(
-                benchmark_config=base_config,
-                server_config=server_config,
-            )
+            logger.info("Launching server...")
+            with managed_server(server_config) as info:
+                logger.info(f"Server ready at {info['api_base']}")
+                logger.info("Running benchmark...")
+                
+                metrics = run_benchmark(benchmark_config=base_config)
 
-            # Collect results
-            results.append(
-                {
-                    "tensor_parallel_size": tp_size,
-                    "metrics": metrics.get_aggregated_summary(),
-                }
-            )
+                # Collect results
+                results.append(
+                    {
+                        "tensor_parallel_size": tp_size,
+                        "metrics": metrics.get_aggregated_summary(),
+                    }
+                )
 
-            logger.info(f"TP{tp_size} completed successfully")
+                logger.info(f"TP{tp_size} completed successfully")
+            logger.info(f"Server shut down for TP{tp_size}")
 
         except Exception as e:
             logger.error(f"Failed for tp_size={tp_size}: {e}")
