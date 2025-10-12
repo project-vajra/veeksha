@@ -73,9 +73,9 @@ def example_hellaswag():
     with managed_server(server_config) as info:
         logger.info(f"Server ready at {info['api_base']}")
         logger.info("Running lm_eval tasks...")
-        
+
         run_benchmark(benchmark_config)
-        
+
         # Load results
         results_path = os.path.join(
             benchmark_config.metrics_config.output_dir, "lmeval_results.json"
@@ -85,10 +85,10 @@ def example_hellaswag():
                 results = json.load(f)
         else:
             results = {}
-        
+
         logger.info("HellaSwag evaluation completed!")
         logger.info(f"Results: {results}")
-    
+
     logger.info("Server shut down")
 
 
@@ -134,9 +134,9 @@ def example_multiple_tasks():
     with managed_server(server_config) as info:
         logger.info(f"Server ready at {info['api_base']}")
         logger.info("Running lm_eval tasks...")
-        
+
         run_benchmark(benchmark_config)
-        
+
         # Load results
         results_path = os.path.join(
             benchmark_config.metrics_config.output_dir, "lmeval_results.json"
@@ -146,7 +146,7 @@ def example_multiple_tasks():
                 results = json.load(f)
         else:
             results = {}
-        
+
         logger.info("Multi-task evaluation completed!")
 
         # Display summary of results
@@ -156,7 +156,7 @@ def example_multiple_tasks():
                 logger.info(f"  {task}:")
                 for metric, value in metrics.items():
                     logger.info(f"    {metric}: {value}")
-    
+
     logger.info("Server shut down")
 
 
@@ -214,9 +214,9 @@ def example_model_comparison():
             with managed_server(server_config) as info:
                 logger.info(f"Server ready at {info['api_base']}")
                 logger.info("Running lm_eval tasks...")
-                
+
                 run_benchmark(benchmark_config)
-                
+
                 # Load results
                 results_path = os.path.join(
                     benchmark_config.metrics_config.output_dir, "lmeval_results.json"
@@ -226,7 +226,7 @@ def example_model_comparison():
                         results = json.load(f)
                 else:
                     results = {}
-                
+
                 all_results[model] = results
                 logger.info(f"✓ {model} completed successfully")
             logger.info(f"Server shut down for {model}")

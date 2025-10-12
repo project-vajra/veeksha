@@ -15,7 +15,7 @@ Example:
 
 import os
 from contextlib import contextmanager
-from typing import Any, Dict, Generator, Optional
+from typing import Any, Dict, Generator
 
 from veeksha.config.server import ServerConfig
 from veeksha.orchestration.server_manager import BaseServerManager

@@ -80,11 +80,13 @@ class BaseServerManager(abc.ABC):
                 logger.info(f"Setting CUDA_VISIBLE_DEVICES={gpu_env}")
 
             # Launch server process
+            # Don't redirect stdout/stderr to PIPE - let them print to console
+            # This makes debugging much easier
             self.process = subprocess.Popen(
                 command,
                 env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=None,  # Inherit from parent process
+                stderr=None,  # Inherit from parent process
                 text=True,
             )
 
@@ -140,6 +142,7 @@ class BaseServerManager(abc.ABC):
                 if self.process and self.process.stderr:
                     try:
                         import select
+
                         # Check if stderr has data available (non-blocking)
                         if select.select([self.process.stderr], [], [], 0)[0]:
                             stderr = self.process.stderr.read()

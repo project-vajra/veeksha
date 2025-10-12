@@ -20,7 +20,7 @@ Example usage:
     )
 
     benchmark_config = BenchmarkConfig.create_from_cli_args()[0]
-    
+
     with managed_server(server_config) as info:
         print(f"Server ready at {info['api_base']}")
         metrics = run_benchmark(benchmark_config)

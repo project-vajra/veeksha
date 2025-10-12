@@ -106,7 +106,7 @@ def test_orchestration():
         with managed_server(server_config) as info:
             logger.info(f"Server ready at {info['api_base']}")
             logger.info("Running benchmark...")
-            
+
             metrics = run_benchmark(benchmark_config)
 
             # Display results
@@ -118,8 +118,10 @@ def test_orchestration():
             for key, value in summary.items():
                 logger.info(f"{key}: {value}")
 
-            logger.info(f"\nResults saved to: {benchmark_config.metrics_config.output_dir}")
-        
+            logger.info(
+                f"\nResults saved to: {benchmark_config.metrics_config.output_dir}"
+            )
+
         logger.info("Server shut down")
         return True
 
