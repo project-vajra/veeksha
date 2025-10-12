@@ -59,7 +59,7 @@ class VLLMServerManager(BaseServerManager):
 
         # Add tensor parallelism
         if self.config.tensor_parallel_size > 1:
-            command.extend(["-tp", str(self.config.tensor_parallel_size)])
+            command.extend(["--tp", str(self.config.tensor_parallel_size)])
 
         # Add dtype
         if self.config.dtype:
@@ -85,23 +85,19 @@ class VLLMServerManager(BaseServerManager):
                 # Regular key-value pairs
                 command.extend([f"--{key}", str(value)])
 
+        # Add vLLM-specific arguments that need special handling
+        command.extend(self._parse_additional_vllm_args())
+
         return command
 
     def _parse_additional_vllm_args(self) -> List[str]:
-        """Parse additional vLLM-specific arguments.
+        """Parse additional vLLM-specific arguments that need special handling.
 
-        Common vLLM arguments that might be in additional_args:
-        - rope_scaling: Dict for RoPE scaling
-        - swap_space: GPU memory swap space in GB
-        - max_num_seqs: Maximum number of sequences per iteration
-        - max_num_batched_tokens: Maximum number of tokens per batch
-        - gpu_memory_utilization: Fraction of GPU memory to use
-        - trust_remote_code: Whether to trust remote code
-        - disable_log_requests: Disable request logging
-        - disable_log_stats: Disable stats logging
+        These are arguments that cannot be handled by simple string conversion
+        and require special formatting (e.g., JSON serialization).
 
         Returns:
-            List of formatted arguments
+            List of formatted command-line arguments
         """
         args = []
 

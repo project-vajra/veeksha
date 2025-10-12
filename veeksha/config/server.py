@@ -96,7 +96,7 @@ class ServerConfig:
             return ",".join(map(str, self.gpu_ids))
         return None
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""
         return {
             "engine": self.engine,
