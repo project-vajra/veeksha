@@ -42,6 +42,7 @@ class PlotextChart(PlotextPlot):
     """Plotext-based line chart for metrics using textual-plotext"""
 
     data = reactive(list)
+    benchmark_start_time = reactive(None)  # Track when benchmark started
 
     def __init__(
         self, title: str, max_points: int = 100, color: str = "cyan", *args, **kwargs
@@ -51,6 +52,7 @@ class PlotextChart(PlotextPlot):
         self.max_points = max_points
         self.chart_color = color
         self.data = []
+        self.benchmark_start_time = None
 
     def on_mount(self) -> None:
         """Configure the plot when widget is mounted"""
@@ -62,6 +64,10 @@ class PlotextChart(PlotextPlot):
 
     def watch_data(self, new_data: list) -> None:
         """React to data changes and update the plot"""
+        self.configure_plot()
+
+    def watch_benchmark_start_time(self, new_time) -> None:
+        """React to benchmark start time changes"""
         self.configure_plot()
 
     def configure_plot(self) -> None:
@@ -92,8 +98,22 @@ class PlotextChart(PlotextPlot):
         # Set title
         self.plt.title(self.chart_title)
 
-        # Plot the data with sample indices
-        x_vals = list(range(len(recent_data)))
+        # Calculate time-based X-axis
+        import time
+        if self.benchmark_start_time:
+            # Calculate elapsed time for each sample
+            current_time = time.time()
+            total_elapsed = current_time - self.benchmark_start_time
+            # Distribute samples evenly across the elapsed time
+            if total_elapsed > 0 and len(recent_data) > 1:
+                time_per_sample = total_elapsed / len(recent_data)
+                x_vals = [i * time_per_sample for i in range(len(recent_data))]
+            else:
+                x_vals = list(range(len(recent_data)))
+        else:
+            # Fallback to sample indices
+            x_vals = list(range(len(recent_data)))
+
         self.plt.plot(
             x_vals, recent_data, color=self.chart_color, marker="braille"
         )
@@ -103,8 +123,12 @@ class PlotextChart(PlotextPlot):
         y_padding = y_range * 0.1 if y_range > 0 else 1
         self.plt.ylim(min_val - y_padding, max_val + y_padding)
 
-        # X-axis label shows stats
-        self.plt.xlabel(f"Avg: {avg_val:.1f} | Min: {min_val:.1f} | Max: {max_val:.1f} | Samples: {len(recent_data)}")
+        # X-axis label shows time and stats
+        if self.benchmark_start_time:
+            elapsed = time.time() - self.benchmark_start_time
+            self.plt.xlabel(f"Time: {elapsed:.1f}s | Avg: {avg_val:.1f} | Min: {min_val:.1f} | Max: {max_val:.1f}")
+        else:
+            self.plt.xlabel(f"Avg: {avg_val:.1f} | Min: {min_val:.1f} | Max: {max_val:.1f} | Samples: {len(recent_data)}")
 
         # Minimal grid for cleaner look
         self.plt.grid(False, False)
@@ -397,6 +421,14 @@ class VeekshaDashboard(App):
         self.tbt_chart.data = list(stats.recent_tbt_ms)
         self.latency_chart.data = list(stats.recent_latency_ms)
 
+        # Update benchmark start time for time-based X-axis
+        active_benchmark = self.dashboard_state.get_active_benchmark()
+        if active_benchmark and active_benchmark.benchmark_start_time:
+            self.ttft_chart.benchmark_start_time = active_benchmark.benchmark_start_time
+            self.tpot_chart.benchmark_start_time = active_benchmark.benchmark_start_time
+            self.tbt_chart.benchmark_start_time = active_benchmark.benchmark_start_time
+            self.latency_chart.benchmark_start_time = active_benchmark.benchmark_start_time
+
         # Update live requests table
         if self.live_table:
             self.live_table.clear()
@@ -531,6 +563,12 @@ class VeekshaDashboard(App):
         self.tpot_chart.data = []
         self.tbt_chart.data = []
         self.latency_chart.data = []
+
+        # Reset benchmark start times for new benchmark
+        self.ttft_chart.benchmark_start_time = None
+        self.tpot_chart.benchmark_start_time = None
+        self.tbt_chart.benchmark_start_time = None
+        self.latency_chart.benchmark_start_time = None
 
     def on_unmount(self) -> None:
         """Clean up log handler"""
