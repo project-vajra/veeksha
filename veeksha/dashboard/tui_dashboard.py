@@ -51,8 +51,6 @@ class PlotextChart(PlotextPlot):
         self.max_points = max_points
         self.chart_color = color
         self.data = []
-        self.start_time = None  # Track when first data point arrives
-        self.data_with_timestamps = []  # Store (timestamp, value) tuples
 
     def on_mount(self) -> None:
         """Configure the plot when widget is mounted"""
@@ -64,48 +62,22 @@ class PlotextChart(PlotextPlot):
 
     def watch_data(self, new_data: list) -> None:
         """React to data changes and update the plot"""
-        self.refresh()
-
-    def add_data_point(self, value: float, timestamp: float = None):
-        """Add a data point with timestamp"""
-        import time
-        if timestamp is None:
-            timestamp = time.time()
-
-        if self.start_time is None:
-            self.start_time = timestamp
-
-        self.data_with_timestamps.append((timestamp, value))
-        # Keep only recent points
-        if len(self.data_with_timestamps) > self.max_points:
-            self.data_with_timestamps = self.data_with_timestamps[-self.max_points:]
-
-    def reset(self):
-        """Reset chart data (useful when switching benchmarks)"""
-        self.data_with_timestamps = []
-        self.start_time = None
+        self.configure_plot()
 
     def configure_plot(self) -> None:
         """Configure and render the plot"""
-        if not self.data_with_timestamps or len(self.data_with_timestamps) == 0:
+        if not self.data or len(self.data) == 0:
             return
 
-        # Get recent data points with timestamps
-        recent_data_with_time = self.data_with_timestamps[-self.max_points:]
+        # Get recent data points
+        recent_data = list(self.data)[-self.max_points:]
 
-        if len(recent_data_with_time) < 2:
+        if len(recent_data) < 2:
             return
 
-        # Extract values and compute time offsets from start
-        timestamps, values = zip(*recent_data_with_time)
-        if self.start_time is None:
-            self.start_time = timestamps[0]
-
-        time_offsets = [(t - self.start_time) for t in timestamps]
-
-        max_val = max(values)
-        min_val = min(values)
-        avg_val = sum(values) / len(values)
+        max_val = max(recent_data)
+        min_val = min(recent_data)
+        avg_val = sum(recent_data) / len(recent_data)
 
         # Clear and configure the plot
         self.plt.clear_data()
@@ -115,14 +87,15 @@ class PlotextChart(PlotextPlot):
         self.plt.theme("clear")
         self.plt.canvas_color("black")
         self.plt.axes_color("black")
-        self.plt.ticks_color("gray")  # Changed from white to gray for less contrast
+        self.plt.ticks_color("gray")
 
         # Set title
         self.plt.title(self.chart_title)
 
-        # Plot the data with time-based X-axis
+        # Plot the data with sample indices
+        x_vals = list(range(len(recent_data)))
         self.plt.plot(
-            time_offsets, values, color=self.chart_color, marker="braille"
+            x_vals, recent_data, color=self.chart_color, marker="braille"
         )
 
         # Set fixed Y-axis bounds based on min/max with some padding
@@ -130,11 +103,11 @@ class PlotextChart(PlotextPlot):
         y_padding = y_range * 0.1 if y_range > 0 else 1
         self.plt.ylim(min_val - y_padding, max_val + y_padding)
 
-        # X-axis label shows time
-        self.plt.xlabel(f"Time (s) | Avg: {avg_val:.1f} | Min: {min_val:.1f} | Max: {max_val:.1f}")
+        # X-axis label shows stats
+        self.plt.xlabel(f"Avg: {avg_val:.1f} | Min: {min_val:.1f} | Max: {max_val:.1f} | Samples: {len(recent_data)}")
 
         # Minimal grid for cleaner look
-        self.plt.grid(False, False)  # Disable grid for cleaner appearance
+        self.plt.grid(False, False)
 
 
 class LogCapture(logging.Handler):
@@ -418,42 +391,11 @@ class VeekshaDashboard(App):
         self.tbt_card.value = f"{stats.avg_tbt_ms:.1f}ms"
         self.latency_card.value = f"{stats.avg_latency_ms:.0f}ms"
 
-        # Update charts - sync with deque data
-        import time
-        current_time = time.time()
-
-        # Get the number of points currently in each deque
-        ttft_count = len(stats.recent_ttft_ms)
-        tpot_count = len(stats.recent_tpot_ms)
-        tbt_count = len(stats.recent_tbt_ms)
-        latency_count = len(stats.recent_latency_ms)
-
-        # Get the number of points currently in each chart
-        ttft_chart_count = len(self.ttft_chart.data_with_timestamps)
-        tpot_chart_count = len(self.tpot_chart.data_with_timestamps)
-        tbt_chart_count = len(self.tbt_chart.data_with_timestamps)
-        latency_chart_count = len(self.latency_chart.data_with_timestamps)
-
-        # Add new points if deque has grown
-        if ttft_count > ttft_chart_count and stats.recent_ttft_ms:
-            for value in list(stats.recent_ttft_ms)[ttft_chart_count:]:
-                self.ttft_chart.add_data_point(value, current_time)
-            self.ttft_chart.configure_plot()
-
-        if tpot_count > tpot_chart_count and stats.recent_tpot_ms:
-            for value in list(stats.recent_tpot_ms)[tpot_chart_count:]:
-                self.tpot_chart.add_data_point(value, current_time)
-            self.tpot_chart.configure_plot()
-
-        if tbt_count > tbt_chart_count and stats.recent_tbt_ms:
-            for value in list(stats.recent_tbt_ms)[tbt_chart_count:]:
-                self.tbt_chart.add_data_point(value, current_time)
-            self.tbt_chart.configure_plot()
-
-        if latency_count > latency_chart_count and stats.recent_latency_ms:
-            for value in list(stats.recent_latency_ms)[latency_chart_count:]:
-                self.latency_chart.add_data_point(value, current_time)
-            self.latency_chart.configure_plot()
+        # Update charts - directly set data from deques
+        self.ttft_chart.data = list(stats.recent_ttft_ms)
+        self.tpot_chart.data = list(stats.recent_tpot_ms)
+        self.tbt_chart.data = list(stats.recent_tbt_ms)
+        self.latency_chart.data = list(stats.recent_latency_ms)
 
         # Update live requests table
         if self.live_table:
@@ -585,10 +527,10 @@ class VeekshaDashboard(App):
 
     def _reset_charts(self) -> None:
         """Reset all charts (called when switching benchmarks)"""
-        self.ttft_chart.reset()
-        self.tpot_chart.reset()
-        self.tbt_chart.reset()
-        self.latency_chart.reset()
+        self.ttft_chart.data = []
+        self.tpot_chart.data = []
+        self.tbt_chart.data = []
+        self.latency_chart.data = []
 
     def on_unmount(self) -> None:
         """Clean up log handler"""
