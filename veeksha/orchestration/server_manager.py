@@ -136,14 +136,15 @@ class BaseServerManager(abc.ABC):
             # Check if process is still alive
             if not self.is_running:
                 logger.error("Server process terminated unexpectedly")
-                # Try to get error output
-                if self.process:
+                # Try to get error output (non-blocking read)
+                if self.process and self.process.stderr:
                     try:
-                        stdout, stderr = self.process.communicate(timeout=5)
-                        if stderr:
-                            logger.error(f"Server stderr: {stderr}")
-                        if stdout:
-                            logger.info(f"Server stdout: {stdout}")
+                        import select
+                        # Check if stderr has data available (non-blocking)
+                        if select.select([self.process.stderr], [], [], 0)[0]:
+                            stderr = self.process.stderr.read()
+                            if stderr:
+                                logger.error(f"Server stderr: {stderr}")
                     except Exception as e:
                         logger.error(f"Failed to read process output: {e}")
                 return False
@@ -196,12 +197,14 @@ class BaseServerManager(abc.ABC):
                     self.process.kill()
                     self.process.wait()
 
-            self._is_running = False
             return True
 
         except Exception as e:
             logger.error(f"Error during shutdown: {e}")
             return False
+        finally:
+            # Always reset state, even if exceptions occur
+            self._is_running = False
 
     def get_server_logs(self, lines: int = 50) -> tuple[str, str]:
         """Get recent server logs.
