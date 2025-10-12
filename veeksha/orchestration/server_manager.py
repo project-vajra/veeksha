@@ -173,6 +173,10 @@ class BaseServerManager(abc.ABC):
             logger.warning("Server is not running")
             return True
 
+        if self.process is None:
+            logger.error("Server process is None, cannot shutdown")
+            return False
+
         try:
             logger.info(f"Shutting down server (PID: {self.process.pid})")
 
