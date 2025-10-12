@@ -80,6 +80,11 @@ class PlotextChart(PlotextPlot):
         if len(self.data_with_timestamps) > self.max_points:
             self.data_with_timestamps = self.data_with_timestamps[-self.max_points:]
 
+    def reset(self):
+        """Reset chart data (useful when switching benchmarks)"""
+        self.data_with_timestamps = []
+        self.start_time = None
+
     def configure_plot(self) -> None:
         """Configure and render the plot"""
         if not self.data_with_timestamps or len(self.data_with_timestamps) == 0:
@@ -413,34 +418,42 @@ class VeekshaDashboard(App):
         self.tbt_card.value = f"{stats.avg_tbt_ms:.1f}ms"
         self.latency_card.value = f"{stats.avg_latency_ms:.0f}ms"
 
-        # Update charts with time-based data points
+        # Update charts - sync with deque data
         import time
         current_time = time.time()
 
-        # Add latest data points to charts (only if there's new data)
-        if stats.recent_ttft_ms:
-            latest_ttft = stats.recent_ttft_ms[-1] if len(stats.recent_ttft_ms) > 0 else 0
-            if not self.ttft_chart.data_with_timestamps or self.ttft_chart.data_with_timestamps[-1][1] != latest_ttft:
-                self.ttft_chart.add_data_point(latest_ttft, current_time)
-                self.ttft_chart.configure_plot()
+        # Get the number of points currently in each deque
+        ttft_count = len(stats.recent_ttft_ms)
+        tpot_count = len(stats.recent_tpot_ms)
+        tbt_count = len(stats.recent_tbt_ms)
+        latency_count = len(stats.recent_latency_ms)
 
-        if stats.recent_tpot_ms:
-            latest_tpot = stats.recent_tpot_ms[-1] if len(stats.recent_tpot_ms) > 0 else 0
-            if not self.tpot_chart.data_with_timestamps or self.tpot_chart.data_with_timestamps[-1][1] != latest_tpot:
-                self.tpot_chart.add_data_point(latest_tpot, current_time)
-                self.tpot_chart.configure_plot()
+        # Get the number of points currently in each chart
+        ttft_chart_count = len(self.ttft_chart.data_with_timestamps)
+        tpot_chart_count = len(self.tpot_chart.data_with_timestamps)
+        tbt_chart_count = len(self.tbt_chart.data_with_timestamps)
+        latency_chart_count = len(self.latency_chart.data_with_timestamps)
 
-        if stats.recent_tbt_ms:
-            latest_tbt = stats.recent_tbt_ms[-1] if len(stats.recent_tbt_ms) > 0 else 0
-            if not self.tbt_chart.data_with_timestamps or self.tbt_chart.data_with_timestamps[-1][1] != latest_tbt:
-                self.tbt_chart.add_data_point(latest_tbt, current_time)
-                self.tbt_chart.configure_plot()
+        # Add new points if deque has grown
+        if ttft_count > ttft_chart_count and stats.recent_ttft_ms:
+            for value in list(stats.recent_ttft_ms)[ttft_chart_count:]:
+                self.ttft_chart.add_data_point(value, current_time)
+            self.ttft_chart.configure_plot()
 
-        if stats.recent_latency_ms:
-            latest_latency = stats.recent_latency_ms[-1] if len(stats.recent_latency_ms) > 0 else 0
-            if not self.latency_chart.data_with_timestamps or self.latency_chart.data_with_timestamps[-1][1] != latest_latency:
-                self.latency_chart.add_data_point(latest_latency, current_time)
-                self.latency_chart.configure_plot()
+        if tpot_count > tpot_chart_count and stats.recent_tpot_ms:
+            for value in list(stats.recent_tpot_ms)[tpot_chart_count:]:
+                self.tpot_chart.add_data_point(value, current_time)
+            self.tpot_chart.configure_plot()
+
+        if tbt_count > tbt_chart_count and stats.recent_tbt_ms:
+            for value in list(stats.recent_tbt_ms)[tbt_chart_count:]:
+                self.tbt_chart.add_data_point(value, current_time)
+            self.tbt_chart.configure_plot()
+
+        if latency_count > latency_chart_count and stats.recent_latency_ms:
+            for value in list(stats.recent_latency_ms)[latency_chart_count:]:
+                self.latency_chart.add_data_point(value, current_time)
+            self.latency_chart.configure_plot()
 
         # Update live requests table
         if self.live_table:
@@ -554,6 +567,9 @@ class VeekshaDashboard(App):
         next_idx = (current_idx + 1) % len(benchmarks)
         self.dashboard_state.set_active_benchmark(benchmarks[next_idx])
 
+        # Reset charts when switching benchmarks
+        self._reset_charts()
+
     def action_prev_benchmark(self) -> None:
         """Switch to previous benchmark"""
         benchmarks = self.dashboard_state.get_benchmark_ids()
@@ -563,6 +579,16 @@ class VeekshaDashboard(App):
         current_idx = benchmarks.index(self.dashboard_state.active_benchmark_id)
         prev_idx = (current_idx - 1) % len(benchmarks)
         self.dashboard_state.set_active_benchmark(benchmarks[prev_idx])
+
+        # Reset charts when switching benchmarks
+        self._reset_charts()
+
+    def _reset_charts(self) -> None:
+        """Reset all charts (called when switching benchmarks)"""
+        self.ttft_chart.reset()
+        self.tpot_chart.reset()
+        self.tbt_chart.reset()
+        self.latency_chart.reset()
 
     def on_unmount(self) -> None:
         """Clean up log handler"""
