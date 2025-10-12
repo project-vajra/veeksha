@@ -141,10 +141,9 @@ def run_microbenchmark_with_server(
         microbenchmark_config: Microbenchmark configuration
         server_config: Server configuration (None means use existing server)
     """
-    pass
     # from veeksha.microbenchmark import Microbenchmark
 
-    # server_manager = None
+    server_manager = None
 
     # try:
     #     # Setup server if config provided

@@ -16,7 +16,9 @@ def frozen_dataclass(
 
 
 @typing.dataclass_transform()
-def frozen_dataclass(_cls: type[_T] | None = None, **kwargs: Any) -> type[_T] | Callable[[type[_T]], type[_T]]:
+def frozen_dataclass(
+    _cls: type[_T] | None = None, **kwargs: Any
+) -> type[_T] | Callable[[type[_T]], type[_T]]:
     """
     A decorator that creates a frozen dataclass, allowing attribute modifications
     only during the __post_init__ method.
