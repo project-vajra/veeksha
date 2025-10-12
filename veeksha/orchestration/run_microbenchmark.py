@@ -81,7 +81,7 @@ def example_parameter_sweep():
             with managed_server(server_config) as info:
                 logger.info(f"Server ready at {info['api_base']}")
                 logger.info("Running benchmark...")
-                
+
                 metrics = run_benchmark(benchmark_config=base_config)
 
                 # Collect results

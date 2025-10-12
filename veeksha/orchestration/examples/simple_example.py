@@ -80,14 +80,14 @@ def example_synthetic_benchmark():
     with managed_server(server_config) as info:
         logger.info(f"Server ready at {info['api_base']}")
         logger.info("Running benchmark...")
-        
+
         metrics = run_benchmark(benchmark_config)
-        
+
         logger.info("Synthetic benchmark completed!")
         logger.info(f"Results saved to: {metrics.output_dir}")
         logger.info(f"Total requests: {metrics.num_requests}")
         logger.info(f"Completed requests: {metrics.num_completed_requests}")
-    
+
     logger.info("Server shut down")
 
 
