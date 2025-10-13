@@ -42,10 +42,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self.past_prompts: Dict[int, str] = {}
         self.corpus_lines = corpus_lines
         self._remap_seed_for_save: Optional[int] = None
-        # epoch counter for per-epoch hash-id remapping
         self._epoch = 0
-        # memoized per-epoch mappings from original->new ids
-        self._epoch_to_id_map: Dict[int, Dict[int, int]] = {}
         sm = self.seed_manager
         self.prompt_rng = sm.random("prompt")
         self.interval_rng_factory = sm.numpy_factory("interval")
@@ -436,10 +433,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
         used: Dict[int, bool] = {}
         id_map: Dict[int, int] = {}
         for src in unique_list:
-            dst = rng.getrandbits(32)
-            # ensure collision-free assignment among destinations
+            dst = rng.getrandbits(64)
             while dst in used:
-                dst = rng.getrandbits(32)
+                dst = rng.getrandbits(64)
             id_map[src] = int(dst)
             used[dst] = True
 
