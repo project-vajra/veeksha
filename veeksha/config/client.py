@@ -3,11 +3,16 @@ from dataclasses import field
 from typing import Optional
 
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from veeksha.config.endpoint import EndpointConfig
 from veeksha.core.llm_clients import SUPPORTED_APIS
 
 
 @frozen_dataclass(allow_from_file=True)
 class ClientConfig:
+    endpoint: EndpointConfig = field(
+        default_factory=EndpointConfig,
+        metadata={"help": "The endpoint configuration for the client."},
+    )
     model: str = field(
         default="meta-llama/Meta-Llama-3-8B-Instruct",
         metadata={"help": "The model to use for this load test."},

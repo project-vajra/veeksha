@@ -24,18 +24,17 @@ You can specify multiple endpoints using YAML configuration files with a list of
 .. code-block:: yaml
 
     # example_parallel.yml
-    endpoint:
-      - name: local-A
-        api_url: http://localhost:30000/v1
-        api_key: token-abc123
-      - name: local-B
-        api_url: http://localhost:30002/v1
-        api_key: token-def456
-      - name: local-C
-        api_url: http://localhost:30004/v1
-        api_key: token-ghi789
-
     client_config:
+      endpoint:
+        - name: local-A
+          api_url: http://localhost:30000/v1
+          api_key: token-abc123
+        - name: local-B
+          api_url: http://localhost:30002/v1
+          api_key: token-def456
+        - name: local-C
+          api_url: http://localhost:30004/v1
+          api_key: token-ghi789
       model: meta-llama/Meta-Llama-3-8B-Instruct
       num_clients: 15
       ...
