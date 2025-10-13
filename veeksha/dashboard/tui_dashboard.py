@@ -26,6 +26,7 @@ from veeksha.dashboard.state import DashboardState
 class MetricCard(Static):
     """A card displaying a single metric"""
 
+    DEFAULT_CLASSES = "metric-card"
     value = reactive("0")
 
     def __init__(self, title: str, border_color: str = "blue", *args, **kwargs):
@@ -256,20 +257,20 @@ class VeekshaDashboard(App):
         self.log_handler: Optional[LogCapture] = None
 
         # Metric cards for Metrics tab
-        self.total_requests_card = MetricCard("Total Requests", "blue")
-        self.completed_card = MetricCard("Completed", "green")
-        self.errors_card = MetricCard("Errors", "red")
-        self.duration_card = MetricCard("Duration", "yellow")
-        self.ttft_card = MetricCard("Avg TTFT (ms)", "cyan")
-        self.tpot_card = MetricCard("Avg TPOT (ms)", "green")
-        self.tbt_card = MetricCard("Avg TBT (ms)", "yellow")
-        self.latency_card = MetricCard("Avg Latency (ms)", "magenta")
+        self.total_requests_card = MetricCard("Total Requests", "blue", classes="metric-card")
+        self.completed_card = MetricCard("Completed", "green", classes="metric-card")
+        self.errors_card = MetricCard("Errors", "red", classes="metric-card")
+        self.duration_card = MetricCard("Duration", "yellow", classes="metric-card")
+        self.ttft_card = MetricCard("Avg TTFT (ms)", "cyan", classes="metric-card")
+        self.tpot_card = MetricCard("Avg TPOT (ms)", "green", classes="metric-card")
+        self.tbt_card = MetricCard("Avg TBT (ms)", "yellow", classes="metric-card")
+        self.latency_card = MetricCard("Avg Latency (ms)", "magenta", classes="metric-card")
 
         # Metric cards for Requests tab
-        self.total_requests_card_requests = MetricCard("Total Requests", "blue")
-        self.completed_card_requests = MetricCard("Completed", "green")
-        self.errors_card_requests = MetricCard("Errors", "red")
-        self.duration_card_requests = MetricCard("Duration", "yellow")
+        self.total_requests_card_requests = MetricCard("Total Requests", "blue", classes="metric-card")
+        self.completed_card_requests = MetricCard("Completed", "green", classes="metric-card")
+        self.errors_card_requests = MetricCard("Errors", "red", classes="metric-card")
+        self.duration_card_requests = MetricCard("Duration", "yellow", classes="metric-card")
 
         # Charts
         self.ttft_chart = PlotextChart("📈 Time to First Token (TTFT)", color="cyan")
