@@ -83,12 +83,12 @@ class BaseServerManager(abc.ABC):
             # Launch server process
             # Redirect output to a temporary file so we can check for errors
             import tempfile
-            
+
             self._log_file = tempfile.NamedTemporaryFile(
-                mode='w+', delete=False, suffix='.log', prefix='vllm_server_'
+                mode="w+", delete=False, suffix=".log", prefix="vllm_server_"
             )
             logger.info(f"Server logs: {self._log_file.name}")
-            
+
             self.process = subprocess.Popen(
                 command,
                 env=env,
@@ -150,17 +150,23 @@ class BaseServerManager(abc.ABC):
                     try:
                         self._log_file.seek(0)
                         logs = self._log_file.read()
-                        
+
                         # Check for GPU memory error
-                        if "Free memory on device" in logs and "is less than desired GPU memory utilization" in logs:
+                        if (
+                            "Free memory on device" in logs
+                            and "is less than desired GPU memory utilization" in logs
+                        ):
                             import re
+
                             # Extract memory info from error message
                             match = re.search(
                                 r"Free memory on device \(([0-9.]+)/([0-9.]+) GiB\).*desired GPU memory utilization.*\(([0-9.]+), ([0-9.]+) GiB\)",
-                                logs
+                                logs,
                             )
                             if match:
-                                free_mem, total_mem, util_frac, needed_mem = match.groups()
+                                free_mem, total_mem, util_frac, needed_mem = (
+                                    match.groups()
+                                )
                                 logger.error(
                                     f"\n{'='*80}\n"
                                     f"GPU MEMORY ERROR: Insufficient GPU memory available\n"
@@ -170,16 +176,18 @@ class BaseServerManager(abc.ABC):
                                     f"Solutions:\n"
                                     f"  1. Free up GPU memory by stopping other processes\n"
                                     f"  2. Reduce GPU memory utilization by adding to server_config:\n"
-                                    f"     additional_args: '{{\"gpu-memory-utilization\": \"0.5\"}}'\n"
+                                    f'     additional_args: \'{{"gpu-memory-utilization": "0.5"}}\'\n'
                                     f"  3. Use a smaller model\n"
                                     f"{'='*80}"
                                 )
                             else:
-                                logger.error("GPU memory error detected but couldn't parse details")
+                                logger.error(
+                                    "GPU memory error detected but couldn't parse details"
+                                )
                         else:
                             # Show last 50 lines of logs for other errors
-                            log_lines = logs.strip().split('\n')
-                            recent_logs = '\n'.join(log_lines[-50:])
+                            log_lines = logs.strip().split("\n")
+                            recent_logs = "\n".join(log_lines[-50:])
                             logger.error(f"Recent server logs:\n{recent_logs}")
                     except Exception as e:
                         logger.error(f"Failed to read server logs: {e}")
@@ -241,12 +249,13 @@ class BaseServerManager(abc.ABC):
         finally:
             # Always reset state, even if exceptions occur
             self._is_running = False
-            
+
             # Clean up log file
             if self._log_file:
                 try:
                     self._log_file.close()
                     import os
+
                     os.unlink(self._log_file.name)
                     logger.debug(f"Removed log file: {self._log_file.name}")
                 except Exception as e:
