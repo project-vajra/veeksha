@@ -363,21 +363,6 @@ def run_main_loop(
 
     pbar.close()
 
-    # Emit benchmark completion event for dashboard
-    # Note: service_metrics uses perf_counter, not time.time(), but we only need elapsed duration
-    elapsed = (service_metrics.end_time or service_metrics.start_time or 0) - (service_metrics.start_time or 0)
-    emit_dashboard_event(
-        BenchmarkStatusEvent(
-            benchmark_id=benchmark_id,
-            total_requests=service_metrics.num_requests,
-            completed_requests=service_metrics.num_completed_requests,
-            errored_requests=service_metrics.num_errored_requests,
-            active_requests=0,  # All requests done at this point
-            current_qps=service_metrics.num_completed_requests / elapsed if elapsed > 0 else 0.0,
-            elapsed_time=elapsed,
-        )
-    )
-
     if service_metrics.error is None:
         logger.info("Main loop completed.")
     else:
@@ -487,6 +472,31 @@ def run_benchmark(
         lmeval_results = request_generator.evaluate()
 
         store_lmeval_results(service_metrics.output_dir, lmeval_results)
+
+    # Emit benchmark completion event for dashboard
+    # This is done after all processing is complete to ensure accurate counts
+    if service_metrics.start_time and service_metrics.end_time:
+        elapsed = service_metrics.end_time - service_metrics.start_time
+    else:
+        elapsed = 0.0
+
+    logger.info(
+        f"Emitting BenchmarkStatusEvent: total={service_metrics.num_requests}, "
+        f"completed={service_metrics.num_completed_requests}, "
+        f"errored={service_metrics.num_errored_requests}"
+    )
+
+    emit_dashboard_event(
+        BenchmarkStatusEvent(
+            benchmark_id=benchmark_id,
+            total_requests=service_metrics.num_requests,
+            completed_requests=service_metrics.num_completed_requests,
+            errored_requests=service_metrics.num_errored_requests,
+            active_requests=0,  # All requests done at this point
+            current_qps=service_metrics.num_completed_requests / elapsed if elapsed > 0 else 0.0,
+            elapsed_time=elapsed,
+        )
+    )
 
     return service_metrics
 

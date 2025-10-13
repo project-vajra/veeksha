@@ -251,8 +251,12 @@ class DashboardState:
         # Update current qps
         benchmark.current_qps = event.current_qps
 
-        # Don't overwrite the aggregate stats - they're already tracked correctly via other events
-        # Only use the event data to determine if benchmark is finished
+        # Update aggregate stats from the event
+        # This is important because it provides the final, authoritative counts
+        # Even if individual request events were missed, this gives us the correct totals
+        benchmark.aggregate_stats.total_requests = event.total_requests
+        benchmark.aggregate_stats.completed_count = event.completed_requests
+        benchmark.aggregate_stats.error_count = event.errored_requests
 
         # If all requests are completed or errored, mark benchmark as ended
         if (
