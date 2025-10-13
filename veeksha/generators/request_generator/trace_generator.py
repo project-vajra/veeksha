@@ -42,6 +42,10 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self.past_prompts: Dict[int, str] = {}
         self.corpus_lines = corpus_lines
         self._remap_seed_for_save: Optional[int] = None
+        # epoch counter for per-epoch hash-id remapping
+        self._epoch = 0
+        # memoized per-epoch mappings from original->new ids
+        self._epoch_to_id_map: Dict[int, Dict[int, int]] = {}
         sm = self.seed_manager
         self.prompt_rng = sm.random("prompt")
         self.interval_rng_factory = sm.numpy_factory("interval")
@@ -91,16 +95,10 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     unique_ids = set()
                     for ids in self.trace_df["hash_ids"]:
                         unique_ids.update(ids)
-                    # unbias permutation
                     unique_list = sorted(unique_ids)
-                    permuted = unique_list.copy()
-                    rng = self.session_rng_factory()
-                    rng.shuffle(permuted)
-                    id_map: Dict[int, int] = {
-                        src: dst for src, dst in zip(unique_list, permuted)
-                    }
+                    id_map = self._build_epoch_hash_id_map(unique_list)
                     logger.info(
-                        f"Applying hash-id remapping with session RNG to {len(unique_list)} unique ids"
+                        f"Applying hash-id remapping for epoch {self._epoch} to {len(unique_list)} unique ids"
                     )
                     self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
                         lambda lst: [id_map[x] for x in lst]
@@ -326,6 +324,26 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     )
                     self._wrap_warning_logged = True
                 self.request_idx = 0
+                if self.config.remap_hash_ids and self.config.use_trace_prefix_hash_ids:
+                    self._epoch += 1
+                    df_has_sessions = self.config.session_generator_config is not None
+                    df = (
+                        self.trace_df_with_sessions
+                        if df_has_sessions
+                        else self.trace_df
+                    )
+                    unique_ids = set()
+                    for ids in df["hash_ids"]:
+                        unique_ids.update(ids)
+                    unique_list = sorted(unique_ids)
+                    if unique_list:
+                        id_map = self._build_epoch_hash_id_map(unique_list)
+                        logger.info(
+                            f"Remapping prefix hash IDs on wrap for {len(unique_list)} unique ids"
+                        )
+                        df["hash_ids"] = df["hash_ids"].apply(
+                            lambda lst: [id_map[x] for x in lst]
+                        )
 
         if self.config.session_generator_config is not None:
             request_to_send = self.trace_df_with_sessions.iloc[self.request_idx]
@@ -410,3 +428,19 @@ class TraceRequestGenerator(BaseRequestGenerator):
             if self.config.session_generator_config is None
             else len(self.trace_df_with_sessions)
         )
+
+    def _build_epoch_hash_id_map(self, unique_list: List[int]) -> Dict[int, int]:
+        """Build a collision-free mapping for the current epoch."""
+        rng = self.seed_manager.random("hash_remap", f"epoch_{self._epoch}")
+
+        used: Dict[int, bool] = {}
+        id_map: Dict[int, int] = {}
+        for src in unique_list:
+            dst = rng.getrandbits(32)
+            # ensure collision-free assignment among destinations
+            while dst in used:
+                dst = rng.getrandbits(32)
+            id_map[src] = int(dst)
+            used[dst] = True
+
+        return id_map
