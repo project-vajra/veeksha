@@ -200,6 +200,20 @@ class DashboardState:
             # Move to completed collection
             benchmark.completed_requests[event.request_id] = completed_req
             del benchmark.live_requests[event.request_id]
+        else:
+            # Request was not in live_requests (throttled out), but still add to completed
+            metrics = event.final_metrics
+            completed_req = LiveRequestInfo(
+                request_id=event.request_id,
+                start_timestamp=event.timestamp,
+                input_tokens=getattr(metrics, 'prompt_tokens', 0),
+                current_output_tokens=getattr(metrics, 'output_tokens', 0),
+                ttft_ms=metrics.ttft * 1000 if metrics.ttft > 0 else None,
+                current_tpot_ms=metrics.tpot * 1000 if metrics.tpot > 0 else None,
+                progress_pct=100.0,
+                is_waiting_first_token=False
+            )
+            benchmark.completed_requests[str(event.request_id)] = completed_req
 
         benchmark.aggregate_stats.completed_count += 1
         metrics = event.final_metrics

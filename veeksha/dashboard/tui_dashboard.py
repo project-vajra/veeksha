@@ -53,6 +53,7 @@ class PlotextChart(PlotextPlot):
 
     data = reactive(list)
     benchmark_start_time = reactive(None)  # Track when benchmark started
+    benchmark_end_time = reactive(None)  # Track when benchmark finished
 
     def __init__(
         self, title: str, max_points: int = 100, color: str = "cyan", *args, **kwargs
@@ -63,6 +64,7 @@ class PlotextChart(PlotextPlot):
         self.chart_color = color
         self.data = []
         self.benchmark_start_time = None
+        self.benchmark_end_time = None
 
     def on_mount(self) -> None:
         """Configure the plot when widget is mounted"""
@@ -78,6 +80,10 @@ class PlotextChart(PlotextPlot):
 
     def watch_benchmark_start_time(self, new_time) -> None:
         """React to benchmark start time changes"""
+        self.configure_plot()
+
+    def watch_benchmark_end_time(self, new_time) -> None:
+        """React to benchmark end time changes"""
         self.configure_plot()
 
     def configure_plot(self) -> None:
@@ -111,8 +117,11 @@ class PlotextChart(PlotextPlot):
         # Calculate time-based X-axis
         import time
         if self.benchmark_start_time:
-            # Calculate elapsed time
-            current_time = time.time()
+            # Calculate elapsed time - use end_time if benchmark finished, otherwise current time
+            if self.benchmark_end_time:
+                current_time = self.benchmark_end_time
+            else:
+                current_time = time.time()
             total_elapsed = current_time - self.benchmark_start_time
             # Distribute samples evenly across the FULL elapsed time
             # This ensures all charts show the same time range regardless of sample count
@@ -140,8 +149,8 @@ class PlotextChart(PlotextPlot):
 
         # X-axis label shows time and stats
         if self.benchmark_start_time:
-            elapsed = time.time() - self.benchmark_start_time
-            self.plt.xlabel(f"Time: {elapsed:.1f}s | Avg: {avg_val:.1f} | Min: {min_val:.1f} | Max: {max_val:.1f}")
+            # Use the same elapsed time calculation as X-axis (frozen if finished)
+            self.plt.xlabel(f"Time: {total_elapsed:.1f}s | Avg: {avg_val:.1f} | Min: {min_val:.1f} | Max: {max_val:.1f}")
         else:
             self.plt.xlabel(f"Avg: {avg_val:.1f} | Min: {min_val:.1f} | Max: {max_val:.1f} | Samples: {len(recent_data)}")
 
@@ -478,13 +487,19 @@ class VeekshaDashboard(App):
         self.tbt_chart.data = list(stats.recent_tbt_ms)
         self.latency_chart.data = list(stats.recent_latency_ms)
 
-        # Update benchmark start time for time-based X-axis
+        # Update benchmark start and end times for time-based X-axis
         active_benchmark = self.dashboard_state.get_active_benchmark()
         if active_benchmark and active_benchmark.benchmark_start_time:
             self.ttft_chart.benchmark_start_time = active_benchmark.benchmark_start_time
             self.tpot_chart.benchmark_start_time = active_benchmark.benchmark_start_time
             self.tbt_chart.benchmark_start_time = active_benchmark.benchmark_start_time
             self.latency_chart.benchmark_start_time = active_benchmark.benchmark_start_time
+
+            # Set end time to freeze the charts when benchmark finishes
+            self.ttft_chart.benchmark_end_time = active_benchmark.benchmark_end_time
+            self.tpot_chart.benchmark_end_time = active_benchmark.benchmark_end_time
+            self.tbt_chart.benchmark_end_time = active_benchmark.benchmark_end_time
+            self.latency_chart.benchmark_end_time = active_benchmark.benchmark_end_time
 
         # Update live requests table
         if self.live_table:
@@ -625,11 +640,16 @@ class VeekshaDashboard(App):
         self.tbt_chart.data = []
         self.latency_chart.data = []
 
-        # Reset benchmark start times for new benchmark
+        # Reset benchmark start and end times for new benchmark
         self.ttft_chart.benchmark_start_time = None
         self.tpot_chart.benchmark_start_time = None
         self.tbt_chart.benchmark_start_time = None
         self.latency_chart.benchmark_start_time = None
+
+        self.ttft_chart.benchmark_end_time = None
+        self.tpot_chart.benchmark_end_time = None
+        self.tbt_chart.benchmark_end_time = None
+        self.latency_chart.benchmark_end_time = None
 
     def on_unmount(self) -> None:
         """Clean up log handler"""
