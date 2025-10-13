@@ -38,6 +38,15 @@ class MetricCard(Static):
         yield Label(self.title, classes="metric-title")
         yield Label(self.value, classes="metric-value")
 
+    def watch_value(self, new_value: str) -> None:
+        """Update the value label when value changes"""
+        try:
+            # Query for the metric-value label within this card
+            value_label = self.query_one(".metric-value", Label)
+            value_label.update(new_value)
+        except:
+            pass  # Widget not yet mounted
+
 
 class PlotextChart(PlotextPlot):
     """Plotext-based line chart for metrics using textual-plotext"""
