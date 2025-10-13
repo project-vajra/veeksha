@@ -325,7 +325,6 @@ class VeekshaDashboard(App):
                     self.live_table.add_column("Output Tokens", key="output")
                     self.live_table.add_column("TTFT (ms)", key="ttft")
                     self.live_table.add_column("TPOT (ms)", key="tpot")
-                    self.live_table.add_column("Progress", key="progress")
                     yield self.live_table
 
                     # Completed Requests section
@@ -486,24 +485,22 @@ class VeekshaDashboard(App):
             self.live_table.clear()
             live_requests = self.dashboard_state.get_live_requests(active_id)
             for req in live_requests[:10]:  # Top 10
-                # Create htop-like progress bar
-                progress_pct = req.progress_pct if req.progress_pct else 0
-                bar_width = 20
-                filled = int((progress_pct / 100) * bar_width)
-                empty = bar_width - filled
-                progress_bar = f"[{'█' * filled}{'░' * empty}] {progress_pct:.0f}%"
-
                 self.live_table.add_row(
                     str(req.request_id),
                     str(req.input_tokens),
                     str(req.current_output_tokens),
                     f"{req.ttft_ms:.1f}" if req.ttft_ms else "-",
                     f"{req.current_tpot_ms:.1f}" if req.current_tpot_ms else "-",
-                    progress_bar,
                 )
 
         # Update completed requests table
         if self.completed_table:
+            # Save current scroll position
+            try:
+                scroll_y = self.completed_table.scroll_y
+            except:
+                scroll_y = 0
+
             self.completed_table.clear()
             completed = self.dashboard_state.get_completed_requests(active_id)
             for req in list(completed)[-100:]:  # Last 100
@@ -514,6 +511,12 @@ class VeekshaDashboard(App):
                     f"{req.ttft_ms:.1f}" if req.ttft_ms else "-",
                     f"{req.current_tpot_ms:.1f}" if req.current_tpot_ms else "-",
                 )
+
+            # Restore scroll position
+            try:
+                self.completed_table.scroll_y = scroll_y
+            except:
+                pass
 
         # Update capacity search tab
         cs_state = self.dashboard_state.capacity_search
