@@ -432,7 +432,10 @@ def _run_benchmarks_for_endpoint(configs_for_endpoint: List[BenchmarkConfig]):
     if platform.system() == "Darwin":
         multiprocessing.set_start_method("fork", force=True)
 
-    endpoint_name = configs_for_endpoint[0].client_config.endpoint.name or configs_for_endpoint[0].client_config.endpoint.api_url
+    endpoint_name = (
+        configs_for_endpoint[0].client_config.endpoint.name
+        or configs_for_endpoint[0].client_config.endpoint.api_url
+    )
 
     if len(configs_for_endpoint) > 1:
         logger.info(
