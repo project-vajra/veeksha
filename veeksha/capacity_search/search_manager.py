@@ -72,6 +72,16 @@ def run_search(
         return result_container["result"]
     else:
         # No dashboard - run normally
+    # Check if server_config is specified for automatic server management
+    if capacity_search_config.benchmark_config.server_config is not None:
+        from veeksha.orchestration import managed_server
+
+        logger.info("Server config detected, launching managed server for capacity search")
+        with managed_server(capacity_search_config.benchmark_config.server_config) as server_info:
+            logger.info(f"Server ready at {server_info['api_base']}")
+            capacity_search = CapacitySearch(capacity_search_config)
+            return capacity_search.search()
+    else:
         capacity_search = CapacitySearch(capacity_search_config)
         return capacity_search.search()
 

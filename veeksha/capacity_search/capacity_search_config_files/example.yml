@@ -15,8 +15,16 @@ slos:
 benchmark_config:
   timeout: 10000
   max_completed_requests: 5
-  api_url: http://localhost:30000/v1
-  api_key: token-abc123
+  # api_url and api_key will be auto-populated from server_config if provided
+  # api_url: http://localhost:30000/v1
+  # api_key: token-abc123
+
+  # Optional: Enable automatic server management
+  server_config:
+    engine: vllm
+    port: 30000
+    tensor_parallel_size: 1
+    additional_args: '{"gpu-memory-utilization": "0.7"}'
 
   client_config:
     model: meta-llama/Meta-Llama-3-8B-Instruct
