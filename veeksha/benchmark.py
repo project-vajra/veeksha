@@ -27,6 +27,7 @@ from veeksha.core.seeding import (
     SeedManager,
 )
 from veeksha.dashboard.events import (
+    BenchmarkStatusEvent,
     RequestCompletedEvent,
     RequestStartedEvent,
 )
@@ -361,6 +362,20 @@ def run_main_loop(
     processor_thread.join()
 
     pbar.close()
+
+    # Emit benchmark completion event for dashboard
+    elapsed = time.time() - (service_metrics.start_time or time.time())
+    emit_dashboard_event(
+        BenchmarkStatusEvent(
+            benchmark_id=benchmark_id,
+            total_requests=service_metrics.num_requests,
+            completed_requests=service_metrics.num_completed_requests,
+            errored_requests=service_metrics.num_errored_requests,
+            active_requests=0,  # All requests done at this point
+            current_qps=service_metrics.num_completed_requests / elapsed if elapsed > 0 else 0.0,
+            elapsed_time=elapsed,
+        )
+    )
 
     if service_metrics.error is None:
         logger.info("Main loop completed.")

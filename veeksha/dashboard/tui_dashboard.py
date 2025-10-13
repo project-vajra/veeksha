@@ -255,7 +255,7 @@ class VeekshaDashboard(App):
         self.update_interval = 1.0  # Update every second
         self.log_handler: Optional[LogCapture] = None
 
-        # Metric cards
+        # Metric cards for Metrics tab
         self.total_requests_card = MetricCard("Total Requests", "blue")
         self.completed_card = MetricCard("Completed", "green")
         self.errors_card = MetricCard("Errors", "red")
@@ -264,6 +264,12 @@ class VeekshaDashboard(App):
         self.tpot_card = MetricCard("Avg TPOT (ms)", "green")
         self.tbt_card = MetricCard("Avg TBT (ms)", "yellow")
         self.latency_card = MetricCard("Avg Latency (ms)", "magenta")
+
+        # Metric cards for Requests tab
+        self.total_requests_card_requests = MetricCard("Total Requests", "blue")
+        self.completed_card_requests = MetricCard("Completed", "green")
+        self.errors_card_requests = MetricCard("Errors", "red")
+        self.duration_card_requests = MetricCard("Duration", "yellow")
 
         # Charts
         self.ttft_chart = PlotextChart("📈 Time to First Token (TTFT)", color="cyan")
@@ -282,34 +288,22 @@ class VeekshaDashboard(App):
         yield Header(show_clock=True)
 
         with TabbedContent(initial="requests-tab"):
-            with TabPane("📊 Metrics", id="metrics-tab"):
+            with TabPane("📋 Requests", id="requests-tab"):
                 with ScrollableContainer():
-                    # Benchmark selector
+                    # Benchmark selector (also on Requests tab)
                     yield Static(
                         "🎯 Active Benchmark: [bold cyan]Loading...[/bold cyan]",
                         classes="benchmark-selector",
-                        id="benchmark-selector",
+                        id="benchmark-selector-requests",
                     )
 
-                    # Compact metric row - only essential metrics
+                    # Status row - essential info for requests tab
                     with Horizontal(classes="metric-row"):
-                        yield self.total_requests_card
-                        yield self.ttft_card
-                        yield self.completed_card
-                        yield self.errors_card
-                        yield self.duration_card
+                        yield self.total_requests_card_requests
+                        yield self.completed_card_requests
+                        yield self.errors_card_requests
+                        yield self.duration_card_requests
 
-                    # Charts in 2x2 grid
-                    with Horizontal(classes="chart-row"):
-                        yield self.ttft_chart.add_class("chart")
-                        yield self.tpot_chart.add_class("chart")
-
-                    with Horizontal(classes="chart-row"):
-                        yield self.tbt_chart.add_class("chart")
-                        yield self.latency_chart.add_class("chart")
-
-            with TabPane("📋 Requests", id="requests-tab"):
-                with ScrollableContainer():
                     # Live Requests section
                     yield Static(
                         "🔴 Live Requests (In Progress)", classes="section-title"
@@ -332,6 +326,32 @@ class VeekshaDashboard(App):
                     self.completed_table.add_column("TTFT (ms)", key="ttft")
                     self.completed_table.add_column("TPOT (ms)", key="tpot")
                     yield self.completed_table
+
+            with TabPane("📊 Metrics", id="metrics-tab"):
+                with ScrollableContainer():
+                    # Benchmark selector
+                    yield Static(
+                        "🎯 Active Benchmark: [bold cyan]Loading...[/bold cyan]",
+                        classes="benchmark-selector",
+                        id="benchmark-selector-metrics",
+                    )
+
+                    # Compact metric row - only essential metrics
+                    with Horizontal(classes="metric-row"):
+                        yield self.total_requests_card
+                        yield self.ttft_card
+                        yield self.completed_card
+                        yield self.errors_card
+                        yield self.duration_card
+
+                    # Charts in 2x2 grid
+                    with Horizontal(classes="chart-row"):
+                        yield self.ttft_chart.add_class("chart")
+                        yield self.tpot_chart.add_class("chart")
+
+                    with Horizontal(classes="chart-row"):
+                        yield self.tbt_chart.add_class("chart")
+                        yield self.latency_chart.add_class("chart")
 
             with TabPane("🔍 Capacity Search", id="capacity-search-tab"):
                 with ScrollableContainer():
@@ -382,11 +402,9 @@ class VeekshaDashboard(App):
         """Update all dashboard elements"""
         active_id = self.dashboard_state.active_benchmark_id
 
-        # Update benchmark selector with running/finished status
+        # Update both benchmark selectors with running/finished status
         benchmarks = self.dashboard_state.get_benchmark_ids()
         if benchmarks:
-            selector = self.query_one("#benchmark-selector", Static)
-
             # Determine if benchmark is running or finished
             active_benchmark = self.dashboard_state.get_active_benchmark()
             if active_benchmark:
@@ -395,17 +413,31 @@ class VeekshaDashboard(App):
             else:
                 status_indicator = "[dim]No benchmark[/dim]"
 
-            selector.update(
+            selector_text = (
                 f"🎯 Active Benchmark: [bold cyan]{active_id}[/bold cyan] | "
                 f"Status: {status_indicator} | "
                 f"Press [bold]n[/bold]/[bold]p[/bold] to switch ({len(benchmarks)} total)"
             )
 
+            # Update requests tab selector
+            try:
+                selector_requests = self.query_one("#benchmark-selector-requests", Static)
+                selector_requests.update(selector_text)
+            except:
+                pass
+
+            # Update metrics tab selector
+            try:
+                selector_metrics = self.query_one("#benchmark-selector-metrics", Static)
+                selector_metrics.update(selector_text)
+            except:
+                pass
+
         # Get stats
         stats = self.dashboard_state.get_aggregate_stats(active_id)
         duration = self.dashboard_state.get_benchmark_duration(active_id)
 
-        # Update metric cards
+        # Update metric cards on Metrics tab
         self.total_requests_card.value = str(stats.total_requests)
         self.completed_card.value = str(stats.completed_count)
         self.errors_card.value = str(stats.error_count)
@@ -414,6 +446,12 @@ class VeekshaDashboard(App):
         self.tpot_card.value = f"{stats.avg_tpot_ms:.1f}ms"
         self.tbt_card.value = f"{stats.avg_tbt_ms:.1f}ms"
         self.latency_card.value = f"{stats.avg_latency_ms:.0f}ms"
+
+        # Update metric cards on Requests tab
+        self.total_requests_card_requests.value = str(stats.total_requests)
+        self.completed_card_requests.value = str(stats.completed_count)
+        self.errors_card_requests.value = str(stats.error_count)
+        self.duration_card_requests.value = f"{duration:.1f}s"
 
         # Update charts - directly set data from deques
         self.ttft_chart.data = list(stats.recent_ttft_ms)
