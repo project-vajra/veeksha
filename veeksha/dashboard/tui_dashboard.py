@@ -278,7 +278,7 @@ class VeekshaDashboard(App):
     def __init__(self, dashboard_state: DashboardState):
         super().__init__()
         self.dashboard_state = dashboard_state
-        self.update_interval = 1.0  # Update every second
+        self.update_interval = 0.5  # Update every 500ms
         self.log_handler: Optional[LogCapture] = None
 
         # Metric cards for Metrics tab
@@ -505,7 +505,7 @@ class VeekshaDashboard(App):
         if self.live_table:
             self.live_table.clear()
             live_requests = self.dashboard_state.get_live_requests(active_id)
-            for req in live_requests[:10]:  # Top 10
+            for req in live_requests[:20]:  # Top 20
                 self.live_table.add_row(
                     str(req.request_id),
                     str(req.input_tokens),

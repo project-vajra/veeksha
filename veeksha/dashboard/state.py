@@ -143,7 +143,9 @@ class DashboardState:
             )
             del benchmark.live_requests[oldest_id]
 
-        benchmark.live_requests[event.request_id] = LiveRequestInfo(
+        # Normalize request_id to string for consistent dict lookups
+        request_key = str(event.request_id)
+        benchmark.live_requests[request_key] = LiveRequestInfo(
             request_id=event.request_id,
             start_timestamp=event.timestamp,
             input_tokens=event.input_tokens,
@@ -155,8 +157,9 @@ class DashboardState:
         benchmark = self._get_or_create_benchmark(event.benchmark_id)
 
         # Update live request info
-        if event.request_id in benchmark.live_requests:
-            req = benchmark.live_requests[event.request_id]
+        request_key = str(event.request_id)
+        if request_key in benchmark.live_requests:
+            req = benchmark.live_requests[request_key]
             req.current_output_tokens = event.total_output_tokens
             req.ttft_ms = event.ttft_ms
             req.current_tpot_ms = event.current_tpot_ms
@@ -184,9 +187,10 @@ class DashboardState:
         benchmark = self._get_or_create_benchmark(event.benchmark_id)
 
         # Move from live requests to completed requests + update aggregate stats
-        if event.request_id in benchmark.live_requests:
+        request_key = str(event.request_id)
+        if request_key in benchmark.live_requests:
             # Move to completed requests with final state
-            completed_req = benchmark.live_requests[event.request_id]
+            completed_req = benchmark.live_requests[request_key]
             completed_req.progress_pct = 100.0  # Mark as fully completed
             completed_req.is_waiting_first_token = False
 
@@ -198,8 +202,8 @@ class DashboardState:
                 completed_req.current_tpot_ms = metrics.tpot * 1000
 
             # Move to completed collection
-            benchmark.completed_requests[event.request_id] = completed_req
-            del benchmark.live_requests[event.request_id]
+            benchmark.completed_requests[request_key] = completed_req
+            del benchmark.live_requests[request_key]
         else:
             # Request was not in live_requests (throttled out), but still add to completed
             metrics = event.final_metrics
@@ -283,8 +287,9 @@ class DashboardState:
     def _handle_request_error(self, event: RequestErrorEvent) -> None:
         benchmark = self._get_or_create_benchmark(event.benchmark_id)
 
-        if event.request_id in benchmark.live_requests:
-            del benchmark.live_requests[event.request_id]
+        request_key = str(event.request_id)
+        if request_key in benchmark.live_requests:
+            del benchmark.live_requests[request_key]
         benchmark.aggregate_stats.error_count += 1
 
     # Getter methods for stats with locking for thread safety
