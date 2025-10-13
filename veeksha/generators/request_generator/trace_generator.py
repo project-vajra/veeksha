@@ -310,8 +310,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     self._wrap_warning_logged = True
                 self.request_idx = 0
                 if self.config.remap_hash_ids:
-                    self._remap_trace_hash_ids()
                     self._epoch += 1
+                    self._remap_trace_hash_ids()
+                    self.past_prompts.clear()
 
         request_to_send = self.trace_df.iloc[self.request_idx]
 
@@ -399,12 +400,12 @@ class TraceRequestGenerator(BaseRequestGenerator):
         for src in unique_list:
             dst = rng.getrandbits(32)
             _i = 0
-            while dst in used:
+            while dst == 0 or dst in used:
                 dst = rng.getrandbits(32)
                 _i += 1
                 if _i > 1000:
-                    raise Exception(
-                        f"Could not generate stable encoding for value {src}"
+                    raise RuntimeError(
+                        f"Could not generate a non-colliding positive remapped ID for {src}"
                     )
             id_map[src] = int(dst)
             used[dst] = True
@@ -419,7 +420,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         unique_list = sorted(unique_ids)
         if unique_list:
             id_map = self._build_epoch_hash_id_map(unique_list)
-            logger.info(f"Remapping prefix hash IDs on wrap.")
+            logger.info("Remapping prefix hash IDs on wrap.")
             self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
                 lambda lst: [id_map[x] for x in lst]
             )

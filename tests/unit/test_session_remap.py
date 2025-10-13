@@ -128,6 +128,7 @@ def test_hash_ids_remap_on_wrap_with_sessions_and_save_suffix(tmp_path):
     # After wrap, the in-place remap should change first-row hash_ids
     wrapped_ids = list(gen.trace_df.iloc[0]["hash_ids"])  # type: ignore[index]
     assert wrapped_ids != initial_ids, "Expected hash_ids to be remapped on wrap"
+    assert all(i > 0 for i in wrapped_ids), "Remapped hash_ids must be positive"
 
     # Saved trace file should include the remapped suffix
     saved = list(Path(tmp_path).glob("**/*_remapped.jsonl"))
