@@ -111,12 +111,13 @@ class PlotextChart(PlotextPlot):
         # Calculate time-based X-axis
         import time
         if self.benchmark_start_time:
-            # Calculate elapsed time for each sample
+            # Calculate elapsed time
             current_time = time.time()
             total_elapsed = current_time - self.benchmark_start_time
-            # Distribute samples evenly across the elapsed time
+            # Distribute samples evenly across the FULL elapsed time
+            # This ensures all charts show the same time range regardless of sample count
             if total_elapsed > 0 and len(recent_data) > 1:
-                time_per_sample = total_elapsed / len(recent_data)
+                time_per_sample = total_elapsed / (len(recent_data) - 1)
                 x_vals = [i * time_per_sample for i in range(len(recent_data))]
             else:
                 x_vals = list(range(len(recent_data)))
@@ -132,6 +133,10 @@ class PlotextChart(PlotextPlot):
         y_range = max_val - min_val
         y_padding = y_range * 0.1 if y_range > 0 else 1
         self.plt.ylim(min_val - y_padding, max_val + y_padding)
+
+        # Set X-axis bounds to match elapsed time for all charts
+        if self.benchmark_start_time and total_elapsed > 0:
+            self.plt.xlim(0, total_elapsed)
 
         # X-axis label shows time and stats
         if self.benchmark_start_time:
@@ -233,7 +238,8 @@ class VeekshaDashboard(App):
     }
 
     #completed-requests {
-        height: 30;
+        min-height: 30;
+        max-height: 50;
         border: solid $warning;
         margin: 0 1 1 1;
     }
