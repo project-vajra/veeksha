@@ -351,6 +351,9 @@ class VeekshaDashboard(App):
                     with Horizontal(classes="metric-row"):
                         yield self.total_requests_card
                         yield self.ttft_card
+                        yield self.tpot_card
+                        yield self.tbt_card
+                        yield self.latency_card
                         yield self.completed_card
                         yield self.errors_card
                         yield self.duration_card
