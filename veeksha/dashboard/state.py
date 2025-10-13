@@ -206,8 +206,8 @@ class DashboardState:
             completed_req = LiveRequestInfo(
                 request_id=event.request_id,
                 start_timestamp=event.timestamp,
-                input_tokens=getattr(metrics, 'prompt_tokens', 0),
-                current_output_tokens=getattr(metrics, 'output_tokens', 0),
+                input_tokens=metrics.num_prompt_tokens,
+                current_output_tokens=metrics.num_output_tokens,
                 ttft_ms=metrics.ttft * 1000 if metrics.ttft > 0 else None,
                 current_tpot_ms=metrics.tpot * 1000 if metrics.tpot > 0 else None,
                 progress_pct=100.0,
