@@ -233,7 +233,7 @@ class VeekshaDashboard(App):
     }
 
     #completed-requests {
-        height: 20;
+        height: 30;
         border: solid $warning;
         margin: 0 1 1 1;
     }
