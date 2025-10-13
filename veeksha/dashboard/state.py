@@ -248,11 +248,11 @@ class DashboardState:
     def _handle_benchmark_status(self, event: BenchmarkStatusEvent) -> None:
         benchmark = self._get_or_create_benchmark(event.benchmark_id)
 
-        # Update current qps and aggregate stats
+        # Update current qps
         benchmark.current_qps = event.current_qps
-        benchmark.aggregate_stats.total_requests = event.total_requests
-        benchmark.aggregate_stats.completed_count = event.completed_requests
-        benchmark.aggregate_stats.error_count = event.errored_requests
+
+        # Don't overwrite the aggregate stats - they're already tracked correctly via other events
+        # Only use the event data to determine if benchmark is finished
 
         # If all requests are completed or errored, mark benchmark as ended
         if (

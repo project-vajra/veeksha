@@ -176,6 +176,7 @@ class VeekshaDashboard(App):
 
     .metric-card {
         height: 4;
+        width: 1fr;
         border: solid $primary;
         padding: 0;
         margin: 0 1;

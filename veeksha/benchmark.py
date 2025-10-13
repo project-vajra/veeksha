@@ -364,7 +364,8 @@ def run_main_loop(
     pbar.close()
 
     # Emit benchmark completion event for dashboard
-    elapsed = time.time() - (service_metrics.start_time or time.time())
+    # Note: service_metrics uses perf_counter, not time.time(), but we only need elapsed duration
+    elapsed = (service_metrics.end_time or service_metrics.start_time or 0) - (service_metrics.start_time or 0)
     emit_dashboard_event(
         BenchmarkStatusEvent(
             benchmark_id=benchmark_id,
