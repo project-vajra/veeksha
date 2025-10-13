@@ -5,11 +5,14 @@ This module provides configuration classes for launching and managing
 LLM inference servers like vLLM.
 """
 
-from dataclasses import dataclass, field
+import json
+from dataclasses import field
 from typing import Any, Dict, List, Optional
 
+from veeksha.config.core.frozen_dataclass import frozen_dataclass
 
-@dataclass
+
+@frozen_dataclass(allow_from_file=True)
 class ServerConfig:
     """Configuration for server launch and management.
 
@@ -21,11 +24,12 @@ class ServerConfig:
     engine: str = field(
         default="vllm",
         metadata={
-            "help": "The inference engine to use (e.g., 'vllm', 'tgi', 'sglang')"
+            "help": "The inference engine to use (e.g., 'vajra', 'vllm','tgi', 'sglang')"
         },
     )
 
     # Model configuration
+    # Note: When used with BenchmarkConfig, this will be auto-populated from ClientConfig
     model: str = field(
         default="meta-llama/Meta-Llama-3-8B-Instruct",
         metadata={"help": "Model name or path"},
@@ -64,8 +68,12 @@ class ServerConfig:
         default=None, metadata={"help": "Maximum model context length"}
     )
 
-    additional_args: Dict[str, Any] = field(
-        default_factory=dict, metadata={"help": "Additional engine-specific arguments"}
+    additional_args: str = field(
+        default="{}",
+        metadata={
+            "help": "Additional engine-specific arguments as JSON string. "
+            "Example: '{\"enable-prefix-caching\": true}'"
+        },
     )
 
     # Startup configuration
@@ -81,6 +89,14 @@ class ServerConfig:
     auto_shutdown: bool = field(
         default=True, metadata={"help": "Automatically shutdown server after benchmark"}
     )
+
+    def __post_init__(self):
+        """Parse additional_args JSON string into a dictionary."""
+        # Parse additional_args from JSON string
+        additional_args_dict: Dict[str, Any] = {}
+        if self.additional_args:
+            additional_args_dict = json.loads(self.additional_args)
+        object.__setattr__(self, "additional_args_dict", additional_args_dict)
 
     def get_api_base_url(self) -> str:
         """Get the full API base URL."""
@@ -100,7 +116,6 @@ class ServerConfig:
         """Convert config to dictionary."""
         return {
             "engine": self.engine,
-            "model": self.model,
             "host": self.host,
             "port": self.port,
             "api_key": self.api_key,
@@ -108,7 +123,7 @@ class ServerConfig:
             "gpu_ids": self.gpu_ids,
             "dtype": self.dtype,
             "max_model_len": self.max_model_len,
-            "additional_args": self.additional_args,
+            "additional_args": self.additional_args_dict,  # Use parsed dict
             "startup_timeout": self.startup_timeout,
             "health_check_interval": self.health_check_interval,
             "auto_shutdown": self.auto_shutdown,

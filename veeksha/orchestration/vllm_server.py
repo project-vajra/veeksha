@@ -69,8 +69,8 @@ class VLLMServerManager(BaseServerManager):
         if self.config.max_model_len is not None:
             command.extend(["--max-model-len", str(self.config.max_model_len)])
 
-        # Process additional arguments
-        for key, value in self.config.additional_args.items():
+        # Process additional arguments (parsed from JSON string in __post_init__)
+        for key, value in self.config.additional_args_dict.items():
             if value is True:
                 # Boolean flags
                 command.append(f"--{key}")
@@ -102,10 +102,10 @@ class VLLMServerManager(BaseServerManager):
         args = []
 
         # Handle special cases like rope_scaling which takes JSON
-        if "rope_scaling" in self.config.additional_args:
+        if "rope_scaling" in self.config.additional_args_dict:
             import json
 
-            rope_config = self.config.additional_args["rope_scaling"]
+            rope_config = self.config.additional_args_dict["rope_scaling"]
             rope_json = json.dumps(rope_config)
             args.extend(["--rope-scaling", rope_json])
 

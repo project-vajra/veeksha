@@ -52,7 +52,7 @@ def example_hellaswag():
     benchmark_config = BenchmarkConfig(
         seed=42,
         timeout=1800,  # 30 minutes
-        max_completed_requests=100,  # Limit for demo
+        max_completed_requests=10000,  # Process all requests for lm_eval
         client_config=ClientConfig(
             model="Qwen/Qwen3-1.7B",
             num_clients=1,
@@ -114,7 +114,7 @@ def example_multiple_tasks():
     benchmark_config = BenchmarkConfig(
         seed=42,
         timeout=3600,  # 1 hour
-        max_completed_requests=500,
+        max_completed_requests=10000,  # Process all requests for lm_eval
         client_config=ClientConfig(
             model="Qwen/Qwen3-1.7B",
             num_clients=1,
@@ -194,7 +194,7 @@ def example_model_comparison():
         benchmark_config = BenchmarkConfig(
             seed=42,
             timeout=1800,
-            max_completed_requests=100,
+            max_completed_requests=10000,  # Process all requests for lm_eval
             client_config=ClientConfig(
                 model=model,
                 num_clients=1,
