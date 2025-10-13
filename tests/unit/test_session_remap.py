@@ -15,7 +15,9 @@ from veeksha.config.generators.interval_generator.static_generator import (
 )
 from veeksha.core.seeding import SeedManager
 from veeksha.generators.request_generator.trace_generator import TraceRequestGenerator
+from veeksha.logger import init_logger
 
+logger = init_logger(__name__)
 
 class _RoundTripTokenizer:
     """Minimal tokenizer with invertible encode/decode for ASCII text.
@@ -37,13 +39,13 @@ def _write_trace_jsonl(tmp_path: Path) -> str:
             "input_length": 64,
             "output_length": 16,
             "timestamp": 1000,
-            "hash_ids": [1, 2, 3, 4],
+            "hash_ids": [1, 2, 1],
         },
         {
             "input_length": 64,
             "output_length": 16,
             "timestamp": 2000,
-            "hash_ids": [1, 2, 3, 5],
+            "hash_ids": [1, 2, 2],
         },
     ]
 
