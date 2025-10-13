@@ -34,6 +34,7 @@ class BaseServerManager(abc.ABC):
         self.config = config
         self.process: Optional[subprocess.Popen] = None
         self._is_running = False
+        self._log_file = None  # Store log file for cleanup
 
     @property
     def is_running(self) -> bool:
@@ -80,13 +81,19 @@ class BaseServerManager(abc.ABC):
                 logger.info(f"Setting CUDA_VISIBLE_DEVICES={gpu_env}")
 
             # Launch server process
-            # Don't redirect stdout/stderr to PIPE - let them print to console
-            # This makes debugging much easier
+            # Redirect output to a temporary file so we can check for errors
+            import tempfile
+            
+            self._log_file = tempfile.NamedTemporaryFile(
+                mode='w+', delete=False, suffix='.log', prefix='vllm_server_'
+            )
+            logger.info(f"Server logs: {self._log_file.name}")
+            
             self.process = subprocess.Popen(
                 command,
                 env=env,
-                stdout=None,  # Inherit from parent process
-                stderr=None,  # Inherit from parent process
+                stdout=self._log_file,
+                stderr=subprocess.STDOUT,  # Combine stderr into stdout
                 text=True,
             )
 
@@ -138,18 +145,44 @@ class BaseServerManager(abc.ABC):
             # Check if process is still alive
             if not self.is_running:
                 logger.error("Server process terminated unexpectedly")
-                # Try to get error output (non-blocking read)
-                if self.process and self.process.stderr:
+                # Read the log file to check for common errors
+                if self._log_file:
                     try:
-                        import select
-
-                        # Check if stderr has data available (non-blocking)
-                        if select.select([self.process.stderr], [], [], 0)[0]:
-                            stderr = self.process.stderr.read()
-                            if stderr:
-                                logger.error(f"Server stderr: {stderr}")
+                        self._log_file.seek(0)
+                        logs = self._log_file.read()
+                        
+                        # Check for GPU memory error
+                        if "Free memory on device" in logs and "is less than desired GPU memory utilization" in logs:
+                            import re
+                            # Extract memory info from error message
+                            match = re.search(
+                                r"Free memory on device \(([0-9.]+)/([0-9.]+) GiB\).*desired GPU memory utilization.*\(([0-9.]+), ([0-9.]+) GiB\)",
+                                logs
+                            )
+                            if match:
+                                free_mem, total_mem, util_frac, needed_mem = match.groups()
+                                logger.error(
+                                    f"\n{'='*80}\n"
+                                    f"GPU MEMORY ERROR: Insufficient GPU memory available\n"
+                                    f"  Free memory:    {free_mem} GiB / {total_mem} GiB\n"
+                                    f"  Required:       {needed_mem} GiB (utilization: {util_frac})\n"
+                                    f"\n"
+                                    f"Solutions:\n"
+                                    f"  1. Free up GPU memory by stopping other processes\n"
+                                    f"  2. Reduce GPU memory utilization by adding to server_config:\n"
+                                    f"     additional_args: '{{\"gpu-memory-utilization\": \"0.5\"}}'\n"
+                                    f"  3. Use a smaller model\n"
+                                    f"{'='*80}"
+                                )
+                            else:
+                                logger.error("GPU memory error detected but couldn't parse details")
+                        else:
+                            # Show last 50 lines of logs for other errors
+                            log_lines = logs.strip().split('\n')
+                            recent_logs = '\n'.join(log_lines[-50:])
+                            logger.error(f"Recent server logs:\n{recent_logs}")
                     except Exception as e:
-                        logger.error(f"Failed to read process output: {e}")
+                        logger.error(f"Failed to read server logs: {e}")
                 return False
 
             # Check health
@@ -208,6 +241,16 @@ class BaseServerManager(abc.ABC):
         finally:
             # Always reset state, even if exceptions occur
             self._is_running = False
+            
+            # Clean up log file
+            if self._log_file:
+                try:
+                    self._log_file.close()
+                    import os
+                    os.unlink(self._log_file.name)
+                    logger.debug(f"Removed log file: {self._log_file.name}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up log file: {e}")
 
     def get_server_logs(self, lines: int = 50) -> tuple[str, str]:
         """Get recent server logs.
