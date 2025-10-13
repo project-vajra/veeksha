@@ -93,12 +93,20 @@ The results of the benchmark are saved in the results directory specified by the
 
 ### Running Benchmarks Against Multiple Endpoints in Parallel
 
-Veeksha supports running benchmarks against multiple API endpoints simultaneously. You can specify multiple endpoints using YAML configuration files with list syntax for `api_url` and `api_key`:
+Veeksha supports running benchmarks against multiple API endpoints simultaneously. You can specify multiple endpoints using YAML configuration files with a list of endpoint configurations:
 
 ```yaml
 # example_parallel.yml
-api_url: [http://localhost:30000/v1, http://localhost:30002/v1, http://localhost:30004/v1]
-api_key: [token-abc123, token-def456, token-ghi789]
+endpoint:
+  - name: local-A
+    api_url: http://localhost:30000/v1
+    api_key: token-abc123
+  - name: local-B
+    api_url: http://localhost:30002/v1
+    api_key: token-def456
+  - name: local-C
+    api_url: http://localhost:30004/v1
+    api_key: token-ghi789
 ```
 
 For more details, see the [black-box evaluation documentation](docs/tutorials/blackbox_evaluation.rst).

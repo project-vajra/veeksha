@@ -19,13 +19,21 @@ Running Benchmarks Against Multiple Endpoints in Parallel
 Using Configuration Files
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-You can specify multiple endpoints using YAML configuration files with list syntax for ``api_url`` and ``api_key``:
+You can specify multiple endpoints using YAML configuration files with a list of ``endpoint`` configurations:
 
 .. code-block:: yaml
 
     # example_parallel.yml
-    api_url: [http://localhost:30000/v1, http://localhost:30002/v1, http://localhost:30004/v1]
-    api_key: [token-abc123, token-def456, token-ghi789]
+    endpoint:
+      - name: local-A
+        api_url: http://localhost:30000/v1
+        api_key: token-abc123
+      - name: local-B
+        api_url: http://localhost:30002/v1
+        api_key: token-def456
+      - name: local-C
+        api_url: http://localhost:30004/v1
+        api_key: token-ghi789
 
     client_config:
       model: meta-llama/Meta-Llama-3-8B-Instruct
@@ -41,8 +49,9 @@ Run the benchmark with:
 How It Works
 ^^^^^^^^^^^^
 
-- **API URL/Key Pairing**: When both ``api_url`` and ``api_key`` are specified as lists, they are automatically paired together (zipped). The lists must be the same length.
+- **Endpoint Configuration**: Each endpoint is defined with its ``api_url``, ``api_key``, and optional ``name`` for identification in logs and results.
 - **Parallel Execution**: Benchmarks are grouped by endpoint and executed in parallel using separate processes. Each endpoint runs its benchmark configurations sequentially, but different endpoints run simultaneously.
+- **List Expansion**: The list of endpoints naturally expands via the config system's list explosion mechanism, creating separate benchmark runs for each endpoint.
 - **Other List Fields**: Any other configuration fields specified as lists will expand via cartesian product as usual, creating multiple benchmark runs per endpoint.
 
 Following figures show evaluations by ``veeksha``:

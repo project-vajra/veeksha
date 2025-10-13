@@ -4,6 +4,7 @@ from typing import Optional
 from veeksha.config.client import ClientConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from veeksha.config.endpoint import EndpointConfig
 from veeksha.config.generators.request_generator.base_generator import (
     BaseRequestGeneratorConfig,
 )
@@ -39,13 +40,9 @@ class BenchmarkConfig:
             "that its possible for the test to timeout first."
         },
     )
-    api_url: Optional[str] = field(
-        default="http://localhost:8000/v1",
-        metadata={"help": "The API URL for the benchmark."},
-    )
-    api_key: Optional[str] = field(
-        default="token-abc123",
-        metadata={"help": "The API key for the benchmark."},
+    endpoint: EndpointConfig = field(
+        default_factory=EndpointConfig,
+        metadata={"help": "The endpoint configuration for the benchmark."},
     )
     client_config: ClientConfig = field(
         default_factory=ClientConfig,

@@ -1,8 +1,10 @@
 timeout: 10000
 max_completed_requests: 5
-api_url: http://localhost:30000/v1
-api_key: token-abc123
 seed: 42
+
+endpoint:
+  api_url: http://localhost:30000/v1
+  api_key: token-abc123
 
 client_config:
   model: meta-llama/Meta-Llama-3-8B-Instruct

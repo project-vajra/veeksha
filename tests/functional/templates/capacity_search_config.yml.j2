@@ -13,8 +13,10 @@ slos:
 benchmark_config:
   timeout: {{ timeout }}
   max_completed_requests: {{ max_completed_requests }}
-  api_url: {{ api_url }}
-  {% if api_key %}api_key: {{ api_key }}{% endif %}
+
+  endpoint:
+    api_url: {{ api_url }}
+    {% if api_key %}api_key: {{ api_key }}{% endif %}
 
   client_config:
     model: {{ model }}

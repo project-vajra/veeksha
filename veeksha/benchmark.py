@@ -349,8 +349,8 @@ def run_benchmark(
     )
 
     setup_api_environment(
-        api_key=benchmark_config.api_key,
-        api_url=benchmark_config.api_url,
+        api_key=benchmark_config.endpoint.api_key,
+        api_url=benchmark_config.endpoint.api_url,
     )
 
     _initialize_min_tokens_support(benchmark_config)
@@ -432,11 +432,11 @@ def _run_benchmarks_for_endpoint(configs_for_endpoint: List[BenchmarkConfig]):
     if platform.system() == "Darwin":
         multiprocessing.set_start_method("fork", force=True)
 
-    endpoint = configs_for_endpoint[0].api_url
+    endpoint_name = configs_for_endpoint[0].endpoint.name or configs_for_endpoint[0].endpoint.api_url
 
     if len(configs_for_endpoint) > 1:
         logger.info(
-            f"Running {len(configs_for_endpoint)} benchmark configurations sequentially for endpoint '{endpoint}'"
+            f"Running {len(configs_for_endpoint)} benchmark configurations sequentially for endpoint '{endpoint_name}'"
         )
 
     for i, benchmark_config in enumerate(configs_for_endpoint):
@@ -457,7 +457,7 @@ if __name__ == "__main__":
 
     grouped_configs = collections.defaultdict(list)
     for cfg in benchmark_configs:
-        grouped_configs[cfg.api_url].append(cfg)
+        grouped_configs[cfg.endpoint.api_url].append(cfg)
 
     num_parallel_jobs = len(grouped_configs)
 
