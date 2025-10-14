@@ -112,6 +112,8 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
 
         most_recent_received_token_time = time.monotonic()
         request_dispatched_at = time.monotonic() - self.start_time
+        # Actual dispatch time (absolute monotonic) measured at client send
+        actual_dispatch_time_monotonic: Optional[float] = None
         # Audit timestamps for streaming
         stream_first_chunk_monotonic: Optional[float] = None
         stream_last_chunk_monotonic: Optional[float] = None
@@ -122,6 +124,8 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             max_tokens_limit = request_config.sampling_params.get("max_tokens")
 
         try:
+            # Record the moment we initiate the HTTP request as actual dispatch time
+            actual_dispatch_time_monotonic = time.monotonic()
             async with session.post(address, json=body, headers=headers) as response:
                 response.raise_for_status()
 
@@ -222,9 +226,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             planned_dispatch_time_monotonic=getattr(
                 request_config, "planned_dispatch_time_monotonic", None
             ),
-            actual_dispatch_time_monotonic=getattr(
-                request_config, "actual_dispatch_time_monotonic", None
-            ),
+            actual_dispatch_time_monotonic=actual_dispatch_time_monotonic,
             scheduling_type=getattr(request_config, "scheduling_type", None),
             stream_first_chunk_monotonic=stream_first_chunk_monotonic,
             stream_last_chunk_monotonic=stream_last_chunk_monotonic,
