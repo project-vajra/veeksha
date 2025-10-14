@@ -7,6 +7,7 @@ from typing import DefaultDict, Dict, Optional
 import pandas as pd
 import rekha as rk
 import wandb
+import numpy as np
 
 from veeksha.config.metrics import MetricsConfig
 from veeksha.logger import init_logger
@@ -374,6 +375,135 @@ class MetricStore:
         self.store_throughput_metrics(output_dir)
         self.store_ttft_violin_plots(output_dir)
         self.store_generation_stalls(output_dir)
+        self.store_dispatch_audits(output_dir)
+        self.store_stream_timing_audits(output_dir)
+
+    def _save_plot(self, fig, output_dir: str, filename: str) -> None:
+        path = os.path.join(output_dir, filename)
+        fig.save(path)
+        if self.should_write_metrics_to_wandb and wandb.run:
+            wandb.log({filename: wandb.Image(path)})
+
+    def _save_json(self, output_dir: str, filename: str, data: Dict) -> None:
+        with open(os.path.join(output_dir, filename), "w") as f:
+            json.dump(data, f)
+
+    def store_dispatch_audits(self, output_dir: str) -> None:
+        rlm = self.request_level_metrics
+        if not len(rlm.dispatch_delta_s):
+            return
+
+        # Prepare data in ms
+        deltas_ms = np.array(rlm.dispatch_delta_s, dtype=float) * 1e3
+        sched_types = np.array(rlm.scheduling_type, dtype=str)
+
+        # Histogram of dispatch deltas
+        if len(deltas_ms) > 0:
+            bins = min(50, max(10, int(np.sqrt(len(deltas_ms)))))
+            counts, edges = np.histogram(deltas_ms, bins=bins)
+            centers = 0.5 * (edges[:-1] + edges[1:])
+            df_hist = pd.DataFrame({"Dispatch Delta (ms)": centers, "Count": counts})
+            fig_hist = rk.bar(
+                df_hist,
+                x="Dispatch Delta (ms)",
+                y="Count",
+                title="Dispatch Delta Histogram (ms)",
+            )
+            self._save_plot(fig_hist, output_dir, "dispatch_delta_hist.png")
+            self._save_json(
+                output_dir,
+                "dispatch_delta_summary.json",
+                {
+                    "count": int(len(deltas_ms)),
+                    "min_ms": float(np.min(deltas_ms)) if len(deltas_ms) else 0.0,
+                    "max_ms": float(np.max(deltas_ms)) if len(deltas_ms) else 0.0,
+                    "mean_ms": float(np.mean(deltas_ms)) if len(deltas_ms) else 0.0,
+                    "p50_ms": float(np.quantile(deltas_ms, 0.5)) if len(deltas_ms) else 0.0,
+                    "p90_ms": float(np.quantile(deltas_ms, 0.9)) if len(deltas_ms) else 0.0,
+                    "p99_ms": float(np.quantile(deltas_ms, 0.99)) if len(deltas_ms) else 0.0,
+                },
+            )
+
+        # Boxplot of dispatch deltas by scheduling type
+        try:
+            df_box = pd.DataFrame(
+                {
+                    "Scheduling Type": sched_types,
+                    "Dispatch Delta (ms)": deltas_ms,
+                }
+            )
+            fig_box = rk.box(
+                df_box,
+                x="Scheduling Type",
+                y="Dispatch Delta (ms)",
+                title="Dispatch Delta by Scheduling Type",
+            )
+            self._save_plot(fig_box, output_dir, "dispatch_delta_by_type.png")
+        except Exception:
+            # Optional; continue even if box plot fails due to small sample sizes
+            pass
+
+        # Planned vs Actual time series (sorted by planned)
+        planned = np.array(rlm.planned_dispatch_time_monotonic, dtype=float)
+        actual = np.array(rlm.actual_dispatch_time_monotonic, dtype=float)
+        if len(planned) and len(actual):
+            valid = np.isfinite(planned) & np.isfinite(actual)
+            planned = planned[valid]
+            actual = actual[valid]
+            if len(planned):
+                base = float(np.min(planned))
+                planned_rel_ms = (planned - base) * 1e3
+                actual_rel_ms = (actual - base) * 1e3
+                order = np.argsort(planned_rel_ms)
+                idx = np.arange(len(order))
+                df_series = pd.DataFrame(
+                    {
+                        "Index": idx,
+                        "Planned (ms)": planned_rel_ms[order],
+                        "Actual (ms)": actual_rel_ms[order],
+                    }
+                )
+                fig_series = rk.line(
+                    df_series,
+                    x="Index",
+                    y=["Planned (ms)", "Actual (ms)"],
+                    title="Planned vs Actual Dispatch Time (ms)",
+                )
+                self._save_plot(fig_series, output_dir, "planned_vs_actual_dispatch.png")
+
+    def store_stream_timing_audits(self, output_dir: str) -> None:
+        rlm = self.request_level_metrics
+        # Prepare arrays (already in seconds in RLM; convert to ms)
+        elapsed_ms = np.array(rlm.stream_elapsed_s or [], dtype=float) * 1e3
+        gap_ms = np.array(rlm.measurement_gap_s or [], dtype=float) * 1e3
+        overhead_ms = np.array(rlm.client_processing_overhead_s or [], dtype=float) * 1e3
+
+        def _hist_plot(values: np.ndarray, label: str, filename: str) -> None:
+            if values.size == 0:
+                return
+            bins = min(50, max(10, int(np.sqrt(values.size))))
+            counts, edges = np.histogram(values, bins=bins)
+            centers = 0.5 * (edges[:-1] + edges[1:])
+            df = pd.DataFrame({label: centers, "Count": counts})
+            fig = rk.bar(df, x=label, y="Count", title=f"{label} Histogram")
+            self._save_plot(fig, output_dir, filename)
+            self._save_json(
+                output_dir,
+                filename.replace(".png", "_summary.json"),
+                {
+                    "count": int(values.size),
+                    "min": float(np.min(values)),
+                    "max": float(np.max(values)),
+                    "mean": float(np.mean(values)),
+                    "p50": float(np.quantile(values, 0.5)),
+                    "p90": float(np.quantile(values, 0.9)),
+                    "p99": float(np.quantile(values, 0.99)),
+                },
+            )
+
+        _hist_plot(elapsed_ms, "Stream Elapsed (ms)", "stream_elapsed_hist.png")
+        _hist_plot(gap_ms, "Measurement Gap (ms)", "measurement_gap_hist.png")
+        _hist_plot(overhead_ms, "Client Processing Overhead (ms)", "client_overhead_hist.png")
 
     def store_deadline_miss_rate_for_target_tbt(self, output_dir: str):
         # plot deadline miss rate for target TBT values
