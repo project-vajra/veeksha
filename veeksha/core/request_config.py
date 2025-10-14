@@ -30,5 +30,10 @@ class RequestConfig(BaseModel):
     wait_after_prev_response_s: Optional[float] = None
     cancel_session_on_failure: Optional[bool] = None
 
+    # dispatch audit metadata (populated by scheduler/dispatcher)
+    planned_dispatch_time_monotonic: Optional[float] = None
+    scheduling_type: Optional[str] = None  # "session" | "non_session"
+    actual_dispatch_time_monotonic: Optional[float] = None
+
     def __str__(self) -> str:
         return f"RequestConfig(id={self.id})"

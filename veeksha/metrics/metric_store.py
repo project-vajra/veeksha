@@ -95,6 +95,23 @@ class MetricStore:
                 f"Min Deadline to Meet Target Deadline Miss Rate of {self.target_deadline_miss_rate * 100}%",
                 self.should_write_metrics_to_wandb,
             ),
+            # dispatch/timing audits
+            "dispatch_delta_s": CDFSketch(
+                "Dispatch Time Delta (actual - planned)",
+                self.should_write_metrics_to_wandb,
+            ),
+            "client_processing_overhead_s": CDFSketch(
+                "Client Processing Overhead per Request",
+                self.should_write_metrics_to_wandb,
+            ),
+            "stream_elapsed_s": CDFSketch(
+                "Stream Elapsed (first to last chunk)",
+                self.should_write_metrics_to_wandb,
+            ),
+            "measurement_gap_s": CDFSketch(
+                "Measurement Gap (stream span - sum inter-token)",
+                self.should_write_metrics_to_wandb,
+            ),
         }
 
         self._init_wandb()
@@ -164,6 +181,14 @@ class MetricStore:
                             target_deadline_miss_rate=self.target_deadline_miss_rate,
                         )
                     )
+                elif metric_name in (
+                    "dispatch_delta_s",
+                    "client_processing_overhead_s",
+                    "stream_elapsed_s",
+                    "measurement_gap_s",
+                ):
+                    value = getattr(request_metrics, metric_name, 0.0) or 0.0
+                    cdf_sketch.put(float(value))
                 else:
                     cdf_sketch.put(getattr(request_metrics, metric_name))
 

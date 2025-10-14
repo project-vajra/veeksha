@@ -18,6 +18,41 @@ class RequestMetrics:
     error_code: Optional[int] = None
     # Request id for correlation when Response is None
     request_id: Optional[int] = None
+    # Dispatch/timing audit fields (absolute monotonic seconds where applicable)
+    planned_dispatch_time_monotonic: Optional[float] = None
+    actual_dispatch_time_monotonic: Optional[float] = None
+    scheduling_type: Optional[str] = None  # "session" | "non_session"
+    # Streaming timing audit
+    stream_first_chunk_monotonic: Optional[float] = None
+    stream_last_chunk_monotonic: Optional[float] = None
+    client_processing_overhead_s: Optional[float] = None
+
+    @cached_property
+    def dispatch_delta_s(self) -> float:
+        if (
+            self.actual_dispatch_time_monotonic is None
+            or self.planned_dispatch_time_monotonic is None
+        ):
+            return 0.0
+        return self.actual_dispatch_time_monotonic - self.planned_dispatch_time_monotonic
+
+    @cached_property
+    def stream_elapsed_s(self) -> float:
+        if (
+            self.stream_first_chunk_monotonic is None
+            or self.stream_last_chunk_monotonic is None
+        ):
+            return 0.0
+        return self.stream_last_chunk_monotonic - self.stream_first_chunk_monotonic
+
+    @cached_property
+    def measurement_gap_s(self) -> float:
+        # Difference between total observed stream span and sum of inter-token times
+        elapsed = self.stream_elapsed_s
+        if elapsed <= 0.0:
+            return 0.0
+        gap = elapsed - self.end_to_end_latency
+        return gap if gap > 0 else 0.0
 
     @cached_property
     def num_total_tokens(self):

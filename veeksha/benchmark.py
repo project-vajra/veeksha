@@ -191,6 +191,16 @@ def dispatch_requests(
         ready = scheduler.pop_ready()
         if ready is not None:
             service_metrics.register_launched_request()
+            # Stamp actual dispatch time (absolute monotonic) for audit
+            try:
+                # mypy: RequestConfig is pydantic BaseModel; allow attribute
+                object.__setattr__(
+                    ready,
+                    "actual_dispatch_time_monotonic",
+                    time.monotonic(),
+                )
+            except Exception:
+                pass
             input_queue.put(ready)
             if scheduled_backlog > 0:
                 scheduled_backlog -= 1

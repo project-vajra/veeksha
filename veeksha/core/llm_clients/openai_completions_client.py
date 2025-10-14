@@ -151,6 +151,10 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
 
         most_recent_received_token_time = time.monotonic()
         request_dispatched_at = time.monotonic() - self.start_time
+        # Audit timestamps for streaming
+        stream_first_chunk_monotonic: Optional[float] = None
+        stream_last_chunk_monotonic: Optional[float] = None
+        client_processing_overhead_s: float = 0.0
         # Respect a local cap on tokens to avoid mismatches with server/tokenizer
         max_tokens_limit = None
         if isinstance(request_config.sampling_params, dict):
@@ -172,6 +176,7 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
                         non_stream_logprobs = lp
                 else:
                     async for data in self._process_stream(response):
+                        before_process = time.monotonic()
                         if "error" in data:
                             err = data.get("error") or {}
                             error_msg = err.get("message", "Unknown error")
@@ -180,7 +185,8 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
                                 code_value if isinstance(code_value, int) else 400
                             )
                             break
-
+                        if stream_first_chunk_monotonic is None:
+                            stream_first_chunk_monotonic = before_process
                         text_chunk = data["choices"][0].get("text", "")
                         if text_chunk:
                             current_tokens_received, previous_token_count = (
@@ -234,6 +240,11 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
                                     ]
                                 elif isinstance(raw_lp, dict):
                                     logprobs_chunks.append(raw_lp)
+                        after_process = time.monotonic()
+                        stream_last_chunk_monotonic = after_process
+                        client_processing_overhead_s += max(
+                            0.0, after_process - before_process
+                        )
 
         except aiohttp.ClientResponseError as e:
             error_response_code = e.status
@@ -264,6 +275,16 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
             error_code=error_response_code,
             error_msg=error_msg,
             request_id=request_config.id,
+            planned_dispatch_time_monotonic=getattr(
+                request_config, "planned_dispatch_time_monotonic", None
+            ),
+            actual_dispatch_time_monotonic=getattr(
+                request_config, "actual_dispatch_time_monotonic", None
+            ),
+            scheduling_type=getattr(request_config, "scheduling_type", None),
+            stream_first_chunk_monotonic=stream_first_chunk_monotonic,
+            stream_last_chunk_monotonic=stream_last_chunk_monotonic,
+            client_processing_overhead_s=client_processing_overhead_s,
         )
 
         generated_response: Optional[Response]

@@ -49,6 +49,7 @@ class DispatchScheduler:
             if (request.session_id is not None) and (
                 request.session_sequence_index is not None
             ):
+                request.scheduling_type = "session"
                 if self._canceled_sessions.get(request.session_id, False):
                     return  # drop requests for canceled sessions
                 # Remember cancel policy from any request in the session
@@ -63,6 +64,10 @@ class DispatchScheduler:
                         ready_at = float(request.anchor_at_s)
                     else:
                         ready_at = self._now() + float(request.dispatch_delay)
+                    # Record planned dispatch time in absolute monotonic seconds
+                    request.planned_dispatch_time_monotonic = (
+                        self._start_monotonic + ready_at
+                    )
                     heapq.heappush(
                         self._ready_heap,
                         _ScheduledItem(
@@ -81,6 +86,10 @@ class DispatchScheduler:
                 anchor_base = max(self._non_session_ready_cursor, self._now())
                 ready_at = anchor_base + float(request.dispatch_delay)
                 self._non_session_ready_cursor = ready_at
+                request.scheduling_type = "non_session"
+                request.planned_dispatch_time_monotonic = (
+                    self._start_monotonic + ready_at
+                )
                 heapq.heappush(
                     self._ready_heap,
                     _ScheduledItem(
@@ -105,6 +114,9 @@ class DispatchScheduler:
                 session_map[next_seq] = req
                 return
             ready_at = last_completion + wait
+            # Record planned dispatch time in absolute monotonic seconds
+            req.planned_dispatch_time_monotonic = self._start_monotonic + ready_at
+            req.scheduling_type = "session"
             next_req_id = req.id if (req.id is not None) else -1
             heapq.heappush(
                 self._ready_heap,
