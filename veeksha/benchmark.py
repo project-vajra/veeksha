@@ -39,6 +39,7 @@ logger = init_logger(__name__)
 PREFETCH_BATCH_SIZE = 1
 PREFETCH_INTERVAL_S = 0.001
 MAX_PREFETCH_BACKLOG = 20
+NEAR_DEADLINE_WINDOW_S = 0.010
 
 
 def setup_api_environment(
@@ -214,7 +215,7 @@ def dispatch_requests(
         time_until = scheduler.time_until_next_ready()
 
         # If very close, spin briefly to avoid overshoot
-        if time_until is not None and time_until <= 0.010:
+        if time_until is not None and time_until <= NEAR_DEADLINE_WINDOW_S:
             deadline = time.monotonic() + time_until
             while time.monotonic() < deadline:
                 if try_dispatch_ready():
@@ -229,7 +230,11 @@ def dispatch_requests(
             and should_send_new_request(service_metrics, num_errored_requests_handled)
             and (scheduled_backlog < MAX_PREFETCH_BACKLOG)
         ):
-            if (time_until is None or time_until >= PREFETCH_INTERVAL_S) and (
+            # Refresh timing after potential spin; gate prefetch away from near deadlines
+            now = time.monotonic()
+            time_until = scheduler.time_until_next_ready()
+            prefetch_safe_threshold = max(PREFETCH_INTERVAL_S, NEAR_DEADLINE_WINDOW_S)
+            if (time_until is None or time_until >= prefetch_safe_threshold) and (
                 now >= next_prefetch_time
             ):
                 for _ in range(PREFETCH_BATCH_SIZE):
