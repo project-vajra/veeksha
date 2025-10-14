@@ -166,7 +166,19 @@ class CDFSketch:
                 step=0,
             )
 
-        fig.save(f"{path}/{plot_name}.png", transparent=False)
+        # Robust white background saving across backends
+        out_path = f"{path}/{plot_name}.png"
+        for kwargs in (
+            {"transparent": False, "facecolor": "white", "edgecolor": "white"},
+            {"transparent": False, "background": "white"},
+            {"transparent": False, "bgcolor": "white"},
+            {"transparent": False},
+        ):
+            try:
+                fig.save(out_path, **kwargs)
+                break
+            except Exception:
+                continue
         self._save_df(df, path, plot_name)
 
     def get_summary(self) -> Dict[str, float]:

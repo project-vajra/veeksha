@@ -384,7 +384,18 @@ class MetricStore:
             fig.update_layout(paper_bgcolor="white", plot_bgcolor="white")
         except Exception:
             pass
-        fig.save(path, transparent=False)
+        # Robust white background saving across backends
+        for kwargs in (
+            {"transparent": False, "facecolor": "white", "edgecolor": "white"},
+            {"transparent": False, "background": "white"},
+            {"transparent": False, "bgcolor": "white"},
+            {"transparent": False},
+        ):
+            try:
+                fig.save(path, **kwargs)
+                break
+            except Exception:
+                continue
         if self.should_write_metrics_to_wandb and wandb.run:
             wandb.log({filename: wandb.Image(path)})
 
@@ -618,7 +629,7 @@ class MetricStore:
             y="ttft",
             labels={"prompt_length": "Number of Prompt Tokens", "ttft": "TTFT (ms)"},
         )
-        fig.save(os.path.join(output_dir, "ttft_violin_plot.png"))
+        self._save_plot(fig, output_dir, "ttft_violin_plot.png")
         if self.should_write_metrics_to_wandb and wandb.run:
             wandb.log(
                 {
@@ -648,7 +659,7 @@ class MetricStore:
             y="Tokens Generated",
             title="Tokens Generated vs Time",
         )
-        fig.save(os.path.join(output_dir, "tokens_generated_vs_time.png"))
+        self._save_plot(fig, output_dir, "tokens_generated_vs_time.png")
         if self.should_write_metrics_to_wandb and wandb.run:
             wandb.log(
                 {
