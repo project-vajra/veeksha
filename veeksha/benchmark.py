@@ -151,17 +151,32 @@ def dispatch_requests(
     next_prefetch_time = 0.0
     generator_exhausted = False
     scheduled_backlog = 0
+    dispatch_clock_offset: Optional[float] = None
 
     def try_dispatch_ready() -> bool:
         ready_local = scheduler.pop_ready()
         if ready_local is None:
             return False
         service_metrics.register_launched_request()
+        now_monotonic = time.monotonic()
+        # Anchor planned times to the first actual dispatch time
         try:
+            planned_raw = getattr(
+                ready_local, "planned_dispatch_time_monotonic", None
+            )
+            nonlocal dispatch_clock_offset
+            if dispatch_clock_offset is None and planned_raw is not None:
+                dispatch_clock_offset = now_monotonic - planned_raw
+            if planned_raw is not None and dispatch_clock_offset is not None:
+                object.__setattr__(
+                    ready_local,
+                    "planned_dispatch_time_monotonic",
+                    planned_raw + dispatch_clock_offset,
+                )
             object.__setattr__(
                 ready_local,
                 "actual_dispatch_time_monotonic",
-                time.monotonic(),
+                now_monotonic,
             )
         except Exception:
             pass
