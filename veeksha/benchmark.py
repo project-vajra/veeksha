@@ -205,7 +205,7 @@ def dispatch_requests(
         time_until = scheduler.time_until_next_ready()
 
         # If very close, spin briefly to avoid overshoot
-        if time_until is not None and time_until <= 0.005:
+        if time_until is not None and time_until <= 0.010:
             deadline = time.monotonic() + time_until
             while time.monotonic() < deadline:
                 if try_dispatch_ready():
