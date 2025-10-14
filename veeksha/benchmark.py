@@ -39,6 +39,7 @@ logger = init_logger(__name__)
 PREFETCH_BATCH_SIZE = 1
 PREFETCH_INTERVAL_S = 0.001
 MAX_PREFETCH_BACKLOG = 20
+NEAR_DEADLINE_WINDOW_S = 0.010
 
 
 def setup_api_environment(
@@ -152,32 +153,34 @@ def dispatch_requests(
     generator_exhausted = False
     scheduled_backlog = 0
 
+    def _dispatch_ready_request(ready) -> None:
+        nonlocal scheduled_backlog, num_errored_requests_handled
+        service_metrics.register_launched_request()
+        if service_metrics.num_requests > service_metrics.max_requests:
+            num_errored_requests_handled += 1
+        input_queue.put(ready)
+        if scheduled_backlog > 0:
+            scheduled_backlog -= 1
+        logger.debug(f"Dispatched request {ready.id}")
+
     while not stop_event.is_set():
         now = time.monotonic()
 
         # immediate dispatch
         ready = scheduler.pop_ready()
         if ready is not None:
-            service_metrics.register_launched_request()
-            input_queue.put(ready)
-            if scheduled_backlog > 0:
-                scheduled_backlog -= 1
-            logger.info(f"Dispatched request {ready.id}")
+            _dispatch_ready_request(ready)
             continue
 
         time_until = scheduler.time_until_next_ready()
 
         # short spin near deadlines (up to 10ms)
-        if time_until is not None and time_until <= 0.010:
+        if time_until is not None and time_until <= NEAR_DEADLINE_WINDOW_S:
             deadline = time.monotonic() + time_until
             while time.monotonic() < deadline:
                 ready = scheduler.pop_ready()
                 if ready is not None:
-                    service_metrics.register_launched_request()
-                    input_queue.put(ready)
-                    if scheduled_backlog > 0:
-                        scheduled_backlog -= 1
-                    logger.info(f"Dispatched request {ready.id}")
+                    _dispatch_ready_request(ready)
                     break
                 time.sleep(0)
             if ready is not None:
@@ -189,7 +192,11 @@ def dispatch_requests(
             and should_send_new_request(service_metrics, num_errored_requests_handled)
             and (scheduled_backlog < MAX_PREFETCH_BACKLOG)
         ):
-            if (time_until is None or time_until >= PREFETCH_INTERVAL_S) and (
+            # gate prefetch away from near deadlines
+            now = time.monotonic()
+            time_until = scheduler.time_until_next_ready()
+            prefetch_safe_threshold = max(PREFETCH_INTERVAL_S, NEAR_DEADLINE_WINDOW_S)
+            if (time_until is None or time_until >= prefetch_safe_threshold) and (
                 now >= next_prefetch_time
             ):
                 for _ in range(PREFETCH_BATCH_SIZE):
@@ -221,11 +228,7 @@ def dispatch_requests(
         # dispatch again after prefetch
         ready = scheduler.pop_ready()
         if ready is not None:
-            service_metrics.register_launched_request()
-            input_queue.put(ready)
-            if scheduled_backlog > 0:
-                scheduled_backlog -= 1
-            logger.info(f"Dispatched request {ready.id}")
+            _dispatch_ready_request(ready)
             continue
 
         # back off briefly
