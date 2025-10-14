@@ -43,7 +43,7 @@ class ServerConfig:
     port: int = field(default=8000, metadata={"help": "Port number for the server"})
 
     api_key: str = field(
-        default="token-abc123", metadata={"help": "API key for server authentication"}
+        default="null", metadata={"help": "API key for server authentication"}
     )
 
     # Hardware/Resource configuration
@@ -75,6 +75,9 @@ class ServerConfig:
             "Example: '{\"enable-prefix-caching\": true}'"
         },
     )
+
+    # Derived field for parsed additional arguments
+    additional_args_dict: Dict[str, Any] = field(init=False)
 
     # Startup configuration
     startup_timeout: int = field(
