@@ -380,7 +380,11 @@ class MetricStore:
 
     def _save_plot(self, fig, output_dir: str, filename: str) -> None:
         path = os.path.join(output_dir, filename)
-        fig.save(path)
+        try:
+            fig.update_layout(paper_bgcolor="white", plot_bgcolor="white")
+        except Exception:
+            pass
+        fig.save(path, transparent=False)
         if self.should_write_metrics_to_wandb and wandb.run:
             wandb.log({filename: wandb.Image(path)})
 

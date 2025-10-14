@@ -142,6 +142,13 @@ class CDFSketch:
             labels={display_name: x_axis_label, "cdf": "CDF"},
         )
 
+        # Ensure white background for saved figures
+        try:
+            # Some backends (e.g., plotly) support update_layout
+            fig.update_layout(paper_bgcolor="white", plot_bgcolor="white")
+        except Exception:
+            pass
+
         if wandb.run and self.should_write_to_wandb:
             wandb_df = df.copy()
             # rename the display column to x_axis_label for wandb plot readability
