@@ -446,21 +446,43 @@ class MetricStore:
                 },
             )
 
-        # Boxplot of dispatch deltas by scheduling type
+        # Boxplot of dispatch deltas by scheduling type (only where planned & actual exist)
         try:
-            df_box = pd.DataFrame(
-                {
-                    "Scheduling Type": sched_types,
-                    "Dispatch Delta (ms)": deltas_ms,
-                }
+            planned_arr = np.array(rlm.planned_dispatch_time_monotonic, dtype=float)
+            actual_arr = np.array(rlm.actual_dispatch_time_monotonic, dtype=float)
+            valid_mask = (
+                np.isfinite(planned_arr)
+                & np.isfinite(actual_arr)
+                & (planned_arr > 0)
+                & (actual_arr > 0)
             )
-            fig_box = rk.box(
-                df_box,
-                x="Scheduling Type",
-                y="Dispatch Delta (ms)",
-                title="Dispatch Delta by Scheduling Type",
-            )
-            self._save_plot(fig_box, output_dir, "dispatch_delta_by_type.png")
+            # align arrays
+            deltas_valid = deltas_ms[: len(valid_mask)][valid_mask]
+            types_valid = sched_types[: len(valid_mask)][valid_mask]
+            # keep only known types
+            keep = (types_valid == "session") | (types_valid == "non_session")
+            deltas_valid = deltas_valid[keep]
+            types_valid = types_valid[keep]
+            # save counts for visibility
+            type_counts = {
+                "session": int(np.sum(types_valid == "session")),
+                "non_session": int(np.sum(types_valid == "non_session")),
+            }
+            self._save_json(output_dir, "dispatch_delta_by_type_counts.json", type_counts)
+            if deltas_valid.size > 0:
+                df_box = pd.DataFrame(
+                    {
+                        "Scheduling Type": types_valid,
+                        "Dispatch Delta (ms)": deltas_valid,
+                    }
+                )
+                fig_box = rk.box(
+                    df_box,
+                    x="Scheduling Type",
+                    y="Dispatch Delta (ms)",
+                    title="Dispatch Delta by Scheduling Type",
+                )
+                self._save_plot(fig_box, output_dir, "dispatch_delta_by_type.png")
         except Exception:
             # Optional; continue even if box plot fails due to small sample sizes
             pass
@@ -469,7 +491,12 @@ class MetricStore:
         planned = np.array(rlm.planned_dispatch_time_monotonic, dtype=float)
         actual = np.array(rlm.actual_dispatch_time_monotonic, dtype=float)
         if len(planned) and len(actual):
-            valid = np.isfinite(planned) & np.isfinite(actual)
+            valid = (
+                np.isfinite(planned)
+                & np.isfinite(actual)
+                & (planned > 0)
+                & (actual > 0)
+            )
             planned = planned[valid]
             actual = actual[valid]
             if len(planned):
@@ -485,13 +512,40 @@ class MetricStore:
                         "Actual (ms)": actual_rel_ms[order],
                     }
                 )
-                fig_series = rk.line(
-                    df_series,
-                    x="Index",
-                    y=["Planned (ms)", "Actual (ms)"],
-                    title="Planned vs Actual Dispatch Time (ms)",
+                # Save CSV for quick inspection
+                try:
+                    self._ensure_dir(output_dir)
+                    df_series.to_csv(
+                        os.path.join(output_dir, "planned_vs_actual_dispatch.csv"),
+                        index=False,
+                    )
+                except Exception:
+                    pass
+                try:
+                    fig_series = rk.line(
+                        df_series,
+                        x="Index",
+                        y=["Planned (ms)", "Actual (ms)"],
+                        title="Planned vs Actual Dispatch Time (ms)",
+                    )
+                except Exception:
+                    # Fallback to long-form plotting with color legend
+                    df_long = df_series.melt(
+                        id_vars=["Index"],
+                        value_vars=["Planned (ms)", "Actual (ms)"],
+                        var_name="Series",
+                        value_name="Value",
+                    )
+                    fig_series = rk.line(
+                        df_long,
+                        x="Index",
+                        y="Value",
+                        color="Series",
+                        title="Planned vs Actual Dispatch Time (ms)",
+                    )
+                self._save_plot(
+                    fig_series, output_dir, "planned_vs_actual_dispatch.png"
                 )
-                self._save_plot(fig_series, output_dir, "planned_vs_actual_dispatch.png")
 
     def store_stream_timing_audits(self, output_dir: str) -> None:
         # group under audits/stream
