@@ -152,22 +152,61 @@ def dispatch_requests(
     generator_exhausted = False
     scheduled_backlog = 0
 
+    def try_dispatch_ready() -> bool:
+        ready_local = scheduler.pop_ready()
+        if ready_local is None:
+            return False
+        service_metrics.register_launched_request()
+        try:
+            object.__setattr__(
+                ready_local,
+                "actual_dispatch_time_monotonic",
+                time.monotonic(),
+            )
+        except Exception:
+            pass
+        input_queue.put(ready_local)
+        nonlocal scheduled_backlog
+        if scheduled_backlog > 0:
+            scheduled_backlog -= 1
+        logger.info(f"Dispatched request {ready_local.id}")
+        return True
+
     while not stop_event.is_set():
         now = time.monotonic()
-        # Prefetch from generator if capacity allows
+
+        # Immediate dispatch path
+        if try_dispatch_ready():
+            continue
+
+        # Look ahead for next ready time
+        time_until = scheduler.time_until_next_ready()
+
+        # If very close, spin briefly to avoid overshoot
+        if time_until is not None and time_until <= 0.002:
+            deadline = time.monotonic() + time_until
+            while time.monotonic() < deadline:
+                if try_dispatch_ready():
+                    break
+                time.sleep(0)
+            if try_dispatch_ready():
+                continue
+
+        # Only prefetch when not too close to next deadline
         if (
             (not generator_exhausted)
             and should_send_new_request(service_metrics, num_errored_requests_handled)
             and (scheduled_backlog < MAX_PREFETCH_BACKLOG)
         ):
-            if now >= next_prefetch_time:
+            if (time_until is None or time_until >= PREFETCH_INTERVAL_S) and (
+                now >= next_prefetch_time
+            ):
                 for _ in range(PREFETCH_BATCH_SIZE):
                     if scheduled_backlog >= MAX_PREFETCH_BACKLOG:
                         break
                     try:
                         request_config = request_generator.get_request()
                     except StopIteration:
-                        # stop prefetching but keep dispatching already-scheduled
                         generator_exhausted = True
                         break
 
@@ -187,16 +226,11 @@ def dispatch_requests(
                     scheduled_backlog += 1
                 next_prefetch_time = now + PREFETCH_INTERVAL_S
 
-        # Attempt to pop a ready request
-        ready = scheduler.pop_ready()
-        if ready is not None:
-            service_metrics.register_launched_request()
-            input_queue.put(ready)
-            if scheduled_backlog > 0:
-                scheduled_backlog -= 1
-            logger.info(f"Dispatched request {ready.id}")
+        # Try dispatch again after prefetch
+        if try_dispatch_ready():
             continue
 
+        # Sleep until next eligible time (small cap)
         time_until = scheduler.time_until_next_ready()
         sleep_time = 0.01 if time_until is None else min(max(time_until, 0.0), 0.1)
         time.sleep(sleep_time)
