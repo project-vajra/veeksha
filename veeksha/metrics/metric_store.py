@@ -378,7 +378,11 @@ class MetricStore:
         self.store_dispatch_audits(output_dir)
         self.store_stream_timing_audits(output_dir)
 
+    def _ensure_dir(self, path: str) -> None:
+        os.makedirs(path, exist_ok=True)
+
     def _save_plot(self, fig, output_dir: str, filename: str) -> None:
+        self._ensure_dir(output_dir)
         path = os.path.join(output_dir, filename)
         try:
             fig.update_layout(paper_bgcolor="white", plot_bgcolor="white")
@@ -404,6 +408,9 @@ class MetricStore:
             json.dump(data, f)
 
     def store_dispatch_audits(self, output_dir: str) -> None:
+        # group under audits/dispatch
+        output_dir = os.path.join(output_dir, "audits", "dispatch")
+        self._ensure_dir(output_dir)
         rlm = self.request_level_metrics
         if not len(rlm.dispatch_delta_s):
             return
@@ -487,6 +494,9 @@ class MetricStore:
                 self._save_plot(fig_series, output_dir, "planned_vs_actual_dispatch.png")
 
     def store_stream_timing_audits(self, output_dir: str) -> None:
+        # group under audits/stream
+        output_dir = os.path.join(output_dir, "audits", "stream")
+        self._ensure_dir(output_dir)
         rlm = self.request_level_metrics
         # Prepare arrays (already in seconds in RLM; convert to ms)
         elapsed_ms = np.array(rlm.stream_elapsed_s or [], dtype=float) * 1e3
