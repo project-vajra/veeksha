@@ -271,7 +271,7 @@ def dispatch_requests(
 
         # Sleep until next eligible time (small cap)
         time_until = scheduler.time_until_next_ready()
-        sleep_time = 0.01 if time_until is None else min(max(time_until, 0.0001), 0.1)
+        sleep_time = 0.01 if time_until is None else min(max(time_until, 0.001), 0.1)
         time.sleep(sleep_time)
 
 
