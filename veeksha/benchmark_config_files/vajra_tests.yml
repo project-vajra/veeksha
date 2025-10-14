@@ -13,7 +13,7 @@ client_config:
   num_concurrent_requests_per_client: 10
 
 metrics_config:
-  output_dir: ./veeksha/output
+  output_dir: ../vajra/veeksha/output
 
 request_generator_config:
   type: synthetic
