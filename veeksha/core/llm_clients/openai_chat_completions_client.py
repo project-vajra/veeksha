@@ -111,7 +111,16 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         previous_token_count = 0
 
         most_recent_received_token_time = time.monotonic()
-        request_dispatched_at = time.monotonic() - self.start_time
+        # Align dispatch timestamp to the shared dispatch clock if available
+        _now = time.monotonic()
+        clock_zero = getattr(request_config, "dispatch_clock_zero_monotonic", None)
+        actual_dispatch_ts = getattr(
+            request_config, "actual_dispatch_time_monotonic", None
+        )
+        if clock_zero is not None:
+            request_dispatched_at = (actual_dispatch_ts or _now) - float(clock_zero)
+        else:
+            request_dispatched_at = _now - self.start_time
         # Actual dispatch time (absolute monotonic) measured at client send
         actual_dispatch_time_monotonic: Optional[float] = None
         # Audit timestamps for streaming
@@ -226,7 +235,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             planned_dispatch_time_monotonic=getattr(
                 request_config, "planned_dispatch_time_monotonic", None
             ),
-            actual_dispatch_time_monotonic=actual_dispatch_time_monotonic,
+            actual_dispatch_time_monotonic=actual_dispatch_ts,
             scheduling_type=getattr(request_config, "scheduling_type", None),
             stream_first_chunk_monotonic=stream_first_chunk_monotonic,
             stream_last_chunk_monotonic=stream_last_chunk_monotonic,
