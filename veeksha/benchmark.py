@@ -220,7 +220,10 @@ def dispatch_requests(
             while time.monotonic() < deadline:
                 if try_dispatch_ready():
                     break
-                time.sleep(0)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                time.sleep(min(remaining, 0.001))
             if try_dispatch_ready():
                 continue
 
@@ -268,7 +271,7 @@ def dispatch_requests(
 
         # Sleep until next eligible time (small cap)
         time_until = scheduler.time_until_next_ready()
-        sleep_time = 0.01 if time_until is None else min(max(time_until, 0.0), 0.1)
+        sleep_time = 0.01 if time_until is None else min(max(time_until, 0.001), 0.1)
         time.sleep(sleep_time)
 
 
