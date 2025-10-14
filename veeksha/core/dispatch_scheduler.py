@@ -33,6 +33,7 @@ class DispatchScheduler:
         self._cancel_policy_by_session: Dict[int, bool] = {}
         self._id_to_session_seq: Dict[int, Tuple[Optional[int], Optional[int]]] = {}
         self._start_monotonic = time.monotonic()
+        self._non_session_ready_cursor: float = 0.0
 
     def _now(self) -> float:
         return time.monotonic() - self._start_monotonic
@@ -77,7 +78,9 @@ class DispatchScheduler:
                     self._maybe_release_next_locked(request.session_id)
             else:
                 # Non-session request: schedule by dispatch_delay
-                ready_at = self._now() + float(request.dispatch_delay)
+                anchor_base = max(self._non_session_ready_cursor, self._now())
+                ready_at = anchor_base + float(request.dispatch_delay)
+                self._non_session_ready_cursor = ready_at
                 heapq.heappush(
                     self._ready_heap,
                     _ScheduledItem(

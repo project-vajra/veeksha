@@ -42,11 +42,10 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self.past_prompts: Dict[int, str] = {}
         self.corpus_lines = corpus_lines
         self._remap_seed_for_save: Optional[int] = None
-        sm = self.seed_manager
-        self.prompt_rng = sm.random("prompt")
-        self.interval_rng_factory = sm.numpy_factory("interval")
-        self.session_rng_factory = sm.numpy_factory("session")
-        self.rng = self.prompt_rng
+        self._epoch = 0
+        self.prompt_rng = self.seed_manager.random("prompt")
+        self.interval_rng_factory = self.seed_manager.numpy_factory("interval")
+        self.session_rng_factory = self.seed_manager.numpy_factory("session")
 
         raw_trace_df = load_trace(self.config.trace_file)
 
@@ -88,23 +87,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                         ast.literal_eval
                     )
                 if self.config.remap_hash_ids:
-                    unique_ids = set()
-                    for ids in self.trace_df["hash_ids"]:
-                        unique_ids.update(ids)
-                    # unbias permutation
-                    unique_list = sorted(unique_ids)
-                    permuted = unique_list.copy()
-                    rng = self.session_rng_factory()
-                    rng.shuffle(permuted)
-                    id_map: Dict[int, int] = {
-                        src: dst for src, dst in zip(unique_list, permuted)
-                    }
-                    logger.info(
-                        f"Applying hash-id remapping with session RNG to {len(unique_list)} unique ids"
-                    )
-                    self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
-                        lambda lst: [id_map[x] for x in lst]
-                    )
+                    self._remap_trace_hash_ids()
         else:
             if self.corpus_lines is None:
                 raise ValueError(
@@ -121,7 +104,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 seed_manager=self.seed_manager.child("session"),
             )
 
-            self.trace_df_with_sessions = self.trace_df.pipe(
+            self.trace_df = self.trace_df.pipe(
                 session_generator.generate_sessions,
             ).pipe(
                 # get next request intervals again because session sampling shuffles sessions
@@ -134,7 +117,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
             if self.config.session_generator_config.save_as_trace_file:
                 # convert timestamps to milliseconds (default time units) before saving
-                session_df_for_saving = self.trace_df_with_sessions.copy()
+                session_df_for_saving = self.trace_df.copy()
                 session_df_for_saving["timestamp"] = (
                     session_df_for_saving["timestamp"] * 1000
                 )
@@ -326,11 +309,12 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     )
                     self._wrap_warning_logged = True
                 self.request_idx = 0
+                if self.config.remap_hash_ids:
+                    self._epoch += 1
+                    self._remap_trace_hash_ids()
+                    self.past_prompts.clear()
 
-        if self.config.session_generator_config is not None:
-            request_to_send = self.trace_df_with_sessions.iloc[self.request_idx]
-        else:
-            request_to_send = self.trace_df.iloc[self.request_idx]
+        request_to_send = self.trace_df.iloc[self.request_idx]
 
         dispatch_delay = request_to_send["inter_request_time"]
 
@@ -369,7 +353,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 tokenizer=self.tokenizer,
                 num_prompt_tokens=remaining_prompt_tokens,
                 corpus_lines=self.corpus_lines,
-                rng=self.rng,
+                rng=self.prompt_rng,
             )
 
         prompt = (instruction + prompt) if instruction else prompt
@@ -405,8 +389,38 @@ class TraceRequestGenerator(BaseRequestGenerator):
         return request_config
 
     def capacity(self) -> int:
-        return (
-            len(self.trace_df)
-            if self.config.session_generator_config is None
-            else len(self.trace_df_with_sessions)
-        )
+        return len(self.trace_df)
+
+    def _build_epoch_hash_id_map(self, unique_list: List[int]) -> Dict[int, int]:
+        """Build a collision-free mapping for the current epoch."""
+        rng = self.seed_manager.random("hash_remap", f"epoch_{self._epoch}")
+
+        used: Dict[int, bool] = {}
+        id_map: Dict[int, int] = {}
+        for src in unique_list:
+            dst = rng.getrandbits(32)
+            _i = 0
+            while dst == 0 or dst in used:
+                dst = rng.getrandbits(32)
+                _i += 1
+                if _i > 1000:
+                    raise RuntimeError(
+                        f"Could not generate a non-colliding positive remapped ID for {src}"
+                    )
+            id_map[src] = int(dst)
+            used[dst] = True
+
+        return id_map
+
+    def _remap_trace_hash_ids(self) -> None:
+        """Remap prefix hash IDs in-place for the unified trace dataframe."""
+        unique_ids = set()
+        for ids in self.trace_df["hash_ids"]:
+            unique_ids.update(ids)
+        unique_list = sorted(unique_ids)
+        if unique_list:
+            id_map = self._build_epoch_hash_id_map(unique_list)
+            logger.info("Remapping prefix hash IDs on wrap.")
+            self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
+                lambda lst: [id_map[x] for x in lst]
+            )

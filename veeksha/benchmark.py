@@ -41,6 +41,7 @@ logger = init_logger(__name__)
 
 PREFETCH_BATCH_SIZE = 1
 PREFETCH_INTERVAL_S = 0.001
+MAX_PREFETCH_BACKLOG = 20
 
 
 def setup_api_environment(
@@ -152,15 +153,20 @@ def dispatch_requests(
     # scheduler provided by caller
     next_prefetch_time = 0.0
     generator_exhausted = False
+    scheduled_backlog = 0
 
     while not stop_event.is_set():
         now = time.monotonic()
         # Prefetch from generator if capacity allows
-        if (not generator_exhausted) and should_send_new_request(
-            service_metrics, num_errored_requests_handled
+        if (
+            (not generator_exhausted)
+            and should_send_new_request(service_metrics, num_errored_requests_handled)
+            and (scheduled_backlog < MAX_PREFETCH_BACKLOG)
         ):
             if now >= next_prefetch_time:
                 for _ in range(PREFETCH_BATCH_SIZE):
+                    if scheduled_backlog >= MAX_PREFETCH_BACKLOG:
+                        break
                     try:
                         request_config = request_generator.get_request()
                     except StopIteration:
@@ -181,6 +187,7 @@ def dispatch_requests(
                         )
 
                     scheduler.add_request(request_config)
+                    scheduled_backlog += 1
                 next_prefetch_time = now + PREFETCH_INTERVAL_S
 
         # Attempt to pop a ready request
@@ -188,6 +195,8 @@ def dispatch_requests(
         if ready is not None:
             service_metrics.register_launched_request()
             input_queue.put(ready)
+            if scheduled_backlog > 0:
+                scheduled_backlog -= 1
             logger.info(f"Dispatched request {ready.id}")
             continue
 
