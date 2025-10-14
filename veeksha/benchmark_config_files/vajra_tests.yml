@@ -1,0 +1,28 @@
+timeout: 30
+api_url: http://localhost:9000/v1
+max_completed_requests: 64
+seed: 42
+vajra_api_url: http://localhost:9000
+vajra_plots_output_dir: vajra_plots
+
+client_config:
+  model: meta-llama/Meta-Llama-3-8B-Instruct
+  request_timeout: 30
+  llm_api: openai_chat
+  num_clients: 20
+  num_concurrent_requests_per_client: 10
+
+metrics_config:
+  output_dir: veeksha/output
+
+request_generator_config:
+  type: synthetic
+  interval_generator_config:
+    type: poisson
+    qps: 5
+  length_generator_config:
+    type: uniform
+    min_tokens: 25
+    max_tokens: 100
+    prefill_to_decode_ratio: 2
+    # trace_file: data/processed_traces/sharegpt_8k_stats_llama2_tokenizer_filtered_v2.csv
