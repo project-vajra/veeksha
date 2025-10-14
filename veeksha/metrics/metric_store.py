@@ -150,6 +150,22 @@ class MetricStore:
         self.num_requests += 1
 
     def add_request_metrics(self, request_metrics: RequestMetrics):
+        # Strict validation of critical audit fields to avoid silent omissions
+        if request_metrics.request_id is None:
+            raise ValueError("Missing request_id in RequestMetrics")
+        if request_metrics.planned_dispatch_time_monotonic is None:
+            raise ValueError(
+                f"Missing planned_dispatch_time_monotonic for request_id={request_metrics.request_id}"
+            )
+        if request_metrics.actual_dispatch_time_monotonic is None:
+            raise ValueError(
+                f"Missing actual_dispatch_time_monotonic for request_id={request_metrics.request_id}"
+            )
+        if not request_metrics.scheduling_type:
+            raise ValueError(
+                f"Missing scheduling_type for request_id={request_metrics.request_id}"
+            )
+
         if request_metrics.error_code:
             # Do not add errored requests to metric sketches, but persist
             # dispatch times at request-level

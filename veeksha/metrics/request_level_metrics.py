@@ -48,6 +48,19 @@ class RequestLevelMetrics:
         self.min_tbt_deadline_to_meet: List[float] = []
 
     def put(self, request_metrics: RequestMetrics):
+        # Enforce presence of critical audit fields
+        if request_metrics.planned_dispatch_time_monotonic is None:
+            raise ValueError(
+                f"Missing planned_dispatch_time_monotonic for request_id={request_metrics.request_id}"
+            )
+        if request_metrics.actual_dispatch_time_monotonic is None:
+            raise ValueError(
+                f"Missing actual_dispatch_time_monotonic for request_id={request_metrics.request_id}"
+            )
+        if not request_metrics.scheduling_type:
+            raise ValueError(
+                f"Missing scheduling_type for request_id={request_metrics.request_id}"
+            )
         self.request_dispatched_at.append(request_metrics.request_dispatched_at)
         # audit values (store best-effort; default to 0/empty if None)
         self.planned_dispatch_time_monotonic.append(
@@ -113,6 +126,18 @@ class RequestLevelMetrics:
 
     def put_dispatch_only(self, request_metrics: RequestMetrics):
         """Record only dispatch time for errored requests."""
+        if request_metrics.planned_dispatch_time_monotonic is None:
+            raise ValueError(
+                f"Missing planned_dispatch_time_monotonic for request_id={request_metrics.request_id} (errored)"
+            )
+        if request_metrics.actual_dispatch_time_monotonic is None:
+            raise ValueError(
+                f"Missing actual_dispatch_time_monotonic for request_id={request_metrics.request_id} (errored)"
+            )
+        if not request_metrics.scheduling_type:
+            raise ValueError(
+                f"Missing scheduling_type for request_id={request_metrics.request_id} (errored)"
+            )
         self.request_dispatched_at.append(request_metrics.request_dispatched_at)
         self.planned_dispatch_time_monotonic.append(
             request_metrics.planned_dispatch_time_monotonic or 0.0

@@ -171,6 +171,21 @@ class RequestsLauncher:
                 error_msg=str(e),
                 error_code=error_code,
                 request_id=request_config.id if request_config else None,
+                planned_dispatch_time_monotonic=(
+                    getattr(request_config, "planned_dispatch_time_monotonic", None)
+                    if request_config is not None
+                    else None
+                ),
+                actual_dispatch_time_monotonic=(
+                    getattr(request_config, "actual_dispatch_time_monotonic", None)
+                    if request_config is not None
+                    else None
+                ),
+                scheduling_type=(
+                    getattr(request_config, "scheduling_type", None)
+                    if request_config is not None
+                    else None
+                ),
             )
             await loop.run_in_executor(None, put_to_queue, (metrics, None))
         except Exception:
