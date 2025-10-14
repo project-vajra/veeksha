@@ -196,16 +196,17 @@ def dispatch_requests(
                     scheduler.add_request(request_config)
                     scheduled_backlog += 1
                 next_prefetch_time = now + PREFETCH_INTERVAL_S
-                
-        request_config.benchmark_id = benchmark_id
 
         # Attempt to pop a ready request
         ready = scheduler.pop_ready()
         if ready is not None:
+            ready.benchmark_id = benchmark_id
+            # Request ID should always be set by the generator
+            assert ready.id is not None, f"Request {ready} has no ID"
             emit_dashboard_event(RequestStartedEvent(
-                request_id = request_config.id,
+                request_id = ready.id,
                 timestamp = time.time(),
-                input_tokens = request_config.prompt[1],
+                input_tokens = ready.prompt[1],
                 benchmark_id = benchmark_id
             ))
 

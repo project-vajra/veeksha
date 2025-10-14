@@ -462,31 +462,46 @@ class VeekshaDashboard(App):
             except:
                 pass
 
-        # Get stats
-        stats = self.dashboard_state.get_aggregate_stats(active_id)
+        # Get thread-safe snapshot of stats
+        (
+            completed_count,
+            error_count,
+            total_requests,
+            ttft_list,
+            tpot_list,
+            tbt_list,
+            latency_list,
+        ) = self.dashboard_state.get_aggregate_stats_snapshot(active_id)
         duration = self.dashboard_state.get_benchmark_duration(active_id)
 
+        # Calculate averages from the snapshot data
+        from statistics import mean
+        avg_ttft = mean(ttft_list) if ttft_list else 0.0
+        avg_tpot = mean(tpot_list) if tpot_list else 0.0
+        avg_tbt = mean(tbt_list) if tbt_list else 0.0
+        avg_latency = mean(latency_list) if latency_list else 0.0
+
         # Update metric cards on Metrics tab
-        self.total_requests_card.value = str(stats.total_requests)
-        self.completed_card.value = str(stats.completed_count)
-        self.errors_card.value = str(stats.error_count)
+        self.total_requests_card.value = str(total_requests)
+        self.completed_card.value = str(completed_count)
+        self.errors_card.value = str(error_count)
         self.duration_card.value = f"{duration:.1f}s"
-        self.ttft_card.value = f"{stats.avg_ttft_ms:.1f}ms"
-        self.tpot_card.value = f"{stats.avg_tpot_ms:.1f}ms"
-        self.tbt_card.value = f"{stats.avg_tbt_ms:.1f}ms"
-        self.latency_card.value = f"{stats.avg_latency_ms:.0f}ms"
+        self.ttft_card.value = f"{avg_ttft:.1f}ms"
+        self.tpot_card.value = f"{avg_tpot:.1f}ms"
+        self.tbt_card.value = f"{avg_tbt:.1f}ms"
+        self.latency_card.value = f"{avg_latency:.0f}ms"
 
         # Update metric cards on Requests tab
-        self.total_requests_card_requests.value = str(stats.total_requests)
-        self.completed_card_requests.value = str(stats.completed_count)
-        self.errors_card_requests.value = str(stats.error_count)
+        self.total_requests_card_requests.value = str(total_requests)
+        self.completed_card_requests.value = str(completed_count)
+        self.errors_card_requests.value = str(error_count)
         self.duration_card_requests.value = f"{duration:.1f}s"
 
-        # Update charts - directly set data from deques
-        self.ttft_chart.data = list(stats.recent_ttft_ms)
-        self.tpot_chart.data = list(stats.recent_tpot_ms)
-        self.tbt_chart.data = list(stats.recent_tbt_ms)
-        self.latency_chart.data = list(stats.recent_latency_ms)
+        # Update charts - use the snapshot data
+        self.ttft_chart.data = ttft_list
+        self.tpot_chart.data = tpot_list
+        self.tbt_chart.data = tbt_list
+        self.latency_chart.data = latency_list
 
         # Update benchmark start and end times for time-based X-axis
         active_benchmark = self.dashboard_state.get_active_benchmark()

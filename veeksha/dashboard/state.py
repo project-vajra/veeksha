@@ -344,12 +344,44 @@ class DashboardState:
             return []
 
     def get_aggregate_stats(self, benchmark_id: Optional[str] = None) -> AggregateStats:
-        """Get aggregate stats for a specific benchmark"""
+        """Get aggregate stats for a specific benchmark with thread-safe deque copies"""
         with self._lock:
             bid = benchmark_id or self.active_benchmark_id
             if bid in self.benchmarks:
-                return self.benchmarks[bid].aggregate_stats
+                stats = self.benchmarks[bid].aggregate_stats
+                # Create a copy with snapshot of deques to avoid "deque mutated during iteration"
+                return AggregateStats(
+                    completed_count=stats.completed_count,
+                    error_count=stats.error_count,
+                    total_requests=stats.total_requests,
+                    recent_ttft_ms=deque(list(stats.recent_ttft_ms), maxlen=100),
+                    recent_tpot_ms=deque(list(stats.recent_tpot_ms), maxlen=100),
+                    recent_tbt_ms=deque(list(stats.recent_tbt_ms), maxlen=100),
+                    recent_latency_ms=deque(list(stats.recent_latency_ms), maxlen=100),
+                )
             return AggregateStats()
+
+    def get_aggregate_stats_snapshot(self, benchmark_id: Optional[str] = None) -> tuple:
+        """Get a thread-safe snapshot of aggregate stats data
+
+        Returns:
+            Tuple of (completed_count, error_count, total_requests,
+                     ttft_list, tpot_list, tbt_list, latency_list)
+        """
+        with self._lock:
+            bid = benchmark_id or self.active_benchmark_id
+            if bid in self.benchmarks:
+                stats = self.benchmarks[bid].aggregate_stats
+                return (
+                    stats.completed_count,
+                    stats.error_count,
+                    stats.total_requests,
+                    list(stats.recent_ttft_ms),  # Create copies while holding lock
+                    list(stats.recent_tpot_ms),
+                    list(stats.recent_tbt_ms),
+                    list(stats.recent_latency_ms),
+                )
+            return (0, 0, 0, [], [], [], [])
 
     def get_capacity_search_state(
         self, benchmark_id: Optional[str] = None
