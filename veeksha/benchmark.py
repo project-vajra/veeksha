@@ -154,13 +154,44 @@ def dispatch_requests(
 
     while not stop_event.is_set():
         now = time.monotonic()
-        # Prefetch from generator if capacity allows
+
+        # immediate dispatch
+        ready = scheduler.pop_ready()
+        if ready is not None:
+            service_metrics.register_launched_request()
+            input_queue.put(ready)
+            if scheduled_backlog > 0:
+                scheduled_backlog -= 1
+            logger.info(f"Dispatched request {ready.id}")
+            continue
+
+        time_until = scheduler.time_until_next_ready()
+
+        # short spin near deadlines (up to 10ms)
+        if time_until is not None and time_until <= 0.010:
+            deadline = time.monotonic() + time_until
+            while time.monotonic() < deadline:
+                ready = scheduler.pop_ready()
+                if ready is not None:
+                    service_metrics.register_launched_request()
+                    input_queue.put(ready)
+                    if scheduled_backlog > 0:
+                        scheduled_backlog -= 1
+                    logger.info(f"Dispatched request {ready.id}")
+                    break
+                time.sleep(0)
+            if ready is not None:
+                continue
+
+        # prefetch away from near deadlines
         if (
             (not generator_exhausted)
             and should_send_new_request(service_metrics, num_errored_requests_handled)
             and (scheduled_backlog < MAX_PREFETCH_BACKLOG)
         ):
-            if now >= next_prefetch_time:
+            if (time_until is None or time_until >= PREFETCH_INTERVAL_S) and (
+                now >= next_prefetch_time
+            ):
                 for _ in range(PREFETCH_BATCH_SIZE):
                     if scheduled_backlog >= MAX_PREFETCH_BACKLOG:
                         break
@@ -187,7 +218,7 @@ def dispatch_requests(
                     scheduled_backlog += 1
                 next_prefetch_time = now + PREFETCH_INTERVAL_S
 
-        # Attempt to pop a ready request
+        # dispatch again after prefetch
         ready = scheduler.pop_ready()
         if ready is not None:
             service_metrics.register_launched_request()
@@ -197,6 +228,7 @@ def dispatch_requests(
             logger.info(f"Dispatched request {ready.id}")
             continue
 
+        # back off briefly
         time_until = scheduler.time_until_next_ready()
         sleep_time = 0.01 if time_until is None else min(max(time_until, 0.0), 0.1)
         time.sleep(sleep_time)
