@@ -121,7 +121,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 session_df_for_saving["timestamp"] = (
                     session_df_for_saving["timestamp"] * 1000
                 )
-                save_suffix = f"_remapped" if self.config.remap_hash_ids else ""
+                save_suffix = ""
                 session_generator.save_requests_as_trace(
                     session_df_for_saving,
                     save_suffix=save_suffix,
@@ -309,7 +309,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     )
                     self._wrap_warning_logged = True
                 self.request_idx = 0
-                if self.config.remap_hash_ids:
+                if self.config.use_trace_prefix_hash_ids and self.config.remap_hash_ids:
                     self._epoch += 1
                     self._remap_trace_hash_ids()
                     self.past_prompts.clear()
