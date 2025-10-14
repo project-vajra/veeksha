@@ -562,6 +562,30 @@ class MetricStore:
                 self._save_plot(
                     fig_series, output_dir, "planned_vs_actual_dispatch.png"
                 )
+                # Residuals (Actual - Planned) vs index (sorted by planned)
+                try:
+                    residuals_ms = actual_rel_ms[order] - planned_rel_ms[order]
+                    df_res = pd.DataFrame(
+                        {"Index": idx, "Residual (ms)": residuals_ms}
+                    )
+                    fig_res = rk.line(
+                        df_res,
+                        x="Index",
+                        y="Residual (ms)",
+                        title="Dispatch Residuals (Actual - Planned) (ms)",
+                    )
+                    self._save_plot(fig_res, output_dir, "dispatch_residuals_line.png")
+                    # Save raw residuals JSON for external plotting/debugging
+                    self._save_json(
+                        output_dir,
+                        "dispatch_residuals_ms.json",
+                        {
+                            "Index": df_res["Index"].tolist(),
+                            "Residual (ms)": [float(x) for x in residuals_ms],
+                        },
+                    )
+                except Exception:
+                    pass
 
     def store_stream_timing_audits(self, output_dir: str) -> None:
         # group under audits/stream
