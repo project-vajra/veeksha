@@ -220,10 +220,7 @@ def dispatch_requests(
             while time.monotonic() < deadline:
                 if try_dispatch_ready():
                     break
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    break
-                time.sleep(min(remaining, 0.001))
+                time.sleep(0.0001)
             if try_dispatch_ready():
                 continue
 
