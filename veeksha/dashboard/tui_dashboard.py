@@ -56,14 +56,21 @@ class PlotextChart(PlotextPlot):
     benchmark_end_time = reactive(None)  # Track when benchmark finished
 
     def __init__(
-        self, title: str, max_points: int = 100, color: str = "cyan",
-        chart_window_seconds: float = None, *args, **kwargs
+        self,
+        title: str,
+        max_points: int = 100,
+        color: str = "cyan",
+        chart_window_seconds: float = None,
+        *args,
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.chart_title = title
         self.max_points = max_points
         self.chart_color = color
-        self.chart_window_seconds = chart_window_seconds  # Optional time window for x-axis
+        self.chart_window_seconds = (
+            chart_window_seconds  # Optional time window for x-axis
+        )
         self.data = []
         self.benchmark_start_time = None
         self.benchmark_end_time = None
@@ -119,6 +126,7 @@ class PlotextChart(PlotextPlot):
 
         # Calculate time-based X-axis
         import time
+
         if self.benchmark_start_time:
             # Calculate elapsed time - use end_time if benchmark finished, otherwise current time
             if self.benchmark_end_time:
@@ -137,9 +145,7 @@ class PlotextChart(PlotextPlot):
             # Fallback to sample indices
             x_vals = list(range(len(recent_data)))
 
-        self.plt.plot(
-            x_vals, recent_data, color=self.chart_color, marker="braille"
-        )
+        self.plt.plot(x_vals, recent_data, color=self.chart_color, marker="braille")
 
         # Set fixed Y-axis bounds based on min/max with some padding
         y_range = max_val - min_val
@@ -160,10 +166,18 @@ class PlotextChart(PlotextPlot):
         # X-axis label shows time and stats
         if self.benchmark_start_time:
             # Use the same elapsed time calculation as X-axis (frozen if finished)
-            window_info = f" (last {self.chart_window_seconds:.0f}s)" if self.chart_window_seconds else ""
-            self.plt.xlabel(f"Time: {total_elapsed:.1f}s{window_info} | Avg: {avg_val:.1f} | Min: {min_val:.1f} | Max: {max_val:.1f}")
+            window_info = (
+                f" (last {self.chart_window_seconds:.0f}s)"
+                if self.chart_window_seconds
+                else ""
+            )
+            self.plt.xlabel(
+                f"Time: {total_elapsed:.1f}s{window_info} | Avg: {avg_val:.1f} | Min: {min_val:.1f} | Max: {max_val:.1f}"
+            )
         else:
-            self.plt.xlabel(f"Avg: {avg_val:.1f} | Min: {min_val:.1f} | Max: {max_val:.1f} | Samples: {len(recent_data)}")
+            self.plt.xlabel(
+                f"Avg: {avg_val:.1f} | Min: {min_val:.1f} | Max: {max_val:.1f} | Samples: {len(recent_data)}"
+            )
 
         # Minimal grid for cleaner look
         self.plt.grid(False, False)
@@ -293,27 +307,51 @@ class VeekshaDashboard(App):
         self.log_handler: Optional[LogCapture] = None
 
         # Metric cards for Metrics tab
-        self.total_requests_card = MetricCard("Total Requests", "blue", classes="metric-card")
+        self.total_requests_card = MetricCard(
+            "Total Requests", "blue", classes="metric-card"
+        )
         self.completed_card = MetricCard("Completed", "green", classes="metric-card")
         self.errors_card = MetricCard("Errors", "red", classes="metric-card")
         self.duration_card = MetricCard("Duration", "yellow", classes="metric-card")
         self.ttft_card = MetricCard("Avg TTFT (ms)", "cyan", classes="metric-card")
         self.tpot_card = MetricCard("Avg TPOT (ms)", "green", classes="metric-card")
         self.tbt_card = MetricCard("Avg TBT (ms)", "yellow", classes="metric-card")
-        self.latency_card = MetricCard("Avg Latency (ms)", "magenta", classes="metric-card")
+        self.latency_card = MetricCard(
+            "Avg Latency (ms)", "magenta", classes="metric-card"
+        )
 
         # Metric cards for Requests tab
-        self.total_requests_card_requests = MetricCard("Total Requests", "blue", classes="metric-card")
-        self.completed_card_requests = MetricCard("Completed", "green", classes="metric-card")
+        self.total_requests_card_requests = MetricCard(
+            "Total Requests", "blue", classes="metric-card"
+        )
+        self.completed_card_requests = MetricCard(
+            "Completed", "green", classes="metric-card"
+        )
         self.errors_card_requests = MetricCard("Errors", "red", classes="metric-card")
-        self.duration_card_requests = MetricCard("Duration", "yellow", classes="metric-card")
+        self.duration_card_requests = MetricCard(
+            "Duration", "yellow", classes="metric-card"
+        )
 
         # Charts - pass chart_window_seconds from dashboard_state
         chart_window = dashboard_state.chart_window_seconds
-        self.ttft_chart = PlotextChart("📈 Time to First Token (TTFT)", color="cyan", chart_window_seconds=chart_window)
-        self.tpot_chart = PlotextChart("📉 Time per Output Token (TPOT)", color="green", chart_window_seconds=chart_window)
-        self.tbt_chart = PlotextChart("⏱️  Time Between Tokens (TBT)", color="orange", chart_window_seconds=chart_window)
-        self.latency_chart = PlotextChart("📊 End-to-End Latency", color="magenta", chart_window_seconds=chart_window)
+        self.ttft_chart = PlotextChart(
+            "📈 Time to First Token (TTFT)",
+            color="cyan",
+            chart_window_seconds=chart_window,
+        )
+        self.tpot_chart = PlotextChart(
+            "📉 Time per Output Token (TPOT)",
+            color="green",
+            chart_window_seconds=chart_window,
+        )
+        self.tbt_chart = PlotextChart(
+            "⏱️  Time Between Tokens (TBT)",
+            color="orange",
+            chart_window_seconds=chart_window,
+        )
+        self.latency_chart = PlotextChart(
+            "📊 End-to-End Latency", color="magenta", chart_window_seconds=chart_window
+        )
 
         # Tables
         self.live_table: Optional[DataTable] = None
@@ -449,7 +487,11 @@ class VeekshaDashboard(App):
             active_benchmark = self.dashboard_state.get_active_benchmark()
             if active_benchmark:
                 is_finished = active_benchmark.benchmark_end_time is not None
-                status_indicator = "[bold green]✓ Finished[/bold green]" if is_finished else "[bold yellow]⚙ Running[/bold yellow]"
+                status_indicator = (
+                    "[bold green]✓ Finished[/bold green]"
+                    if is_finished
+                    else "[bold yellow]⚙ Running[/bold yellow]"
+                )
             else:
                 status_indicator = "[dim]No benchmark[/dim]"
 
@@ -461,7 +503,9 @@ class VeekshaDashboard(App):
 
             # Update requests tab selector
             try:
-                selector_requests = self.query_one("#benchmark-selector-requests", Static)
+                selector_requests = self.query_one(
+                    "#benchmark-selector-requests", Static
+                )
                 selector_requests.update(selector_text)
             except:
                 pass
@@ -487,6 +531,7 @@ class VeekshaDashboard(App):
 
         # Calculate averages from the snapshot data
         from statistics import mean
+
         avg_ttft = mean(ttft_list) if ttft_list else 0.0
         avg_tpot = mean(tpot_list) if tpot_list else 0.0
         avg_tbt = mean(tbt_list) if tbt_list else 0.0
@@ -520,7 +565,9 @@ class VeekshaDashboard(App):
             self.ttft_chart.benchmark_start_time = active_benchmark.benchmark_start_time
             self.tpot_chart.benchmark_start_time = active_benchmark.benchmark_start_time
             self.tbt_chart.benchmark_start_time = active_benchmark.benchmark_start_time
-            self.latency_chart.benchmark_start_time = active_benchmark.benchmark_start_time
+            self.latency_chart.benchmark_start_time = (
+                active_benchmark.benchmark_start_time
+            )
 
             # Set end time to freeze the charts when benchmark finishes
             self.ttft_chart.benchmark_end_time = active_benchmark.benchmark_end_time

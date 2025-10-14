@@ -203,12 +203,14 @@ def dispatch_requests(
             ready.benchmark_id = benchmark_id
             # Request ID should always be set by the generator
             assert ready.id is not None, f"Request {ready} has no ID"
-            emit_dashboard_event(RequestStartedEvent(
-                request_id = ready.id,
-                timestamp = time.time(),
-                input_tokens = ready.prompt[1],
-                benchmark_id = benchmark_id
-            ))
+            emit_dashboard_event(
+                RequestStartedEvent(
+                    request_id=ready.id,
+                    timestamp=time.time(),
+                    input_tokens=ready.prompt[1],
+                    benchmark_id=benchmark_id,
+                )
+            )
 
             service_metrics.register_launched_request()
             input_queue.put(ready)
@@ -494,7 +496,9 @@ def run_benchmark(
             completed_requests=service_metrics.num_completed_requests,
             errored_requests=service_metrics.num_errored_requests,
             active_requests=0,  # All requests done at this point
-            current_qps=service_metrics.num_completed_requests / elapsed if elapsed > 0 else 0.0,
+            current_qps=(
+                service_metrics.num_completed_requests / elapsed if elapsed > 0 else 0.0
+            ),
             elapsed_time=elapsed,
         )
     )

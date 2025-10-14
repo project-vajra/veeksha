@@ -91,10 +91,14 @@ class SingleBenchmarkState:
 
 
 class DashboardState:
-    def __init__(self, max_live_requests: int = 50, chart_window_seconds: Optional[float] = None):
+    def __init__(
+        self, max_live_requests: int = 50, chart_window_seconds: Optional[float] = None
+    ):
         self._lock = threading.RLock()
         self.max_live_requests = max_live_requests
-        self.chart_window_seconds = chart_window_seconds  # Optional time window for charts
+        self.chart_window_seconds = (
+            chart_window_seconds  # Optional time window for charts
+        )
 
         # Track multiple benchmarks by ID
         self.benchmarks: Dict[str, SingleBenchmarkState] = {}
@@ -216,7 +220,7 @@ class DashboardState:
                 ttft_ms=metrics.ttft * 1000 if metrics.ttft > 0 else None,
                 current_tpot_ms=metrics.tpot * 1000 if metrics.tpot > 0 else None,
                 progress_pct=100.0,
-                is_waiting_first_token=False
+                is_waiting_first_token=False,
             )
             benchmark.completed_requests[str(event.request_id)] = completed_req
 
