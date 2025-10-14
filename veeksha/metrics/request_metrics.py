@@ -27,6 +27,8 @@ class RequestMetrics:
     stream_last_chunk_monotonic: Optional[float] = None
     client_processing_overhead_s: Optional[float] = None
     dispatch_clock_zero_monotonic: Optional[float] = None
+    theoretical_offset_s: Optional[float] = None
+    theoretical_dispatch_time_monotonic: Optional[float] = None
 
     @cached_property
     def dispatch_delta_s(self) -> float:
@@ -36,6 +38,21 @@ class RequestMetrics:
         ):
             return 0.0
         return self.actual_dispatch_time_monotonic - self.planned_dispatch_time_monotonic
+
+    @cached_property
+    def observed_vs_theoretical_delta_s(self) -> float:
+        # Compare observed (actual) vs theoretical schedule relative to clock zero
+        if (
+            self.actual_dispatch_time_monotonic is None
+            or self.dispatch_clock_zero_monotonic is None
+        ):
+            return 0.0
+        observed = (
+            self.actual_dispatch_time_monotonic - self.dispatch_clock_zero_monotonic
+        )
+        if self.theoretical_offset_s is not None:
+            return observed - float(self.theoretical_offset_s)
+        return 0.0
 
     @cached_property
     def stream_elapsed_s(self) -> float:

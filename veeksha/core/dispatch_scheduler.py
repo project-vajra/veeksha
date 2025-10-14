@@ -68,6 +68,9 @@ class DispatchScheduler:
                     request.planned_dispatch_time_monotonic = (
                         self._start_monotonic + ready_at
                     )
+                    request.theoretical_dispatch_time_monotonic = (
+                        request.planned_dispatch_time_monotonic
+                    )
                     heapq.heappush(
                         self._ready_heap,
                         _ScheduledItem(
@@ -89,6 +92,11 @@ class DispatchScheduler:
                 request.scheduling_type = "non_session"
                 request.planned_dispatch_time_monotonic = (
                     self._start_monotonic + ready_at
+                )
+                # theoretical offset relative to scheduler start
+                request.theoretical_offset_s = ready_at
+                request.theoretical_dispatch_time_monotonic = (
+                    request.planned_dispatch_time_monotonic
                 )
                 heapq.heappush(
                     self._ready_heap,
@@ -117,6 +125,9 @@ class DispatchScheduler:
             # Record planned dispatch time in absolute monotonic seconds
             req.planned_dispatch_time_monotonic = self._start_monotonic + ready_at
             req.scheduling_type = "session"
+            req.theoretical_dispatch_time_monotonic = (
+                req.planned_dispatch_time_monotonic
+            )
             next_req_id = req.id if (req.id is not None) else -1
             heapq.heappush(
                 self._ready_heap,

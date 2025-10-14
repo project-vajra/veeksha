@@ -115,6 +115,38 @@ class MetricStore:
                 display_unit_scale=1e3,
                 display_unit_suffix=" (ms)",
             ),
+            # existing audit metrics possibly added earlier
+            "dispatch_delta_s": CDFSketch(
+                "Dispatch Time Delta (actual - planned)",
+                self.should_write_metrics_to_wandb,
+                display_unit_scale=1e3,
+                display_unit_suffix=" (ms)",
+            ),
+            "client_processing_overhead_s": CDFSketch(
+                "Client Processing Overhead per Request",
+                self.should_write_metrics_to_wandb,
+                display_unit_scale=1e3,
+                display_unit_suffix=" (ms)",
+            ),
+            "stream_elapsed_s": CDFSketch(
+                "Stream Elapsed (first to last chunk)",
+                self.should_write_metrics_to_wandb,
+                display_unit_scale=1e3,
+                display_unit_suffix=" (ms)",
+            ),
+            "measurement_gap_s": CDFSketch(
+                "Measurement Gap (stream span - sum inter-token)",
+                self.should_write_metrics_to_wandb,
+                display_unit_scale=1e3,
+                display_unit_suffix=" (ms)",
+            ),
+            # new: observed vs theoretical schedule delta
+            "observed_vs_theoretical_delta_s": CDFSketch(
+                "Observed vs Theoretical Dispatch Delta",
+                self.should_write_metrics_to_wandb,
+                display_unit_scale=1e3,
+                display_unit_suffix=" (ms)",
+            ),
         }
 
         self._init_wandb()

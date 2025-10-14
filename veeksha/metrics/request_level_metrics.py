@@ -36,6 +36,7 @@ class RequestLevelMetrics:
         self.dispatch_clock_zero_monotonic: List[float] = []
         self.stream_elapsed_s: List[float] = []
         self.measurement_gap_s: List[float] = []
+        self.observed_vs_theoretical_delta_s: List[float] = []
         self.num_prompt_tokens: List[int] = []
         self.num_output_tokens: List[int] = []
         self.num_total_tokens: List[int] = []
@@ -100,6 +101,9 @@ class RequestLevelMetrics:
         self.stream_elapsed_s.append(getattr(request_metrics, "stream_elapsed_s", 0.0))
         self.measurement_gap_s.append(
             getattr(request_metrics, "measurement_gap_s", 0.0)
+        )
+        self.observed_vs_theoretical_delta_s.append(
+            getattr(request_metrics, "observed_vs_theoretical_delta_s", 0.0)
         )
         self.num_prompt_tokens.append(request_metrics.num_prompt_tokens)
         self.num_output_tokens.append(request_metrics.num_output_tokens)
@@ -176,6 +180,9 @@ class RequestLevelMetrics:
         self.measurement_gap_s.append(
             getattr(request_metrics, "measurement_gap_s", 0.0)
         )
+        self.observed_vs_theoretical_delta_s.append(
+            getattr(request_metrics, "observed_vs_theoretical_delta_s", 0.0)
+        )
 
     def to_dict(self):
         return {
@@ -190,6 +197,7 @@ class RequestLevelMetrics:
             "dispatch_clock_zero_monotonic": self.dispatch_clock_zero_monotonic,
             "stream_elapsed_s": self.stream_elapsed_s,
             "measurement_gap_s": self.measurement_gap_s,
+            "observed_vs_theoretical_delta_s": self.observed_vs_theoretical_delta_s,
             "num_prompt_tokens": self.num_prompt_tokens,
             "num_output_tokens": self.num_output_tokens,
             "num_total_tokens": self.num_total_tokens,

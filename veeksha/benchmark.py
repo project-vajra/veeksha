@@ -173,6 +173,15 @@ def dispatch_requests(
                     "planned_dispatch_time_monotonic",
                     planned_raw + dispatch_clock_offset,
                 )
+            # translate theoretical offset from scheduler-start to dispatch-clock-zero
+            theor = getattr(ready_local, "theoretical_offset_s", None)
+            if theor is not None and dispatch_clock_offset is not None:
+                # clock zero is (now - offset); theoretical time from zero is ready_at - first_planned
+                object.__setattr__(
+                    ready_local,
+                    "theoretical_offset_s",
+                    max(0.0, float(theor) - (planned_raw or float(theor))),
+                )
             # Also record the clock zero for downstream consumers
             if dispatch_clock_offset is not None:
                 object.__setattr__(
