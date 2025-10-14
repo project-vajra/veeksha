@@ -91,9 +91,10 @@ class SingleBenchmarkState:
 
 
 class DashboardState:
-    def __init__(self, max_live_requests: int = 50):
+    def __init__(self, max_live_requests: int = 50, chart_window_seconds: Optional[float] = None):
         self._lock = threading.RLock()
         self.max_live_requests = max_live_requests
+        self.chart_window_seconds = chart_window_seconds  # Optional time window for charts
 
         # Track multiple benchmarks by ID
         self.benchmarks: Dict[str, SingleBenchmarkState] = {}

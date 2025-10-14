@@ -31,10 +31,13 @@ class DashboardEventHandler(logging.Handler):
 class DashboardEventHandlerProcessor:
     """Main pipeline for dashboard event processing"""
 
-    def __init__(self, max_queue_size: int = 1000, max_live_requests: int = 50):
+    def __init__(self, max_queue_size: int = 1000, max_live_requests: int = 50, chart_window_seconds: float = None):
         self.manager = Manager()
         self.event_queue = self.manager.Queue(maxsize=max_queue_size)
-        self.dashboard_state = DashboardState(max_live_requests=max_live_requests)
+        self.dashboard_state = DashboardState(
+            max_live_requests=max_live_requests,
+            chart_window_seconds=chart_window_seconds
+        )
         self.event_handler = DashboardEventHandler(self.dashboard_state)
         self.queue_listener: Optional[QueueListener] = None
         self.is_running = False

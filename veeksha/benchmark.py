@@ -523,6 +523,7 @@ def run_benchmark_with_dashboard(benchmark_config: BenchmarkConfig):
         enable_frontend=False,  # We'll launch TUI manually in main thread
         max_queue_size=benchmark_config.dashboard_config.max_queue_size,
         max_live_requests=benchmark_config.dashboard_config.max_live_requests,
+        chart_window_seconds=benchmark_config.dashboard_config.chart_window_seconds,
     )
 
     # Result container to capture service_metrics from background thread
@@ -582,6 +583,7 @@ def run_benchmark_console_only(
                 enable_frontend=False,
                 max_queue_size=benchmark_config.dashboard_config.max_queue_size,
                 max_live_requests=benchmark_config.dashboard_config.max_live_requests,
+                chart_window_seconds=benchmark_config.dashboard_config.chart_window_seconds,
             )
 
         service_metrics = run_benchmark(benchmark_config=benchmark_config)

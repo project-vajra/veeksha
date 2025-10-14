@@ -56,12 +56,14 @@ class PlotextChart(PlotextPlot):
     benchmark_end_time = reactive(None)  # Track when benchmark finished
 
     def __init__(
-        self, title: str, max_points: int = 100, color: str = "cyan", *args, **kwargs
+        self, title: str, max_points: int = 100, color: str = "cyan",
+        chart_window_seconds: float = None, *args, **kwargs
     ):
         super().__init__(*args, **kwargs)
         self.chart_title = title
         self.max_points = max_points
         self.chart_color = color
+        self.chart_window_seconds = chart_window_seconds  # Optional time window for x-axis
         self.data = []
         self.benchmark_start_time = None
         self.benchmark_end_time = None
@@ -144,14 +146,22 @@ class PlotextChart(PlotextPlot):
         y_padding = y_range * 0.1 if y_range > 0 else 1
         self.plt.ylim(min_val - y_padding, max_val + y_padding)
 
-        # Set X-axis bounds to match elapsed time for all charts
+        # Set X-axis bounds based on window setting
         if self.benchmark_start_time and total_elapsed > 0:
-            self.plt.xlim(0, total_elapsed)
+            if self.chart_window_seconds is not None:
+                # Show only the last N seconds
+                x_min = max(0, total_elapsed - self.chart_window_seconds)
+                x_max = total_elapsed
+                self.plt.xlim(x_min, x_max)
+            else:
+                # Show full history
+                self.plt.xlim(0, total_elapsed)
 
         # X-axis label shows time and stats
         if self.benchmark_start_time:
             # Use the same elapsed time calculation as X-axis (frozen if finished)
-            self.plt.xlabel(f"Time: {total_elapsed:.1f}s | Avg: {avg_val:.1f} | Min: {min_val:.1f} | Max: {max_val:.1f}")
+            window_info = f" (last {self.chart_window_seconds:.0f}s)" if self.chart_window_seconds else ""
+            self.plt.xlabel(f"Time: {total_elapsed:.1f}s{window_info} | Avg: {avg_val:.1f} | Min: {min_val:.1f} | Max: {max_val:.1f}")
         else:
             self.plt.xlabel(f"Avg: {avg_val:.1f} | Min: {min_val:.1f} | Max: {max_val:.1f} | Samples: {len(recent_data)}")
 
@@ -298,11 +308,12 @@ class VeekshaDashboard(App):
         self.errors_card_requests = MetricCard("Errors", "red", classes="metric-card")
         self.duration_card_requests = MetricCard("Duration", "yellow", classes="metric-card")
 
-        # Charts
-        self.ttft_chart = PlotextChart("📈 Time to First Token (TTFT)", color="cyan")
-        self.tpot_chart = PlotextChart("📉 Time per Output Token (TPOT)", color="green")
-        self.tbt_chart = PlotextChart("⏱️  Time Between Tokens (TBT)", color="orange")
-        self.latency_chart = PlotextChart("📊 End-to-End Latency", color="magenta")
+        # Charts - pass chart_window_seconds from dashboard_state
+        chart_window = dashboard_state.chart_window_seconds
+        self.ttft_chart = PlotextChart("📈 Time to First Token (TTFT)", color="cyan", chart_window_seconds=chart_window)
+        self.tpot_chart = PlotextChart("📉 Time per Output Token (TPOT)", color="green", chart_window_seconds=chart_window)
+        self.tbt_chart = PlotextChart("⏱️  Time Between Tokens (TBT)", color="orange", chart_window_seconds=chart_window)
+        self.latency_chart = PlotextChart("📊 End-to-End Latency", color="magenta", chart_window_seconds=chart_window)
 
         # Tables
         self.live_table: Optional[DataTable] = None
