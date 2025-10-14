@@ -72,17 +72,34 @@ class MetricStore:
                 "Number of Total Tokens", self.should_write_metrics_to_wandb
             ),
             "tpot": CDFSketch(
-                "Time per Output Token", self.should_write_metrics_to_wandb
+                "Time per Output Token",
+                self.should_write_metrics_to_wandb,
+                display_unit_scale=1e3,
+                display_unit_suffix=" (ms)",
             ),
             "ttft": CDFSketch(
-                "Time to First Token", self.should_write_metrics_to_wandb
+                "Time to First Token",
+                self.should_write_metrics_to_wandb,
+                display_unit_scale=1e3,
+                display_unit_suffix=" (ms)",
             ),
-            "tbt": CDFSketch("Time Between Tokens", self.should_write_metrics_to_wandb),
+            "tbt": CDFSketch(
+                "Time Between Tokens",
+                self.should_write_metrics_to_wandb,
+                display_unit_scale=1e3,
+                display_unit_suffix=" (ms)",
+            ),
             "end_to_end_latency": CDFSketch(
-                "End to End Latency", self.should_write_metrics_to_wandb
+                "End to End Latency",
+                self.should_write_metrics_to_wandb,
+                display_unit_scale=1e3,
+                display_unit_suffix=" (ms)",
             ),
             "normalized_end_to_end_latency": CDFSketch(
-                "Normalized End to End Latency", self.should_write_metrics_to_wandb
+                "Normalized End to End Latency",
+                self.should_write_metrics_to_wandb,
+                display_unit_scale=1e3,
+                display_unit_suffix=" (ms)",
             ),
             "output_throughput": CDFSketch(
                 "Output Throughput", self.should_write_metrics_to_wandb
@@ -94,23 +111,8 @@ class MetricStore:
             "min_tbt_deadline_to_meet": CDFSketch(
                 f"Min Deadline to Meet Target Deadline Miss Rate of {self.target_deadline_miss_rate * 100}%",
                 self.should_write_metrics_to_wandb,
-            ),
-            # dispatch/timing audits
-            "dispatch_delta_s": CDFSketch(
-                "Dispatch Time Delta (actual - planned)",
-                self.should_write_metrics_to_wandb,
-            ),
-            "client_processing_overhead_s": CDFSketch(
-                "Client Processing Overhead per Request",
-                self.should_write_metrics_to_wandb,
-            ),
-            "stream_elapsed_s": CDFSketch(
-                "Stream Elapsed (first to last chunk)",
-                self.should_write_metrics_to_wandb,
-            ),
-            "measurement_gap_s": CDFSketch(
-                "Measurement Gap (stream span - sum inter-token)",
-                self.should_write_metrics_to_wandb,
+                display_unit_scale=1e3,
+                display_unit_suffix=" (ms)",
             ),
         }
 
@@ -181,14 +183,6 @@ class MetricStore:
                             target_deadline_miss_rate=self.target_deadline_miss_rate,
                         )
                     )
-                elif metric_name in (
-                    "dispatch_delta_s",
-                    "client_processing_overhead_s",
-                    "stream_elapsed_s",
-                    "measurement_gap_s",
-                ):
-                    value = getattr(request_metrics, metric_name, 0.0) or 0.0
-                    cdf_sketch.put(float(value))
                 else:
                     cdf_sketch.put(getattr(request_metrics, metric_name))
 
@@ -218,6 +212,116 @@ class MetricStore:
             **self.get_aggregated_summary(),
             **perf_summary,
         }
+
+    def get_terminal_table(self, only: Optional[list] = None) -> str:
+        """Return a formatted ASCII table of metric summaries for the terminal.
+
+        Columns: Metric, Min, Max, Mean, Median, P90, P99.
+
+        Notes:
+            - Time-based metrics are displayed in milliseconds via the
+              CDFSketch display scaling (values remain stored in seconds).
+            - Non-time metrics retain their natural units (e.g., tokens, tok/s).
+        """
+        headers = ["Metric", "Min", "Max", "Mean", "Median", "P90", "P99"]
+
+        # Desired default ordering and labels (time metrics reported in ms)
+        default_keys_in_order = [
+            "end_to_end_latency",
+            "ttft",
+            "tpot",
+            "tbt",
+            "num_prompt_tokens",
+            "num_output_tokens",
+            "num_total_tokens",
+        ]
+        key_to_label = {
+            "end_to_end_latency": "e2e latency (ms)",
+            "ttft": "time to first token (ms)",
+            "tpot": "time per output token (ms)",
+            "tbt": "time between tokens (ms)",
+            "num_prompt_tokens": "num prefill tokens (count)",
+            "num_output_tokens": "num decode tokens (count)",
+            "num_total_tokens": "num total tokens (count)",
+        }
+
+        def fmt(value: float) -> str:
+            return f"{value:,.3f}"
+
+        rows = []
+        keys = default_keys_in_order if only is None else [k for k in only]
+        for key in keys:
+            sketch = self.summaries.get(key)
+            if sketch is None:
+                continue
+            # skip empty sketches
+            if len(sketch) == 0:
+                continue
+
+            # derive display name and scale
+            display_name = key_to_label.get(
+                key, f"{sketch.metric_name}{sketch.display_unit_suffix}"
+            )
+            scale = getattr(sketch, "display_unit_scale", 1.0)
+
+            # pull stats from DDSketch; coerce None -> 0.0
+            min_v = sketch.sketch._min if sketch.sketch._min is not None else 0.0
+            max_v = sketch.sketch._max if sketch.sketch._max is not None else 0.0
+            mean_v = sketch.sketch.avg if sketch.sketch.avg is not None else 0.0
+            p50_v = sketch.sketch.get_quantile_value(0.5) or 0.0
+            p90_v = sketch.sketch.get_quantile_value(0.9) or 0.0
+            p99_v = sketch.sketch.get_quantile_value(0.99) or 0.0
+
+            # apply display scaling (e.g., seconds -> ms)
+            min_v *= scale
+            max_v *= scale
+            mean_v *= scale
+            p50_v *= scale
+            p90_v *= scale
+            p99_v *= scale
+
+            rows.append(
+                [
+                    display_name,
+                    fmt(min_v),
+                    fmt(max_v),
+                    fmt(mean_v),
+                    fmt(p50_v),
+                    fmt(p90_v),
+                    fmt(p99_v),
+                ]
+            )
+
+        # compute column widths
+        col_widths = [len(h) for h in headers]
+        for row in rows:
+            for i, cell in enumerate(row):
+                col_widths[i] = max(col_widths[i], len(str(cell)))
+
+        # build table string
+        def pad(cell: str, width: int) -> str:
+            return cell + " " * (width - len(cell))
+
+        line_sep = "+" + "+".join(["-" * (w + 2) for w in col_widths]) + "+"
+        out_lines = [line_sep]
+        header_line = "| " + " | ".join(
+            [pad(h, col_widths[i]) for i, h in enumerate(headers)]
+        ) + " |"
+        out_lines.append(header_line)
+        out_lines.append(line_sep)
+        for row in rows:
+            out_lines.append(
+                "| "
+                + " | ".join([pad(str(c), col_widths[i]) for i, c in enumerate(row)])
+                + " |"
+            )
+        out_lines.append(line_sep)
+
+        return "\n".join(out_lines)
+
+    def print_terminal_table(self, only: Optional[list] = None) -> None:
+        """Print the terminal table of metric summaries."""
+        print(self.get_terminal_table(only=only))
 
     def store_output(self, output_dir: str):
         perf_csv_path = os.path.join(output_dir, "perf_metrics.csv")
@@ -361,7 +465,8 @@ class MetricStore:
         for i, ttft in enumerate(self.request_level_metrics.ttft):
             if str(self.request_level_metrics.num_prompt_tokens[i]) not in data:
                 data[str(self.request_level_metrics.num_prompt_tokens[i])] = []
-            data[str(self.request_level_metrics.num_prompt_tokens[i])].append(ttft)
+            # Convert to ms for reporting
+            data[str(self.request_level_metrics.num_prompt_tokens[i])].append(ttft * 1e3)
         df = pd.DataFrame(
             {
                 "ttft": [ttft for ttfts in data.values() for ttft in ttfts],
@@ -377,7 +482,7 @@ class MetricStore:
             df,
             x="prompt_length",
             y="ttft",
-            labels={"prompt_length": "Number of Prompt Tokens", "ttft": "TTFT (s)"},
+            labels={"prompt_length": "Number of Prompt Tokens", "ttft": "TTFT (ms)"},
         )
         fig.save(os.path.join(output_dir, "ttft_violin_plot.png"))
         if self.should_write_metrics_to_wandb and wandb.run:
