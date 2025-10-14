@@ -282,6 +282,9 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
                 request_config, "actual_dispatch_time_monotonic", None
             ),
             scheduling_type=getattr(request_config, "scheduling_type", None),
+            dispatch_clock_zero_monotonic=getattr(
+                request_config, "dispatch_clock_zero_monotonic", None
+            ),
             stream_first_chunk_monotonic=stream_first_chunk_monotonic,
             stream_last_chunk_monotonic=stream_last_chunk_monotonic,
             client_processing_overhead_s=client_processing_overhead_s,

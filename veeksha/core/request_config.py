@@ -34,6 +34,7 @@ class RequestConfig(BaseModel):
     planned_dispatch_time_monotonic: Optional[float] = None
     scheduling_type: Optional[str] = None  # "session" | "non_session"
     actual_dispatch_time_monotonic: Optional[float] = None
+    dispatch_clock_zero_monotonic: Optional[float] = None
 
     def __str__(self) -> str:
         return f"RequestConfig(id={self.id})"

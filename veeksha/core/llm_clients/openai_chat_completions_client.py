@@ -231,6 +231,9 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             stream_first_chunk_monotonic=stream_first_chunk_monotonic,
             stream_last_chunk_monotonic=stream_last_chunk_monotonic,
             client_processing_overhead_s=client_processing_overhead_s,
+            dispatch_clock_zero_monotonic=getattr(
+                request_config, "dispatch_clock_zero_monotonic", None
+            ),
         )
 
         generated_response: Optional[Response]

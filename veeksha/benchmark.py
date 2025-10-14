@@ -173,6 +173,13 @@ def dispatch_requests(
                     "planned_dispatch_time_monotonic",
                     planned_raw + dispatch_clock_offset,
                 )
+            # Also record the clock zero for downstream consumers
+            if dispatch_clock_offset is not None:
+                object.__setattr__(
+                    ready_local,
+                    "dispatch_clock_zero_monotonic",
+                    now_monotonic - dispatch_clock_offset,
+                )
             object.__setattr__(
                 ready_local,
                 "actual_dispatch_time_monotonic",

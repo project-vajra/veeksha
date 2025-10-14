@@ -33,6 +33,7 @@ class RequestLevelMetrics:
         self.stream_first_chunk_monotonic: List[float] = []
         self.stream_last_chunk_monotonic: List[float] = []
         self.client_processing_overhead_s: List[float] = []
+        self.dispatch_clock_zero_monotonic: List[float] = []
         self.stream_elapsed_s: List[float] = []
         self.measurement_gap_s: List[float] = []
         self.num_prompt_tokens: List[int] = []
@@ -92,6 +93,9 @@ class RequestLevelMetrics:
         )
         self.client_processing_overhead_s.append(
             request_metrics.client_processing_overhead_s or 0.0
+        )
+        self.dispatch_clock_zero_monotonic.append(
+            request_metrics.dispatch_clock_zero_monotonic or 0.0
         )
         self.stream_elapsed_s.append(getattr(request_metrics, "stream_elapsed_s", 0.0))
         self.measurement_gap_s.append(
@@ -165,6 +169,9 @@ class RequestLevelMetrics:
         self.client_processing_overhead_s.append(
             request_metrics.client_processing_overhead_s or 0.0
         )
+        self.dispatch_clock_zero_monotonic.append(
+            request_metrics.dispatch_clock_zero_monotonic or 0.0
+        )
         self.stream_elapsed_s.append(getattr(request_metrics, "stream_elapsed_s", 0.0))
         self.measurement_gap_s.append(
             getattr(request_metrics, "measurement_gap_s", 0.0)
@@ -180,6 +187,7 @@ class RequestLevelMetrics:
             "stream_first_chunk_monotonic": self.stream_first_chunk_monotonic,
             "stream_last_chunk_monotonic": self.stream_last_chunk_monotonic,
             "client_processing_overhead_s": self.client_processing_overhead_s,
+            "dispatch_clock_zero_monotonic": self.dispatch_clock_zero_monotonic,
             "stream_elapsed_s": self.stream_elapsed_s,
             "measurement_gap_s": self.measurement_gap_s,
             "num_prompt_tokens": self.num_prompt_tokens,
