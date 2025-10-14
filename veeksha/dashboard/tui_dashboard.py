@@ -92,7 +92,8 @@ class PlotextChart(PlotextPlot):
             return
 
         # Get recent data points
-        recent_data = list(self.data)[-self.max_points:]
+        # recent_data = list(self.data)[-self.max_points:]
+        recent_data = list(self.data)
 
         if len(recent_data) < 2:
             return
@@ -278,7 +279,7 @@ class VeekshaDashboard(App):
     def __init__(self, dashboard_state: DashboardState):
         super().__init__()
         self.dashboard_state = dashboard_state
-        self.update_interval = 0.5  # Update every 500ms
+        self.update_interval = 1  # Update every 10ms
         self.log_handler: Optional[LogCapture] = None
 
         # Metric cards for Metrics tab

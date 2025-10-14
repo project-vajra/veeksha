@@ -34,10 +34,10 @@ class AggregateStats:
     error_count: int = 0
     total_requests: int = 0
 
-    recent_ttft_ms: Deque[float] = field(default_factory=lambda: deque(maxlen=100))
-    recent_tpot_ms: Deque[float] = field(default_factory=lambda: deque(maxlen=100))
-    recent_tbt_ms: Deque[float] = field(default_factory=lambda: deque(maxlen=100))
-    recent_latency_ms: Deque[float] = field(default_factory=lambda: deque(maxlen=100))
+    recent_ttft_ms: Deque[float] = field(default_factory=lambda: deque())
+    recent_tpot_ms: Deque[float] = field(default_factory=lambda: deque())
+    recent_tbt_ms: Deque[float] = field(default_factory=lambda: deque())
+    recent_latency_ms: Deque[float] = field(default_factory=lambda: deque())
 
     @property
     def avg_ttft_ms(self) -> float:
