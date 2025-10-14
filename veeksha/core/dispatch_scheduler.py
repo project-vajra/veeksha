@@ -32,10 +32,14 @@ class DispatchScheduler:
         self._canceled_sessions: Dict[int, bool] = {}
         self._cancel_policy_by_session: Dict[int, bool] = {}
         self._id_to_session_seq: Dict[int, Tuple[Optional[int], Optional[int]]] = {}
-        self._start_monotonic = time.monotonic()
+        # Start time is lazily initialized on first dispatch/pop.
+        # This avoids attributing pre-warm overhead to the first planned times.
+        self._start_monotonic: Optional[float] = None
         self._non_session_ready_cursor: float = 0.0
 
     def _now(self) -> float:
+        if self._start_monotonic is None:
+            return 0.0
         return time.monotonic() - self._start_monotonic
 
     def add_request(self, request: RequestConfig) -> None:
@@ -64,10 +68,11 @@ class DispatchScheduler:
                         ready_at = float(request.anchor_at_s)
                     else:
                         ready_at = self._now() + float(request.dispatch_delay)
-                    # Record planned dispatch time in absolute monotonic seconds
-                    request.planned_dispatch_time_monotonic = (
-                        self._start_monotonic + ready_at
-                    )
+                    # Record planned dispatch time if clock started
+                    if self._start_monotonic is not None:
+                        request.planned_dispatch_time_monotonic = (
+                            self._start_monotonic + ready_at
+                        )
                     heapq.heappush(
                         self._ready_heap,
                         _ScheduledItem(
@@ -87,9 +92,10 @@ class DispatchScheduler:
                 ready_at = anchor_base + float(request.dispatch_delay)
                 self._non_session_ready_cursor = ready_at
                 request.scheduling_type = "non_session"
-                request.planned_dispatch_time_monotonic = (
-                    self._start_monotonic + ready_at
-                )
+                if self._start_monotonic is not None:
+                    request.planned_dispatch_time_monotonic = (
+                        self._start_monotonic + ready_at
+                    )
                 heapq.heappush(
                     self._ready_heap,
                     _ScheduledItem(
@@ -114,8 +120,9 @@ class DispatchScheduler:
                 session_map[next_seq] = req
                 return
             ready_at = last_completion + wait
-            # Record planned dispatch time in absolute monotonic seconds
-            req.planned_dispatch_time_monotonic = self._start_monotonic + ready_at
+            # Record planned dispatch time in absolute monotonic seconds if clock started
+            if self._start_monotonic is not None:
+                req.planned_dispatch_time_monotonic = self._start_monotonic + ready_at
             req.scheduling_type = "session"
             next_req_id = req.id if (req.id is not None) else -1
             heapq.heappush(
@@ -131,6 +138,23 @@ class DispatchScheduler:
             if not self._ready_heap:
                 return None
             now = self._now()
+            # Lazy start: if clock hasn't started yet, start it when the first item is due now
+            if self._start_monotonic is None:
+                if self._ready_heap[0].ready_at <= 0.0:
+                    self._start_monotonic = time.monotonic()
+                    item = heapq.heappop(self._ready_heap)
+                    # Backfill planned absolute time for popped item
+                    try:
+                        item.request.planned_dispatch_time_monotonic = (
+                            self._start_monotonic + item.ready_at
+                        )
+                    except Exception:
+                        pass
+                    return item.request
+                else:
+                    # Start the clock now so future comparisons are against a real base
+                    self._start_monotonic = time.monotonic()
+                    now = 0.0
             if self._ready_heap[0].ready_at <= now:
                 item = heapq.heappop(self._ready_heap)
                 return item.request
@@ -140,6 +164,10 @@ class DispatchScheduler:
         with self._lock:
             if not self._ready_heap:
                 return None
+            if self._start_monotonic is None:
+                # Until the clock starts, the earliest ready_at is relative to the
+                # moment we start the clock (which will be 'now').
+                return max(0.0, self._ready_heap[0].ready_at)
             now = self._now()
             delta = self._ready_heap[0].ready_at - now
             return max(0.0, delta)
@@ -154,6 +182,9 @@ class DispatchScheduler:
             if session_id is None or seq_idx is None:
                 return
             # Convert absolute monotonic to scheduler time base
+            if self._start_monotonic is None:
+                # Should not happen; ensure clock is initialized
+                self._start_monotonic = completed_at_monotonic
             completed_at = completed_at_monotonic - self._start_monotonic
 
             if not success:
