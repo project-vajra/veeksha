@@ -317,9 +317,11 @@ def process_results(
         if generated_response is not None:
             generated_responses.append(generated_response)
 
+        # Emit completion event - ensure request_id is set
+        assert request_metrics.request_id is not None, f"Request metrics has no ID: {request_metrics}"
         emit_dashboard_event(
             RequestCompletedEvent(
-                request_id=request_metrics.request_id,
+                request_id=str(request_metrics.request_id),
                 timestamp=time.time(),
                 final_metrics=request_metrics,
                 benchmark_id=request_metrics.benchmark_id,

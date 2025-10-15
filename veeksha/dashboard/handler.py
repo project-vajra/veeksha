@@ -36,8 +36,9 @@ class DashboardEventHandlerProcessor:
         max_live_requests: int = 50,
         chart_window_seconds: Optional[float] = None,
     ):
-        self.manager = Manager()
-        self.event_queue = self.manager.Queue(maxsize=max_queue_size)
+        import multiprocessing as mp
+        self.manager = None  # Manager not needed with mp.Queue
+        self.event_queue: mp.Queue = mp.Queue(maxsize=max_queue_size)
         self.dashboard_state = DashboardState(
             max_live_requests=max_live_requests,
             chart_window_seconds=chart_window_seconds,
@@ -48,7 +49,9 @@ class DashboardEventHandlerProcessor:
 
         self.logger = logging.getLogger("veeksha.dashboard")
         self.logger.setLevel(logging.DEBUG)
-        self.logger.addHandler(QueueHandler(self.event_queue))
+        self.logger.propagate = False  # Prevent log propagation
+        self.queue_handler = QueueHandler(self.event_queue)
+        self.logger.addHandler(self.queue_handler)
 
     def start(self) -> DashboardState:
         """Start the dashboard pipeline and return the state object"""
