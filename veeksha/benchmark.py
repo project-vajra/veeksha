@@ -188,6 +188,11 @@ def dispatch_requests(
                 time.sleep(min(remaining, 0.001))
             if ready is not None:
                 continue
+            # immediate check at boundary
+            ready = scheduler.pop_ready()
+            if ready is not None:
+                _dispatch_ready_request(ready)
+                continue
 
         # prefetch away from near deadlines
         if (
