@@ -2,7 +2,6 @@ import logging
 import queue
 import threading
 from logging.handlers import QueueHandler, QueueListener
-from multiprocessing import Manager
 from typing import Optional
 
 from veeksha.dashboard.events import DashboardEvent
@@ -37,6 +36,7 @@ class DashboardEventHandlerProcessor:
         chart_window_seconds: Optional[float] = None,
     ):
         import multiprocessing as mp
+
         self.manager = None  # Manager not needed with mp.Queue
         self.event_queue: mp.Queue = mp.Queue(maxsize=max_queue_size)
         self.dashboard_state = DashboardState(
