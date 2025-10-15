@@ -257,19 +257,20 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
                                     t * 1000 for t in inter_token_times[1:][-10:]
                                 ]
 
-                            emit_dashboard_event(
-                                TokenBatchEvent(
-                                    request_id=request_config.id,
-                                    timestamp=time.time(),
-                                    tokens_received_this_batch=tokens_received_chunk,
-                                    total_output_tokens=tokens_received,
-                                    ttft_ms=current_ttft_ms,
-                                    current_tpot_ms=current_tpot_ms,
-                                    is_first_token=is_first_emission,
-                                    recent_tbt_ms=recent_tbt_ms,
-                                    benchmark_id=request_config.benchmark_id,
+                            if request_config.id is not None:
+                                emit_dashboard_event(
+                                    TokenBatchEvent(
+                                        request_id=request_config.id,
+                                        timestamp=time.time(),
+                                        tokens_received_this_batch=tokens_received_chunk,
+                                        total_output_tokens=tokens_received,
+                                        ttft_ms=current_ttft_ms,
+                                        current_tpot_ms=current_tpot_ms,
+                                        is_first_token=is_first_emission,
+                                        recent_tbt_ms=recent_tbt_ms,
+                                        benchmark_id=request_config.benchmark_id,
+                                    )
                                 )
-                            )
                             last_token_batch_emission = tokens_received
                             is_first_emission = (
                                 False  # After first emission, no longer first

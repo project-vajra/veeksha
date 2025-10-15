@@ -3,7 +3,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from statistics import mean
-from typing import Deque, Dict, List, Optional, Union
+from typing import Any, Deque, Dict, List, Optional, Union
 
 from veeksha.dashboard.events import (
     BenchmarkStatusEvent,
@@ -66,7 +66,7 @@ class CapacitySearchState:
     is_under_sla: bool = False
     slo_target: str = ""
     slo_metrics: Dict[str, float] = field(default_factory=dict)
-    qps_history: List[Dict[str, any]] = field(
+    qps_history: List[Dict[str, Any]] = field(
         default_factory=list
     )  # list of dicts with qps, under_sla, slo_metrics, from_cache
     best_qps: Optional[float] = None
@@ -354,7 +354,6 @@ class DashboardState:
             bid = benchmark_id or self.active_benchmark_id
             if bid in self.benchmarks:
                 stats = self.benchmarks[bid].aggregate_stats
-                # Create a copy with snapshot of deques to avoid "deque mutated during iteration"
                 return AggregateStats(
                     completed_count=stats.completed_count,
                     error_count=stats.error_count,

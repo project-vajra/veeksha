@@ -18,10 +18,9 @@ class DashboardEventHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            if hasattr(record, "dashboard_event"):
-                event = record.dashboard_event
-                if isinstance(event, DashboardEvent):
-                    self.dashboard_state.apply(event)
+            event = getattr(record, "dashboard_event", None)
+            if isinstance(event, DashboardEvent):
+                self.dashboard_state.apply(event)
         except Exception:
             self.handleError(
                 record
@@ -35,7 +34,7 @@ class DashboardEventHandlerProcessor:
         self,
         max_queue_size: int = 1000,
         max_live_requests: int = 50,
-        chart_window_seconds: float = None,
+        chart_window_seconds: Optional[float] = None,
     ):
         self.manager = Manager()
         self.event_queue = self.manager.Queue(maxsize=max_queue_size)

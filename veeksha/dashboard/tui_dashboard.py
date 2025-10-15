@@ -52,15 +52,19 @@ class PlotextChart(PlotextPlot):
     """Plotext-based line chart for metrics using textual-plotext"""
 
     data = reactive(list)
-    benchmark_start_time = reactive(None)  # Track when benchmark started
-    benchmark_end_time = reactive(None)  # Track when benchmark finished
+    benchmark_start_time: reactive[Optional[float]] = reactive(
+        None
+    )  # Track when benchmark started
+    benchmark_end_time: reactive[Optional[float]] = reactive(
+        None
+    )  # Track when benchmark finished
 
     def __init__(
         self,
         title: str,
         max_points: int = 100,
         color: str = "cyan",
-        chart_window_seconds: float = None,
+        chart_window_seconds: Optional[float] = None,
         *args,
         **kwargs,
     ):
@@ -127,6 +131,7 @@ class PlotextChart(PlotextPlot):
         # Calculate time-based X-axis
         import time
 
+        total_elapsed = 0.0
         if self.benchmark_start_time:
             # Calculate elapsed time - use end_time if benchmark finished, otherwise current time
             if self.benchmark_end_time:

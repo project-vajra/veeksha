@@ -7,7 +7,7 @@ import time
 from multiprocessing import Queue
 from queue import Empty
 from threading import Thread
-from typing import List, Optional
+from typing import List, Optional, TypedDict
 
 from tqdm import tqdm  # type: ignore
 
@@ -506,6 +506,11 @@ def run_benchmark(
     return service_metrics
 
 
+class BenchmarkResultContainer(TypedDict):
+    service_metrics: Optional[ServiceMetrics]
+    error: Optional[Exception]
+
+
 def run_benchmark_with_dashboard(benchmark_config: BenchmarkConfig):
     """Run benchmark with TUI dashboard in main thread.
 
@@ -531,7 +536,10 @@ def run_benchmark_with_dashboard(benchmark_config: BenchmarkConfig):
     )
 
     # Result container to capture service_metrics from background thread
-    result_container = {"service_metrics": None, "error": None}
+    result_container: BenchmarkResultContainer = {
+        "service_metrics": None,
+        "error": None,
+    }
 
     def run_benchmark_thread():
         """Run benchmark in background thread"""

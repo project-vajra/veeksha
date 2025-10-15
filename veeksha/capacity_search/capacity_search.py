@@ -5,7 +5,7 @@ import tempfile
 import threading
 from dataclasses import replace
 from datetime import datetime
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, TypedDict
 
 import wandb
 
@@ -22,6 +22,13 @@ from veeksha.constants.capacity_search_constants import (
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
+
+
+class SearchResult(TypedDict, total=False):
+    """Result of a capacity search."""
+
+    max_qps_under_sla: Optional[float]
+    slo_metrics_at_max_qps: Optional[Dict[str, float]]
 
 
 class CapacitySearch:
@@ -154,7 +161,7 @@ class CapacitySearch:
 
         return files[0]
 
-    def search(self):
+    def search(self) -> SearchResult:
         """
         Perform binary search to find the maximum QPS under the SLO
         """

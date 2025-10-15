@@ -1,9 +1,9 @@
 import os
-from typing import List
+from typing import List, Optional, TypedDict
 
 import wandb
 
-from veeksha.capacity_search.capacity_search import CapacitySearch
+from veeksha.capacity_search.capacity_search import CapacitySearch, SearchResult
 from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.logger import init_logger
 
@@ -51,7 +51,7 @@ def run_search(
         # Run capacity search in background thread, TUI in main thread
         import threading
 
-        result_container = {"result": None}
+        result_container: dict[str, Optional[SearchResult]] = {"result": None}
 
         def run_search_thread():
             capacity_search = CapacitySearch(capacity_search_config)
@@ -63,7 +63,8 @@ def run_search(
         # Run TUI in main thread
         from veeksha.dashboard.tui_dashboard import run_dashboard_tui
 
-        run_dashboard_tui(dashboard_state)
+        if dashboard_state:
+            run_dashboard_tui(dashboard_state)
 
         # Wait for search to complete
         search_thread.join()
