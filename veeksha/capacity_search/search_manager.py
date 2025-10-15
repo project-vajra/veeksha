@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional, TypedDict
+from typing import List, Optional
 
 import wandb
 
