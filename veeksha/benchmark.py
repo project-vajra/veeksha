@@ -33,6 +33,8 @@ from veeksha.dashboard.events import (
 )
 from veeksha.dashboard.handler import (
     emit_dashboard_event,
+    get_dashboard_event_processor,
+    init_dashboard_event_processor,
     stop_dashboard_event_processor,
 )
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
@@ -573,8 +575,6 @@ def run_benchmark_with_dashboard(benchmark_config: BenchmarkConfig):
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     # Initialize dashboard event processor without frontend
-    from veeksha.dashboard.handler import init_dashboard_event_processor
-
     dashboard_state = init_dashboard_event_processor(
         enabled=benchmark_config.dashboard_config.enabled,
         enable_frontend=False,  # We'll launch TUI manually in main thread
@@ -634,10 +634,11 @@ def run_benchmark_console_only(
     try:
         random.seed(benchmark_config.seed)
 
-        # Initialize dashboard if enabled
-        if benchmark_config.dashboard_config.enabled:
-            from veeksha.dashboard.handler import init_dashboard_event_processor
-
+        # Initialize dashboard if enabled (skip if already initialized)
+        if (
+            benchmark_config.dashboard_config.enabled
+            and not get_dashboard_event_processor()
+        ):
             init_dashboard_event_processor(
                 enabled=True,
                 enable_frontend=False,
@@ -702,6 +703,16 @@ if __name__ == "__main__":
             os.environ["VEEKSHA_SUPPRESS_CONSOLE_LOGS"] = "1"
             os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+            # Initialize dashboard in main thread to avoid races
+            first = benchmark_configs[0]
+            dashboard_state = init_dashboard_event_processor(
+                enabled=True,
+                enable_frontend=False,
+                max_queue_size=first.dashboard_config.max_queue_size,
+                max_live_requests=first.dashboard_config.max_live_requests,
+                chart_window_seconds=first.dashboard_config.chart_window_seconds,
+            )
+
             def run_all_benchmarks():
                 """Run all benchmarks sequentially in background"""
                 for i, benchmark_config in enumerate(benchmark_configs):
@@ -716,17 +727,11 @@ if __name__ == "__main__":
             benchmark_thread = Thread(target=run_all_benchmarks, daemon=False)
             benchmark_thread.start()
 
-            # Give benchmarks a moment to initialize
-            time.sleep(0.5)
-
             # Launch TUI dashboard
-            from veeksha.dashboard.handler import get_dashboard_event_processor
-
-            processor = get_dashboard_event_processor()
-            if processor and processor.dashboard_state:
+            if dashboard_state:
                 from veeksha.dashboard.tui_dashboard import run_dashboard_tui
 
-                run_dashboard_tui(processor.dashboard_state)
+                run_dashboard_tui(dashboard_state)
 
             # Wait for all benchmarks to complete
             benchmark_thread.join()
