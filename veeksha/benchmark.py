@@ -173,6 +173,18 @@ def dispatch_requests(
             scheduled_backlog -= 1
         logger.debug(f"Dispatched request {ready.id}")
 
+        ready.benchmark_id = benchmark_id
+        # Request ID should always be set by the generator
+        assert ready.id is not None, f"Request {ready} has no ID"
+        emit_dashboard_event(
+            RequestStartedEvent(
+                request_id=ready.id,
+                timestamp=time.time(),
+                input_tokens=ready.prompt[1],
+                benchmark_id=benchmark_id,
+            )
+        )
+
     while not stop_event.is_set():
         now = time.monotonic()
 
@@ -246,23 +258,6 @@ def dispatch_requests(
         # dispatch again after prefetch
         ready = scheduler.pop_ready()
         if ready is not None:
-            ready.benchmark_id = benchmark_id
-            # Request ID should always be set by the generator
-            assert ready.id is not None, f"Request {ready} has no ID"
-            emit_dashboard_event(
-                RequestStartedEvent(
-                    request_id=ready.id,
-                    timestamp=time.time(),
-                    input_tokens=ready.prompt[1],
-                    benchmark_id=benchmark_id,
-                )
-            )
-
-            service_metrics.register_launched_request()
-            input_queue.put(ready)
-            if scheduled_backlog > 0:
-                scheduled_backlog -= 1
-            logger.info(f"Dispatched request {ready.id}")
             
             _dispatch_ready_request(ready)
             continue
