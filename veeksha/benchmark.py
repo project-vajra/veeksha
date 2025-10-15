@@ -258,7 +258,7 @@ def dispatch_requests(
         # dispatch again after prefetch
         ready = scheduler.pop_ready()
         if ready is not None:
-            
+
             _dispatch_ready_request(ready)
             continue
 
