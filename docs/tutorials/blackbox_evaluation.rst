@@ -53,6 +53,29 @@ How It Works
 - **List Expansion**: The list of endpoints naturally expands via the config system's list explosion mechanism, creating separate benchmark runs for each endpoint.
 - **Other List Fields**: Any other configuration fields specified as lists will expand via cartesian product as usual, creating multiple benchmark runs per endpoint.
 
+Controlling Parallelism
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+When running benchmarks against multiple endpoints, you can control the maximum number of parallel processes using the ``max_parallel_runs`` configuration option:
+
+.. code-block:: yaml
+
+    # example_parallel.yml
+    max_parallel_runs: 8  # Limit to 8 concurrent benchmark processes
+    client_config:
+      endpoint:
+        - name: local-A
+          api_url: http://localhost:30000/v1
+          api_key: token-abc123
+        - name: local-B
+          api_url: http://localhost:30002/v1
+          api_key: token-def456
+        # ... more endpoints ...
+
+- If ``max_parallel_runs`` is not set (``None``), all benchmarks run concurrently
+- If set, jobs exceeding this limit will be queued and executed as running jobs complete
+- **Recommended**: Use 8 or lower for stable performance, especially on resource-constrained systems
+
 Following figures show evaluations by ``veeksha``:
 
 .. _token_rate_comparison_api:

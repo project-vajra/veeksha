@@ -93,10 +93,11 @@ The results of the benchmark are saved in the results directory specified by the
 
 ### Running Benchmarks Against Multiple Endpoints in Parallel
 
-Veeksha supports running benchmarks against multiple API endpoints simultaneously. You can specify multiple endpoints using YAML configuration files with a list of endpoint configurations:
+Veeksha supports running benchmarks against multiple API endpoints simultaneously. You can specify multiple endpoints using YAML configuration files with a list of endpoint configurations. Use `max_parallel_runs` to limit concurrent processes:
 
 ```yaml
 # example_parallel.yml
+max_parallel_runs: 3
 client_config:
   endpoint:
     - name: local-A
