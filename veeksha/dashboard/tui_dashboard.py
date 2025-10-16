@@ -340,22 +340,24 @@ class VeekshaDashboard(App):
         # Charts - pass chart_window_seconds from dashboard_state
         chart_window = dashboard_state.chart_window_seconds
         self.ttft_chart = PlotextChart(
-            "📈 Time to First Token (TTFT)",
+            "Time to First Token (TTFT) — ms",
             color="cyan",
             chart_window_seconds=chart_window,
         )
         self.tpot_chart = PlotextChart(
-            "📉 Time per Output Token (TPOT)",
+            "Time per Output Token (TPOT) — ms",
             color="green",
             chart_window_seconds=chart_window,
         )
         self.tbt_chart = PlotextChart(
-            "⏱️  Time Between Tokens (TBT)",
+            "Time Between Tokens (TBT) — ms",
             color="orange",
             chart_window_seconds=chart_window,
         )
         self.latency_chart = PlotextChart(
-            "📊 End-to-End Latency", color="magenta", chart_window_seconds=chart_window
+            "End-to-End Latency — ms",
+            color="magenta",
+            chart_window_seconds=chart_window,
         )
 
         # Tables

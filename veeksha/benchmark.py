@@ -534,7 +534,7 @@ def run_benchmark(
     else:
         elapsed = 0.0
 
-    logger.info(
+    logger.debug(
         f"Emitting BenchmarkStatusEvent: total={service_metrics.num_requests}, "
         f"completed={service_metrics.num_completed_requests}, "
         f"errored={service_metrics.num_errored_requests}"
