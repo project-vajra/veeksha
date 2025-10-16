@@ -436,6 +436,9 @@ def run_benchmark(
 
     prepare_benchmark_output_dir(benchmark_config)
 
+    # Ensure reproducibility across all execution paths
+    random.seed(benchmark_config.seed)
+
     # Generate unique benchmark ID from output directory
     import os
 
@@ -632,8 +635,6 @@ def run_benchmark_console_only(
                             Set to False when running multiple benchmarks sequentially.
     """
     try:
-        random.seed(benchmark_config.seed)
-
         # Initialize dashboard if enabled (skip if already initialized)
         if (
             benchmark_config.dashboard_config.enabled
