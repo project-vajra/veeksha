@@ -473,7 +473,9 @@ if __name__ == "__main__":
 
     num_parallel_jobs = len(grouped_configs)
     max_parallel_runs = benchmark_configs[0].max_parallel_runs
-    max_workers = max_parallel_runs if max_parallel_runs is not None else num_parallel_jobs
+    max_workers = (
+        max_parallel_runs if max_parallel_runs is not None else num_parallel_jobs
+    )
 
     if max_parallel_runs is not None and max_parallel_runs < num_parallel_jobs:
         logger.warning(
@@ -481,10 +483,14 @@ if __name__ == "__main__":
             f"Jobs will be queued."
         )
     if max_workers > 8:
-        logger.warning(f"max_parallel_runs={max_workers} exceeds recommended limit of 8.")
+        logger.warning(
+            f"max_parallel_runs={max_workers} exceeds recommended limit of 8."
+        )
 
     if num_parallel_jobs > 1:
-        logger.info(f"Running {num_parallel_jobs} jobs with {max_workers} parallel workers.")
+        logger.info(
+            f"Running {num_parallel_jobs} jobs with {max_workers} parallel workers."
+        )
 
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             future_to_endpoint = {
