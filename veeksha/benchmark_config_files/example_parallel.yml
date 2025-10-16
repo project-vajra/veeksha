@@ -1,5 +1,6 @@
 timeout: 10000
 max_completed_requests: 5
+max_parallel_runs: 3
 seed: 42
 
 client_config:
@@ -13,6 +14,12 @@ client_config:
     - name: local-C
       api_url: http://localhost:30004/v1
       api_key: token-ghi789
+    - name: local-D
+      api_url: http://localhost:30006/v1
+      api_key: token-jkl012
+    - name: local-E
+      api_url: http://localhost:30008/v1
+      api_key: token-mno345
   model: meta-llama/Meta-Llama-3-8B-Instruct
   num_clients: 15
   num_concurrent_requests_per_client: 10

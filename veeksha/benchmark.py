@@ -472,11 +472,21 @@ if __name__ == "__main__":
         grouped_configs[cfg.client_config.endpoint.api_url].append(cfg)
 
     num_parallel_jobs = len(grouped_configs)
+    max_parallel_runs = benchmark_configs[0].max_parallel_runs
+    max_workers = max_parallel_runs if max_parallel_runs is not None else num_parallel_jobs
+
+    if max_parallel_runs is not None and max_parallel_runs < num_parallel_jobs:
+        logger.warning(
+            f"Running {num_parallel_jobs} jobs with max_parallel_runs={max_parallel_runs}. "
+            f"Jobs will be queued."
+        )
+    if max_workers > 8:
+        logger.warning(f"max_parallel_runs={max_workers} exceeds recommended limit of 8.")
 
     if num_parallel_jobs > 1:
-        logger.info(f"Running {num_parallel_jobs} jobs in parallel.")
+        logger.info(f"Running {num_parallel_jobs} jobs with {max_workers} parallel workers.")
 
-        with ProcessPoolExecutor(max_workers=num_parallel_jobs) as executor:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
             future_to_endpoint = {
                 executor.submit(_run_benchmarks_for_endpoint, configs): endpoint
                 for endpoint, configs in grouped_configs.items()

@@ -39,6 +39,14 @@ class BenchmarkConfig:
             "that its possible for the test to timeout first."
         },
     )
+    max_parallel_runs: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "Maximum number of parallel benchmark processes to run. If None, "
+            "runs all parallel benchmarks concurrently. Jobs exceeding this limit "
+            "will be queued. Recommended: 8 or lower for stable performance."
+        },
+    )
     client_config: ClientConfig = field(
         default_factory=ClientConfig,
         metadata={"help": "The client configuration for the benchmark."},
