@@ -690,9 +690,8 @@ if __name__ == "__main__":
         logger.info("Using console dashboard for multiple configurations.")
 
     try:
-        # Check if we should launch dashboard for single or multiple configs
+        # single or multiple configs
         if has_dashboard_enabled and len(benchmark_configs) == 1:
-            # Single benchmark with dashboard - launch interactive TUI
             run_benchmark_with_dashboard(benchmark_configs[0])
         elif has_dashboard_enabled and len(benchmark_configs) > 1:
             # Multiple benchmarks with dashboard - run all in thread, then show TUI
