@@ -440,8 +440,6 @@ def run_benchmark(
     random.seed(benchmark_config.seed)
 
     # Generate unique benchmark ID from output directory
-    import os
-
     benchmark_id = os.path.basename(benchmark_config.metrics_config.output_dir)
     logger.info(
         f"Benchmark ID: {benchmark_id}, Output directory: {benchmark_config.metrics_config.output_dir}"
