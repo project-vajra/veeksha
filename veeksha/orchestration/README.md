@@ -184,6 +184,7 @@ See the examples in `veeksha/orchestration/examples/` for templates.
 ### Basic Options
 
 - `engine`: Inference engine (`"vllm"`, etc.)
+ - `engine`: Inference engine (`"vllm"`, "vajra", etc.)
 - `model`: Model name or path
 - `host`: Server host address (default: `"localhost"`)
 - `port`: Server port (default: `8000`)
@@ -208,7 +209,7 @@ Use `additional_args` dict for engine-specific options:
 
 ```python
 server_config = ServerConfig(
-    engine="vllm",
+    engine="vllm",  # or "vajra" to launch Vajra's OpenAI-compatible server
     model="meta-llama/Meta-Llama-3-8B-Instruct",
     additional_args={
         "rope_scaling": {"type": "dynamic", "factor": 2.0},

@@ -42,7 +42,7 @@ def example_synthetic_benchmark():
 
     # Configure server
     server_config = ServerConfig(
-        engine="vllm",
+        engine="vajra",
         model="Qwen/Qwen3-1.7B",
         host="localhost",
         port=8000,

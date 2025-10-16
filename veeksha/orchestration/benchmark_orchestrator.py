@@ -20,6 +20,7 @@ from typing import Any, Dict, Generator
 from veeksha.config.server import ServerConfig
 from veeksha.orchestration.server_manager import BaseServerManager
 from veeksha.orchestration.vllm_server import VLLMServerManager
+from veeksha.orchestration.vajra_server import VajraServerManager
 
 
 def create_server_manager(config: ServerConfig) -> BaseServerManager:
@@ -38,6 +39,8 @@ def create_server_manager(config: ServerConfig) -> BaseServerManager:
 
     if engine == "vllm":
         return VLLMServerManager(config)
+    elif engine == "vajra":
+        return VajraServerManager(config)
     else:
         raise ValueError(f"Unsupported engine: {engine}. Currently supported: vllm")
 
