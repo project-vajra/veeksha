@@ -33,7 +33,9 @@ dependencies = [
     "evaluate",
     "pytablewriter",
     "Pillow",
-    "rekha"
+    "rekha",
+    "textual",
+    "textual-plotext",
 ]
 
 [project.urls]
@@ -73,6 +75,8 @@ exclude = ["tests*", "docs*"]
 veeksha = [
     "data/processed_traces/*",
     "data/corpus.txt",
+    "dashboard/templates/*",
+    "dashboard/static/*",
 ]
 
 [tool.setuptools_scm]
