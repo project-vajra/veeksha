@@ -9,6 +9,8 @@ from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
 from veeksha.core.llm_clients.streaming_mixin import StreamingMixin
 from veeksha.core.request_config import RequestConfig
 from veeksha.core.response import Response
+from veeksha.dashboard.events import TokenBatchEvent
+from veeksha.dashboard.handler import emit_dashboard_event
 from veeksha.logger import init_logger
 from veeksha.metrics.request_metrics import RequestMetrics
 
@@ -117,11 +119,15 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         if isinstance(request_config.sampling_params, dict):
             max_tokens_limit = request_config.sampling_params.get("max_tokens")
 
+        last_token_batch_emission = 0
+        is_first_emission = True  # Track if this is the first dashboard event emission
+
         try:
             async with session.post(address, json=body, headers=headers) as response:
                 response.raise_for_status()
 
                 async for data in self._process_stream(response):
+                    tokens_received_chunk = 0  # Track tokens received in this chunk
                     if "error" in data:
                         err = data.get("error") or {}
                         error_msg = err.get("message", "Unknown error")
@@ -153,6 +159,9 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                             )
 
                         if allowable_to_add > 0:
+                            tokens_received_chunk += (
+                                allowable_to_add  # Track tokens for this chunk
+                            )
                             inter_token_times.append(
                                 time.monotonic() - most_recent_received_token_time
                             )
@@ -178,6 +187,43 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                         ):
                             break
 
+                    if (
+                        tokens_received_chunk > 0
+                        and (tokens_received - last_token_batch_emission) >= 10
+                    ):  # TODO: make this configurable/a constant
+                        current_ttft_ms = (
+                            inter_token_times[0] * 1000 if inter_token_times else None
+                        )
+                        current_tpot_ms = None
+                        recent_tbt_ms = None
+                        if len(inter_token_times) > 1:
+                            from statistics import mean
+
+                            current_tpot_ms = mean(inter_token_times[1:]) * 1000
+                            # Get recent TBT values (last 10 or all available)
+                            recent_tbt_ms = [
+                                t * 1000 for t in inter_token_times[1:][-10:]
+                            ]
+
+                        if request_config.id is not None:
+                            emit_dashboard_event(
+                                TokenBatchEvent(
+                                    request_id=request_config.id,
+                                    timestamp=time.time(),
+                                    tokens_received_this_batch=tokens_received_chunk,
+                                    total_output_tokens=tokens_received,
+                                    ttft_ms=current_ttft_ms,
+                                    current_tpot_ms=current_tpot_ms,
+                                    is_first_token=is_first_emission,
+                                    recent_tbt_ms=recent_tbt_ms,
+                                    benchmark_id=request_config.benchmark_id,
+                                )
+                            )
+                        last_token_batch_emission = tokens_received
+                        is_first_emission = (
+                            False  # After first emission, no longer first
+                        )
+
         except aiohttp.ClientResponseError as e:
             error_response_code = e.status
             error_msg = error_msg or (e.message if hasattr(e, "message") else str(e))
@@ -200,13 +246,14 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             )
 
         metrics = RequestMetrics(
+            request_id=request_config.id,
             request_dispatched_at=request_dispatched_at,
             inter_token_times=inter_token_times,
             num_prompt_tokens=prompt_len,
             num_output_tokens=tokens_received,
             error_code=error_response_code,
             error_msg=error_msg,
-            request_id=request_config.id,
+            benchmark_id=request_config.benchmark_id,
         )
 
         generated_response: Optional[Response]

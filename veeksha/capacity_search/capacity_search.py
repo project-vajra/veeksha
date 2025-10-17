@@ -5,7 +5,7 @@ import tempfile
 import threading
 from dataclasses import replace
 from datetime import datetime
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, TypedDict
 
 import wandb
 
@@ -22,6 +22,13 @@ from veeksha.constants.capacity_search_constants import (
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
+
+
+class SearchResult(TypedDict, total=False):
+    """Result of a capacity search."""
+
+    max_qps_under_sla: Optional[float]
+    slo_metrics_at_max_qps: Optional[Dict[str, float]]
 
 
 class CapacitySearch:
@@ -96,7 +103,7 @@ class CapacitySearch:
 
     def _run_capacity_search_benchmark(
         self, qps: float
-    ) -> Tuple[bool, Optional[Dict[str, float]], str]:
+    ) -> Tuple[bool, Optional[Dict[str, float]], str, bool]:
         qps_key = str(qps)
 
         cached_iter = self._capsearch_cache.get("iterations", {}).get(qps_key)
@@ -106,6 +113,7 @@ class CapacitySearch:
                 bool(cached_iter.get("is_under_sla", False)),
                 cached_iter.get("slo_metrics", {}),
                 qps_key,
+                True,  # from_cache = True
             )
 
         # no cache: ensure per-run dir exists now
@@ -130,7 +138,7 @@ class CapacitySearch:
             run_id=qps_key,
         )
 
-        return is_under_sla, slo_metrics_dict, qps_key
+        return is_under_sla, slo_metrics_dict, qps_key, False  # from_cache = False
 
     def _get_result_file(self, run_dir: str, metric_name: str) -> Optional[str]:
         files = glob.glob(os.path.join(run_dir, f"{metric_name}.csv"))
@@ -153,7 +161,7 @@ class CapacitySearch:
 
         return files[0]
 
-    def search(self):
+    def search(self) -> SearchResult:
         """
         Perform binary search to find the maximum QPS under the SLO
         """
@@ -174,7 +182,35 @@ class CapacitySearch:
         best_run_id = None
         found_valid_qps = False
 
-        for _ in range(self.capacity_search_config.max_iterations):
+        # Generate benchmark_id from base config for dashboard tracking
+        import os
+
+        benchmark_id = os.path.basename(
+            self.base_benchmark_config.metrics_config.output_dir
+        )
+
+        # Emit start event
+        from veeksha.dashboard.events import CapacitySearchEvent
+        from veeksha.dashboard.handler import emit_dashboard_event
+
+        emit_dashboard_event(
+            CapacitySearchEvent(
+                current_qps=0.0,
+                is_under_sla=False,
+                slo_metrics={},
+                slo_target=str(self.slo_evaluator.slo_set),
+                iteration=0,
+                total_iterations=self.capacity_search_config.max_iterations,
+                search_left=left,
+                search_right=right,
+                best_qps=None,
+                best_slo_metrics=None,
+                is_complete=False,
+                benchmark_id=benchmark_id,
+            )
+        )
+
+        for iteration in range(self.capacity_search_config.max_iterations):
             logger.info(f"Searching between {left} and {right}")
             # stopping condition - we have reached the minimum granularity
             if (
@@ -194,6 +230,7 @@ class CapacitySearch:
                 is_under_sla,
                 metrics_dict,
                 run_id,
+                from_cache,
             ) = self._run_capacity_search_benchmark(qps)
 
             if is_under_sla:
@@ -209,6 +246,25 @@ class CapacitySearch:
             else:
                 right = qps
                 min_qps_over_sla = min(min_qps_over_sla, qps)
+
+            # Emit event after each iteration
+            emit_dashboard_event(
+                CapacitySearchEvent(
+                    current_qps=qps,
+                    is_under_sla=is_under_sla,
+                    slo_metrics=metrics_dict or {},
+                    slo_target=str(self.slo_evaluator.slo_set),
+                    iteration=iteration + 1,
+                    total_iterations=self.capacity_search_config.max_iterations,
+                    search_left=left,
+                    search_right=right,
+                    best_qps=max_qps_under_sla,
+                    best_slo_metrics=slo_metrics_at_max_qps,
+                    is_complete=False,
+                    from_cache=from_cache,
+                    benchmark_id=benchmark_id,
+                )
+            )
 
         if not found_valid_qps:
             logger.info(
@@ -240,6 +296,24 @@ class CapacitySearch:
             max_qps_under_sla=max_qps_under_sla,
             slo_metrics_at_max_qps=slo_metrics_at_max_qps,
             best_run_id=best_run_id,
+        )
+
+        # Emit final completion event
+        emit_dashboard_event(
+            CapacitySearchEvent(
+                current_qps=max_qps_under_sla or 0.0,
+                is_under_sla=True,
+                slo_metrics=slo_metrics_at_max_qps or {},
+                slo_target=str(self.slo_evaluator.slo_set),
+                iteration=self.capacity_search_config.max_iterations,
+                total_iterations=self.capacity_search_config.max_iterations,
+                search_left=left,
+                search_right=right,
+                best_qps=max_qps_under_sla,
+                best_slo_metrics=slo_metrics_at_max_qps,
+                is_complete=True,
+                benchmark_id=benchmark_id,
+            )
         )
 
         return {

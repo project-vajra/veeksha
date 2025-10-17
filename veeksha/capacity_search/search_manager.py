@@ -1,9 +1,9 @@
 import os
-from typing import List
+from typing import List, Optional
 
 import wandb
 
-from veeksha.capacity_search.capacity_search import CapacitySearch
+from veeksha.capacity_search.capacity_search import CapacitySearch, SearchResult
 from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.logger import init_logger
 
@@ -36,8 +36,44 @@ def run_search(
         # required so that wandb doesn't delay flush of child logs
         wandb.finish(quiet=True)
 
-    capacity_search = CapacitySearch(capacity_search_config)
-    return capacity_search.search()
+    # Initialize dashboard if enabled
+    dashboard_cfg = capacity_search_config.get_dashboard_config()
+    if dashboard_cfg.enabled:
+        from veeksha.dashboard.handler import init_dashboard_event_processor
+
+        dashboard_state = init_dashboard_event_processor(
+            enabled=True,
+            enable_frontend=False,
+            max_queue_size=dashboard_cfg.max_queue_size,
+            max_live_requests=dashboard_cfg.max_live_requests,
+        )
+
+        # Run capacity search in background thread, TUI in main thread
+        import threading
+
+        result_container: dict[str, Optional[SearchResult]] = {"result": None}
+
+        def run_search_thread():
+            capacity_search = CapacitySearch(capacity_search_config)
+            result_container["result"] = capacity_search.search()
+
+        search_thread = threading.Thread(target=run_search_thread, daemon=False)
+        search_thread.start()
+
+        # Run TUI in main thread
+        from veeksha.dashboard.tui_dashboard import run_dashboard_tui
+
+        if dashboard_state:
+            run_dashboard_tui(dashboard_state)
+
+        # Wait for search to complete
+        search_thread.join()
+
+        return result_container["result"]
+    else:
+        # No dashboard - run normally
+        capacity_search = CapacitySearch(capacity_search_config)
+        return capacity_search.search()
 
 
 # TODO implement parallel jobs if they have different servers

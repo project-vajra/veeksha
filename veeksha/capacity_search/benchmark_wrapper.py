@@ -12,7 +12,10 @@ logger = init_logger(__name__)
 def run_benchmark_wrapped(
     benchmark_config: BenchmarkConfig,
 ):
-    """Main function to run benchmark and return in-memory ServiceMetrics."""
+    """Main function to run benchmark and return in-memory ServiceMetrics.
+
+    Note: Dashboard initialization is handled by the search manager, not here.
+    """
 
     logger.info(f"Running benchmark with config: {benchmark_config}")
     service_metrics = run_benchmark(benchmark_config)
