@@ -76,6 +76,12 @@ When running benchmarks against multiple endpoints, you can control the maximum 
 - If set, jobs exceeding this limit will be queued and executed as running jobs complete
 - **Recommended**: Use 8 or lower for stable performance, especially on resource-constrained systems
 
+.. note::
+
+    **Dashboard and Parallel Execution**
+
+    The TUI dashboard feature and parallel execution are currently mutually exclusive. When the dashboard is enabled (``dashboard_config.enabled: true``), parallel execution across multiple endpoints is automatically disabled and benchmarks will run sequentially instead.
+
 Following figures show evaluations by ``veeksha``:
 
 .. _token_rate_comparison_api:
