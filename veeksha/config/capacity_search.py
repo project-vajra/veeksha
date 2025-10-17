@@ -15,8 +15,11 @@ logger = init_logger(__name__)
 
 @frozen_dataclass(allow_from_file=True)
 class CapacitySearchConfig:
-    """Configuration for capacity search benchmark. This is a special benchmark that runs multiple benchmarks with different QPS and
-    finds the maximum QPS that can be sustained given the deadline constraints."""
+    """Configuration for capacity search benchmark.
+
+    This special benchmark runs multiple benchmarks at different QPS values to
+    find the maximum QPS under the specified SLOs.
+    """
 
     dashboard_config: Optional[DashboardConfig] = field(
         default=None,
@@ -56,7 +59,15 @@ class CapacitySearchConfig:
     )
     wandb_project: Optional[str] = field(
         default=None,
-        metadata={"help": "Wandb project for capacity search"},
+        metadata={
+            "help": "Wandb project for capacity search; overrides nested metrics_config.wandb_project and enables wandb logging for per-QPS attempts and the summary run."
+        },
+    )
+    wandb_group: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Optional Wandb group; overrides nested metrics_config.wandb_group for all per-QPS attempts and the summary run."
+        },
     )
     enable_wandb_sweep: bool = field(
         default=False,

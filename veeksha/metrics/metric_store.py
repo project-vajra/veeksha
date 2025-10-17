@@ -63,7 +63,8 @@ class MetricStore:
 
         self.summaries: Dict[str, CDFSketch] = {
             "num_prompt_tokens": CDFSketch(
-                "Number of Prompt Tokens", self.should_write_metrics_to_wandb
+                metric_name="Number of Prompt Tokens",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
             ),
             "num_output_tokens": CDFSketch(
                 "Number of Output Tokens", self.should_write_metrics_to_wandb
@@ -72,20 +73,33 @@ class MetricStore:
                 "Number of Total Tokens", self.should_write_metrics_to_wandb
             ),
             "tpot": CDFSketch(
-                "Time per Output Token", self.should_write_metrics_to_wandb
+                metric_name="Time per Output Token",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
+                unit="s",
             ),
             "ttft": CDFSketch(
-                "Time to First Token", self.should_write_metrics_to_wandb
+                metric_name="Time to First Token",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
+                unit="s",
             ),
-            "tbt": CDFSketch("Time Between Tokens", self.should_write_metrics_to_wandb),
+            "tbt": CDFSketch(
+                metric_name="Time Between Tokens",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
+                unit="s",
+            ),
             "end_to_end_latency": CDFSketch(
-                "End to End Latency", self.should_write_metrics_to_wandb
+                metric_name="End to End Latency",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
+                unit="s",
             ),
             "normalized_end_to_end_latency": CDFSketch(
-                "Normalized End to End Latency", self.should_write_metrics_to_wandb
+                metric_name="Normalized End to End Latency",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
+                unit="s/token",
             ),
             "output_throughput": CDFSketch(
-                "Output Throughput", self.should_write_metrics_to_wandb
+                metric_name="Output Throughput",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
             ),
             "deadline_miss_rate": CDFSketch(
                 f"Deadline Miss Rate with {self.tbt_deadline}s TBT Deadline, {self.ttft_deadline}s TTFT Deadline",
@@ -117,6 +131,30 @@ class MetricStore:
             },
         )
         logger.info("wandb enabled")
+
+    def _persist_wandb_run_info(self, output_dir: str) -> None:
+        """Persist basic wandb run identifiers for downstream consumers.
+
+        This allows external orchestrators (e.g., capacity search) to
+        reference the exact wandb run for tagging or dashboards.
+        """
+        try:
+            if not (self.should_write_metrics_to_wandb and wandb.run):
+                return
+
+            run_info = {
+                "id": getattr(wandb.run, "id", None),
+                "name": getattr(wandb.run, "name", None),
+                "entity": getattr(wandb.run, "entity", None),
+                "project": getattr(wandb.run, "project", None),
+                "group": getattr(wandb.run, "group", None),
+                "path": getattr(wandb.run, "path", None),
+                "url": getattr(wandb.run, "url", None),
+            }
+            with open(os.path.join(output_dir, "wandb_run.json"), "w") as f:
+                json.dump(run_info, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Failed to persist wandb run info: {e}")
 
     @property
     def error_rate(self):
@@ -202,9 +240,10 @@ class MetricStore:
         self.request_level_metrics.save(output_dir)
 
         # store metric objects
+        logger.info("Storing metric artifacts.")
         for metric_name, metric_summary in self.summaries.items():
             metric_summary._save_df(metric_summary._to_df(), output_dir, metric_name)
-            metric_summary.plot_cdf(output_dir, metric_name, metric_name)
+            metric_summary.plot_cdf(output_dir, metric_name)
 
         # store service level deadline stats
         with open(os.path.join(output_dir, "service_level_metrics.json"), "w") as f:
@@ -240,11 +279,49 @@ class MetricStore:
         # store additional outputs
         self.store_additional_outputs(output_dir)
 
+        # log selected result files as wandb artifacts
+        self._log_artifact_files(output_dir)
+
+        # persist run identifiers and finish the run (if enabled)
+        if self.should_write_metrics_to_wandb and wandb.run:
+            self._persist_wandb_run_info(output_dir)
+            try:
+                wandb.finish(quiet=True)
+            except Exception as e:
+                logger.warning(f"wandb.finish() failed: {e}")
+
     def store_additional_outputs(self, output_dir: str):
         self.store_deadline_miss_rate_for_target_tbt(output_dir)
         self.store_throughput_metrics(output_dir)
         self.store_ttft_violin_plots(output_dir)
         self.store_generation_stalls(output_dir)
+
+    def _log_artifact_files(self, output_dir: str) -> None:
+        if not (self.should_write_metrics_to_wandb and wandb.run):
+            return
+
+        artifact = wandb.Artifact(
+            name=f"benchmark-output-files-{wandb.run.id}",
+            type="benchmark-metrics",
+        )
+
+        files_to_log = [
+            "config.yml",
+            "request_level_metrics.json",
+            "service_level_metrics.json",
+            "summary_stats.json",
+            f"p{int(QUANTILE_FOR_DEADLINE_MISS_RATE * 100)}_deadline_miss_rate_for_target_tbt_values.json",
+        ]
+
+        has_entries = False
+        for relative_path in files_to_log:
+            file_path = os.path.join(output_dir, relative_path)
+            if os.path.exists(file_path):
+                artifact.add_file(file_path, name=relative_path)
+                has_entries = True
+
+        if has_entries:
+            wandb.log_artifact(artifact)
 
     def store_deadline_miss_rate_for_target_tbt(self, output_dir: str):
         # plot deadline miss rate for target TBT values

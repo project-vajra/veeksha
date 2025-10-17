@@ -19,6 +19,7 @@ class CDFSketch:
         self,
         metric_name: str,
         should_write_to_wandb: bool = True,
+        unit: Optional[str] = None,
     ) -> None:
         # metrics are a data series of two-dimensional (x, y) datapoints
         self.sketch = DDSketch(relative_accuracy=0.001)
@@ -30,6 +31,7 @@ class CDFSketch:
         self.last_data = 0
 
         self.should_write_to_wandb = should_write_to_wandb
+        self.unit = unit
 
     def __len__(self):
         return int(self.sketch.count)
@@ -119,7 +121,9 @@ class CDFSketch:
             return
 
         if x_axis_label is None:
-            x_axis_label = self.metric_name
+            x_axis_label = (
+                f"{self.metric_name}{' (' + self.unit + ')' if self.unit else ''}"
+            )
 
         df = self._to_df()
 
@@ -133,7 +137,6 @@ class CDFSketch:
 
         if wandb.run and self.should_write_to_wandb:
             wandb_df = df.copy()
-            # rename the self.metric_name column to x_axis_label
             wandb_df = wandb_df.rename(columns={self.metric_name: x_axis_label})
 
             wandb.log(
