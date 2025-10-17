@@ -255,11 +255,41 @@ class MetricStore:
         # store additional outputs
         self.store_additional_outputs(output_dir)
 
+        # log selected result files as wandb artifacts
+        self._log_artifact_files(output_dir)
+
     def store_additional_outputs(self, output_dir: str):
         self.store_deadline_miss_rate_for_target_tbt(output_dir)
         self.store_throughput_metrics(output_dir)
         self.store_ttft_violin_plots(output_dir)
         self.store_generation_stalls(output_dir)
+
+    def _log_artifact_files(self, output_dir: str) -> None:
+        if not (self.should_write_metrics_to_wandb and wandb.run):
+            return
+
+        artifact = wandb.Artifact(
+            name=f"benchmark-output-files-{wandb.run.id}",
+            type="benchmark-metrics",
+        )
+
+        files_to_log = [
+            "config.yml",
+            "request_level_metrics.json",
+            "service_level_metrics.json",
+            "summary_stats.json",
+            f"p{int(QUANTILE_FOR_DEADLINE_MISS_RATE * 100)}_deadline_miss_rate_for_target_tbt_values.json",
+        ]
+
+        has_entries = False
+        for relative_path in files_to_log:
+            file_path = os.path.join(output_dir, relative_path)
+            if os.path.exists(file_path):
+                artifact.add_file(file_path, name=relative_path)
+                has_entries = True
+
+        if has_entries:
+            wandb.log_artifact(artifact)
 
     def store_deadline_miss_rate_for_target_tbt(self, output_dir: str):
         # plot deadline miss rate for target TBT values
