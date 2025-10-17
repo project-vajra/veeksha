@@ -1,0 +1,80 @@
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Union
+
+from veeksha.metrics.request_metrics import RequestMetrics
+
+
+@dataclass
+class RequestStartedEvent:
+    request_id: Union[str, int]
+    timestamp: float
+    input_tokens: int
+    benchmark_id: str = "default"
+
+
+@dataclass
+class TokenBatchEvent:
+    request_id: Union[str, int]
+    timestamp: float
+    tokens_received_this_batch: int
+    total_output_tokens: int
+    ttft_ms: Optional[float] = None
+    current_tpot_ms: Optional[float] = None
+    is_first_token: bool = False
+    recent_tbt_ms: Optional[List[float]] = None  # Recent TBT values in this batch
+    benchmark_id: str = "default"
+
+
+@dataclass
+class RequestCompletedEvent:
+    request_id: Union[str, int]
+    timestamp: float
+    final_metrics: RequestMetrics
+    benchmark_id: str = "default"
+
+
+@dataclass
+class CapacitySearchEvent:
+    current_qps: float
+    is_under_sla: bool
+    slo_metrics: Dict[str, float]
+    slo_target: str
+    iteration: int
+    total_iterations: int
+    search_left: float = 0.0
+    search_right: float = 0.0
+    best_qps: Optional[float] = None
+    best_slo_metrics: Optional[Dict[str, float]] = None
+    is_complete: bool = False  # True when search is finished
+    from_cache: bool = False  # True if this iteration used cached results
+    benchmark_id: str = "default"
+
+
+@dataclass
+class BenchmarkStatusEvent:
+    total_requests: int
+    completed_requests: int
+    errored_requests: int
+    active_requests: int
+    current_qps: float
+    elapsed_time: float
+    benchmark_id: str = "default"
+
+
+@dataclass
+class RequestErrorEvent:
+    request_id: Union[str, int]
+    timestamp: float
+    error_code: Optional[int]
+    error_msg: str
+    benchmark_id: str = "default"
+
+
+DashboardEvent = Union[
+    RequestStartedEvent,
+    TokenBatchEvent,
+    RequestCompletedEvent,
+    RequestErrorEvent,
+    CapacitySearchEvent,
+    BenchmarkStatusEvent,
+]

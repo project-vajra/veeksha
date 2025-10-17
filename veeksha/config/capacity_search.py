@@ -6,6 +6,7 @@ from typing import List, Optional
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from veeksha.config.dashboard import DashboardConfig
 from veeksha.config.slo import BaseSloConfig
 from veeksha.logger import init_logger
 
@@ -17,6 +18,12 @@ class CapacitySearchConfig:
     """Configuration for capacity search benchmark. This is a special benchmark that runs multiple benchmarks with different QPS and
     finds the maximum QPS that can be sustained given the deadline constraints."""
 
+    dashboard_config: Optional[DashboardConfig] = field(
+        default=None,
+        metadata={
+            "help": "Dashboard configuration for capacity search. If not specified, falls back to benchmark_config.dashboard_config."
+        },
+    )
     start_qps: float = field(
         default=1,
         metadata={"help": "The starting QPS for the capacity search."},
@@ -79,6 +86,16 @@ class CapacitySearchConfig:
             object.__setattr__(instance, "__flat_config__", flat_config)
             instances.append(instance)
         return instances
+
+    def get_dashboard_config(self) -> DashboardConfig:
+        """Get the effective dashboard config.
+
+        Returns the top-level dashboard_config if specified, otherwise falls back
+        to benchmark_config.dashboard_config.
+        """
+        if self.dashboard_config is not None:
+            return self.dashboard_config
+        return self.benchmark_config.dashboard_config
 
     def to_dict(self):
         return self.__dict__

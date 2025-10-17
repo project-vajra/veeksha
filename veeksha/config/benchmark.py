@@ -4,6 +4,7 @@ from typing import Optional
 from veeksha.config.client import ClientConfig
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from veeksha.config.dashboard import DashboardConfig
 from veeksha.config.generators.request_generator.base_generator import (
     BaseRequestGeneratorConfig,
 )
@@ -74,6 +75,9 @@ class BenchmarkConfig:
             "Only used when enable_revati_client is True."
         },
     )
+    dashboard_config: DashboardConfig = field(
+        default_factory=DashboardConfig, metadata={"help": "Dashboard configuration"}
+    )
 
     def __post_init__(self):
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
@@ -121,4 +125,4 @@ class BenchmarkConfig:
             logger.debug("Flat config not found or is None. Using dataclass_to_dict.")
             return dataclass_to_dict(self)
 
-        return flat_config.__dict__  # type: ignore
+        return self.__flat_config__.__dict__  # type: ignore
