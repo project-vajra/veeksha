@@ -1,0 +1,61 @@
+output_dir: "capsearch_results"
+start_qps: 1.0
+max_iterations: 15
+min_search_granularity: 2.5
+seed: 42
+
+slos:
+  - type: constant
+    metric: ttft
+    value: 2.0
+    percentile: 0.90
+    name: "P90 TTFT under 2.0s"
+  
+  - type: constant
+    metric: tbt
+    value: 0.08
+    percentile: 0.90
+    name: "P90 TBT under 80ms"
+  
+  - type: constant
+    metric: tpot
+    value: 0.1
+    percentile: 0.99
+    name: "P99 TPOT under 0.1s"
+
+benchmark_config:
+  timeout: 1000000
+  max_completed_requests: 1000
+  api_url: "http://localhost:9080/v1"
+  api_key: "token-abc123"
+
+  client_config:
+    model: "gradientai/Llama-3-8B-Instruct-Gradient-1048k"
+    num_clients: 50
+    num_concurrent_requests_per_client: 25
+    llm_api: openai_chat
+    request_timeout: 7200
+
+  request_generator_config:
+    type: "trace"
+    trace_file: "/coc/scratch/docker_safe/shrey/vajra/analysis/claude_code/traces/claude_code_trace.jsonl"
+    input_length_column: "input_length"
+    output_length_column: "output_length"
+    use_trace_prefix_hash_ids: true
+    max_tokens: 128000
+    session_generator_config:
+      minimum_prefix_match: 0.6
+      max_session_size: 100000
+      min_session_size: 0
+      save_as_trace_file: true
+      trace_file_save_dir: "./generated_traces"
+
+  metrics_config:
+    deadline_report:
+      ttft_deadline: 2.0
+      tbt_deadline: 0.08
+      target_deadline_miss_rate: 0.05
+    should_write_metrics_to_wandb: true
+    wandb_project: "prefix-cache-profiling"
+    wandb_group: "gatech-sysml"
+    wandb_run_name: "vllm-16K"

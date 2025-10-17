@@ -244,6 +244,7 @@ result_outputs/
 __pycache__
 **/__pycache__/
 
+.env
 env/
 benchmark_results/
 capsearch_results/

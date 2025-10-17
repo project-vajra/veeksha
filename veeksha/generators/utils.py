@@ -28,6 +28,75 @@ def load_trace(trace_file: str) -> pd.DataFrame:
     return trace_df
 
 
+def preprocess_claude_code_trace(
+    trace_df: pd.DataFrame,
+    trace_file: str,
+    column_map: Optional[List[str]] = None,
+) -> pd.DataFrame:
+    """
+    Preprocess a Claude Code trace to:
+    1. Coalesce requests with input_length=0 and output_length>0 with the next request
+       if the next request has time_since_last_assistant=0.0. The next request's
+       new_input_length is changed to its input_length.
+    2. Generate timestamp column from cumulative time_since_last_assistant per session_id.
+    3. Optionally generate hash_ids for prefix caching simulation based on new_input_length.
+
+    Args:
+        trace_df: DataFrame containing the trace file.
+        trace_file: Path to the trace file, only used for logging.
+        tokenizer: Optional tokenizer for determining vocab size when generating hash_ids.
+        block_size: Number of tokens per hash block (default: 512).
+        generate_hash_ids: Whether to generate hash_ids column (default: False).
+        hash_seed: Random seed for generating token IDs (default: 42).
+
+    Returns:
+        Preprocessed trace dataframe.
+    """
+    logger.info(f"Preprocessing Claude Code trace from {trace_file}")
+    
+    new_trace_df = trace_df.copy()
+    
+    # Validate required columns
+    if column_map is not None:
+        for col in column_map:
+            if col not in new_trace_df.columns:
+                raise ValueError(
+                    f"Claude Code Trace file does not have column {col}. Available: {list(new_trace_df.columns)}"
+                )
+
+    def process_group(group):
+        group = group.copy()
+        
+        # Create mask for rows to drop
+        drop_mask = group["input_length"] == 0
+        
+        # Update new_input_length for rows immediately following dropped rows
+        # shift(1) moves the mask down by 1 position to align with "next" row
+        following_dropped = drop_mask.shift(1, fill_value=False)
+        group.loc[following_dropped, "new_input_length"] = group.loc[following_dropped, "input_length"]
+        
+        # Drop rows with input_length == 0
+        group = group[~drop_mask]
+        
+        # Generate cumulative timestamp from time_since_last_assistant
+        group["timestamp"] = group["time_since_last_assistant"].cumsum()    
+        return group
+    
+    new_trace_df = new_trace_df.groupby("session_id", group_keys=False).apply(
+        process_group,
+    ).sort_values(by="timestamp").reset_index(drop=True)
+    
+    if new_trace_df["session_id"].dtype == object or new_trace_df["session_id"].dtype == str:
+        # Create a mapping from string session_ids to integers
+        unique_session_ids = new_trace_df["session_id"].unique()
+        session_id_map = {str(sid): idx for idx, sid in enumerate(sorted(unique_session_ids))}
+        new_trace_df["session_id"] = new_trace_df["session_id"].astype(str).map(session_id_map)
+        logger.info(f"Mapped {len(session_id_map)} string session_ids to integers")
+    
+    logger.info(f"Claude Code trace preprocessing complete: {len(trace_df)} -> {len(new_trace_df)} requests")
+    return new_trace_df
+
+
 def process_request_length_trace(
     trace_df: pd.DataFrame,
     trace_file: str,

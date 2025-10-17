@@ -91,6 +91,12 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
             "help": "If not None, it will synthesize sessions based on the trace file and prefix hash IDs of requests (requires use_trace_prefix_hash_ids to be True)."
         },
     )
+    preprocess_claude_code_trace: bool = field(
+        default=False,
+        metadata={
+            "help": "If True, preprocess the trace file to coalesce requests with input_length=0 and generate timestamps from time_since_last_assistant."
+        },
+    )
 
     def __post_init__(self):
         # Check if trace file exists, handling package resources

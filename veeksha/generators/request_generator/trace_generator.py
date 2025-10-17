@@ -13,6 +13,7 @@ from veeksha.generators.request_generator.base_generator import BaseRequestGener
 from veeksha.generators.utils import (
     generate_random_prompt,
     load_trace,
+    preprocess_claude_code_trace,
     process_request_interval_trace,
     process_request_length_trace,
 )
@@ -48,6 +49,15 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self.session_rng_factory = self.seed_manager.numpy_factory("session")
 
         raw_trace_df = load_trace(self.config.trace_file)
+
+        # Preprocess Claude Code trace if flag is set
+        if self.config.preprocess_claude_code_trace:
+            required_cols = ["session_id", "input_length", "output_length", "time_since_last_assistant"]
+            raw_trace_df = preprocess_claude_code_trace(
+                raw_trace_df,
+                self.config.trace_file,
+                column_map=required_cols,
+            )
 
         # canonical column names
         self.length_column_map = {
@@ -89,7 +99,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 if self.config.remap_hash_ids:
                     self._remap_trace_hash_ids()
         else:
-            if self.corpus_lines is None:
+            if self.corpus_lines is None and not self.config.preprocess_claude_code_trace:
                 raise ValueError(
                     "A corpus file must be provided when not using trace prefix hash IDs."
                 )
@@ -340,6 +350,25 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         if self.config.use_trace_prefix_hash_ids:
             for hash_id in request_to_send["hash_ids"]:
+                if hash_id not in self.past_prompts:
+                    chunk = self.generate_unique_encoding(hash_id)
+                    block = self.pad_to_block_size(chunk, self.config.block_size)
+                    prompt_segment = self.decode(block)
+                    remaining_prompt_tokens -= self.config.block_size
+                    self.past_prompts[hash_id] = prompt_segment
+                prompt += self.past_prompts[hash_id]
+        elif self.config.preprocess_claude_code_trace:
+            block_count = (
+                request_to_send["input_length"] + self.config.block_size - 1
+            ) // self.config.block_size
+            
+            # Generate random integers as virtual hash_ids
+            virtual_hash_ids = [
+                self.prompt_rng.getrandbits(32) for _ in range(block_count)
+            ]
+            
+            # Use same block generation logic as hash_id approach
+            for hash_id in virtual_hash_ids:
                 if hash_id not in self.past_prompts:
                     chunk = self.generate_unique_encoding(hash_id)
                     block = self.pad_to_block_size(chunk, self.config.block_size)
