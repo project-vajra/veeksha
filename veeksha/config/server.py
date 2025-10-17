@@ -93,6 +93,30 @@ class ServerConfig:
         default=True, metadata={"help": "Automatically shutdown server after benchmark"}
     )
 
+    # Resource management
+    require_contiguous_gpus: bool = field(
+        default=True,
+        metadata={
+            "help": "Require contiguous GPU allocation (e.g., GPUs 0,1,2 instead of 0,2,5)"
+        },
+    )
+
+    priority: int = field(
+        default=0,
+        metadata={
+            "help": "Job priority for scheduling (higher = more important). "
+            "Used by resource manager when multiple jobs are queued."
+        },
+    )
+
+    estimated_memory_per_gpu_gb: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": "Estimated GPU memory requirement per GPU in GB. "
+            "Used for resource planning and validation."
+        },
+    )
+
     def __post_init__(self):
         """Parse additional_args JSON string into a dictionary."""
         # Parse additional_args from JSON string
@@ -115,6 +139,16 @@ class ServerConfig:
             return ",".join(map(str, self.gpu_ids))
         return None
 
+    def get_num_gpus(self) -> int:
+        """Get the number of GPUs required for this server.
+
+        Returns:
+            Number of GPUs (tensor_parallel_size or length of gpu_ids)
+        """
+        if self.gpu_ids is not None:
+            return len(self.gpu_ids)
+        return self.tensor_parallel_size
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""
         return {
@@ -130,4 +164,7 @@ class ServerConfig:
             "startup_timeout": self.startup_timeout,
             "health_check_interval": self.health_check_interval,
             "auto_shutdown": self.auto_shutdown,
+            "require_contiguous_gpus": self.require_contiguous_gpus,
+            "priority": self.priority,
+            "estimated_memory_per_gpu_gb": self.estimated_memory_per_gpu_gb,
         }

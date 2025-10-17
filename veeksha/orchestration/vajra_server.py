@@ -55,15 +55,11 @@ class VajraServerManager(BaseServerManager):
 
         # Tensor parallelism
         if self.config.tensor_parallel_size and self.config.tensor_parallel_size > 1:
-            command.extend(["--tensor_parallel_size", str(self.config.tensor_parallel_size)])
-
-        # dtype is accepted via model config typically, but we include it if present
-        if self.config.dtype and self.config.dtype != "auto":
-            command.extend(["--dtype", self.config.dtype])
+            command.extend(["--parallel_config_tensor_parallel_size", str(self.config.tensor_parallel_size)])
 
         # max model length / context
         if self.config.max_model_len is not None:
-            command.extend(["--max_model_len", str(self.config.max_model_len)])
+            command.extend(["--model_config_max_model_len", str(self.config.max_model_len)])
 
         # Process additional arguments (parsed from JSON string in __post_init__)
         for key, value in self.config.additional_args_dict.items():
@@ -96,12 +92,12 @@ class VajraServerManager(BaseServerManager):
         """
         args: List[str] = []
 
-        # Example: if a complex nested config is passed as a dict under 'scheduler_config'
-        if "scheduler_config" in self.config.additional_args_dict:
+        # Handle complex resource mapping configuration
+        if "inference_engine_config_global_resource_mapping" in self.config.additional_args_dict:
             import json
 
-            sched = self.config.additional_args_dict["scheduler_config"]
-            args.extend(["--scheduler-config", json.dumps(sched)])
+            mapping = self.config.additional_args_dict["inference_engine_config_global_resource_mapping"]
+            args.extend(["--inference_engine_config_global_resource_mapping", json.dumps(mapping)])
 
         return args
 
