@@ -63,7 +63,8 @@ class MetricStore:
 
         self.summaries: Dict[str, CDFSketch] = {
             "num_prompt_tokens": CDFSketch(
-                "Number of Prompt Tokens", self.should_write_metrics_to_wandb
+                metric_name="Number of Prompt Tokens",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
             ),
             "num_output_tokens": CDFSketch(
                 "Number of Output Tokens", self.should_write_metrics_to_wandb
@@ -72,20 +73,33 @@ class MetricStore:
                 "Number of Total Tokens", self.should_write_metrics_to_wandb
             ),
             "tpot": CDFSketch(
-                "Time per Output Token", self.should_write_metrics_to_wandb
+                metric_name="Time per Output Token",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
+                unit="s",
             ),
             "ttft": CDFSketch(
-                "Time to First Token", self.should_write_metrics_to_wandb
+                metric_name="Time to First Token",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
+                unit="s",
             ),
-            "tbt": CDFSketch("Time Between Tokens", self.should_write_metrics_to_wandb),
+            "tbt": CDFSketch(
+                metric_name="Time Between Tokens",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
+                unit="s",
+            ),
             "end_to_end_latency": CDFSketch(
-                "End to End Latency", self.should_write_metrics_to_wandb
+                metric_name="End to End Latency",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
+                unit="s",
             ),
             "normalized_end_to_end_latency": CDFSketch(
-                "Normalized End to End Latency", self.should_write_metrics_to_wandb
+                metric_name="Normalized End to End Latency",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
+                unit="s",
             ),
             "output_throughput": CDFSketch(
-                "Output Throughput", self.should_write_metrics_to_wandb
+                metric_name="Output Throughput",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
             ),
             "deadline_miss_rate": CDFSketch(
                 f"Deadline Miss Rate with {self.tbt_deadline}s TBT Deadline, {self.ttft_deadline}s TTFT Deadline",
@@ -202,9 +216,10 @@ class MetricStore:
         self.request_level_metrics.save(output_dir)
 
         # store metric objects
+        logger.info("Storing metric artifacts.")
         for metric_name, metric_summary in self.summaries.items():
             metric_summary._save_df(metric_summary._to_df(), output_dir, metric_name)
-            metric_summary.plot_cdf(output_dir, metric_name, metric_name)
+            metric_summary.plot_cdf(output_dir, metric_name)
 
         # store service level deadline stats
         with open(os.path.join(output_dir, "service_level_metrics.json"), "w") as f:
