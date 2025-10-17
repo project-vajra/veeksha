@@ -15,6 +15,15 @@ from veeksha.capacity_search.slo import SloSet
 from veeksha.capacity_search.slo_evaluator import SloEvaluator
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.capacity_search import CapacitySearchConfig
+from veeksha.config.generators.request_generator.base_generator import (
+    BaseRequestGeneratorConfig,
+)
+from veeksha.config.generators.request_generator.synthetic_generator import (
+    SyntheticRequestGeneratorConfig,
+)
+from veeksha.config.generators.request_generator.trace_generator import (
+    TraceRequestGeneratorConfig,
+)
 from veeksha.config.utils import dataclass_to_dict, get_config_hash
 from veeksha.constants.capacity_search_constants import (
     QPS_INCREASE_SCALE,
@@ -110,9 +119,59 @@ class CapacitySearch:
             wandb_project=propagated_project,
             wandb_group=effective_group,
         )
+        # Build a request_generator_config adjusted for this attempt's QPS
+        # using dataclasses.replace to respect frozen dataclasses.
+        new_req_gen_cfg = self._apply_qps_to_request_generator_config(
+            self.base_benchmark_config.request_generator_config, qps
+        )
 
-        # copy of benchmark_config with updated metrics_config.output_dir
-        return replace(self.base_benchmark_config, metrics_config=new_metrics_cfg)  # type: ignore
+        # copy of benchmark_config with updated metrics and request generator config
+        return replace(  # type: ignore[call-overload]
+            cast(Any, self.base_benchmark_config),
+            metrics_config=new_metrics_cfg,
+            request_generator_config=new_req_gen_cfg,  # type: ignore[arg-type]
+        )
+
+    def _apply_qps_to_request_generator_config(
+        self,
+        base_req_gen_cfg: BaseRequestGeneratorConfig,
+        qps: float,
+    ) -> BaseRequestGeneratorConfig:
+        """Return a copy of request generator config with QPS applied.
+
+        - Synthetic: set interval_generator_config.qps
+        - Trace + sessions: set session_interval_generator_config.qps
+        """
+        new_req_gen_cfg: BaseRequestGeneratorConfig = base_req_gen_cfg
+
+        if isinstance(base_req_gen_cfg, SyntheticRequestGeneratorConfig):
+            interval_cfg = base_req_gen_cfg.interval_generator_config
+            if hasattr(interval_cfg, "qps"):
+                new_interval_cfg = replace(cast(Any, interval_cfg), qps=qps)  # type: ignore[call-overload]
+                new_req_gen_cfg = replace(  # type: ignore[call-overload]
+                    cast(Any, base_req_gen_cfg),
+                    interval_generator_config=new_interval_cfg,
+                )
+        elif isinstance(base_req_gen_cfg, TraceRequestGeneratorConfig):
+            session_gen_cfg = base_req_gen_cfg.session_generator_config
+            if session_gen_cfg is not None:
+                session_interval_cfg = session_gen_cfg.session_interval_generator_config
+                if session_interval_cfg is not None and hasattr(
+                    session_interval_cfg, "qps"
+                ):
+                    new_session_interval_cfg = replace(  # type: ignore[call-overload]
+                        cast(Any, session_interval_cfg), qps=qps
+                    )
+                    new_session_gen_cfg = replace(  # type: ignore[call-overload]
+                        cast(Any, session_gen_cfg),
+                        session_interval_generator_config=new_session_interval_cfg,
+                    )
+                    new_req_gen_cfg = replace(  # type: ignore[call-overload]
+                        cast(Any, new_req_gen_cfg),
+                        session_generator_config=new_session_gen_cfg,
+                    )
+
+        return new_req_gen_cfg
 
     def _ensure_run_dir(self) -> None:
         if self.job_output_dir is None:
