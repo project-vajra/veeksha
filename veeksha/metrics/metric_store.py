@@ -95,7 +95,7 @@ class MetricStore:
             "normalized_end_to_end_latency": CDFSketch(
                 metric_name="Normalized End to End Latency",
                 should_write_to_wandb=self.should_write_metrics_to_wandb,
-                unit="s",
+                unit="s/token",
             ),
             "output_throughput": CDFSketch(
                 metric_name="Output Throughput",

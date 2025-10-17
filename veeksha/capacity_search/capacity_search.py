@@ -179,6 +179,7 @@ class CapacitySearch:
                 info = json.load(f)
             return info.get("path")
         except Exception:
+            logger.debug(f"Could not read wandb path for QPS {qps_key}", exc_info=True)
             return None
 
     def _log_post_search_summary(self, benchmark_id: str) -> None:
@@ -407,7 +408,7 @@ class CapacitySearch:
                     best_run.tags.append("BEST_CONFIG")
                     best_run.update()
                 except Exception:
-                    pass
+                    logger.debug("Could not tag best wandb run", exc_info=True)
 
         self._cache_final(
             max_qps_under_sla=max_qps_under_sla,
