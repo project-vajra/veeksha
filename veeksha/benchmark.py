@@ -743,22 +743,24 @@ if __name__ == "__main__":
 
                 is_last = i == len(benchmark_configs) - 1
         
-        # Check if server orchestration is needed
-        if benchmark_config.server_config is not None:
-            logger.info("Server configuration detected - using managed server")
-            from veeksha.orchestration import managed_server
+                # Check if server orchestration is needed
+                if benchmark_config.server_config is not None:
+                    logger.info("Server configuration detected - using managed server")
+                    from veeksha.orchestration import managed_server
 
-            logger.info(f"Launching {benchmark_config.server_config.engine} server...")
-            with managed_server(benchmark_config.server_config) as info:
-                logger.info(f"Server ready at {info['api_base']}")
-                logger.info("Running benchmark...")
-                service_metrics = run_benchmark(benchmark_config=benchmark_config)
-            logger.info("Server shut down")
-        else:
-            # No server config - assume external server is running
-                    run_benchmark_console_only(
-                    benchmark_config, stop_processor_after=is_last
-                )
+                    logger.info(f"Launching {benchmark_config.server_config.engine} server...")
+                    with managed_server(benchmark_config.server_config) as info:
+                        logger.info(f"Server ready at {info['api_base']}")
+                        logger.info("Running benchmark...")
+                        run_benchmark_console_only(
+                            benchmark_config, stop_processor_after=is_last
+                        )
+                    logger.info("Server shut down")
+                else:
+                    # No server config - assume external server is running
+                            run_benchmark_console_only(
+                            benchmark_config, stop_processor_after=is_last
+                        )
 
                 if len(benchmark_configs) > 1:
                     logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")

@@ -88,6 +88,7 @@ class BenchmarkConfig:
     )
     dashboard_config: DashboardConfig = field(
         default_factory=DashboardConfig, metadata={"help": "Dashboard configuration"}
+    )
     server_config: Optional[ServerConfig] = field(
         default=None,
         metadata={
