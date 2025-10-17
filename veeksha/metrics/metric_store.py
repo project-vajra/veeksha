@@ -132,6 +132,30 @@ class MetricStore:
         )
         logger.info("wandb enabled")
 
+    def _persist_wandb_run_info(self, output_dir: str) -> None:
+        """Persist basic wandb run identifiers for downstream consumers.
+
+        This allows external orchestrators (e.g., capacity search) to
+        reference the exact wandb run for tagging or dashboards.
+        """
+        try:
+            if not (self.should_write_metrics_to_wandb and wandb.run):
+                return
+
+            run_info = {
+                "id": getattr(wandb.run, "id", None),
+                "name": getattr(wandb.run, "name", None),
+                "entity": getattr(wandb.run, "entity", None),
+                "project": getattr(wandb.run, "project", None),
+                "group": getattr(wandb.run, "group", None),
+                "path": getattr(wandb.run, "path", None),
+                "url": getattr(wandb.run, "url", None),
+            }
+            with open(os.path.join(output_dir, "wandb_run.json"), "w") as f:
+                json.dump(run_info, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Failed to persist wandb run info: {e}")
+
     @property
     def error_rate(self):
         return (
@@ -257,6 +281,14 @@ class MetricStore:
 
         # log selected result files as wandb artifacts
         self._log_artifact_files(output_dir)
+
+        # persist run identifiers and finish the run (if enabled)
+        if self.should_write_metrics_to_wandb and wandb.run:
+            self._persist_wandb_run_info(output_dir)
+            try:
+                wandb.finish(quiet=True)
+            except Exception as e:
+                logger.warning(f"wandb.finish() failed: {e}")
 
     def store_additional_outputs(self, output_dir: str):
         self.store_deadline_miss_rate_for_target_tbt(output_dir)

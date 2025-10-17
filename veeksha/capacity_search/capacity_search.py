@@ -5,8 +5,9 @@ import tempfile
 import threading
 from dataclasses import replace
 from datetime import datetime
-from typing import Any, Dict, Optional, Tuple, TypedDict
+from typing import Any, Dict, Optional, Tuple, TypedDict, cast
 
+import pandas as pd
 import wandb
 
 from veeksha.capacity_search.benchmark_wrapper import run_benchmark_wrapped
@@ -78,11 +79,36 @@ class CapacitySearch:
         wandb_run_name encoding QPS.
         """
 
-        # copy of metric_config with updated output_dir and wandb_run_name
-        new_metrics_cfg = replace(
-            self.base_benchmark_config.metrics_config,  # type: ignore
+        # propagate wandb project from capacity search if provided and enable logging
+        base_metrics_cfg = self.base_benchmark_config.metrics_config  # type: ignore
+        propagated_project = (
+            self.capacity_search_config.wandb_project
+            if self.capacity_search_config.wandb_project is not None
+            else base_metrics_cfg.wandb_project
+        )
+        enable_wandb = base_metrics_cfg.should_write_metrics_to_wandb or (
+            self.capacity_search_config.wandb_project is not None
+        )
+        # effective group: capsearch override -> benchmark group -> auto group
+        auto_group = (
+            f"capsearch-{os.path.basename(self.job_output_dir)}"
+            if self.job_output_dir
+            else None
+        )
+        effective_group = (
+            self.capacity_search_config.wandb_group
+            or base_metrics_cfg.wandb_group
+            or auto_group
+        )
+
+        # clone metrics config with updated output_dir and wandb settings
+        new_metrics_cfg = replace(  # type: ignore[call-overload]
+            cast(Any, base_metrics_cfg),
             output_dir=run_dir,
             wandb_run_name=f"qps_{qps}_model_{self.base_benchmark_config.client_config.model}",
+            should_write_metrics_to_wandb=enable_wandb,
+            wandb_project=propagated_project,
+            wandb_group=effective_group,
         )
 
         # copy of benchmark_config with updated metrics_config.output_dir
@@ -140,6 +166,71 @@ class CapacitySearch:
 
         return is_under_sla, slo_metrics_dict, qps_key, False  # from_cache = False
 
+    def _read_wandb_path_for_qps(self, qps_key: str) -> Optional[str]:
+        """Read persisted wandb run path for a given QPS attempt, if present."""
+        try:
+            if self.job_output_dir is None:
+                return None
+            target_dir = os.path.join(self.job_output_dir, str(qps_key))
+            run_info_path = os.path.join(target_dir, "wandb_run.json")
+            if not os.path.exists(run_info_path):
+                return None
+            with open(run_info_path, "r", encoding="utf-8") as f:
+                info = json.load(f)
+            return info.get("path")
+        except Exception:
+            return None
+
+    def _log_post_search_summary(self, benchmark_id: str) -> None:
+        """Create a standalone wandb run with a QPS vs SLO summary table/plot."""
+        if self.capacity_search_config.wandb_project is None:
+            return
+        # build dataframe from cached iterations
+        iterations = self._capsearch_cache.get("iterations", {})
+        if len(iterations) == 0:
+            return
+        rows = []
+        all_metric_keys: set[str] = set()
+        for qps_key, entry in iterations.items():
+            slo_metrics = entry.get("slo_metrics", {}) or {}
+            all_metric_keys.update(slo_metrics.keys())
+        for qps_key, entry in iterations.items():
+            row: Dict[str, Any] = {"qps": float(qps_key)}
+            slo_metrics = entry.get("slo_metrics", {}) or {}
+            for k in all_metric_keys:
+                row[k] = slo_metrics.get(k)
+            rows.append(row)
+        df = pd.DataFrame(sorted(rows, key=lambda r: r["qps"]))
+
+        # use the same effective group as attempts to visually group all runs
+        auto_group = (
+            f"capsearch-{os.path.basename(self.job_output_dir)}"
+            if self.job_output_dir
+            else None
+        )
+        effective_group = (
+            self.capacity_search_config.wandb_group
+            or getattr(self.base_benchmark_config.metrics_config, "wandb_group", None)
+            or auto_group
+        )
+
+        run = wandb.init(
+            project=self.capacity_search_config.wandb_project,
+            group=effective_group,
+            name=f"capsearch-summary-{benchmark_id}",
+            config={
+                "benchmark_id": benchmark_id,
+                "model": self.base_benchmark_config.client_config.model,
+                "start_qps": self.capacity_search_config.start_qps,
+                "max_iterations": self.capacity_search_config.max_iterations,
+                "slos": str(self.slo_evaluator.slo_set),
+            },
+        )
+        try:
+            wandb.log({"capsearch_qps_slo_table": wandb.Table(dataframe=df)}, step=0)
+        finally:
+            wandb.finish(quiet=True)
+
     def _get_result_file(self, run_dir: str, metric_name: str) -> Optional[str]:
         files = glob.glob(os.path.join(run_dir, f"{metric_name}.csv"))
         if len(files) == 0:
@@ -171,6 +262,23 @@ class CapacitySearch:
         )
         logger.info(f"SLOs: {self.slo_evaluator.slo_set}")
 
+        # Emit effective wandb settings (if enabled)
+        effective_project = self.capacity_search_config.wandb_project or getattr(
+            self.base_benchmark_config.metrics_config, "wandb_project", None
+        )
+        effective_group = self.capacity_search_config.wandb_group or getattr(
+            self.base_benchmark_config.metrics_config, "wandb_group", None
+        )
+        wandb_enabled = effective_project is not None or getattr(
+            self.base_benchmark_config.metrics_config,
+            "should_write_metrics_to_wandb",
+            False,
+        )
+        if wandb_enabled:
+            logger.info(
+                f"wandb: enabled | project={effective_project} | group={effective_group}"
+            )
+
         left = 0
         right = self.capacity_search_config.start_qps * 2
         qps = 0
@@ -181,6 +289,7 @@ class CapacitySearch:
         slo_metrics_at_max_qps = None
         best_run_id = None
         found_valid_qps = False
+        any_new_runs = False
 
         # Generate benchmark_id from base config for dashboard tracking
         import os
@@ -233,6 +342,9 @@ class CapacitySearch:
                 from_cache,
             ) = self._run_capacity_search_benchmark(qps)
 
+            if not from_cache:
+                any_new_runs = True
+
             if is_under_sla:
                 found_valid_qps = True
                 max_qps_under_sla = qps
@@ -282,15 +394,20 @@ class CapacitySearch:
             f"{'-'*100}\n"
         )
 
+        # Tag the actual best attempt run in wandb (if available and not fully cached)
         if (
-            self.capacity_search_config.wandb_project is not None
-            and self.capacity_search_config.enable_wandb_sweep
+            any_new_runs
+            and self.capacity_search_config.wandb_project is not None
+            and best_run_id is not None
         ):
-            best_run = wandb.Api().run(
-                f"{self.capacity_search_config.wandb_project}/{best_run_id}"
-            )
-            best_run.tags.append("BEST_CONFIG")
-            best_run.update()
+            best_path = self._read_wandb_path_for_qps(str(best_run_id))
+            if best_path:
+                try:
+                    best_run = wandb.Api().run(best_path)
+                    best_run.tags.append("BEST_CONFIG")
+                    best_run.update()
+                except Exception:
+                    pass
 
         self._cache_final(
             max_qps_under_sla=max_qps_under_sla,
@@ -315,6 +432,10 @@ class CapacitySearch:
                 benchmark_id=benchmark_id,
             )
         )
+
+        # Log a post-search summary run/table only if new runs occurred
+        if any_new_runs:
+            self._log_post_search_summary(benchmark_id)
 
         return {
             "max_qps_under_sla": max_qps_under_sla,

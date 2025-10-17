@@ -1,7 +1,6 @@
 import multiprocessing
 import os
 import platform
-import time
 from typing import List
 
 from veeksha.capacity_search.search_manager import SearchManager
@@ -44,10 +43,7 @@ def run():
                 veeksha_logger.removeHandler(handler)
 
     search_manager = SearchManager(capacity_search_configs)
-    start_time = time.time()
-    all_results = search_manager.run()
-    end_time = time.time()
-    logger.info(f"Capacity search took time: {end_time - start_time}")
+    _ = search_manager.run()
 
 
 def main():
