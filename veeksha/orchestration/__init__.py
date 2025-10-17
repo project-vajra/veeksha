@@ -31,6 +31,10 @@ from veeksha.orchestration.benchmark_orchestrator import (
     create_server_manager,
     managed_server,
 )
+from veeksha.orchestration.benchmark_orchestrator import (
+    create_server_manager,
+    managed_server,
+)
 from veeksha.orchestration.server_manager import BaseServerManager
 from veeksha.orchestration.vllm_server import (
     VLLMServerManager,
@@ -39,6 +43,11 @@ from veeksha.orchestration.vllm_server import (
 from veeksha.orchestration.vajra_server import (
     VajraServerManager,
     create_vajra_server_manager,
+)
+from veeksha.orchestration.resource_manager import ResourceManager
+from veeksha.orchestration.parallel_runner import (
+    ParallelBenchmarkRunner,
+    SequentialJobQueue,
 )
 
 __all__ = [
@@ -51,4 +60,8 @@ __all__ = [
     "create_server_manager",
     # Context manager
     "managed_server",
+    # Resource management
+    "ResourceManager",
+    "ParallelBenchmarkRunner",
+    "SequentialJobQueue",
 ]
