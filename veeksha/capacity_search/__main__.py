@@ -1,4 +1,5 @@
 import multiprocessing
+import os
 import platform
 import time
 from typing import List
@@ -24,7 +25,12 @@ def run():
 
 
 def main():
-    if platform.system() == "Darwin":
+    # Use spawn mode when EventLoopIntegration is enabled to avoid ZMQ fork issues
+    # Fork mode copies ZMQ socket file descriptors from parent, but ZMQ context is not fork-safe
+    # This causes deadlocks in child processes when using revati time synchronization
+    if os.getenv("REVATI_EVENT_LOOP_INTEGRATION") == "1":
+        multiprocessing.set_start_method("spawn", force=True)
+    elif platform.system() == "Darwin":
         multiprocessing.set_start_method("fork", force=True)
 
     run()

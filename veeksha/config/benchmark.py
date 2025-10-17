@@ -59,6 +59,21 @@ class BenchmarkConfig:
         default_factory=SyntheticRequestGeneratorConfig,
         metadata={"help": "The request generator configuration for the benchmark."},
     )
+    enable_revati_client: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable Revati client for time synchronization and emulation. "
+            "Requires revati-server to be running and the benchmark to be "
+            "launched with revati-run wrapper."
+        },
+    )
+    revati_server_address: str = field(
+        default="ipc:///tmp/revati_time_sync_default.sock",
+        metadata={
+            "help": "Address of the Revati timing simulation server. "
+            "Only used when enable_revati_client is True."
+        },
+    )
 
     def __post_init__(self):
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:

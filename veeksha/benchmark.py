@@ -11,6 +11,11 @@ from typing import List, Optional
 
 from tqdm import tqdm  # type: ignore
 
+try:
+    from revati.core.time_sync import Client as RevatiClient
+except ImportError:
+    RevatiClient = None
+
 from veeksha.benchmark_data_utils import (
     load_corpus,
     store_generated_texts,
@@ -143,8 +148,18 @@ def dispatch_requests(
     request_generator: BaseRequestGenerator,
     stop_event: threading.Event,
     scheduler: DispatchScheduler,
+    revati_client: Optional["RevatiClient"] = None,
 ) -> None:
-    """Thread function to generate and dispatch requests."""
+    """Thread function to generate and dispatch requests.
+
+    Args:
+        input_queue: Queue for dispatching requests
+        service_metrics: Metrics tracker
+        request_generator: Generator for creating requests
+        stop_event: Event to signal thread termination
+        scheduler: Scheduler for managing request dispatch timing
+        revati_client: Optional revati client for time synchronization
+    """
     num_errored_requests_handled = 0
 
     # scheduler provided by caller
@@ -190,6 +205,13 @@ def dispatch_requests(
         # Attempt to pop a ready request
         ready = scheduler.pop_ready()
         if ready is not None:
+            # Check if stop requested before dispatching. With revati, time_jump() can make
+            # many prefetched requests "ready" instantly, causing rapid dispatch without
+            # checking stop_event if we don't explicitly check here before the continue.
+            if stop_event.is_set():
+                logger.info("Stop requested, not dispatching request %d", ready.id)
+                break
+
             service_metrics.register_launched_request()
             input_queue.put(ready)
             if scheduled_backlog > 0:
@@ -199,7 +221,12 @@ def dispatch_requests(
 
         time_until = scheduler.time_until_next_ready()
         sleep_time = 0.01 if time_until is None else min(max(time_until, 0.0), 0.1)
-        time.sleep(sleep_time)
+
+        # Use revati time synchronization if available, otherwise fall back to time.sleep
+        if revati_client is not None:
+            revati_client.time_jump(sleep_time)
+        else:
+            time.sleep(sleep_time)
 
 
 def process_results(
@@ -271,6 +298,35 @@ def run_main_loop(
     stop_event = threading.Event()
     scheduler = DispatchScheduler()
 
+    # Initialize revati client if enabled
+    revati_client = None
+    enable_revati = getattr(benchmark_config, "enable_revati_client", False)
+    revati_server_address = getattr(
+        benchmark_config, "revati_server_address", "ipc:///tmp/revati_time_sync_default.sock"
+    )
+
+    if enable_revati and RevatiClient:
+        try:
+            logger.info(
+                f"Initializing Revati client at {revati_server_address} for dispatch timing"
+            )
+            revati_client = RevatiClient(
+                server_address=revati_server_address, client_name="Dispatch"
+            )
+            revati_client.connect()
+            revati_client.register()
+            revati_client.start_simulation()
+            logger.info("Revati dispatch client initialized and simulation started")
+        except Exception as e:
+            logger.warning(
+                f"Failed to initialize Revati client: {e}. Falling back to normal timing."
+            )
+            revati_client = None
+    elif enable_revati and not RevatiClient:
+        logger.warning(
+            "Revati client requested but not available. Install revati to enable time synchronization."
+        )
+
     # Initialize request launcher
     req_launcher = RequestsLauncher(
         client_config=benchmark_config.client_config,
@@ -290,6 +346,7 @@ def run_main_loop(
             request_generator,
             stop_event,
             scheduler,
+            revati_client,
         ),
     )
 
@@ -330,6 +387,16 @@ def run_main_loop(
     processor_thread.join()
 
     pbar.close()
+
+    # Clean up revati client if it was initialized
+    if revati_client is not None:
+        try:
+            logger.info("Finalizing and disconnecting Revati dispatch client")
+            revati_client.finalize()
+            revati_client.disconnect()
+            logger.info("Revati dispatch client cleaned up successfully")
+        except Exception as e:
+            logger.warning(f"Error cleaning up Revati client: {e}")
 
     if service_metrics.error is None:
         logger.info("Main loop completed.")
@@ -435,7 +502,12 @@ def run_benchmark(
 
 
 if __name__ == "__main__":
-    if platform.system() == "Darwin":
+    # Use spawn mode when EventLoopIntegration is enabled to avoid ZMQ fork issues
+    # Fork mode copies ZMQ socket file descriptors from parent, but ZMQ context is not fork-safe
+    # This causes deadlocks in child processes when using revati time synchronization
+    if os.getenv("REVATI_EVENT_LOOP_INTEGRATION") == "1":
+        multiprocessing.set_start_method("spawn", force=True)
+    elif platform.system() == "Darwin":
         multiprocessing.set_start_method("fork", force=True)
 
     benchmark_configs = BenchmarkConfig.create_from_cli_args()
