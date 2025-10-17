@@ -271,13 +271,14 @@ def dispatch_requests(
                     scheduler.add_request(request_config)
                     scheduled_backlog += 1
                 next_prefetch_time = now + PREFETCH_INTERVAL_S
+            else:
+                # TODO: may be wrong place Can't prefetch now (near deadline or not time yet) - jump time until next request is ready
+                if revati_client is not None and time_until is not None and time_until > 0:
+                    revati_client.time_jump(time_until)
 
         # dispatch again after prefetch
         ready = scheduler.pop_ready()
         if ready is not None:
-            # Check if stop requested before dispatching. With revati, time_jump() can make
-            # many prefetched requests "ready" instantly, causing rapid dispatch without
-            # checking stop_event if we don't explicitly check here before the continue.
             if stop_event.is_set():
                 logger.info("Stop requested, not dispatching request %d", ready.id)
                 break
@@ -291,7 +292,12 @@ def dispatch_requests(
 
         # Use revati time synchronization if available, otherwise fall back to time.sleep
         if revati_client is not None:
-            revati_client.time_jump(sleep_time)
+            # Jump to next dispatch time if there are scheduled requests
+            if time_until is not None and time_until > 0:
+                revati_client.time_jump(time_until)
+            else:
+                # Wait for interrupts (request completions, etc.)
+                revati_client.time_wait_until_interrupt()
         else:
             time.sleep(sleep_time)
 
