@@ -233,10 +233,18 @@ class CapacitySearch:
             target_dir = os.path.join(self.job_output_dir, str(qps_key))
             run_info_path = os.path.join(target_dir, "wandb_run.json")
             if not os.path.exists(run_info_path):
-                return None
+                candidates = glob.glob(
+                    os.path.join(target_dir, "**", "wandb_run.json"), recursive=True
+                )
+                if not candidates:
+                    return None
+                run_info_path = max(candidates, key=lambda p: os.path.getmtime(p))
             with open(run_info_path, "r", encoding="utf-8") as f:
                 info = json.load(f)
-            return info.get("path")
+            entity = info.get("entity")
+            project = info.get("project")
+            run_id = info.get("id")
+            return f"{entity}/{project}/{run_id}"
         except Exception:
             logger.debug(f"Could not read wandb path for QPS {qps_key}", exc_info=True)
             return None
@@ -455,17 +463,15 @@ class CapacitySearch:
         )
 
         # Tag the actual best attempt run in wandb (if available and not fully cached)
-        if (
-            any_new_runs
-            and self.capacity_search_config.wandb_project is not None
-            and best_run_id is not None
-        ):
+        if any_new_runs and wandb_enabled and best_run_id is not None:
             best_path = self._read_wandb_path_for_qps(str(best_run_id))
+            logger.info(f"Best path: {best_path}")
             if best_path:
                 try:
+                    logger.info(f"Tagging best wandb run: {best_path}")
                     best_run = wandb.Api().run(best_path)
-                    best_run.tags.append("BEST_CONFIG")
-                    best_run.update()
+                    best_run.tags = best_run.tags + ("BEST_CONFIG",)
+                    best_run.update({"tags": best_run.tags})
                 except Exception:
                     logger.debug("Could not tag best wandb run", exc_info=True)
 
