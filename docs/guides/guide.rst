@@ -8,6 +8,7 @@ Check out the following guides to learn more:
 .. toctree::
    :maxdepth: 2
 
+   configuration
    new_llm_client
    request_generator_providers
 
