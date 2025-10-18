@@ -356,6 +356,38 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
         raise
 
 
+class ExplodeMarker:
+    """Marker class for values tagged with !explode in YAML config files.
+
+    This class wraps a value to indicate it should be exploded into multiple
+    configurations, even if the field type would normally prevent explosion
+    (e.g., List-typed fields).
+    """
+    def __init__(self, value):
+        self.value = value
+
+    def __repr__(self):
+        return f"ExplodeMarker({self.value!r})"
+
+
+def explode_constructor(loader, node):
+    """YAML constructor for the !explode tag.
+
+    Parses a sequence tagged with !explode and wraps it in an ExplodeMarker
+    to signal the config explosion logic to force explosion regardless of
+    the field's type annotation.
+
+    Example YAML:
+        gpu_ids: !explode [0, 1, 2, 3]
+    """
+    if isinstance(node, yaml.SequenceNode):
+        value = loader.construct_sequence(node)
+    else:
+        # Handle scalar or mapping nodes if needed
+        value = loader.construct_object(node)
+    return ExplodeMarker(value)
+
+
 def load_yaml_config(file_path: str):
     """Load a YAML configuration file and return its contents.
 
@@ -397,6 +429,9 @@ def load_yaml_config(file_path: str):
     import os
 
     import yaml
+
+    # Register the !explode tag constructor
+    yaml.add_constructor('!explode', explode_constructor, Loader=yaml.SafeLoader)
 
     # check file
     if not os.path.exists(file_path):

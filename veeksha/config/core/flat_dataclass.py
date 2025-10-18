@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple, get_args
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.utils import (
+    ExplodeMarker,
     get_all_subclasses,
     get_inner_type,
     has_allow_from_file_attribute,
@@ -121,7 +122,23 @@ def explode_dict(
             expected_type = getattr(cls, "__annotations__", {}).get(prefixed_key, None)
             is_literal_list = expected_type and is_list(expected_type)
 
-            if isinstance(value, list) and len(value) > 0:
+            # Check if value is marked with !explode tag
+            is_explode_tagged = isinstance(value, ExplodeMarker)
+
+            if is_explode_tagged:
+                # Force explosion regardless of type annotation
+                actual_value = value.value
+                if not isinstance(actual_value, list):
+                    raise ValueError(
+                        f"!explode tag can only be used with list values. "
+                        f"Field '{key}' has !explode but value is {type(actual_value).__name__}"
+                    )
+                logger.info(
+                    f"Field '{prefixed_key}' marked with !explode tag - forcing explosion"
+                )
+                list_keys.append(key)
+                list_values.append(actual_value)
+            elif isinstance(value, list) and len(value) > 0:
                 # (only) if the dataclass declares the field as a List[...]
                 # we treat the whole list as a single literal value and don't
                 # explode it
