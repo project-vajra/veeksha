@@ -462,18 +462,12 @@ class CapacitySearch:
             f"{'-'*100}\n"
         )
 
-        # Tag the actual best attempt run in wandb (if available and not fully cached)
         if any_new_runs and wandb_enabled and best_run_id is not None:
             best_path = self._read_wandb_path_for_qps(str(best_run_id))
-            logger.info(f"Best path: {best_path}")
             if best_path:
-                try:
-                    logger.info(f"Tagging best wandb run: {best_path}")
-                    best_run = wandb.Api().run(best_path)
-                    best_run.tags = best_run.tags + ("BEST_CONFIG",)
-                    best_run.update({"tags": best_run.tags})
-                except Exception:
-                    logger.debug("Could not tag best wandb run", exc_info=True)
+                best_run = wandb.Api().run(best_path)
+                best_run.tags.append("BEST_CONFIG")
+                best_run.update()
 
         self._cache_final(
             max_qps_under_sla=max_qps_under_sla,
