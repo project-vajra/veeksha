@@ -363,6 +363,7 @@ class ExplodeMarker:
     configurations, even if the field type would normally prevent explosion
     (e.g., List-typed fields).
     """
+
     def __init__(self, value):
         self.value = value
 
@@ -431,7 +432,7 @@ def load_yaml_config(file_path: str):
     import yaml
 
     # Register the !explode tag constructor
-    yaml.add_constructor('!explode', explode_constructor, Loader=yaml.SafeLoader)
+    yaml.add_constructor("!explode", explode_constructor, Loader=yaml.SafeLoader)
 
     # check file
     if not os.path.exists(file_path):
