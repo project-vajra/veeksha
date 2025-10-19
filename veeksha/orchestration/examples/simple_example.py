@@ -42,7 +42,7 @@ def example_synthetic_benchmark():
 
     # Configure server
     server_config = ServerConfig(
-        engine="vajra",
+        engine="vllm",
         model="Qwen/Qwen3-1.7B",
         host="localhost",
         port=8000,
@@ -60,8 +60,6 @@ def example_synthetic_benchmark():
         api_url=server_config.get_api_base_url(),
         client_config=ClientConfig(
             model="Qwen/Qwen3-1.7B",
-            num_clients=1,  # Single client for demo
-            tokenizer="Qwen/Qwen3-1.7B",
         ),
         request_generator_config=SyntheticRequestGeneratorConfig(
             interval_generator_config=PoissonRequestIntervalGeneratorConfig(qps=1.0),

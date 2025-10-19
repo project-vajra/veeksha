@@ -13,6 +13,12 @@ from veeksha.config.benchmark import (
     MetricsConfig,
     SyntheticRequestGeneratorConfig
 )
+from veeksha.config.generators.interval_generator.poisson_generator import (
+    PoissonRequestIntervalGeneratorConfig,
+)
+from veeksha.config.generators.length_generator.trace_generator import (
+    TraceRequestLengthGeneratorConfig,
+)
 from veeksha.config.server import ServerConfig
 from veeksha.orchestration import ResourceManager
 from veeksha.orchestration.benchmark_orchestrator import managed_server
@@ -44,15 +50,21 @@ def run_experiment_with_resources(
     gpu_ids = [gpu_id for _, gpu_id in resource_mapping]
     print(f"Allocated GPUs: {gpu_ids}")
 
+    # Get recommended GPU memory utilization
+    gpu_mem_util = resource_manager.recommend_gpu_memory_utilization(
+        resource_mapping, model
+    )
+
     try:
         # Create server config with allocated GPUs
         server_config = ServerConfig(
-            engine="vajra",
+            engine="vllm",
             model=model,
             port=port,
             tensor_parallel_size=tp_size,
             gpu_ids=gpu_ids,
             auto_shutdown=True,
+            additional_args=f'{{"gpu-memory-utilization": "{gpu_mem_util}"}}',
         )
         # Create benchmark config
         benchmark_config = BenchmarkConfig(
@@ -60,7 +72,13 @@ def run_experiment_with_resources(
             timeout=300,
             max_completed_requests=20,
             client_config=ClientConfig(model=model),
-            request_generator_config=SyntheticRequestGeneratorConfig(),
+            request_generator_config=SyntheticRequestGeneratorConfig(
+                interval_generator_config=PoissonRequestIntervalGeneratorConfig(qps=0.5),
+                length_generator_config=TraceRequestLengthGeneratorConfig(
+                    trace_file="./veeksha/data/processed_traces/sharegpt_8k_filtered_stats_llama2_tokenizer.csv",
+                    max_tokens=8192,
+                ),
+            ),
             metrics_config=MetricsConfig(output_dir=f"results/{job_id}"),
         )
 
