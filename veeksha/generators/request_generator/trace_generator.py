@@ -121,7 +121,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 session_df_for_saving["timestamp"] = (
                     session_df_for_saving["timestamp"] * 1000
                 )
-                save_suffix = ""
+                save_suffix = f"_remapped" if self.config.remap_hash_ids else ""
                 session_generator.save_requests_as_trace(
                     session_df_for_saving,
                     save_suffix=save_suffix,
