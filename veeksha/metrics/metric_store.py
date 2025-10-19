@@ -128,6 +128,12 @@ class MetricStore:
                 display_unit_scale=1e3,
                 display_unit_suffix=" (ms)",
             ),
+            "client_parse_overhead_s": CDFSketch(
+                "Client Parse Overhead per Request",
+                self.should_write_metrics_to_wandb,
+                display_unit_scale=1e3,
+                display_unit_suffix=" (ms)",
+            ),
             "stream_elapsed_s": CDFSketch(
                 "Stream Elapsed (first to last chunk)",
                 self.should_write_metrics_to_wandb,
@@ -423,6 +429,55 @@ class MetricStore:
         self.store_throughput_metrics(output_dir)
         self.store_ttft_violin_plots(output_dir)
         self.store_generation_stalls(output_dir)
+        self.store_stream_audit_plots(output_dir)
+
+    def store_stream_audit_plots(self, output_dir: str) -> None:
+        """Write audit plots for streaming/timing metrics under audits/stream.
+
+        This includes CDFs (duplicated under the audit path) for the core audit
+        metrics and simple line plots for arrival timestamps.
+        """
+        audit_dir = os.path.join(output_dir, "audits", "stream")
+        os.makedirs(audit_dir, exist_ok=True)
+
+        # Re-plot CDFs for stream audit metrics into the audit directory
+        audit_cdf_keys = [
+            "client_processing_overhead_s",
+            "client_parse_overhead_s",
+            "stream_elapsed_s",
+            "measurement_gap_s",
+            "dispatch_delta_s",
+        ]
+        for key in audit_cdf_keys:
+            if key in self.summaries:
+                # Use the metric's display name as x-axis label
+                self.summaries[key].plot_cdf(
+                    audit_dir,
+                    key,
+                    None,
+                )
+
+        # Line plots for arrival timestamps (index vs absolute time)
+        rlm = self.request_level_metrics
+        def _save_line(values, filename, title, y_label):
+            if not values:
+                return
+            df = pd.DataFrame({"index": list(range(len(values))), y_label: values})
+            fig = rk.line(df, x="index", y=y_label, title=title)
+            fig.save(os.path.join(audit_dir, filename))
+
+        _save_line(
+            rlm.stream_first_chunk_monotonic,
+            "stream_first_chunk_monotonic.png",
+            "Stream First Chunk Arrival (absolute, s)",
+            "arrival_time_s",
+        )
+        _save_line(
+            rlm.stream_last_chunk_monotonic,
+            "stream_last_chunk_monotonic.png",
+            "Stream Last Chunk Arrival (absolute, s)",
+            "arrival_time_s",
+        )
         self.store_dispatch_audits(output_dir)
         self.store_stream_timing_audits(output_dir)
 

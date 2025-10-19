@@ -164,6 +164,7 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
         stream_first_chunk_monotonic: Optional[float] = None
         stream_last_chunk_monotonic: Optional[float] = None
         client_processing_overhead_s: float = 0.0
+        client_parse_overhead_s: float = 0.0
         # Respect a local cap on tokens to avoid mismatches with server/tokenizer
         max_tokens_limit = None
         if isinstance(request_config.sampling_params, dict):
@@ -186,6 +187,21 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
                 else:
                     async for data in self._process_stream(response):
                         before_process = time.monotonic()
+                        if "_arrival_monotonic" not in data or "_parse_overhead_s" not in data:
+                            raise RuntimeError(
+                                "Missing streaming audit metadata (_arrival_monotonic/_parse_overhead_s)."
+                            )
+                        arrival_raw = data.pop("_arrival_monotonic")
+                        parse_overhead_raw = data.pop("_parse_overhead_s")
+                        if not isinstance(arrival_raw, (int, float)) or not isinstance(
+                            parse_overhead_raw, (int, float)
+                        ):
+                            raise RuntimeError(
+                                "Invalid types for streaming audit metadata."
+                            )
+                        arrival_ts = float(arrival_raw)
+                        parse_overhead = float(parse_overhead_raw)
+                        client_parse_overhead_s += parse_overhead
                         if "error" in data:
                             err = data.get("error") or {}
                             error_msg = err.get("message", "Unknown error")
@@ -195,7 +211,7 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
                             )
                             break
                         if stream_first_chunk_monotonic is None:
-                            stream_first_chunk_monotonic = before_process
+                            stream_first_chunk_monotonic = arrival_ts
                         text_chunk = data["choices"][0].get("text", "")
                         if text_chunk:
                             current_tokens_received, previous_token_count = (
@@ -215,15 +231,16 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
                                     ),
                                 )
                             if allowable_to_add > 0:
+                                now_ts = arrival_ts
                                 inter_token_times.append(
-                                    time.monotonic() - most_recent_received_token_time
+                                    now_ts - most_recent_received_token_time
                                 )
                                 if allowable_to_add > 1:
                                     inter_token_times.extend(
                                         [0] * (allowable_to_add - 1)
                                     )
                                 tokens_received += allowable_to_add
-                                most_recent_received_token_time = time.monotonic()
+                                most_recent_received_token_time = now_ts
                                 generated_text += text_chunk
 
                                 # Truncate generated_text to exactly tokens_received tokens
@@ -250,7 +267,7 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
                                 elif isinstance(raw_lp, dict):
                                     logprobs_chunks.append(raw_lp)
                         after_process = time.monotonic()
-                        stream_last_chunk_monotonic = after_process
+                        stream_last_chunk_monotonic = arrival_ts
                         client_processing_overhead_s += max(
                             0.0, after_process - before_process
                         )
@@ -295,6 +312,7 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
             stream_first_chunk_monotonic=stream_first_chunk_monotonic,
             stream_last_chunk_monotonic=stream_last_chunk_monotonic,
             client_processing_overhead_s=client_processing_overhead_s,
+            client_parse_overhead_s=client_parse_overhead_s,
         )
 
         generated_response: Optional[Response]

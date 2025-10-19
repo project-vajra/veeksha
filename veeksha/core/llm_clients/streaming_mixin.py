@@ -1,4 +1,5 @@
 import json
+import time
 from typing import AsyncGenerator, Dict, List, Protocol, Tuple, cast
 
 import aiohttp
@@ -43,7 +44,15 @@ class StreamingMixin:
                     return
 
                 try:
-                    yield json.loads(payload)
+                    arrival_ts = time.monotonic()
+                    parse_start = time.monotonic()
+                    parsed = json.loads(payload)
+                    parse_overhead = time.monotonic() - parse_start
+                    # Attach arrival timestamp and parse overhead for audit
+                    if isinstance(parsed, dict):
+                        parsed["_arrival_monotonic"] = arrival_ts
+                        parsed["_parse_overhead_s"] = parse_overhead
+                    yield parsed
                 except json.JSONDecodeError:
                     logger.exception(f"JSON decode error with chunk: {payload}")
 

@@ -26,6 +26,7 @@ class RequestMetrics:
     stream_first_chunk_monotonic: Optional[float] = None
     stream_last_chunk_monotonic: Optional[float] = None
     client_processing_overhead_s: Optional[float] = None
+    client_parse_overhead_s: Optional[float] = None
     dispatch_clock_zero_monotonic: Optional[float] = None
     theoretical_offset_s: Optional[float] = None
     theoretical_dispatch_time_monotonic: Optional[float] = None

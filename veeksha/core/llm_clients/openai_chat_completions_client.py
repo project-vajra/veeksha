@@ -127,6 +127,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         stream_first_chunk_monotonic: Optional[float] = None
         stream_last_chunk_monotonic: Optional[float] = None
         client_processing_overhead_s: float = 0.0
+        client_parse_overhead_s: float = 0.0
         # Respect a local cap on tokens to avoid mismatches with server/tokenizer
         max_tokens_limit = None
         if isinstance(request_config.sampling_params, dict):
@@ -135,11 +136,29 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         try:
             # Record the moment we initiate the HTTP request as actual dispatch time
             actual_dispatch_time_monotonic = time.monotonic()
+            # Initialize TTFT baseline at actual dispatch timestamp
+            most_recent_received_token_time = actual_dispatch_time_monotonic
             async with session.post(address, json=body, headers=headers) as response:
                 response.raise_for_status()
 
                 async for data in self._process_stream(response):
                     before_process = time.monotonic()
+                    # Enforce presence and types of streaming audit metadata
+                    if "_arrival_monotonic" not in data or "_parse_overhead_s" not in data:
+                        raise RuntimeError(
+                            "Missing streaming audit metadata (_arrival_monotonic/_parse_overhead_s)."
+                        )
+                    arrival_raw = data.pop("_arrival_monotonic")
+                    parse_overhead_raw = data.pop("_parse_overhead_s")
+                    if not isinstance(arrival_raw, (int, float)) or not isinstance(
+                        parse_overhead_raw, (int, float)
+                    ):
+                        raise RuntimeError(
+                            "Invalid types for streaming audit metadata."
+                        )
+                    arrival_ts = float(arrival_raw)
+                    parse_overhead = float(parse_overhead_raw)
+                    client_parse_overhead_s += parse_overhead
                     if "error" in data:
                         err = data.get("error") or {}
                         error_msg = err.get("message", "Unknown error")
@@ -150,7 +169,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                         break  # Stop processing on error
                     # First time we see a valid data event
                     if stream_first_chunk_monotonic is None:
-                        stream_first_chunk_monotonic = before_process
+                        stream_first_chunk_monotonic = arrival_ts
                     delta = data["choices"][0]["delta"]
                     if delta.get("content", None):
                         (
@@ -174,13 +193,13 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                             )
 
                         if allowable_to_add > 0:
-                            inter_token_times.append(
-                                time.monotonic() - most_recent_received_token_time
-                            )
+                            # Prefer arrival timestamp for interval when available
+                            now_ts = arrival_ts
+                            inter_token_times.append(now_ts - most_recent_received_token_time)
                             if allowable_to_add > 1:
                                 inter_token_times.extend([0] * (allowable_to_add - 1))
                             tokens_received += allowable_to_add
-                            most_recent_received_token_time = time.monotonic()
+                            most_recent_received_token_time = now_ts
                             # We still append full text; metrics cap governs counts/timings
                             generated_text += delta["content"]
 
@@ -200,7 +219,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                             break
                     # Mark last seen time and accumulate client-side processing overhead
                     after_process = time.monotonic()
-                    stream_last_chunk_monotonic = after_process
+                    stream_last_chunk_monotonic = arrival_ts
                     client_processing_overhead_s += max(0.0, after_process - before_process)
 
         except aiohttp.ClientResponseError as e:
@@ -240,6 +259,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             stream_first_chunk_monotonic=stream_first_chunk_monotonic,
             stream_last_chunk_monotonic=stream_last_chunk_monotonic,
             client_processing_overhead_s=client_processing_overhead_s,
+            client_parse_overhead_s=client_parse_overhead_s,
             dispatch_clock_zero_monotonic=getattr(
                 request_config, "dispatch_clock_zero_monotonic", None
             ),
