@@ -72,7 +72,8 @@ class VLLMServerManager(BaseServerManager):
             command.extend(["--max-model-len", str(self.config.max_model_len)])
 
         # Process additional arguments (parsed from JSON string in __post_init__)
-        for key, value in self.config.additional_args_dict.items():
+        additional_args_dict = self.get_additional_args_dict()
+        for key, value in additional_args_dict.items():
             if value is True:
                 # Boolean flags
                 command.append(f"--{key}")
@@ -102,12 +103,13 @@ class VLLMServerManager(BaseServerManager):
             List of formatted command-line arguments
         """
         args = []
+        additional_args_dict = self.get_additional_args_dict()
 
         # Handle special cases like rope_scaling which takes JSON
-        if "rope_scaling" in self.config.additional_args_dict:
+        if "rope_scaling" in additional_args_dict:
             import json
 
-            rope_config = self.config.additional_args_dict["rope_scaling"]
+            rope_config = additional_args_dict["rope_scaling"]
             rope_json = json.dumps(rope_config)
             args.extend(["--rope-scaling", rope_json])
 

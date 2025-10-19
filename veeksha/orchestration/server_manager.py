@@ -8,7 +8,7 @@ of LLM inference servers (launch, health check, shutdown).
 import abc
 import subprocess
 import time
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import requests
 
@@ -293,6 +293,18 @@ class BaseServerManager(abc.ABC):
         except Exception as e:
             logger.error(f"Error reading server logs: {e}")
             return "", ""
+        
+    def get_additional_args_dict(self) -> Dict[str, Any]:
+        """Parse additional_args JSON string into a dictionary.
+        
+        Returns:
+            Dictionary of parsed additional arguments
+        """
+        import json
+        additional_args_dict: Dict[str, Any] = {}
+        if self.config.additional_args:
+            additional_args_dict = json.loads(self.config.additional_args)
+        return additional_args_dict
 
     def __enter__(self):
         """Context manager entry."""
