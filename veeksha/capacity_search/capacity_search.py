@@ -18,6 +18,9 @@ from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.config.generators.request_generator.base_generator import (
     BaseRequestGeneratorConfig,
 )
+from veeksha.config.generators.request_generator.lmeval_generator import (
+    LmevalRequestGeneratorConfig,
+)
 from veeksha.config.generators.request_generator.synthetic_generator import (
     SyntheticRequestGeneratorConfig,
 )
@@ -125,6 +128,11 @@ class CapacitySearch:
             self.base_benchmark_config.request_generator_config, qps
         )
 
+        if new_req_gen_cfg is self.base_benchmark_config.request_generator_config:
+            logger.warning(
+                f"QPS override (qps={qps}) not applied to request generator type {type(self.base_benchmark_config.request_generator_config).__name__}; run will use the base request rate.",
+            )
+
         # copy of benchmark_config with updated metrics and request generator config
         return replace(  # type: ignore[call-overload]
             cast(Any, self.base_benchmark_config),
@@ -141,10 +149,19 @@ class CapacitySearch:
 
         - Synthetic: set interval_generator_config.qps
         - Trace + sessions: set session_interval_generator_config.qps
+        - LMEval: set interval_generator_config.qps
         """
         new_req_gen_cfg: BaseRequestGeneratorConfig = base_req_gen_cfg
 
         if isinstance(base_req_gen_cfg, SyntheticRequestGeneratorConfig):
+            interval_cfg = base_req_gen_cfg.interval_generator_config
+            if hasattr(interval_cfg, "qps"):
+                new_interval_cfg = replace(cast(Any, interval_cfg), qps=qps)  # type: ignore[call-overload]
+                new_req_gen_cfg = replace(  # type: ignore[call-overload]
+                    cast(Any, base_req_gen_cfg),
+                    interval_generator_config=new_interval_cfg,
+                )
+        elif isinstance(base_req_gen_cfg, LmevalRequestGeneratorConfig):
             interval_cfg = base_req_gen_cfg.interval_generator_config
             if hasattr(interval_cfg, "qps"):
                 new_interval_cfg = replace(cast(Any, interval_cfg), qps=qps)  # type: ignore[call-overload]
@@ -169,6 +186,9 @@ class CapacitySearch:
                     new_req_gen_cfg = replace(  # type: ignore[call-overload]
                         cast(Any, new_req_gen_cfg),
                         session_generator_config=new_session_gen_cfg,
+                    )
+                    logger.info(
+                        f"Capacity search: detected session trace generator; interpreting qps={qps} as sessions per second (SPS)."
                     )
 
         return new_req_gen_cfg
