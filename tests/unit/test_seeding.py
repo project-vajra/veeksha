@@ -118,7 +118,12 @@ class TestSeeding:
             corpus_lines=["hello world"],
         )
 
-        requests = [generator.get_request() for _ in range(3)]
+        requests = []
+        for _ in range(3):
+            try:
+                requests.append(generator.get_request())
+            except StopIteration:
+                pytest.fail("Generator exhausted before producing 3 requests")
 
         generator2 = SyntheticRequestGenerator(
             config=config,
@@ -128,7 +133,12 @@ class TestSeeding:
             corpus_lines=["hello world"],
         )
 
-        requests2 = [generator2.get_request() for _ in range(3)]
+        requests2 = []
+        for _ in range(3):
+            try:
+                requests2.append(generator2.get_request())
+            except StopIteration:
+                pytest.fail("Generator exhausted before producing 3 requests (second generator)")
 
         for req1, req2 in zip(requests, requests2):
             assert req1.prompt == req2.prompt

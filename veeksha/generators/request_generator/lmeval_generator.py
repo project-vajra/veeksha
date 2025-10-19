@@ -201,15 +201,7 @@ class LMEvalRequestGenerator:
 
     def get_request(self) -> RequestConfig:
         if self.req_idx >= len(self.cloned_requests):
-            # Signal graceful stop with sentinel dispatch delay
-            return RequestConfig(
-                model=self.client_config.model,
-                prompt=("", 0),
-                dispatch_delay=-1,
-                llm_api=self.client_config.llm_api,
-                address_append_value=self.client_config.address_append_value,
-                id=self.req_idx,
-            )
+            raise StopIteration
         req: Instance = self.cloned_requests[self.req_idx]
         dispatch_delay = self.requests_interval_generator.get_next_inter_request_time()
         self.req_idx += 1
