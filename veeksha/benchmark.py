@@ -7,7 +7,7 @@ import time
 from multiprocessing import Queue
 from queue import Empty
 from threading import Thread
-from typing import List, Optional
+from typing import List, Optional, TypedDict
 
 from tqdm import tqdm  # type: ignore
 
@@ -26,6 +26,17 @@ from veeksha.core.response import Response
 from veeksha.core.seeding import (
     SeedManager,
 )
+from veeksha.dashboard.events import (
+    BenchmarkStatusEvent,
+    RequestCompletedEvent,
+    RequestStartedEvent,
+)
+from veeksha.dashboard.handler import (
+    emit_dashboard_event,
+    get_dashboard_event_processor,
+    init_dashboard_event_processor,
+    stop_dashboard_event_processor,
+)
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.generators.request_generator.generator_registry import (
     RequestGeneratorRegistry,
@@ -39,6 +50,7 @@ logger = init_logger(__name__)
 PREFETCH_BATCH_SIZE = 1
 PREFETCH_INTERVAL_S = 0.001
 MAX_PREFETCH_BACKLOG = 20
+NEAR_DEADLINE_WINDOW_S = 0.010
 
 
 def setup_api_environment(
@@ -143,6 +155,7 @@ def dispatch_requests(
     request_generator: BaseRequestGenerator,
     stop_event: threading.Event,
     scheduler: DispatchScheduler,
+    benchmark_id: str = "default",
 ) -> None:
     """Thread function to generate and dispatch requests."""
     num_errored_requests_handled = 0
@@ -152,15 +165,72 @@ def dispatch_requests(
     generator_exhausted = False
     scheduled_backlog = 0
 
+    def _dispatch_ready_request(ready) -> None:
+        nonlocal scheduled_backlog, num_errored_requests_handled
+        service_metrics.register_launched_request()
+        if service_metrics.num_requests > service_metrics.max_requests:
+            num_errored_requests_handled += 1
+        input_queue.put(ready)
+        if scheduled_backlog > 0:
+            scheduled_backlog -= 1
+        logger.debug(f"Dispatched request {ready.id}")
+
+        ready.benchmark_id = benchmark_id
+        # Request ID should always be set by the generator
+        assert ready.id is not None, f"Request {ready} has no ID"
+        emit_dashboard_event(
+            RequestStartedEvent(
+                request_id=ready.id,
+                timestamp=time.time(),
+                input_tokens=ready.prompt[1],
+                benchmark_id=benchmark_id,
+            )
+        )
+
     while not stop_event.is_set():
         now = time.monotonic()
-        # Prefetch from generator if capacity allows
+
+        # immediate dispatch
+        ready = scheduler.pop_ready()
+        if ready is not None:
+            _dispatch_ready_request(ready)
+            continue
+
+        time_until = scheduler.time_until_next_ready()
+
+        # short spin near deadlines (up to 10ms)
+        if time_until is not None and time_until <= NEAR_DEADLINE_WINDOW_S:
+            deadline = time.monotonic() + time_until
+            while time.monotonic() < deadline:
+                ready = scheduler.pop_ready()
+                if ready is not None:
+                    _dispatch_ready_request(ready)
+                    break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                time.sleep(min(remaining, 0.001))
+            if ready is not None:
+                continue
+            # immediate check at boundary
+            ready = scheduler.pop_ready()
+            if ready is not None:
+                _dispatch_ready_request(ready)
+                continue
+
+        # prefetch away from near deadlines
         if (
             (not generator_exhausted)
             and should_send_new_request(service_metrics, num_errored_requests_handled)
             and (scheduled_backlog < MAX_PREFETCH_BACKLOG)
         ):
-            if now >= next_prefetch_time:
+            # gate prefetch away from near deadlines
+            now = time.monotonic()
+            time_until = scheduler.time_until_next_ready()
+            prefetch_safe_threshold = max(PREFETCH_INTERVAL_S, NEAR_DEADLINE_WINDOW_S)
+            if (time_until is None or time_until >= prefetch_safe_threshold) and (
+                now >= next_prefetch_time
+            ):
                 for _ in range(PREFETCH_BATCH_SIZE):
                     if scheduled_backlog >= MAX_PREFETCH_BACKLOG:
                         break
@@ -187,18 +257,16 @@ def dispatch_requests(
                     scheduled_backlog += 1
                 next_prefetch_time = now + PREFETCH_INTERVAL_S
 
-        # Attempt to pop a ready request
+        # dispatch again after prefetch
         ready = scheduler.pop_ready()
         if ready is not None:
-            service_metrics.register_launched_request()
-            input_queue.put(ready)
-            if scheduled_backlog > 0:
-                scheduled_backlog -= 1
-            logger.info(f"Dispatched request {ready.id}")
+
+            _dispatch_ready_request(ready)
             continue
 
+        # back off briefly
         time_until = scheduler.time_until_next_ready()
-        sleep_time = 0.01 if time_until is None else min(max(time_until, 0.0), 0.1)
+        sleep_time = 0.01 if time_until is None else min(max(time_until, 0.001), 0.1)
         time.sleep(sleep_time)
 
 
@@ -251,6 +319,21 @@ def process_results(
         if generated_response is not None:
             generated_responses.append(generated_response)
 
+        # Emit completion event - ensure request_id is set
+        assert (
+            request_metrics.request_id is not None
+        ), f"Request metrics has no ID: {request_metrics}"
+        emit_dashboard_event(
+            RequestCompletedEvent(
+                request_id=str(request_metrics.request_id),
+                timestamp=time.time(),
+                final_metrics=request_metrics,
+                benchmark_id=request_metrics.benchmark_id,
+            )
+        )
+
+        # TODO: maybe add benchmark status event here?
+
         pbar.update(service_metrics.num_completed_requests - pbar.n)
 
 
@@ -260,6 +343,7 @@ def run_main_loop(
     service_metrics: ServiceMetrics,
     generated_responses: List[Response],
     pbar: tqdm,
+    benchmark_id: str = "default",
 ):
     """Run the main loop for the benchmark."""
 
@@ -290,6 +374,7 @@ def run_main_loop(
             request_generator,
             stop_event,
             scheduler,
+            benchmark_id,
         ),
     )
 
@@ -350,8 +435,14 @@ def run_benchmark(
     """
 
     prepare_benchmark_output_dir(benchmark_config)
+
+    # Ensure reproducibility across all execution paths
+    random.seed(benchmark_config.seed)
+
+    # Generate unique benchmark ID from output directory
+    benchmark_id = os.path.basename(benchmark_config.metrics_config.output_dir)
     logger.info(
-        f"Benchmark output directory: {benchmark_config.metrics_config.output_dir}"
+        f"Benchmark ID: {benchmark_id}, Output directory: {benchmark_config.metrics_config.output_dir}"
     )
 
     setup_api_environment(
@@ -360,6 +451,9 @@ def run_benchmark(
     )
 
     _initialize_min_tokens_support(benchmark_config)
+
+    # Dashboard initialization is now handled by the caller
+    # (either run_benchmark_with_dashboard or run_benchmark_console_only)
 
     generated_responses: List[Response] = []
 
@@ -400,7 +494,8 @@ def run_benchmark(
         == RequestGeneratorType.LMEVAL
         else benchmark_config.max_completed_requests
     )
-    pbar = tqdm(total=max_requests)
+    # Disable tqdm progress bar if dashboard is enabled to prevent output conflicts
+    pbar = tqdm(total=max_requests, disable=benchmark_config.dashboard_config.enabled)
 
     service_metrics = ServiceMetrics(
         max_requests=max_requests,
@@ -414,6 +509,7 @@ def run_benchmark(
         service_metrics=service_metrics,
         generated_responses=generated_responses,
         pbar=pbar,
+        benchmark_id=benchmark_id,
     )
 
     service_metrics.store_output()
@@ -431,7 +527,130 @@ def run_benchmark(
 
         store_lmeval_results(service_metrics.output_dir, lmeval_results)
 
+    # Emit benchmark completion event for dashboard
+    # This is done after all processing is complete to ensure accurate counts
+    if service_metrics.start_time and service_metrics.end_time:
+        elapsed = service_metrics.end_time - service_metrics.start_time
+    else:
+        elapsed = 0.0
+
+    logger.debug(
+        f"Emitting BenchmarkStatusEvent: total={service_metrics.num_requests}, "
+        f"completed={service_metrics.num_completed_requests}, "
+        f"errored={service_metrics.num_errored_requests}"
+    )
+
+    emit_dashboard_event(
+        BenchmarkStatusEvent(
+            benchmark_id=benchmark_id,
+            total_requests=service_metrics.num_requests,
+            completed_requests=service_metrics.num_completed_requests,
+            errored_requests=service_metrics.num_errored_requests,
+            active_requests=0,  # All requests done at this point
+            current_qps=(
+                service_metrics.num_completed_requests / elapsed if elapsed > 0 else 0.0
+            ),
+            elapsed_time=elapsed,
+        )
+    )
+
     return service_metrics
+
+
+class BenchmarkResultContainer(TypedDict):
+    service_metrics: Optional[ServiceMetrics]
+    error: Optional[Exception]
+
+
+def run_benchmark_with_dashboard(benchmark_config: BenchmarkConfig):
+    """Run benchmark with TUI dashboard in main thread.
+
+    The benchmark runs in a background thread while the TUI runs in the main thread.
+    This is required because Textual needs to register signal handlers which can only
+    be done in the main thread.
+    """
+    logger.info("Starting TUI dashboard with benchmark")
+
+    # Ensure environment variables are set to suppress console output
+    os.environ["VEEKSHA_SUPPRESS_CONSOLE_LOGS"] = "1"
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+    # Initialize dashboard event processor without frontend
+    dashboard_state = init_dashboard_event_processor(
+        enabled=benchmark_config.dashboard_config.enabled,
+        enable_frontend=False,  # We'll launch TUI manually in main thread
+        max_queue_size=benchmark_config.dashboard_config.max_queue_size,
+        max_live_requests=benchmark_config.dashboard_config.max_live_requests,
+        chart_window_seconds=benchmark_config.dashboard_config.chart_window_seconds,
+    )
+
+    # Result container to capture service_metrics from background thread
+    result_container: BenchmarkResultContainer = {
+        "service_metrics": None,
+        "error": None,
+    }
+
+    def run_benchmark_thread():
+        """Run benchmark in background thread"""
+        try:
+            service_metrics = run_benchmark(benchmark_config)
+            result_container["service_metrics"] = service_metrics
+        except Exception as e:
+            result_container["error"] = e
+            logger.error(f"Benchmark error: {e}", exc_info=True)
+
+    # Start benchmark in background thread
+    benchmark_thread = Thread(target=run_benchmark_thread, daemon=False)
+    benchmark_thread.start()
+
+    # Give benchmark a moment to initialize
+    time.sleep(0.5)
+
+    # Run TUI in main thread (blocking)
+    if dashboard_state:
+        from veeksha.dashboard.tui_dashboard import run_dashboard_tui
+
+        run_dashboard_tui(dashboard_state)
+
+    # Wait for benchmark thread to complete
+    benchmark_thread.join()
+
+    # Check for errors
+    if result_container["error"]:
+        raise result_container["error"]
+
+    return result_container["service_metrics"]
+
+
+def run_benchmark_console_only(
+    benchmark_config: BenchmarkConfig, stop_processor_after: bool = True
+):
+    """Run benchmark with console-only output
+
+    Args:
+        benchmark_config: Configuration for the benchmark
+        stop_processor_after: If True, stop the dashboard processor after this benchmark.
+                            Set to False when running multiple benchmarks sequentially.
+    """
+    try:
+        # Initialize dashboard if enabled (skip if already initialized)
+        if (
+            benchmark_config.dashboard_config.enabled
+            and not get_dashboard_event_processor()
+        ):
+            init_dashboard_event_processor(
+                enabled=True,
+                enable_frontend=False,
+                max_queue_size=benchmark_config.dashboard_config.max_queue_size,
+                max_live_requests=benchmark_config.dashboard_config.max_live_requests,
+                chart_window_seconds=benchmark_config.dashboard_config.chart_window_seconds,
+            )
+
+        service_metrics = run_benchmark(benchmark_config=benchmark_config)
+        return service_metrics
+    finally:
+        if stop_processor_after:
+            stop_dashboard_event_processor()
 
 
 if __name__ == "__main__":
@@ -440,20 +659,96 @@ if __name__ == "__main__":
 
     benchmark_configs = BenchmarkConfig.create_from_cli_args()
 
+    # Check if dashboard is enabled
+    has_dashboard_enabled = any(bc.dashboard_config.enabled for bc in benchmark_configs)
+    if has_dashboard_enabled:
+        # Set environment variable to suppress console logging in child processes
+        os.environ["VEEKSHA_SUPPRESS_CONSOLE_LOGS"] = "1"
+        # Suppress tokenizers parallelism warning when forking processes
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+        # Remove stream handlers from loggers (but don't redirect stdout/stderr yet)
+        # This allows the TUI to start properly
+        import logging as log_module
+
+        # Remove handlers from root logger
+        root_logger = log_module.getLogger()
+        for handler in root_logger.handlers[:]:
+            if isinstance(handler, log_module.StreamHandler):
+                root_logger.removeHandler(handler)
+
+        # Remove handlers from veeksha logger specifically (which has its own handler)
+        veeksha_logger = log_module.getLogger("veeksha")
+        for handler in veeksha_logger.handlers[:]:
+            if isinstance(handler, log_module.StreamHandler):
+                veeksha_logger.removeHandler(handler)
+
     if len(benchmark_configs) > 1:
         logger.info(
             f"Running {len(benchmark_configs)} benchmark configurations sequentially."
         )
+        logger.info("Using console dashboard for multiple configurations.")
 
-    for i, benchmark_config in enumerate(benchmark_configs):
-        print(f"Running benchmark with config: {benchmark_config}")
-        if len(benchmark_configs) > 1:
-            logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
+    try:
+        # single or multiple configs
+        if has_dashboard_enabled and len(benchmark_configs) == 1:
+            run_benchmark_with_dashboard(benchmark_configs[0])
+        elif has_dashboard_enabled and len(benchmark_configs) > 1:
+            # Multiple benchmarks with dashboard - run all in thread, then show TUI
+            logger.info(f"Running {len(benchmark_configs)} benchmarks with dashboard")
 
-        random.seed(benchmark_config.seed)
-        service_metrics = run_benchmark(benchmark_config=benchmark_config)
+            # Ensure environment variables are set
+            os.environ["VEEKSHA_SUPPRESS_CONSOLE_LOGS"] = "1"
+            os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-        if len(benchmark_configs) > 1:
-            logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")
+            # Initialize dashboard in main thread to avoid races
+            first = benchmark_configs[0]
+            dashboard_state = init_dashboard_event_processor(
+                enabled=True,
+                enable_frontend=False,
+                max_queue_size=first.dashboard_config.max_queue_size,
+                max_live_requests=first.dashboard_config.max_live_requests,
+                chart_window_seconds=first.dashboard_config.chart_window_seconds,
+            )
 
-    logger.info("All benchmarks completed.")
+            def run_all_benchmarks():
+                """Run all benchmarks sequentially in background"""
+                for i, benchmark_config in enumerate(benchmark_configs):
+                    logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
+                    is_last = i == len(benchmark_configs) - 1
+                    run_benchmark_console_only(
+                        benchmark_config, stop_processor_after=is_last
+                    )
+                    logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")
+
+            # Start all benchmarks in background thread
+            benchmark_thread = Thread(target=run_all_benchmarks, daemon=False)
+            benchmark_thread.start()
+
+            # Launch TUI dashboard
+            if dashboard_state:
+                from veeksha.dashboard.tui_dashboard import run_dashboard_tui
+
+                run_dashboard_tui(dashboard_state)
+
+            # Wait for all benchmarks to complete
+            benchmark_thread.join()
+            logger.info("All benchmarks completed")
+        else:
+            # No dashboard - console only mode
+            for i, benchmark_config in enumerate(benchmark_configs):
+                print(f"Running benchmark with config: {benchmark_config}")
+                if len(benchmark_configs) > 1:
+                    logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
+
+                is_last = i == len(benchmark_configs) - 1
+                run_benchmark_console_only(
+                    benchmark_config, stop_processor_after=is_last
+                )
+
+                if len(benchmark_configs) > 1:
+                    logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")
+    finally:
+        logger.info("All benchmarks completed.")
+        # Ensure processor is stopped even if there's an exception
+        stop_dashboard_event_processor()
