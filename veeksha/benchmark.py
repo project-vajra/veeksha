@@ -758,9 +758,9 @@ if __name__ == "__main__":
                     logger.info("Server shut down")
                 else:
                     # No server config - assume external server is running
-                            run_benchmark_console_only(
-                            benchmark_config, stop_processor_after=is_last
-                        )
+                    run_benchmark_console_only(
+                        benchmark_config, stop_processor_after=is_last
+                    )
 
                 if len(benchmark_configs) > 1:
                     logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")
