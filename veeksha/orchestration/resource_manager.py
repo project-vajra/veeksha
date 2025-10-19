@@ -293,11 +293,11 @@ class ResourceManager:
         if match:
             param_billions = float(match.group(1))
         else:
-            # Default assumption if we can't parse
+            # Cannot parse model size, return -1 to indicate unknown size
             logger.warning(
-                f"Could not parse model size from '{model_name}', assuming 7B"
+                f"Could not parse model size from '{model_name}', will use max GPU utilization"
             )
-            param_billions = 7.0
+            return -1
 
         # Bytes per parameter based on dtype
         if dtype in ["float16", "bfloat16", "half"]:
@@ -345,6 +345,13 @@ class ResourceManager:
 
         if total_gpu_memory_mb == 0:
             logger.warning("Could not determine GPU memory, using default 0.9")
+            return max_utilization
+
+        # If model size couldn't be parsed, use maximum utilization
+        if estimated_model_mb == -1:
+            logger.info(
+                f"Using max GPU utilization ({max_utilization:.2f}) for unknown model size"
+            )
             return max_utilization
 
         # Calculate what utilization would be needed for the model
