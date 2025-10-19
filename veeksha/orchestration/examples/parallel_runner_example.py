@@ -46,7 +46,7 @@ def create_benchmark_configs() -> List[Tuple[ServerConfig, BenchmarkConfig]]:
     for model, tp_size, port in experiments:
         # Server configuration
         server_config = ServerConfig(
-            engine="vajra",
+            engine="vllm",
             model=model,
             host="localhost",
             port=port,
@@ -128,7 +128,7 @@ def example_parallel_benchmarks():
     logger.info(f"Total execution time: {total_time:.2f} seconds")
     logger.info(f"Successful: {successful}/{len(configs)}")
     logger.info(f"Failed: {failed}/{len(configs)}")
-    logger.info(".2f")
+    logger.info(f"Throughput: {successful / total_time:.2f} benchmarks/sec")
     logger.info("=" * 80)
 
 
