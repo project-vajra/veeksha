@@ -252,6 +252,116 @@ class ResourceManager:
         logger.warning(f"Could not allocate {num_gpus} GPUs")
         return None
 
+    def get_gpu_memory_mb(self, resource_mapping: ResourceMapping) -> int:
+        """Get total GPU memory for allocated resources.
+
+        Args:
+            resource_mapping: List of (hostname, gpu_id) tuples
+
+        Returns:
+            Total GPU memory in MB across all allocated GPUs
+        """
+        total_memory = 0
+        for hostname, gpu_id in resource_mapping:
+            if hostname in self.nodes:
+                node = self.nodes[hostname]
+                for gpu in node.gpus:
+                    if gpu.gpu_id == gpu_id:
+                        total_memory += gpu.total_memory_mb
+                        break
+        return total_memory
+
+    def estimate_model_memory_mb(self, model_name: str, dtype: str = "auto") -> int:
+        """Estimate GPU memory required for a model.
+
+        This is a rough heuristic based on model name patterns.
+
+        Args:
+            model_name: Model name or path
+            dtype: Data type (auto, float16, bfloat16, etc.)
+
+        Returns:
+            Estimated memory in MB
+        """
+        # Extract parameter count from model name
+        import re
+        
+        model_lower = model_name.lower()
+        
+        # Common patterns: "7b", "8b", "13b", "70b", "0.5b", etc.
+        match = re.search(r'(\d+\.?\d*)b', model_lower)
+        if match:
+            param_billions = float(match.group(1))
+        else:
+            # Default assumption if we can't parse
+            logger.warning(f"Could not parse model size from '{model_name}', assuming 7B")
+            param_billions = 7.0
+        
+        # Bytes per parameter based on dtype
+        if dtype in ["float16", "bfloat16", "half"]:
+            bytes_per_param = 2
+        elif dtype == "float32":
+            bytes_per_param = 4
+        else:  # "auto" - assume float16
+            bytes_per_param = 2
+        
+        # Model weights in MB
+        model_weights_mb = param_billions * 1000 * bytes_per_param
+        
+        # Add overhead for activations, KV cache, etc. (roughly 50% of model size)
+        total_mb = model_weights_mb * 1.5
+        
+        logger.debug(
+            f"Estimated memory for {model_name} ({param_billions}B, {dtype}): "
+            f"{total_mb:.0f} MB ({total_mb/1024:.1f} GB)"
+        )
+        
+        return int(total_mb)
+
+    def recommend_gpu_memory_utilization(
+        self,
+        resource_mapping: ResourceMapping,
+        model_name: str,
+        dtype: str = "auto",
+        min_utilization: float = 0.3,
+        max_utilization: float = 0.9,
+    ) -> float:
+        """Recommend GPU memory utilization based on model size and available memory.
+
+        Args:
+            resource_mapping: Allocated GPU resources
+            model_name: Model name
+            dtype: Data type
+            min_utilization: Minimum utilization to recommend
+            max_utilization: Maximum utilization to recommend
+
+        Returns:
+            Recommended gpu_memory_utilization value (0.0 to 1.0)
+        """
+        total_gpu_memory_mb = self.get_gpu_memory_mb(resource_mapping)
+        estimated_model_mb = self.estimate_model_memory_mb(model_name, dtype)
+        
+        if total_gpu_memory_mb == 0:
+            logger.warning("Could not determine GPU memory, using default 0.9")
+            return max_utilization
+        
+        # Calculate what utilization would be needed for the model
+        required_utilization = estimated_model_mb / total_gpu_memory_mb
+        
+        # Add some buffer (20%) for safety
+        recommended = required_utilization * 1.2
+        
+        # Clamp to reasonable range
+        recommended = max(min_utilization, min(recommended, max_utilization))
+        
+        logger.info(
+            f"Recommended gpu-memory-utilization={recommended:.2f} "
+            f"(model: {estimated_model_mb/1024:.1f}GB, "
+            f"available: {total_gpu_memory_mb/1024:.1f}GB)"
+        )
+        
+        return recommended
+
     def _allocate_contiguous(
         self, free_gpus: List[GPUInfo], num_gpus: int
     ) -> Optional[List[GPUInfo]]:
