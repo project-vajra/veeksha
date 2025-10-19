@@ -76,9 +76,6 @@ class ServerConfig:
         },
     )
 
-    # Derived field for parsed additional arguments
-    additional_args_dict: Dict[str, Any] = field(init=False)
-
     # Startup configuration
     startup_timeout: int = field(
         default=300, metadata={"help": "Timeout in seconds for server startup"}
@@ -117,14 +114,6 @@ class ServerConfig:
         },
     )
 
-    def __post_init__(self):
-        """Parse additional_args JSON string into a dictionary."""
-        # Parse additional_args from JSON string
-        additional_args_dict: Dict[str, Any] = {}
-        if self.additional_args:
-            additional_args_dict = json.loads(self.additional_args)
-        object.__setattr__(self, "additional_args_dict", additional_args_dict)
-
     def get_api_base_url(self) -> str:
         """Get the full API base URL."""
         return f"http://{self.host}:{self.port}/v1"
@@ -151,6 +140,11 @@ class ServerConfig:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""
+        # Parse additional_args from JSON string
+        additional_args_dict: Dict[str, Any] = {}
+        if self.additional_args:
+            additional_args_dict = json.loads(self.additional_args)
+        
         return {
             "engine": self.engine,
             "host": self.host,
@@ -160,7 +154,7 @@ class ServerConfig:
             "gpu_ids": self.gpu_ids,
             "dtype": self.dtype,
             "max_model_len": self.max_model_len,
-            "additional_args": self.additional_args_dict,  # Use parsed dict
+            "additional_args": additional_args_dict,  # Use parsed dict
             "startup_timeout": self.startup_timeout,
             "health_check_interval": self.health_check_interval,
             "auto_shutdown": self.auto_shutdown,
