@@ -7,11 +7,12 @@ scheduling and resource allocation strategies.
 
 import time
 
+from veeksha.benchmark import run_benchmark
 from veeksha.config.benchmark import (
     BenchmarkConfig,
     ClientConfig,
     MetricsConfig,
-    SyntheticRequestGeneratorConfig
+    SyntheticRequestGeneratorConfig,
 )
 from veeksha.config.generators.interval_generator.poisson_generator import (
     PoissonRequestIntervalGeneratorConfig,
@@ -22,7 +23,6 @@ from veeksha.config.generators.length_generator.trace_generator import (
 from veeksha.config.server import ServerConfig
 from veeksha.orchestration import ResourceManager
 from veeksha.orchestration.benchmark_orchestrator import managed_server
-from veeksha.benchmark import run_benchmark
 
 
 def run_experiment_with_resources(
@@ -73,7 +73,9 @@ def run_experiment_with_resources(
             max_completed_requests=20,
             client_config=ClientConfig(model=model),
             request_generator_config=SyntheticRequestGeneratorConfig(
-                interval_generator_config=PoissonRequestIntervalGeneratorConfig(qps=0.5),
+                interval_generator_config=PoissonRequestIntervalGeneratorConfig(
+                    qps=0.5
+                ),
                 length_generator_config=TraceRequestLengthGeneratorConfig(
                     trace_file="./veeksha/data/processed_traces/sharegpt_8k_filtered_stats_llama2_tokenizer.csv",
                     max_tokens=8192,

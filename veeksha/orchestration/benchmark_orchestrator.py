@@ -19,8 +19,8 @@ from typing import Any, Dict, Generator
 
 from veeksha.config.server import ServerConfig
 from veeksha.orchestration.server_manager import BaseServerManager
-from veeksha.orchestration.vllm_server import VLLMServerManager
 from veeksha.orchestration.vajra_server import VajraServerManager
+from veeksha.orchestration.vllm_server import VLLMServerManager
 
 
 def create_server_manager(config: ServerConfig) -> BaseServerManager:

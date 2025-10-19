@@ -59,7 +59,9 @@ class VLLMServerManager(BaseServerManager):
 
         # Add tensor parallelism
         if self.config.tensor_parallel_size > 1:
-            command.extend(["--tensor-parallel-size", str(self.config.tensor_parallel_size)])
+            command.extend(
+                ["--tensor-parallel-size", str(self.config.tensor_parallel_size)]
+            )
 
         # Add dtype
         if self.config.dtype:

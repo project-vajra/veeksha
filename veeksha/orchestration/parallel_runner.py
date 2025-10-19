@@ -174,7 +174,7 @@ class ParallelBenchmarkRunner:
             # Use managed_server context manager for proper lifecycle management
             with managed_server(server_config_with_gpus) as server_info:
                 logger.info(f"Server ready at {server_info['api_base']}")
-                
+
                 # Run benchmark
                 result = benchmark_func(benchmark_config)
 
@@ -306,7 +306,7 @@ class SequentialJobQueue:
                 # Use managed_server context manager
                 with managed_server(server_config_with_gpus) as server_info:
                     logger.info(f"Server ready at {server_info['api_base']}")
-                    
+
                     # Run benchmark
                     result = benchmark_func(benchmark_config)
                     self.results.append(result)

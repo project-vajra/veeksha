@@ -116,9 +116,9 @@ def example_parallel_benchmarks():
             successful += 1
             logger.info(f"✅ {model} (TP={tp_size}): SUCCESS")
             logger.info(f"   Output: {result.output_dir}")
-            if hasattr(result, 'total_requests'):
+            if hasattr(result, "total_requests"):
                 logger.info(f"   Requests: {result.total_requests}")
-            if hasattr(result, 'duration'):
+            if hasattr(result, "duration"):
                 logger.info(f"   Duration: {result.duration:.2f}s")
         else:
             failed += 1
