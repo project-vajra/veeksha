@@ -190,12 +190,12 @@ class RequestsLauncher:
 
     def wait_for_clients(self, timeout: float = 30.0) -> None:
         """Wait for all clients to complete their tasks and exit.
-        
+
         Args:
             timeout: Maximum time to wait for each client to join (seconds)
         """
         self.complete_tasks()
-        
+
         for i, client in enumerate(self.clients):
             logger.info(f"Waiting for client {i} to join (timeout={timeout}s)...")
             client.join(timeout=timeout)

@@ -742,13 +742,15 @@ if __name__ == "__main__":
                     logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
 
                 is_last = i == len(benchmark_configs) - 1
-        
+
                 # Check if server orchestration is needed
                 if benchmark_config.server_config is not None:
                     logger.info("Server configuration detected - using managed server")
                     from veeksha.orchestration import managed_server
 
-                    logger.info(f"Launching {benchmark_config.server_config.engine} server...")
+                    logger.info(
+                        f"Launching {benchmark_config.server_config.engine} server..."
+                    )
                     with managed_server(benchmark_config.server_config) as info:
                         logger.info(f"Server ready at {info['api_base']}")
                         logger.info("Running benchmark...")

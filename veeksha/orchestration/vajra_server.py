@@ -55,11 +55,18 @@ class VajraServerManager(BaseServerManager):
 
         # Tensor parallelism
         if self.config.tensor_parallel_size and self.config.tensor_parallel_size > 1:
-            command.extend(["--parallel_config_tensor_parallel_size", str(self.config.tensor_parallel_size)])
+            command.extend(
+                [
+                    "--parallel_config_tensor_parallel_size",
+                    str(self.config.tensor_parallel_size),
+                ]
+            )
 
         # max model length / context
         if self.config.max_model_len is not None:
-            command.extend(["--model_config_max_model_len", str(self.config.max_model_len)])
+            command.extend(
+                ["--model_config_max_model_len", str(self.config.max_model_len)]
+            )
 
         # Process additional arguments (parsed from JSON string in __post_init__)
         for key, value in self.config.additional_args_dict.items():
@@ -93,11 +100,21 @@ class VajraServerManager(BaseServerManager):
         args: List[str] = []
 
         # Handle complex resource mapping configuration
-        if "inference_engine_config_global_resource_mapping" in self.config.additional_args_dict:
+        if (
+            "inference_engine_config_global_resource_mapping"
+            in self.config.additional_args_dict
+        ):
             import json
 
-            mapping = self.config.additional_args_dict["inference_engine_config_global_resource_mapping"]
-            args.extend(["--inference_engine_config_global_resource_mapping", json.dumps(mapping)])
+            mapping = self.config.additional_args_dict[
+                "inference_engine_config_global_resource_mapping"
+            ]
+            args.extend(
+                [
+                    "--inference_engine_config_global_resource_mapping",
+                    json.dumps(mapping),
+                ]
+            )
 
         return args
 

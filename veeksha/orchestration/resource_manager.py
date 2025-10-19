@@ -9,7 +9,7 @@ import socket
 import subprocess
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from veeksha.logger import init_logger
 
@@ -285,18 +285,20 @@ class ResourceManager:
         """
         # Extract parameter count from model name
         import re
-        
+
         model_lower = model_name.lower()
-        
+
         # Common patterns: "7b", "8b", "13b", "70b", "0.5b", etc.
-        match = re.search(r'(\d+\.?\d*)b', model_lower)
+        match = re.search(r"(\d+\.?\d*)b", model_lower)
         if match:
             param_billions = float(match.group(1))
         else:
             # Default assumption if we can't parse
-            logger.warning(f"Could not parse model size from '{model_name}', assuming 7B")
+            logger.warning(
+                f"Could not parse model size from '{model_name}', assuming 7B"
+            )
             param_billions = 7.0
-        
+
         # Bytes per parameter based on dtype
         if dtype in ["float16", "bfloat16", "half"]:
             bytes_per_param = 2
@@ -304,18 +306,18 @@ class ResourceManager:
             bytes_per_param = 4
         else:  # "auto" - assume float16
             bytes_per_param = 2
-        
+
         # Model weights in MB
         model_weights_mb = param_billions * 1000 * bytes_per_param
-        
+
         # Add overhead for activations, KV cache, etc. (roughly 50% of model size)
         total_mb = model_weights_mb * 1.5
-        
+
         logger.debug(
             f"Estimated memory for {model_name} ({param_billions}B, {dtype}): "
             f"{total_mb:.0f} MB ({total_mb/1024:.1f} GB)"
         )
-        
+
         return int(total_mb)
 
     def recommend_gpu_memory_utilization(
@@ -340,26 +342,26 @@ class ResourceManager:
         """
         total_gpu_memory_mb = self.get_gpu_memory_mb(resource_mapping)
         estimated_model_mb = self.estimate_model_memory_mb(model_name, dtype)
-        
+
         if total_gpu_memory_mb == 0:
             logger.warning("Could not determine GPU memory, using default 0.9")
             return max_utilization
-        
+
         # Calculate what utilization would be needed for the model
         required_utilization = estimated_model_mb / total_gpu_memory_mb
-        
+
         # Add some buffer (20%) for safety
         recommended = required_utilization * 1.2
-        
+
         # Clamp to reasonable range
         recommended = max(min_utilization, min(recommended, max_utilization))
-        
+
         logger.info(
             f"Recommended gpu-memory-utilization={recommended:.2f} "
             f"(model: {estimated_model_mb/1024:.1f}GB, "
             f"available: {total_gpu_memory_mb/1024:.1f}GB)"
         )
-        
+
         return recommended
 
     def _allocate_contiguous(
@@ -487,9 +489,7 @@ class ResourceManager:
 
             # Check timeout
             if timeout is not None and (time.time() - start_time) >= timeout:
-                logger.warning(
-                    f"Timeout waiting for {num_gpus} GPUs after {timeout}s"
-                )
+                logger.warning(f"Timeout waiting for {num_gpus} GPUs after {timeout}s")
                 return None
 
             # Wait before next attempt
