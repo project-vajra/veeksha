@@ -73,7 +73,11 @@ def run_search(
     else:
         # No dashboard - run normally
         # Check if server_config is specified for automatic server management
-        if capacity_search_config.benchmark_config.server_config is not None:
+        # Skip if server_per_qps_run is enabled (CapacitySearch handles individual servers per QPS run)
+        if (
+            capacity_search_config.benchmark_config.server_config is not None
+            and not capacity_search_config.server_per_qps_run
+        ):
             from veeksha.orchestration import managed_server
 
             logger.info(

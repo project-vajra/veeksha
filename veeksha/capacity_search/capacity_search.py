@@ -32,6 +32,7 @@ from veeksha.constants.capacity_search_constants import (
     QPS_INCREASE_SCALE,
     VICINITY_THRESHOLD,
 )
+from veeksha.orchestration.benchmark_orchestrator import managed_server
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
@@ -233,7 +234,19 @@ class CapacitySearch:
         # isolated benchmark config for this QPS
         benchmark_config = self._build_benchmark_config_for_qps(qps, qps_run_dir)
 
-        service_metrics = run_benchmark_wrapped(benchmark_config)
+        # Use managed server if configured to create a new server for each QPS run
+        if (
+            self.capacity_search_config.server_per_qps_run and
+            hasattr(benchmark_config, 'server_config') and
+            benchmark_config.server_config is not None
+        ):
+            logger.info(f"Launching new server for QPS {qps}")
+            with managed_server(benchmark_config.server_config) as server_info:
+                logger.info(f"Server ready at {server_info['api_base']}")
+                service_metrics = run_benchmark_wrapped(benchmark_config)
+        else:
+            # Use existing behavior (server managed externally or pre-launched)
+            service_metrics = run_benchmark_wrapped(benchmark_config)
 
         is_under_sla, slo_metrics_dict = self.slo_evaluator.evaluate_slo(
             service_metrics.metric_store

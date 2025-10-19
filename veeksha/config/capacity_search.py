@@ -87,6 +87,13 @@ class CapacitySearchConfig:
         default=None,
         metadata={"help": "Wandb sweep id for capacity search"},
     )
+    server_per_qps_run: bool = field(
+        default=False,
+        metadata={
+            "help": "Create a new server for each QPS run instead of reusing one server for all runs. "
+            "Requires server_config to be specified in benchmark_config."
+        },
+    )
 
     @classmethod
     def create_from_cli_args(cls):
