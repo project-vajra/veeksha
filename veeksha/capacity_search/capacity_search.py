@@ -18,6 +18,9 @@ from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.config.generators.request_generator.base_generator import (
     BaseRequestGeneratorConfig,
 )
+from veeksha.config.generators.request_generator.lmeval_generator import (
+    LmevalRequestGeneratorConfig,
+)
 from veeksha.config.generators.request_generator.synthetic_generator import (
     SyntheticRequestGeneratorConfig,
 )
@@ -125,6 +128,11 @@ class CapacitySearch:
             self.base_benchmark_config.request_generator_config, qps
         )
 
+        if new_req_gen_cfg is self.base_benchmark_config.request_generator_config:
+            logger.warning(
+                f"QPS override (qps={qps}) not applied to request generator type {type(self.base_benchmark_config.request_generator_config).__name__}; run will use the base request rate.",
+            )
+
         # copy of benchmark_config with updated metrics and request generator config
         return replace(  # type: ignore[call-overload]
             cast(Any, self.base_benchmark_config),
@@ -141,10 +149,19 @@ class CapacitySearch:
 
         - Synthetic: set interval_generator_config.qps
         - Trace + sessions: set session_interval_generator_config.qps
+        - LMEval: set interval_generator_config.qps
         """
         new_req_gen_cfg: BaseRequestGeneratorConfig = base_req_gen_cfg
 
         if isinstance(base_req_gen_cfg, SyntheticRequestGeneratorConfig):
+            interval_cfg = base_req_gen_cfg.interval_generator_config
+            if hasattr(interval_cfg, "qps"):
+                new_interval_cfg = replace(cast(Any, interval_cfg), qps=qps)  # type: ignore[call-overload]
+                new_req_gen_cfg = replace(  # type: ignore[call-overload]
+                    cast(Any, base_req_gen_cfg),
+                    interval_generator_config=new_interval_cfg,
+                )
+        elif isinstance(base_req_gen_cfg, LmevalRequestGeneratorConfig):
             interval_cfg = base_req_gen_cfg.interval_generator_config
             if hasattr(interval_cfg, "qps"):
                 new_interval_cfg = replace(cast(Any, interval_cfg), qps=qps)  # type: ignore[call-overload]
@@ -169,6 +186,9 @@ class CapacitySearch:
                     new_req_gen_cfg = replace(  # type: ignore[call-overload]
                         cast(Any, new_req_gen_cfg),
                         session_generator_config=new_session_gen_cfg,
+                    )
+                    logger.info(
+                        f"Capacity search: detected session trace generator; interpreting qps={qps} as sessions per second (SPS)."
                     )
 
         return new_req_gen_cfg
@@ -233,10 +253,18 @@ class CapacitySearch:
             target_dir = os.path.join(self.job_output_dir, str(qps_key))
             run_info_path = os.path.join(target_dir, "wandb_run.json")
             if not os.path.exists(run_info_path):
-                return None
+                candidates = glob.glob(
+                    os.path.join(target_dir, "**", "wandb_run.json"), recursive=True
+                )
+                if not candidates:
+                    return None
+                run_info_path = max(candidates, key=lambda p: os.path.getmtime(p))
             with open(run_info_path, "r", encoding="utf-8") as f:
                 info = json.load(f)
-            return info.get("path")
+            entity = info.get("entity")
+            project = info.get("project")
+            run_id = info.get("id")
+            return f"{entity}/{project}/{run_id}"
         except Exception:
             logger.debug(f"Could not read wandb path for QPS {qps_key}", exc_info=True)
             return None
@@ -454,20 +482,20 @@ class CapacitySearch:
             f"{'-'*100}\n"
         )
 
-        # Tag the actual best attempt run in wandb (if available and not fully cached)
-        if (
-            any_new_runs
-            and self.capacity_search_config.wandb_project is not None
-            and best_run_id is not None
-        ):
+        if any_new_runs and wandb_enabled and best_run_id is not None:
             best_path = self._read_wandb_path_for_qps(str(best_run_id))
             if best_path:
                 try:
-                    best_run = wandb.Api().run(best_path)
-                    best_run.tags.append("BEST_CONFIG")
-                    best_run.update()
+                    api = wandb.Api()
+                    best_run = api.run(best_path)
+                    current = list(best_run.tags or [])
+                    if "BEST_CONFIG" not in current:
+                        best_run.tags = current + ["BEST_CONFIG"]
+                        best_run.update()
                 except Exception:
-                    logger.debug("Could not tag best wandb run", exc_info=True)
+                    logger.warning(
+                        "Failed to tag BEST_CONFIG for run %s", best_path, exc_info=True
+                    )
 
         self._cache_final(
             max_qps_under_sla=max_qps_under_sla,

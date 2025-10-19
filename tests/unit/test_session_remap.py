@@ -120,10 +120,13 @@ def test_hash_ids_remap_on_wrap_with_sessions_and_save_suffix(tmp_path):
     initial_ids = list(gen.trace_df.iloc[0]["hash_ids"])  # type: ignore[index]
 
     # Drive generator to (and through) wrap: capacity is 2 after synthesis
-    _ = gen.get_request()
-    _ = gen.get_request()
-    # Next call should trigger wrap + remap
-    _ = gen.get_request()
+    try:
+        _ = gen.get_request()
+        _ = gen.get_request()
+        # Next call should trigger wrap + remap
+        _ = gen.get_request()
+    except StopIteration:
+        pytest.fail("Generator exhausted unexpectedly before wrap + remap")
 
     # After wrap, the in-place remap should change first-row hash_ids
     wrapped_ids = list(gen.trace_df.iloc[0]["hash_ids"])  # type: ignore[index]
@@ -148,9 +151,12 @@ def test_hash_ids_not_remapped_when_disabled_on_wrap(tmp_path):
 
     initial_ids = list(gen.trace_df.iloc[0]["hash_ids"])  # type: ignore[index]
 
-    _ = gen.get_request()
-    _ = gen.get_request()
-    _ = gen.get_request()  # triggers wrap without remap
+    try:
+        _ = gen.get_request()
+        _ = gen.get_request()
+        _ = gen.get_request()  # triggers wrap without remap
+    except StopIteration:
+        pytest.fail("Generator exhausted unexpectedly before wrap without remap")
 
     wrapped_ids = list(gen.trace_df.iloc[0]["hash_ids"])  # type: ignore[index]
     assert (
