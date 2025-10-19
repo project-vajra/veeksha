@@ -239,7 +239,12 @@ class BaseServerManager(abc.ABC):
                 except subprocess.TimeoutExpired:
                     logger.warning("Server did not shut down gracefully, force killing")
                     self.process.kill()
-                    self.process.wait()
+
+            # Ensure process is reaped, ignore errors
+            try:
+                self.process.wait(timeout=5)
+            except Exception as e:
+                logger.warning(f"Error waiting for process to exit: {e}")
 
             return True
 
