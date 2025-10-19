@@ -24,7 +24,7 @@ DEFAULT_TRACE_FILE = str(_DATA_FILE_PATH)
 @frozen_dataclass(allow_from_file=True)
 class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     exhaustion_policy: str = field(
-        default="stop",
+        default="wrap",
         metadata={
             "help": "Behavior when the trace runs out: error | stop | wrap.",
         },
@@ -74,7 +74,7 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
         },
     )
     remap_hash_ids: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "If True and use_trace_prefix_hash_ids, randomly remap prefix hash IDs. Will also remap hash_ids when trace is exhausted and exhaustion_policy is set to 'wrap'.",
         },
@@ -148,10 +148,6 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
         if self.exhaustion_policy not in ALLOWED_EXHAUSTION_POLICIES:
             raise ValueError(
                 f"{self.__class__.__name__}: exhaustion_policy must be one of {sorted(ALLOWED_EXHAUSTION_POLICIES)}"
-            )
-        if self.remap_hash_ids and not self.use_trace_prefix_hash_ids:
-            raise ValueError(
-                f"{self.__class__.__name__}: remap_hash_ids requires use_trace_prefix_hash_ids to be True"
             )
 
     @classmethod
