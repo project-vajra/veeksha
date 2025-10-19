@@ -142,7 +142,6 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                 response.raise_for_status()
 
                 async for data in self._process_stream(response):
-                    logger.info(f"data: {data}")
                     before_process = time.monotonic()
                     # Enforce presence and types of streaming audit metadata
                     if "_arrival_monotonic" not in data or "_parse_overhead_s" not in data:
