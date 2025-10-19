@@ -43,7 +43,7 @@ class ServerConfig:
     port: int = field(default=8000, metadata={"help": "Port number for the server"})
 
     api_key: str = field(
-        default="null", metadata={"help": "API key for server authentication"}
+        default="token-abc123", metadata={"help": "API key for server authentication"}
     )
 
     # Hardware/Resource configuration
