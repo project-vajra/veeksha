@@ -11,6 +11,22 @@ client_config:
 
 request_generator_config:
   type: trace # use default trace: swe_agent
-  input_length_column: input_length
-  output_length_column: output_length
-  use_trace_prefix_hash_ids: true
+  trace_file: veeksha/data/processed_traces/sharegpt_8k_filtered_stats_llama2_tokenizer.csv
+  input_length_column: num_prefill_tokens
+  output_length_column: num_decode_tokens
+  use_trace_prefix_hash_ids: false
+
+metrics_config:
+  output_dir: "benchmark_results"  # Directory to save results
+  
+  # Deadline configuration for reporting
+  deadline_report:
+    ttft_deadline: 0.6              # Time to first token deadline (seconds)
+    tbt_deadline: 0.04               # Time between tokens deadline (seconds)
+    target_deadline_miss_rate: 0.1   # Target miss rate (10%)
+  
+  # WandB configuration
+  should_write_metrics_to_wandb: true
+  wandb_project: "sglang-revati-llama3.1-70b"
+  wandb_group: "sglang-revati-llama3.1-70b-h100-tp4-pp1-sharegpt"
+  wandb_run_name: "sglang-revati-llama3.1-70b-h100-tp4-pp1-sharegpt-gpu"
