@@ -34,10 +34,8 @@ from veeksha.orchestration import managed_server
 logger = init_logger(__name__)
 
 
-def create_minimal_benchmark_config() -> BenchmarkConfig:
+def create_minimal_benchmark_config(output_dir: str) -> BenchmarkConfig:
     """Create a minimal benchmark configuration for testing."""
-    # Create temporary output directory
-    output_dir = tempfile.mkdtemp(prefix="veeksha_test_")
 
     # Client configuration
     client_config = ClientConfig(
@@ -82,55 +80,57 @@ def test_orchestration():
     logger.info("Testing Server Orchestration")
     logger.info("=" * 80)
 
-    # Create minimal benchmark config
-    logger.info("Creating minimal benchmark configuration...")
-    benchmark_config = create_minimal_benchmark_config()
+    # Create temporary output directory
+    with tempfile.TemporaryDirectory(prefix="veeksha_test_") as output_dir:
+        # Create minimal benchmark config
+        logger.info("Creating minimal benchmark configuration...")
+        benchmark_config = create_minimal_benchmark_config(output_dir)
 
-    # Create server config
-    logger.info("Creating server configuration...")
-    server_config = ServerConfig(
-        engine="vllm",
-        model="Qwen/Qwen3-1.7B",  # Use Qwen3 model
-        port=8000,
-        tensor_parallel_size=1,
-        gpu_ids=[2],  # Use GPU 2 which has more free memory
-        dtype="auto",
-        auto_shutdown=True,
-        startup_timeout=120,  # 2 minutes should be enough for small model
-    )
+        # Create server config
+        logger.info("Creating server configuration...")
+        server_config = ServerConfig(
+            engine="vllm",
+            model="Qwen/Qwen3-1.7B",  # Use Qwen3 model
+            port=8000,
+            tensor_parallel_size=1,
+            gpu_ids=[2],  # Use GPU 2 which has more free memory
+            dtype="auto",
+            auto_shutdown=True,
+            startup_timeout=120,  # 2 minutes should be enough for small model
+        )
 
-    # Run the orchestration
-    logger.info("Starting orchestration test...")
-    try:
-        logger.info("Launching server...")
-        with managed_server(server_config) as info:
-            logger.info(f"Server ready at {info['api_base']}")
-            logger.info("Running benchmark...")
+        # Run the orchestration
+        logger.info("Starting orchestration test...")
+        try:
+            logger.info("Launching server...")
+            with managed_server(server_config) as info:
+                logger.info(f"Server ready at {info['api_base']}")
+                logger.info("Running benchmark...")
 
-            metrics = run_benchmark(benchmark_config)
+                metrics = run_benchmark(benchmark_config)
 
-            # Display results
-            logger.info("=" * 80)
-            logger.info("TEST PASSED - Orchestration successful!")
-            logger.info("=" * 80)
+                # Display results
+                logger.info("=" * 80)
+                logger.info("TEST PASSED - Orchestration successful!")
+                logger.info("=" * 80)
 
-            summary = metrics.get_aggregated_summary()
-            for key, value in summary.items():
-                logger.info(f"{key}: {value}")
+                summary = metrics.get_aggregated_summary()
+                for key, value in summary.items():
+                    logger.info(f"{key}: {value}")
 
-            logger.info(
-                f"\nResults saved to: {benchmark_config.metrics_config.output_dir}"
-            )
+                logger.info(
+                    f"\nResults saved to: {benchmark_config.metrics_config.output_dir}"
+                )
 
-        logger.info("Server shut down")
-        return True
+            logger.info("Server shut down")
+            return True
 
-    except Exception as e:
-        logger.error("=" * 80)
-        logger.error("TEST FAILED - Orchestration error!")
-        logger.error("=" * 80)
-        logger.error(f"Error: {e}")
-        raise
+        except Exception as e:
+            logger.error("=" * 80)
+            logger.error("TEST FAILED - Orchestration error!")
+            logger.error("=" * 80)
+            logger.error(f"Error: {e}")
+            raise
 
 
 if __name__ == "__main__":
