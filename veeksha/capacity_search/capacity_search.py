@@ -32,8 +32,8 @@ from veeksha.constants.capacity_search_constants import (
     QPS_INCREASE_SCALE,
     VICINITY_THRESHOLD,
 )
-from veeksha.orchestration.benchmark_orchestrator import managed_server
 from veeksha.logger import init_logger
+from veeksha.orchestration.benchmark_orchestrator import managed_server
 
 logger = init_logger(__name__)
 
@@ -236,9 +236,9 @@ class CapacitySearch:
 
         # Use managed server if configured to create a new server for each QPS run
         if (
-            self.capacity_search_config.server_per_qps_run and
-            hasattr(benchmark_config, 'server_config') and
-            benchmark_config.server_config is not None
+            self.capacity_search_config.server_per_qps_run
+            and hasattr(benchmark_config, "server_config")
+            and benchmark_config.server_config is not None
         ):
             logger.info(f"Launching new server for QPS {qps}")
             with managed_server(benchmark_config.server_config) as server_info:
