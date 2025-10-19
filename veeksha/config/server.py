@@ -144,7 +144,7 @@ class ServerConfig:
         additional_args_dict: Dict[str, Any] = {}
         if self.additional_args:
             additional_args_dict = json.loads(self.additional_args)
-        
+
         return {
             "engine": self.engine,
             "host": self.host,

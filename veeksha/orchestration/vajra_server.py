@@ -68,7 +68,7 @@ class VajraServerManager(BaseServerManager):
                 ["--model_config_max_model_len", str(self.config.max_model_len)]
             )
 
-                # Process additional arguments from the configuration
+            # Process additional arguments from the configuration
         # These are engine-specific parameters parsed from JSON
         additional_args_dict = self.get_additional_args_dict()
         for key, value in additional_args_dict.items():
@@ -103,10 +103,7 @@ class VajraServerManager(BaseServerManager):
         additional_args_dict = self.get_additional_args_dict()
 
         # Handle complex resource mapping configuration
-        if (
-            "inference_engine_config_global_resource_mapping"
-            in additional_args_dict
-        ):
+        if "inference_engine_config_global_resource_mapping" in additional_args_dict:
             import json
 
             mapping = additional_args_dict[
