@@ -38,16 +38,13 @@ class BenchmarkConfig:
 
     **Handling Field Redundancy**:
 
-    When `server_config` is provided, the following fields are auto-populated:
+    When `server_config` is provided, warnings are issued for potential configuration issues:
 
-    - `api_url`: Auto-populated from `server_config.get_api_base_url()` if not explicitly set
-    - `api_key`: Auto-populated from `server_config.api_key` if not explicitly set
-    - `server_config.model`: Auto-populated from `client_config.model` to avoid duplication
+    - `api_url`: Warns if at default value
+    - `api_key`: Warns if at default value
+    - `server_config.model`: Warns if it differs from `client_config.model`
 
-    This means you only need to specify the model once in `client_config.model`, and it will
-    automatically be used for both the server launch and client requests.
-
-    This design allows flexibility while preventing configuration mismatches between
+    This design allows flexibility while alerting users to potential mismatches between
     the server being launched and the client making requests.
     """
 
@@ -93,8 +90,9 @@ class BenchmarkConfig:
         default=None,
         metadata={
             "help": "Optional server configuration for automatic server management. "
-            "If provided, the server will be launched before the benchmark and "
-            "api_url and api_key will be auto-populated if not explicitly set."
+            "If provided, the server will be launched before the benchmark. "
+            "Warnings will be issued if api_url or api_key are at default values, "
+            "or if server_config.model differs from client_config.model."
         },
     )
 
@@ -109,24 +107,22 @@ class BenchmarkConfig:
                 f for f in self.__dataclass_fields__.values() if f.name == "api_key"
             )
 
-            # Auto-populate api_url if not explicitly set (checking against default)
+            # Warn if api_url is at default value
             if self.api_url == api_url_field.default:
-                object.__setattr__(
-                    self, "api_url", self.server_config.get_api_base_url()
-                )
-                logger.info(
-                    f"Auto-populated api_url from server_config: {self.api_url}"
+                logger.warning(
+                    "api_url is at default value. Consider setting it explicitly when using server_config."
                 )
 
-            # Auto-populate api_key if not explicitly set (checking against default)
+            # Warn if api_key is at default value
             if self.api_key == api_key_field.default:
-                object.__setattr__(self, "api_key", self.server_config.api_key)
-                logger.info("Auto-populated api_key from server_config")
+                logger.warning(
+                    "api_key is at default value. Consider setting it explicitly when using server_config."
+                )
 
-            # Sync model from client_config to server_config to avoid user having to specify twice
+            # Warn if server_config.model differs from client_config.model
             if self.server_config.model != self.client_config.model:
-                logger.info(
-                    f"Auto-populating server_config.model from client_config.model: {self.client_config.model}"
+                logger.warning(
+                    f"Client model differs from server. Setting server model from client_config: {self.client_config.model}"
                 )
                 object.__setattr__(
                     self.server_config, "model", self.client_config.model
