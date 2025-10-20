@@ -26,7 +26,6 @@ benchmark_config:
     engine: vllm
     port: 30000
     tensor_parallel_size: 1
-    additional_args: '{"gpu-memory-utilization": "0.7"}'
 
   client_config:
     model: meta-llama/Meta-Llama-3-8B-Instruct
