@@ -175,9 +175,7 @@ class BaseServerManager(abc.ABC):
                                     f"\n"
                                     f"Solutions:\n"
                                     f"  1. Free up GPU memory by stopping other processes\n"
-                                    f"  2. Reduce GPU memory utilization by adding to server_config:\n"
-                                    f'     additional_args: \'{{"gpu-memory-utilization": "0.5"}}\'\n'
-                                    f"  3. Use a smaller model\n"
+                                    f"  2. Use a smaller model\n"
                                     f"{'='*80}"
                                 )
                             else:

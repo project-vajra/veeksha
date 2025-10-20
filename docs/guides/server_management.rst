@@ -417,7 +417,6 @@ Use :code:`additional_args` dict for engine-specific options:
        additional_args={
            "rope_scaling": {"type": "dynamic", "factor": 2.0},
            "max_num_seqs": 256,
-           "gpu_memory_utilization": 0.9,
        }
    )
 

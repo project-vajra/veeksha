@@ -50,21 +50,15 @@ def run_experiment_with_resources(
     gpu_ids = [gpu_id for _, gpu_id in resource_mapping]
     print(f"Allocated GPUs: {gpu_ids}")
 
-    # Get recommended GPU memory utilization
-    gpu_mem_util = resource_manager.recommend_gpu_memory_utilization(
-        resource_mapping, model
-    )
-
     try:
         # Create server config with allocated GPUs
         server_config = ServerConfig(
-            engine="vllm",
+            engine="vajra",
             model=model,
             port=port,
             tensor_parallel_size=tp_size,
             gpu_ids=gpu_ids,
             auto_shutdown=True,
-            additional_args=f'{{"gpu-memory-utilization": "{gpu_mem_util}"}}',
         )
         # Create benchmark config
         benchmark_config = BenchmarkConfig(
