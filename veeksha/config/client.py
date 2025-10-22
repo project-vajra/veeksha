@@ -27,7 +27,7 @@ class ClientConfig:
         metadata={"help": "The number of concurrent requests each client can manage."},
     )
     auto_spawn_new_clients: bool = field(
-        default=True,
+        default=False,
         metadata={
             "help": "If True, spawn additional clients when requests are ready to be dispatched but all clients are busy. Spawned clients use the same per-client concurrency.",
         },
@@ -77,7 +77,7 @@ class ClientConfig:
         if self.tokenizer is None:
             self.tokenizer = self.model
 
-        if self.num_clients < 0:
+        if self.num_clients < 1:
             raise ValueError("num_clients must be greater than 0")
         if self.num_concurrent_requests_per_client < 1:
             raise ValueError(

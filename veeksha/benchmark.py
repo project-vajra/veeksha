@@ -236,7 +236,10 @@ def dispatch_requests(
                 service_metrics.num_requests - service_metrics.num_completed_requests
             )
             total_slots = req_launcher.get_total_slots()
-            input_queue_size_now = input_queue.qsize()
+            try:
+                input_queue_size_now = input_queue.qsize()
+            except NotImplementedError:  # portable fallback
+                input_queue_size_now = 1 if inflight >= total_slots else 0
             available_slots = max(0, total_slots - inflight)
             if (
                 input_queue_size_now > 0
