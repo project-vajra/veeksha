@@ -44,7 +44,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self._remap_seed_for_save: Optional[int] = None
         self._epoch = 0
         self._session_id_offset = 0
-        self._num_sessions_per_epoch = 0
+        self._session_id_base = 0
         self._global_request_id = 0
         self._epoch_anchor_offset_s: float = 0.0
         self._session_firsts_span_s: float = 0.0
@@ -138,7 +138,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         #### offsets for wrapping mode
         # number of sessions per epoch
         if "session_id" in self.trace_df.columns:
-            self._num_sessions_per_epoch = int(self.trace_df["session_id"].nunique())
+            self._session_id_base = int(self.trace_df["session_id"].max()) + 1
 
         # distance from first to last session (s)
         if (
@@ -341,8 +341,8 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     self._wrap_warning_logged = True
                 self.request_idx = 0
                 self._epoch += 1
-                if self._num_sessions_per_epoch > 0:
-                    self._session_id_offset = self._epoch * self._num_sessions_per_epoch
+                if self._session_id_base > 0:
+                    self._session_id_offset = self._epoch * self._session_id_base
                 if self._session_firsts_span_s > 0.0:
                     self._epoch_anchor_offset_s += self._session_firsts_span_s
                 if self.config.use_trace_prefix_hash_ids and self.config.remap_hash_ids:
@@ -416,7 +416,6 @@ class TraceRequestGenerator(BaseRequestGenerator):
             id=self._global_request_id,
         )
 
-        # attach session scheduling metadata based on configuration
         self._attach_session_metadata(request_to_send, request_config)
 
         self.request_idx += 1
