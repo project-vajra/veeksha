@@ -13,6 +13,7 @@ from veeksha.dashboard.events import TokenBatchEvent
 from veeksha.dashboard.handler import emit_dashboard_event
 from veeksha.logger import init_logger
 from veeksha.metrics.request_metrics import RequestMetrics
+from veeksha.metrics.dispatch_trace import append_dispatch_trace
 
 logger = init_logger(__name__)
 
@@ -114,6 +115,18 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
 
         most_recent_received_token_time = time.monotonic()
         request_dispatched_at = time.monotonic() - self.start_time
+        # Append to dispatch trace (best-effort)
+        try:
+            output_dir = os.environ.get("VEEKSHA_OUTPUT_DIR", "")
+            append_dispatch_trace(
+                output_dir=output_dir,
+                request_id=request_config.id,
+                session_id=getattr(request_config, "session_id", None),
+                ready_timestamp=getattr(request_config, "ready_timestamp", None),
+                dispatch_timestamp=time.time(),
+            )
+        except Exception:
+            pass
         # Respect a local cap on tokens to avoid mismatches with server/tokenizer
         max_tokens_limit = None
         if isinstance(request_config.sampling_params, dict):

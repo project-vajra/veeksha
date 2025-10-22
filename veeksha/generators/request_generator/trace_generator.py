@@ -43,6 +43,11 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self.corpus_lines = corpus_lines
         self._remap_seed_for_save: Optional[int] = None
         self._epoch = 0
+        self._session_id_offset = 0
+        self._num_sessions_per_epoch = 0
+        self._global_request_id = 0
+        self._epoch_anchor_offset_s: float = 0.0
+        self._session_firsts_span_s: float = 0.0
         self.prompt_rng = self.seed_manager.random("prompt")
         self.interval_rng_factory = self.seed_manager.numpy_factory("interval")
         self.session_rng_factory = self.seed_manager.numpy_factory("session")
@@ -130,6 +135,25 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self.request_idx = 0
         self._wrap_warning_logged = False
 
+        # Determine number of sessions per epoch if sessions are present
+        if "session_id" in self.trace_df.columns:
+            self._num_sessions_per_epoch = int(self.trace_df["session_id"].nunique())
+
+        # Pre-compute span of first-request timestamps from first to last session (s)
+        if (
+            "session_id" in self.trace_df.columns
+            and "timestamp" in self.trace_df.columns
+            and not self.trace_df.empty
+        ):
+            firsts = (
+                self.trace_df.sort_values("timestamp")
+                .groupby("session_id", as_index=False)
+                .first()["timestamp"].astype(float)
+            )
+            if len(firsts) >= 1:
+                span = float(firsts.max() - firsts.min())
+                self._session_firsts_span_s = max(0.0, span)
+
     def _annotate_trace_sessions(self) -> None:
         """Annotate trace-provided sessions with sequence index, intra-session wait, and anchor.
 
@@ -172,7 +196,8 @@ class TraceRequestGenerator(BaseRequestGenerator):
         """
         session_id_val = request_to_send.get("session_id", None)
         if session_id_val is not None:
-            request_config.session_id = int(session_id_val)
+            # Apply per-epoch offset to avoid cross-epoch session collisions
+            request_config.session_id = int(session_id_val) + int(self._session_id_offset)
         if cancel_on_failure is not None:
             request_config.cancel_session_on_failure = bool(cancel_on_failure)
 
@@ -184,7 +209,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         anchor = request_to_send.get("anchor_at_s")
         if seq_idx == 0 and anchor is not None:
-            request_config.anchor_at_s = float(anchor)
+            request_config.anchor_at_s = float(anchor) + float(self._epoch_anchor_offset_s)
 
         wait_gap = float(request_to_send.get("wait_after_prev_response_s", 0.0))
         if seq_idx > 0:
@@ -309,8 +334,15 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     )
                     self._wrap_warning_logged = True
                 self.request_idx = 0
+                # advance epoch and update per-epoch offsets
+                self._epoch += 1
+                if self._num_sessions_per_epoch > 0:
+                    self._session_id_offset = self._epoch * self._num_sessions_per_epoch
+                # shift anchors forward by one epoch span to preserve arrival pattern
+                if self._session_firsts_span_s > 0.0:
+                    self._epoch_anchor_offset_s += self._session_firsts_span_s
+                # optional hash remap on wrap
                 if self.config.use_trace_prefix_hash_ids and self.config.remap_hash_ids:
-                    self._epoch += 1
                     self._remap_trace_hash_ids()
                     self.past_prompts.clear()
 
@@ -378,13 +410,14 @@ class TraceRequestGenerator(BaseRequestGenerator):
             sampling_params=default_sampling_params,
             llm_api=self.client_config.llm_api,
             address_append_value=self.client_config.address_append_value,
-            id=self.request_idx,
+            id=self._global_request_id,
         )
 
         # attach session scheduling metadata based on configuration
         self._attach_session_metadata(request_to_send, request_config)
 
         self.request_idx += 1
+        self._global_request_id += 1
 
         return request_config
 

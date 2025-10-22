@@ -30,6 +30,9 @@ class RequestConfig(BaseModel):
     anchor_at_s: Optional[float] = None  # absolute anchor for first-in-session requests
     wait_after_prev_response_s: Optional[float] = None
     cancel_session_on_failure: Optional[bool] = None
+    
+    ready_timestamp: Optional[float] = None
+    dispatch_timestamp: Optional[float] = None
 
     def __str__(self) -> str:
         return f"RequestConfig(id={self.id})"

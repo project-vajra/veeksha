@@ -436,6 +436,88 @@ class SessionGenerator:
             request["cummulative_prefix_match_pct"] = cummulative_prefix_match_pct
 
         logger.info(f"Prefix match in generated trace: {cummulative_prefix_match_pct}%")
+        
+        # session dispatch rate in generated trace
+        df_tmp = pd.DataFrame(sampled_requests)
+        if not df_tmp.empty and "session_id" in df_tmp.columns and "timestamp" in df_tmp.columns:
+            df_tmp = df_tmp.sort_values(by="timestamp")
+            first_requests_df = df_tmp.groupby("session_id", as_index=False).first()
+            if len(first_requests_df) >= 2:
+                duration_s = float(
+                    first_requests_df["timestamp"].max() - first_requests_df["timestamp"].min()
+                )
+                session_dispatch_rate = (len(first_requests_df) / duration_s) if duration_s > 0 else 0.0
+            else:
+                session_dispatch_rate = 0.0
+            logger.info(
+                f"Session dispatch rate in generated trace: {session_dispatch_rate:.6f} sessions/s"
+            )
+            # Localized diagnostics to catch non-uniform dispatch behavior
+            try:
+                first_times = np.sort(
+                    first_requests_df["timestamp"].to_numpy(dtype=float)
+                )
+                n_first = len(first_times)
+                if n_first >= 2:
+                    inter_arrivals = np.diff(first_times)
+                    logger.info(
+                        "Session first-request inter-arrival (s): "
+                        f"count={len(inter_arrivals)}, "
+                        f"mean={float(np.mean(inter_arrivals)):.6f}, "
+                        f"median={float(np.median(inter_arrivals)):.6f}, "
+                        f"p10={float(np.percentile(inter_arrivals, 10)):.6f}, "
+                        f"p90={float(np.percentile(inter_arrivals, 90)):.6f}, "
+                        f"min={float(np.min(inter_arrivals)):.6f}, "
+                        f"max={float(np.max(inter_arrivals)):.6f}"
+                    )
+
+                    # Rate over equal-sized time chunks (deciles)
+                    total_span = float(first_times[-1] - first_times[0])
+                    if total_span > 0:
+                        num_chunks = 10
+                        edges = np.linspace(first_times[0], first_times[-1], num_chunks + 1)
+                        counts, _ = np.histogram(first_times, bins=edges)
+                        widths = edges[1:] - edges[:-1]
+                        # Avoid division by zero in degenerate bins
+                        valid = widths > 0
+                        chunk_rates = np.zeros_like(widths, dtype=float)
+                        chunk_rates[valid] = counts[valid] / widths[valid]
+                        logger.info(
+                            "Session dispatch rate by time chunks (/s): "
+                            f"min={float(np.min(chunk_rates)):.6f}, "
+                            f"p10={float(np.percentile(chunk_rates, 10)):.6f}, "
+                            f"median={float(np.median(chunk_rates)):.6f}, "
+                            f"p90={float(np.percentile(chunk_rates, 90)):.6f}, "
+                            f"max={float(np.max(chunk_rates)):.6f}"
+                        )
+
+                        # First half vs second half rate comparison
+                        mid_ts = 0.5 * (first_times[0] + first_times[-1])
+                        first_half_mask = first_times <= mid_ts
+                        n_first_half = int(np.sum(first_half_mask))
+                        n_second_half = n_first - n_first_half
+                        span_first = float(max(mid_ts - first_times[0], 0.0))
+                        span_second = float(max(first_times[-1] - mid_ts, 0.0))
+                        rate_first = (n_first_half / span_first) if span_first > 0 else 0.0
+                        rate_second = (n_second_half / span_second) if span_second > 0 else 0.0
+                        logger.info(
+                            "Session dispatch rate halves (/s): "
+                            f"first_half={rate_first:.6f}, second_half={rate_second:.6f}"
+                        )
+
+                        # Largest gaps to highlight extreme sparsity
+                        if inter_arrivals.size > 0:
+                            k = min(3, inter_arrivals.size)
+                            largest_gaps = np.sort(inter_arrivals)[-k:][::-1]
+                            logger.info(
+                                "Largest session start gaps (s): "
+                                + ", ".join(f"{g:.6f}" for g in largest_gaps)
+                            )
+            except Exception:
+                # Best-effort diagnostics; do not fail generation due to logging
+                pass
+        else:
+            logger.info("Session dispatch rate in generated trace: N/A")
 
         # Convert back to DataFrame
         result_df = pd.DataFrame(sampled_requests)

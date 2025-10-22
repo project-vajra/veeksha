@@ -161,3 +161,26 @@ class DispatchScheduler:
         with self._lock:
             self._canceled_sessions[session_id] = True
             self._pending_by_session.pop(session_id, None)
+
+    def get_blocked_pending_count(self) -> int:
+        with self._lock:
+            return sum(len(session_map) for session_map in self._pending_by_session.values())
+
+    def get_ready_count(self) -> int:
+        with self._lock:
+            return len(self._ready_heap)
+
+    def get_ready_now_count(self) -> int:
+        with self._lock:
+            if not self._ready_heap:
+                return 0
+            now = self._now()
+            # Count items at the front that are ready now. Since it's a heap, only
+            # contiguous front elements can be ready without popping.
+            count = 0
+            for item in self._ready_heap:
+                if item.ready_at <= now:
+                    count += 1
+                # Because it's a heap, encountering a not-ready item does not guarantee
+                # later items are not-ready; but scanning all is O(n) and fine for logging.
+            return count
