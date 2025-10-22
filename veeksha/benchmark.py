@@ -165,6 +165,7 @@ def dispatch_requests(
     next_prefetch_time = 0.0
     generator_exhausted = False
     scheduled_backlog = 0
+    next_backlog_warn_time = 0.0
 
     def _dispatch_ready_request(ready) -> None:
         nonlocal scheduled_backlog, num_errored_requests_handled
