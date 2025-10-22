@@ -566,8 +566,7 @@ def _log_session_dispatch_diagnostics(sampled_requests: List[Dict[str, Any]]) ->
                             "Largest session start gaps (s): "
                             + ", ".join(f"{g:.6f}" for g in largest_gaps)
                         )
-        except Exception:
-            # Best-effort diagnostics; do not fail generation due to logging
-            pass
+        except Exception as e:
+            logger.error(f"Error logging session dispatch diagnostics: {e}")
     else:
         logger.info("Session dispatch rate in generated trace: N/A")
