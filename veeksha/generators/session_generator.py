@@ -485,14 +485,21 @@ def _log_session_dispatch_diagnostics(sampled_requests: List[Dict[str, Any]]) ->
     - largest gaps
     """
     df_tmp = pd.DataFrame(sampled_requests)
-    if not df_tmp.empty and "session_id" in df_tmp.columns and "timestamp" in df_tmp.columns:
+    if (
+        not df_tmp.empty
+        and "session_id" in df_tmp.columns
+        and "timestamp" in df_tmp.columns
+    ):
         df_tmp = df_tmp.sort_values(by="timestamp")
         first_requests_df = df_tmp.groupby("session_id", as_index=False).first()
         if len(first_requests_df) >= 2:
             duration_s = float(
-                first_requests_df["timestamp"].max() - first_requests_df["timestamp"].min()
+                first_requests_df["timestamp"].max()
+                - first_requests_df["timestamp"].min()
             )
-            session_dispatch_rate = (len(first_requests_df) / duration_s) if duration_s > 0 else 0.0
+            session_dispatch_rate = (
+                (len(first_requests_df) / duration_s) if duration_s > 0 else 0.0
+            )
         else:
             session_dispatch_rate = 0.0
         logger.info(
@@ -500,9 +507,7 @@ def _log_session_dispatch_diagnostics(sampled_requests: List[Dict[str, Any]]) ->
         )
         # Localized diagnostics to catch non-uniform dispatch behavior
         try:
-            first_times = np.sort(
-                first_requests_df["timestamp"].to_numpy(dtype=float)
-            )
+            first_times = np.sort(first_requests_df["timestamp"].to_numpy(dtype=float))
             n_first = len(first_times)
             if n_first >= 2:
                 inter_arrivals = np.diff(first_times)
@@ -545,7 +550,9 @@ def _log_session_dispatch_diagnostics(sampled_requests: List[Dict[str, Any]]) ->
                     span_first = float(max(mid_ts - first_times[0], 0.0))
                     span_second = float(max(first_times[-1] - mid_ts, 0.0))
                     rate_first = (n_first_half / span_first) if span_first > 0 else 0.0
-                    rate_second = (n_second_half / span_second) if span_second > 0 else 0.0
+                    rate_second = (
+                        (n_second_half / span_second) if span_second > 0 else 0.0
+                    )
                     logger.info(
                         "Session dispatch rate halves (/s): "
                         f"first_half={rate_first:.6f}, second_half={rate_second:.6f}"

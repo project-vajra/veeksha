@@ -225,10 +225,7 @@ def dispatch_requests(
         blocked_pending = scheduler.get_blocked_pending_count()
         effective_backlog = max(0, scheduled_backlog - blocked_pending)
 
-        if (
-            effective_backlog >= MAX_PREFETCH_BACKLOG
-            and now >= next_backlog_warn_time
-        ):
+        if effective_backlog >= MAX_PREFETCH_BACKLOG and now >= next_backlog_warn_time:
             logger.warning(
                 "Effective prefetch backlog reached cap (%d). scheduled=%d blocked_pending=%d ready=%d ready_now=%d",
                 MAX_PREFETCH_BACKLOG,

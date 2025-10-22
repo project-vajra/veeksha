@@ -164,7 +164,9 @@ class DispatchScheduler:
 
     def get_blocked_pending_count(self) -> int:
         with self._lock:
-            return sum(len(session_map) for session_map in self._pending_by_session.values())
+            return sum(
+                len(session_map) for session_map in self._pending_by_session.values()
+            )
 
     def get_ready_count(self) -> int:
         with self._lock:
