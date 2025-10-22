@@ -49,8 +49,9 @@ logger = init_logger(__name__)
 
 PREFETCH_BATCH_SIZE = 1
 PREFETCH_INTERVAL_S = 0.001
-MAX_PREFETCH_BACKLOG = 1000
+MAX_PREFETCH_BACKLOG = 5000
 NEAR_DEADLINE_WINDOW_S = 0.010
+BACKLOG_WARN_INTERVAL_S = 5.0
 
 
 def setup_api_environment(
@@ -219,10 +220,27 @@ def dispatch_requests(
                 continue
 
         # prefetch away from near deadlines
+        # effective backlog ignores blocked session-followup requests
+        blocked_pending = scheduler.get_blocked_pending_count()
+        effective_backlog = max(0, scheduled_backlog - blocked_pending)
+
+        if (
+            effective_backlog >= MAX_PREFETCH_BACKLOG
+            and now >= next_backlog_warn_time
+        ):
+            logger.warning(
+                "Effective prefetch backlog reached cap (%d). scheduled=%d blocked_pending=%d ready=%d ready_now=%d",
+                MAX_PREFETCH_BACKLOG,
+                scheduled_backlog,
+                blocked_pending,
+                scheduler.get_ready_count(),
+                scheduler.get_ready_now_count(),
+            )
+            next_backlog_warn_time = now + BACKLOG_WARN_INTERVAL_S
         if (
             (not generator_exhausted)
             and should_send_new_request(service_metrics, num_errored_requests_handled)
-            and (scheduled_backlog < MAX_PREFETCH_BACKLOG)
+            and (effective_backlog < MAX_PREFETCH_BACKLOG)
         ):
             # gate prefetch away from near deadlines
             now = time.monotonic()
@@ -232,7 +250,10 @@ def dispatch_requests(
                 now >= next_prefetch_time
             ):
                 for _ in range(PREFETCH_BATCH_SIZE):
-                    if scheduled_backlog >= MAX_PREFETCH_BACKLOG:
+                    # in case effective backlog changes
+                    blocked_pending = scheduler.get_blocked_pending_count()
+                    effective_backlog = max(0, scheduled_backlog - blocked_pending)
+                    if effective_backlog >= MAX_PREFETCH_BACKLOG:
                         break
                     try:
                         request_config = request_generator.get_request()
