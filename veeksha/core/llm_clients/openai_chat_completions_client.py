@@ -12,8 +12,8 @@ from veeksha.core.response import Response
 from veeksha.dashboard.events import TokenBatchEvent
 from veeksha.dashboard.handler import emit_dashboard_event
 from veeksha.logger import init_logger
-from veeksha.metrics.request_metrics import RequestMetrics
 from veeksha.metrics.dispatch_trace import append_dispatch_trace
+from veeksha.metrics.request_metrics import RequestMetrics
 
 logger = init_logger(__name__)
 
@@ -151,6 +151,9 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                         break  # Stop processing on error
                     delta = data["choices"][0]["delta"]
                     if delta.get("content", None):
+                        chunk_arrival_monotonic = (
+                            time.monotonic()
+                        )  # avoid tokenization overhead
                         (
                             current_tokens_received,
                             previous_token_count,
@@ -172,17 +175,16 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                             )
 
                         if allowable_to_add > 0:
-                            tokens_received_chunk += (
-                                allowable_to_add  # Track tokens for this chunk
-                            )
+                            tokens_received_chunk += allowable_to_add
                             inter_token_times.append(
-                                time.monotonic() - most_recent_received_token_time
+                                chunk_arrival_monotonic
+                                - most_recent_received_token_time
                             )
                             if allowable_to_add > 1:
                                 inter_token_times.extend([0] * (allowable_to_add - 1))
                             tokens_received += allowable_to_add
-                            most_recent_received_token_time = time.monotonic()
-                            # We still append full text; metrics cap governs counts/timings
+                            most_recent_received_token_time = chunk_arrival_monotonic
+
                             generated_text += delta["content"]
 
                             # Truncate generated_text to exactly tokens_received tokens

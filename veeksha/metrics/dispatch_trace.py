@@ -1,6 +1,5 @@
 import csv
 import os
-import sys
 from typing import Optional
 
 
@@ -75,5 +74,3 @@ def append_dispatch_trace(
     except Exception:
         # Do not raise from metrics path; best-effort only
         return
-
-

@@ -3,6 +3,7 @@ import functools
 from multiprocessing import Process
 from multiprocessing import Queue as MPQueue
 from queue import Empty
+from threading import Lock
 from typing import Any, Callable, List, Optional
 
 import aiohttp  # type: ignore
@@ -29,16 +30,63 @@ class RequestsLauncher:
         self.input_queue = input_queue
         self.output_queue = output_queue
         self.clients: List[Process] = []
+        self._lock: Lock = Lock()
+        self._next_client_id: int = 0
 
     def start(self) -> None:
-        """Start the clients."""
-        for client_id in range(self.client_config.num_clients):
-            client = Process(
-                target=self.run_client,
-                args=(client_id,),
+        """Start the initial configured clients."""
+        with self._lock:
+            for _ in range(self.client_config.num_clients):
+                if self._can_spawn_more_locked():
+                    self._spawn_client_locked()
+                else:
+                    logger.warning(
+                        "Configured num_clients=%d exceeds max_clients=%s; starting only %d",
+                        self.client_config.num_clients,
+                        str(self.client_config.max_clients),
+                        len(self.clients),
+                    )
+                    break
+
+    def _spawn_client_locked(self) -> None:
+        client_id = self._next_client_id
+        client = Process(
+            target=self.run_client,
+            args=(client_id,),
+        )
+        self.clients.append(client)
+        self._next_client_id += 1
+        client.start()
+
+    def spawn_new_client(self) -> None:
+        """Dynamically spawn a new client process that persists for the run."""
+        with self._lock:
+            if self._can_spawn_more_locked():
+                self._spawn_client_locked()
+            else:
+                logger.info(
+                    "Max clients reached (max_clients=%s); not spawning new client.",
+                    str(self.client_config.max_clients),
+                )
+
+    def get_client_count(self) -> int:
+        with self._lock:
+            return len(self.clients)
+
+    def get_total_slots(self) -> int:
+        with self._lock:
+            return (
+                len(self.clients)
+                * self.client_config.num_concurrent_requests_per_client
             )
-            self.clients.append(client)
-            client.start()
+
+    def can_spawn_more(self) -> bool:
+        with self._lock:
+            return self._can_spawn_more_locked()
+
+    def _can_spawn_more_locked(self) -> bool:
+        max_clients = self.client_config.max_clients
+        return max_clients is None or len(self.clients) < max_clients
 
     def run_client(self, client_id: int) -> None:
         """Run a client process that sends requests to the LLM API."""
@@ -182,10 +230,8 @@ class RequestsLauncher:
 
     def complete_tasks(self) -> None:
         """Signal worker processes to complete their tasks and exit."""
-        for _ in range(
-            self.client_config.num_clients
-            * self.client_config.num_concurrent_requests_per_client
-        ):
+        total_slots = self.get_total_slots()
+        for _ in range(total_slots):
             self.input_queue.put(None)
 
     def wait_for_clients(self) -> None:

@@ -53,6 +53,8 @@ MAX_PREFETCH_BACKLOG = 5000
 NEAR_DEADLINE_WINDOW_S = 0.010
 BACKLOG_LOG_INTERVAL_S = 1.0
 BACKLOG_WARN_INTERVAL_S = 5.0
+SPAWN_SUPPRESSION_INTERVAL_S = 10.0
+SPAWN_COOLDOWN_S = 1.0
 
 
 def setup_api_environment(
@@ -157,6 +159,7 @@ def dispatch_requests(
     request_generator: BaseRequestGenerator,
     stop_event: threading.Event,
     scheduler: DispatchScheduler,
+    req_launcher: RequestsLauncher,
     benchmark_id: str = "default",
 ) -> None:
     """Thread function to generate and dispatch requests."""
@@ -168,6 +171,8 @@ def dispatch_requests(
     scheduled_backlog = 0
     next_backlog_log_time = 0.0
     next_backlog_warn_time = 0.0
+    next_spawn_time = 0.0
+    next_spawn_suppression_time = 0.0
 
     def _dispatch_ready_request(ready) -> None:
         nonlocal scheduled_backlog, num_errored_requests_handled
@@ -252,11 +257,40 @@ def dispatch_requests(
         blocked_pending = scheduler.get_blocked_pending_count()
         effective_backlog = max(0, scheduled_backlog - blocked_pending)
 
-        # Warn (throttled) if effective backlog hits the cap
-        if (
-            effective_backlog >= MAX_PREFETCH_BACKLOG
-            and now >= next_backlog_warn_time
-        ):
+        # dynamic client spawn
+        if req_launcher.client_config.auto_spawn_new_clients:
+            inflight = (
+                service_metrics.num_requests - service_metrics.num_completed_requests
+            )
+            total_slots = req_launcher.get_total_slots()
+            input_queue_size_now = input_queue.qsize()
+            available_slots = max(0, total_slots - inflight)
+            if (
+                input_queue_size_now > 0
+                and available_slots == 0
+                and now >= next_spawn_time
+            ):
+                if req_launcher.can_spawn_more():
+                    logger.info(
+                        "Auto-spawning new client: reqs_queued=%d inflight=%d total_slots=%d",
+                        input_queue_size_now,
+                        inflight,
+                        total_slots,
+                    )
+                    req_launcher.spawn_new_client()
+                else:
+                    if now >= next_spawn_suppression_time:
+                        logger.info(
+                            "Client spawn suppressed: at max_clients=%s (reqs_queued=%d inflight=%d total_slots=%d)",
+                            str(req_launcher.client_config.max_clients),
+                            input_queue_size_now,
+                            inflight,
+                            total_slots,
+                        )
+                        next_spawn_suppression_time = now + SPAWN_SUPPRESSION_INTERVAL_S
+                next_spawn_time = time.monotonic() + SPAWN_COOLDOWN_S
+
+        if effective_backlog >= MAX_PREFETCH_BACKLOG and now >= next_backlog_warn_time:
             logger.warning(
                 "Effective prefetch backlog reached cap (%d). scheduled=%d blocked_pending=%d ready=%d ready_now=%d",
                 MAX_PREFETCH_BACKLOG,
@@ -424,6 +458,7 @@ def run_main_loop(
             request_generator,
             stop_event,
             scheduler,
+            req_launcher,
             benchmark_id,
         ),
     )
@@ -496,6 +531,7 @@ def run_benchmark(
     )
     # Expose output directory to child processes for iterative trace writes
     os.environ["VEEKSHA_OUTPUT_DIR"] = benchmark_config.metrics_config.output_dir
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
     setup_api_environment(
         api_key=benchmark_config.api_key,

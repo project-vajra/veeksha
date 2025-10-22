@@ -148,7 +148,8 @@ class TraceRequestGenerator(BaseRequestGenerator):
             firsts = (
                 self.trace_df.sort_values("timestamp")
                 .groupby("session_id", as_index=False)
-                .first()["timestamp"].astype(float)
+                .first()["timestamp"]
+                .astype(float)
             )
             if len(firsts) >= 1:
                 span = float(firsts.max() - firsts.min())
@@ -197,7 +198,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
         session_id_val = request_to_send.get("session_id", None)
         if session_id_val is not None:
             # Apply per-epoch offset to avoid cross-epoch session collisions
-            request_config.session_id = int(session_id_val) + int(self._session_id_offset)
+            request_config.session_id = int(session_id_val) + int(
+                self._session_id_offset
+            )
         if cancel_on_failure is not None:
             request_config.cancel_session_on_failure = bool(cancel_on_failure)
 
@@ -209,7 +212,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         anchor = request_to_send.get("anchor_at_s")
         if seq_idx == 0 and anchor is not None:
-            request_config.anchor_at_s = float(anchor) + float(self._epoch_anchor_offset_s)
+            request_config.anchor_at_s = float(anchor) + float(
+                self._epoch_anchor_offset_s
+            )
 
         wait_gap = float(request_to_send.get("wait_after_prev_response_s", 0.0))
         if seq_idx > 0:
