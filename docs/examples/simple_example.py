@@ -60,6 +60,7 @@ def example_synthetic_benchmark():
         api_url=server_config.get_api_base_url(),
         client_config=ClientConfig(
             model="Qwen/Qwen3-1.7B",
+            num_clients=25
         ),
         request_generator_config=SyntheticRequestGeneratorConfig(
             interval_generator_config=PoissonRequestIntervalGeneratorConfig(qps=1.0),

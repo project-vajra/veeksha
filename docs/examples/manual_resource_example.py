@@ -118,9 +118,9 @@ def main():
     # Define experiments
     experiments = [
         ("meta-llama/Meta-Llama-3-8B-Instruct", 1, 8000),
-        ("meta-llama/Meta-Llama-3-8B-Instruct", 2, 8001),
-        ("Qwen/Qwen2.5-0.5B-Instruct", 1, 8002),
-        ("Qwen/Qwen2.5-0.5B-Instruct", 2, 8003),
+        ("meta-llama/Meta-Llama-3-8B-Instruct", 2, 8000),
+        ("Qwen/Qwen2.5-0.5B-Instruct", 1, 8000),
+        ("Qwen/Qwen2.5-0.5B-Instruct", 2, 8000),
     ]
 
     results = []

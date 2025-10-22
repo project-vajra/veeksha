@@ -66,56 +66,38 @@ class ResourceManager:
             self._detect_gpus()
 
     def _detect_gpus(self) -> None:
-        """Detect available GPUs using nvidia-smi."""
+        """Detect available GPUs using Ray."""
         try:
-            # Get GPU information using nvidia-smi
-            result = subprocess.run(
-                [
-                    "nvidia-smi",
-                    "--query-gpu=index,memory.total",
-                    "--format=csv,noheader,nounits",
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-
-            hostname = socket.gethostname()
-            gpus = []
-
-            for line in result.stdout.strip().split("\n"):
-                if line.strip():
-                    gpu_id_str, memory_str = line.strip().split(",")
-                    gpu_id = int(gpu_id_str.strip())
-                    memory_mb = int(memory_str.strip())
-
-                    gpu_info = GPUInfo(
-                        node_hostname=hostname,
-                        gpu_id=gpu_id,
-                        total_memory_mb=memory_mb,
-                        is_free=True,
+            import ray
+            ray.init(ignore_reinit_error=True)
+            nodes = ray.nodes()
+            for node in nodes:
+                node_ip = node['NodeManagerAddress']
+                num_gpus = int(node['Resources'].get('GPU', 0))
+                if num_gpus > 0:
+                    gpus = [
+                        GPUInfo(
+                            node_hostname=node_ip,
+                            gpu_id=i,
+                            total_memory_mb=0,  # Ray doesn't provide memory info
+                            is_free=True,
+                        )
+                        for i in range(num_gpus)
+                    ]
+                    self.nodes[node_ip] = NodeInfo(
+                        hostname=node_ip,
+                        num_gpus=num_gpus,
+                        gpus=gpus,
+                        is_fully_free=True
                     )
-                    gpus.append(gpu_info)
-
-            if gpus:
-                self.nodes[hostname] = NodeInfo(
-                    hostname=hostname, num_gpus=len(gpus), gpus=gpus, is_fully_free=True
-                )
-                logger.info(
-                    f"Detected {len(gpus)} GPUs on node {hostname}: "
-                    f"{[f'GPU{g.gpu_id}' for g in gpus]}"
-                )
-            else:
-                logger.warning("No GPUs detected on this node")
-
-        except FileNotFoundError:
-            logger.error(
-                "nvidia-smi not found. Please ensure NVIDIA drivers are installed."
-            )
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to run nvidia-smi: {e}")
+                    logger.info(
+                        f"Detected {num_gpus} GPUs on node {node_ip}: "
+                        f"{[f'GPU{g.gpu_id}' for g in gpus]}"
+                    )
+        except ImportError:
+            logger.error("Ray not installed. Cannot detect GPUs.")
         except Exception as e:
-            logger.error(f"Error detecting GPUs: {e}")
+            logger.error(f"Error detecting GPUs with Ray: {e}")
 
     def add_node(
         self, hostname: str, num_gpus: int, gpu_memory_mb: Optional[int] = None
@@ -367,6 +349,30 @@ class ResourceManager:
             status["nodes"][hostname] = node_status
 
         return status
+
+    def get_vajra_resource_mapping(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """Get resource mapping in vajra server format.
+
+        Args:
+            job_id: Job identifier
+
+        Returns:
+            Dictionary in vajra format, or None if job not found
+        """
+        if job_id not in self.allocated_resources:
+            return None
+
+        resource_mapping = self.allocated_resources[job_id]
+        vajra_mapping = {
+            "0": {
+                "resource_mapping": [
+                    {"node_ip": node_ip, "gpu_id": gpu_id}
+                    for node_ip, gpu_id in resource_mapping
+                ],
+                "worker_type": "GPU"
+            }
+        }
+        return vajra_mapping
 
     def wait_for_resources(
         self,
