@@ -71,9 +71,8 @@ class VajraServerManager(BaseServerManager):
             # Process additional arguments from the configuration
         # These are engine-specific parameters parsed from JSON
         additional_args_dict = self.get_additional_args_dict()
-        for key, value in additional_args_dict.items():
+        for cli_key, value in additional_args_dict.items():
             # Normalize key names: replace underscores with dashes for CLI
-            cli_key = key.replace("_", "-")
             if value is True:
                 # Boolean flags
                 command.append(f"--{cli_key}")
