@@ -526,9 +526,8 @@ class SessionGenerator:
                                 "Largest session start gaps (s): "
                                 + ", ".join(f"{g:.6f}" for g in largest_gaps)
                             )
-            except Exception:
-                # Best-effort diagnostics; do not fail generation due to logging
-                pass
+            except Exception as e:
+                logger.exception("Session dispatch diagnostics failed: %s", e)
         else:
             logger.info("Session dispatch rate in generated trace: N/A")
 
