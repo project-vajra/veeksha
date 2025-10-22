@@ -52,6 +52,7 @@ PREFETCH_INTERVAL_S = 0.001
 MAX_PREFETCH_BACKLOG = 5000
 NEAR_DEADLINE_WINDOW_S = 0.010
 BACKLOG_WARN_INTERVAL_S = 5.0
+SPAWN_COOLDOWN_S = 1.0
 
 
 def setup_api_environment(
@@ -156,6 +157,7 @@ def dispatch_requests(
     request_generator: BaseRequestGenerator,
     stop_event: threading.Event,
     scheduler: DispatchScheduler,
+    req_launcher: RequestsLauncher,
     benchmark_id: str = "default",
 ) -> None:
     """Thread function to generate and dispatch requests."""
@@ -166,6 +168,7 @@ def dispatch_requests(
     generator_exhausted = False
     scheduled_backlog = 0
     next_backlog_warn_time = 0.0
+    next_spawn_time = 0.0
 
     def _dispatch_ready_request(ready) -> None:
         nonlocal scheduled_backlog, num_errored_requests_handled
@@ -224,6 +227,32 @@ def dispatch_requests(
         # effective backlog ignores blocked session-followup requests
         blocked_pending = scheduler.get_blocked_pending_count()
         effective_backlog = max(0, scheduled_backlog - blocked_pending)
+
+        # dynamic client spawn
+        if req_launcher.client_config.auto_spawn_new_clients:
+            ready_now = scheduler.get_ready_now_count()
+            inflight = (
+                service_metrics.num_requests - service_metrics.num_completed_requests
+            )
+            total_slots = req_launcher.get_total_slots()
+            if ready_now > 0 and inflight >= total_slots and now >= next_spawn_time:
+                if req_launcher.can_spawn_more():
+                    logger.info(
+                        "Auto-spawning new client: ready_now=%d inflight=%d total_slots=%d",
+                        ready_now,
+                        inflight,
+                        total_slots,
+                    )
+                    req_launcher.spawn_new_client()
+                else:
+                    logger.info(
+                        "Client spawn suppressed: at max_clients=%s (ready_now=%d inflight=%d total_slots=%d)",
+                        str(req_launcher.client_config.max_clients),
+                        ready_now,
+                        inflight,
+                        total_slots,
+                    )
+                next_spawn_time = time.monotonic() + SPAWN_COOLDOWN_S
 
         if effective_backlog >= MAX_PREFETCH_BACKLOG and now >= next_backlog_warn_time:
             logger.warning(
@@ -393,6 +422,7 @@ def run_main_loop(
             request_generator,
             stop_event,
             scheduler,
+            req_launcher,
             benchmark_id,
         ),
     )

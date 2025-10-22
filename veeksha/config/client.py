@@ -20,11 +20,17 @@ class ClientConfig:
     )
     num_clients: int = field(
         default=2,
-        metadata={"help": "The number of clients to use for benchmark."},
+        metadata={"help": "The default number of clients to use for benchmark."},
+    )
+    max_clients: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "Maximum total number of client processes allowed when auto-spawn is enabled. None means unlimited.",
+        },
     )
     num_concurrent_requests_per_client: int = field(
         default=5,
-        metadata={"help": "The number of concurrent requests to send per client."},
+        metadata={"help": "The number of concurrent requests each client can manage."},
     )
     additional_sampling_params: str = field(
         default="{}",
@@ -51,6 +57,12 @@ class ClientConfig:
         default="min_tokens",
         metadata={
             "help": "Name of server parameter for minimum tokens to be generated. If omitted or non accepted by the server, fallback to prompt-based minimum token request (append instruction to prompt to generate at least the requested number of tokens)."
+        },
+    )
+    auto_spawn_new_clients: bool = field(
+        default=True,
+        metadata={
+            "help": "If True, spawn additional clients when requests are ready to be dispatched but all clients are busy. Spawned clients use the same per-client concurrency.",
         },
     )
 
