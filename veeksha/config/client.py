@@ -20,11 +20,23 @@ class ClientConfig:
     )
     num_clients: int = field(
         default=2,
-        metadata={"help": "The number of clients to use for benchmark."},
+        metadata={"help": "The default number of clients to use for benchmark."},
     )
     num_concurrent_requests_per_client: int = field(
         default=5,
-        metadata={"help": "The number of concurrent requests to send per client."},
+        metadata={"help": "The number of concurrent requests each client can manage."},
+    )
+    auto_spawn_new_clients: bool = field(
+        default=False,
+        metadata={
+            "help": "If True, spawn additional clients when requests are ready to be dispatched but all clients are busy. Spawned clients use the same per-client concurrency.",
+        },
+    )
+    max_clients: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "Maximum total number of clients allowed when auto-spawn is enabled. None means unlimited.",
+        },
     )
     additional_sampling_params: str = field(
         default="{}",
@@ -64,3 +76,26 @@ class ClientConfig:
 
         if self.tokenizer is None:
             self.tokenizer = self.model
+
+        if self.num_clients < 1:
+            raise ValueError("num_clients must be greater than 0")
+        if self.num_concurrent_requests_per_client < 1:
+            raise ValueError(
+                "num_concurrent_requests_per_client must be greater than 0"
+            )
+        if (
+            self.auto_spawn_new_clients
+            and self.max_clients is not None
+            and self.max_clients < 1
+        ):
+            raise ValueError(
+                "max_clients must be greater than 0 when auto_spawn_new_clients is set"
+            )
+        if (
+            self.auto_spawn_new_clients
+            and self.max_clients is not None
+            and self.num_clients >= self.max_clients
+        ):
+            raise ValueError(
+                "num_clients must be less than max_clients when auto_spawn_new_clients is True"
+            )
