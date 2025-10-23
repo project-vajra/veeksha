@@ -275,3 +275,102 @@ def generate_random_prompt(
 
     prompt = tokenizer.decode(prompt_token_ids, skip_special_tokens=False)
     return (prompt, num_prompt_tokens)
+
+
+def generate_random_prompt_fast(
+    tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+    pretokenized_lines: List[List[int]],
+    num_prompt_tokens: int,
+    rng: random.Random,
+) -> Tuple[str, int]:
+    """Generate a random prompt using a pre-tokenized corpus.
+
+    Args:
+        tokenizer: Tokenizer used for decoding token IDs back to text.
+        pretokenized_lines: Corpus lines tokenized into token ID lists.
+        num_prompt_tokens: Number of tokens desired in the resulting prompt.
+        rng: Optional random number generator for variety
+
+    Returns:
+        Tuple of (prompt_text, num_prompt_tokens). The count equals the requested
+        num_prompt_tokens by construction.
+    """
+    if num_prompt_tokens < 0:
+        raise ValueError("num_prompt_tokens must be >= 0")
+    if num_prompt_tokens == 0:
+        logger.info("Generated random prompt with 0 tokens.")
+        return ("", 0)
+
+    token_lines = [t for t in pretokenized_lines if t]
+    if not token_lines:
+        raise ValueError("All pretokenized_lines are empty.")
+
+    remaining = num_prompt_tokens
+    prompt_token_ids: List[int] = []
+
+    # Shuffle a working view once per generation for variety
+    indices = list(range(len(token_lines)))
+    rng.shuffle(indices)
+    idx_cursor = 0
+
+    while remaining > 0:
+        tokens = token_lines[indices[idx_cursor]]
+        take = min(remaining, len(tokens))
+        if take:
+            prompt_token_ids.extend(tokens[:take])
+            remaining -= take
+        idx_cursor += 1
+        if idx_cursor == len(indices):
+            idx_cursor = 0
+            rng.shuffle(indices)
+
+    prompt = tokenizer.decode(prompt_token_ids, skip_special_tokens=False)
+    return (prompt, num_prompt_tokens)
+
+
+def generate_random_token_ids_fast(
+    pretokenized_lines: List[List[int]],
+    num_tokens: int,
+    rng: random.Random,
+) -> List[int]:
+    """Assemble exactly num_tokens token IDs from a pre-tokenized corpus.
+
+    This avoids per-call tokenization and returns token IDs suitable for
+    concatenation with other token ID sequences before a single decode.
+
+    Args:
+        pretokenized_lines: Corpus lines tokenized into token ID lists.
+        num_tokens: Target number of token IDs to assemble.
+        rng: Random generator for variety.
+
+    Returns:
+        List of token IDs of length exactly num_tokens.
+    """
+    if num_tokens < 0:
+        raise ValueError("num_tokens must be >= 0")
+    if num_tokens == 0:
+        return []
+
+    token_lines = [t for t in pretokenized_lines if t]
+    if not token_lines:
+        raise ValueError("All pretokenized_lines are empty.")
+
+    remaining = num_tokens
+    out: List[int] = []
+
+    indices = list(range(len(token_lines)))
+    rng.shuffle(indices)
+    idx_cursor = 0
+
+    while remaining > 0:
+        tokens = token_lines[indices[idx_cursor]]
+        take = min(remaining, len(tokens))
+        if take:
+            out.extend(tokens[:take])
+            remaining -= take
+        idx_cursor += 1
+        if idx_cursor == len(indices):
+            idx_cursor = 0
+            rng.shuffle(indices)
+
+    return out

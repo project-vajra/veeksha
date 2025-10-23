@@ -5,7 +5,6 @@ import random
 import threading
 import time
 from multiprocessing import Queue
-from queue import Empty
 from threading import Thread
 from typing import List, Optional, TypedDict
 
@@ -19,6 +18,7 @@ from veeksha.benchmark_data_utils import (
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.client import ClientConfig
 from veeksha.config.utils import prepare_benchmark_output_dir
+from veeksha.core.dispatch_runtime import dispatch_requests, process_results
 from veeksha.core.dispatch_scheduler import DispatchScheduler
 from veeksha.core.hf_utils import get_tokenizer
 from veeksha.core.requests_launcher import RequestsLauncher
@@ -28,8 +28,6 @@ from veeksha.core.seeding import (
 )
 from veeksha.dashboard.events import (
     BenchmarkStatusEvent,
-    RequestCompletedEvent,
-    RequestStartedEvent,
 )
 from veeksha.dashboard.handler import (
     emit_dashboard_event,
@@ -46,14 +44,6 @@ from veeksha.metrics.service_metrics import ServiceMetrics
 from veeksha.types import RequestGeneratorType
 
 logger = init_logger(__name__)
-
-PREFETCH_BATCH_SIZE = 1
-PREFETCH_INTERVAL_S = 0.001
-MAX_PREFETCH_BACKLOG = 5000
-NEAR_DEADLINE_WINDOW_S = 0.010
-BACKLOG_WARN_INTERVAL_S = 5.0
-SPAWN_SUPPRESSION_INTERVAL_S = 10.0
-SPAWN_COOLDOWN_S = 1.0
 
 
 def setup_api_environment(
@@ -142,261 +132,6 @@ def _initialize_min_tokens_support(benchmark_config: BenchmarkConfig) -> None:
             )
 
 
-def should_send_new_request(
-    service_metrics: ServiceMetrics, num_errored_requests_handled: int
-) -> bool:
-    """Check if a request should be sent based on the current state of the service."""
-    return (service_metrics.num_requests < service_metrics.max_requests) or (
-        service_metrics.num_requests >= service_metrics.max_requests
-        and num_errored_requests_handled < service_metrics.num_errored_requests
-    )
-
-
-def dispatch_requests(
-    input_queue: Queue,
-    service_metrics: ServiceMetrics,
-    request_generator: BaseRequestGenerator,
-    stop_event: threading.Event,
-    scheduler: DispatchScheduler,
-    req_launcher: RequestsLauncher,
-    benchmark_id: str = "default",
-) -> None:
-    """Thread function to generate and dispatch requests."""
-    num_errored_requests_handled = 0
-
-    # scheduler provided by caller
-    next_prefetch_time = 0.0
-    generator_exhausted = False
-    scheduled_backlog = 0
-    next_backlog_warn_time = 0.0
-    next_spawn_time = 0.0
-    next_spawn_suppression_time = 0.0
-
-    def _dispatch_ready_request(ready) -> None:
-        nonlocal scheduled_backlog, num_errored_requests_handled
-        service_metrics.register_launched_request()
-        if service_metrics.num_requests > service_metrics.max_requests:
-            num_errored_requests_handled += 1
-        input_queue.put(ready)
-        if scheduled_backlog > 0:
-            scheduled_backlog -= 1
-        logger.debug(f"Dispatched request {ready.id}")
-
-        ready.benchmark_id = benchmark_id
-        # Request ID should always be set by the generator
-        assert ready.id is not None, f"Request {ready} has no ID"
-        emit_dashboard_event(
-            RequestStartedEvent(
-                request_id=ready.id,
-                timestamp=time.time(),
-                input_tokens=ready.prompt[1],
-                benchmark_id=benchmark_id,
-            )
-        )
-
-    while not stop_event.is_set():
-        now = time.monotonic()
-
-        # immediate dispatch
-        ready = scheduler.pop_ready()
-        if ready is not None:
-            _dispatch_ready_request(ready)
-            continue
-
-        time_until = scheduler.time_until_next_ready()
-
-        # short spin near deadlines (up to 10ms)
-        if time_until is not None and time_until <= NEAR_DEADLINE_WINDOW_S:
-            deadline = time.monotonic() + time_until
-            while time.monotonic() < deadline:
-                ready = scheduler.pop_ready()
-                if ready is not None:
-                    _dispatch_ready_request(ready)
-                    break
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    break
-                time.sleep(min(remaining, 0.001))
-            if ready is not None:
-                continue
-            # immediate check at boundary
-            ready = scheduler.pop_ready()
-            if ready is not None:
-                _dispatch_ready_request(ready)
-                continue
-
-        # prefetch away from near deadlines
-        # effective backlog ignores blocked session-followup requests
-        blocked_pending = scheduler.get_blocked_pending_count()
-        effective_backlog = max(0, scheduled_backlog - blocked_pending)
-
-        # dynamic client spawn
-        if req_launcher.client_config.auto_spawn_new_clients:
-            inflight = (
-                service_metrics.num_requests - service_metrics.num_completed_requests
-            )
-            total_slots = req_launcher.get_total_slots()
-            try:
-                input_queue_size_now = input_queue.qsize()
-            except NotImplementedError:  # portable fallback
-                input_queue_size_now = 1 if inflight >= total_slots else 0
-            available_slots = max(0, total_slots - inflight)
-            if (
-                input_queue_size_now > 0
-                and available_slots == 0
-                and now >= next_spawn_time
-            ):
-                if req_launcher.can_spawn_more():
-                    logger.info(
-                        "Auto-spawning new client: reqs_queued=%d inflight=%d total_slots=%d",
-                        input_queue_size_now,
-                        inflight,
-                        total_slots,
-                    )
-                    req_launcher.spawn_new_client()
-                else:
-                    if now >= next_spawn_suppression_time:
-                        logger.info(
-                            "Client spawn suppressed: at max_clients=%s (reqs_queued=%d inflight=%d total_slots=%d)",
-                            str(req_launcher.client_config.max_clients),
-                            input_queue_size_now,
-                            inflight,
-                            total_slots,
-                        )
-                        next_spawn_suppression_time = now + SPAWN_SUPPRESSION_INTERVAL_S
-                next_spawn_time = time.monotonic() + SPAWN_COOLDOWN_S
-
-        if effective_backlog >= MAX_PREFETCH_BACKLOG and now >= next_backlog_warn_time:
-            logger.warning(
-                "Effective prefetch backlog reached cap (%d). scheduled=%d blocked_pending=%d ready=%d ready_now=%d",
-                MAX_PREFETCH_BACKLOG,
-                scheduled_backlog,
-                blocked_pending,
-                scheduler.get_ready_count(),
-                scheduler.get_ready_now_count(),
-            )
-            next_backlog_warn_time = now + BACKLOG_WARN_INTERVAL_S
-        if (
-            (not generator_exhausted)
-            and should_send_new_request(service_metrics, num_errored_requests_handled)
-            and (effective_backlog < MAX_PREFETCH_BACKLOG)
-        ):
-            # gate prefetch away from near deadlines
-            now = time.monotonic()
-            time_until = scheduler.time_until_next_ready()
-            prefetch_safe_threshold = max(PREFETCH_INTERVAL_S, NEAR_DEADLINE_WINDOW_S)
-            if (time_until is None or time_until >= prefetch_safe_threshold) and (
-                now >= next_prefetch_time
-            ):
-                for _ in range(PREFETCH_BATCH_SIZE):
-                    # in case effective backlog changes
-                    blocked_pending = scheduler.get_blocked_pending_count()
-                    effective_backlog = max(0, scheduled_backlog - blocked_pending)
-                    if effective_backlog >= MAX_PREFETCH_BACKLOG:
-                        break
-                    try:
-                        request_config = request_generator.get_request()
-                    except StopIteration:
-                        # stop prefetching but keep dispatching already-scheduled
-                        generator_exhausted = True
-                        break
-
-                    if request_config.dispatch_delay == -1:
-                        logger.info(
-                            "Benchmark ending early due to stop policy (generator sentinel received)."
-                        )
-                        service_metrics.request_stop()
-                        stop_event.set()
-                        break
-                    elif request_config.dispatch_delay < 0:
-                        raise ValueError(
-                            f"Invalid request dispatch delay '{request_config.dispatch_delay}' from request metadata."
-                        )
-
-                    scheduler.add_request(request_config)
-                    scheduled_backlog += 1
-                next_prefetch_time = now + PREFETCH_INTERVAL_S
-
-        # dispatch again after prefetch
-        ready = scheduler.pop_ready()
-        if ready is not None:
-
-            _dispatch_ready_request(ready)
-            continue
-
-        # back off briefly
-        time_until = scheduler.time_until_next_ready()
-        sleep_time = 0.01 if time_until is None else min(max(time_until, 0.001), 0.1)
-        time.sleep(sleep_time)
-
-
-def process_results(
-    output_queue: Queue,
-    service_metrics: ServiceMetrics,
-    generated_responses: List[Response],
-    pbar: tqdm,
-    stop_event: threading.Event,
-    scheduler: DispatchScheduler,
-) -> None:
-    """Thread function to process results from the output queue."""
-    # On stop, attempt to drain for a short grace period, then exit
-    POLL_TIMEOUT_S = 0.1
-    DRAIN_MAX_EMPTY_POLLS = 50  # ~5s
-    consecutive_empty_polls_after_stop = 0
-    while not stop_event.is_set() or (
-        service_metrics.error is None
-        and service_metrics.num_completed_requests < service_metrics.num_requests
-    ):
-        try:
-            result = output_queue.get(timeout=POLL_TIMEOUT_S)
-            consecutive_empty_polls_after_stop = 0
-        except Empty:
-            if stop_event.is_set():
-                consecutive_empty_polls_after_stop += 1
-                if consecutive_empty_polls_after_stop >= DRAIN_MAX_EMPTY_POLLS:
-                    logger.info(
-                        "Result processor drained for ~%.1fs after stop; exiting.",
-                        DRAIN_MAX_EMPTY_POLLS * POLL_TIMEOUT_S,
-                    )
-                    break
-            continue
-
-        if result is None:  # Sentinel check
-            break
-
-        request_metrics, generated_response = result
-        service_metrics.add_request_metrics(request_metrics)
-        # notify scheduler about completion for session-aware sequencing
-        success = (
-            getattr(request_metrics, "error_code", None) is None
-            and getattr(request_metrics, "error_msg", None) is None
-        )
-        scheduler.notify_completion(
-            request_id=request_metrics.request_id,
-            completed_at_monotonic=time.monotonic(),
-            success=success,
-        )
-        if generated_response is not None:
-            generated_responses.append(generated_response)
-
-        # Emit completion event - ensure request_id is set
-        assert (
-            request_metrics.request_id is not None
-        ), f"Request metrics has no ID: {request_metrics}"
-        emit_dashboard_event(
-            RequestCompletedEvent(
-                request_id=str(request_metrics.request_id),
-                timestamp=time.time(),
-                final_metrics=request_metrics,
-                benchmark_id=request_metrics.benchmark_id,
-            )
-        )
-
-        # TODO: maybe add benchmark status event here?
-
-        pbar.update(service_metrics.num_completed_requests - pbar.n)
-
-
 def run_main_loop(
     benchmark_config: BenchmarkConfig,
     request_generator: BaseRequestGenerator,
@@ -436,6 +171,7 @@ def run_main_loop(
             scheduler,
             req_launcher,
             benchmark_id,
+            benchmark_config.runtime_telemetry_enabled,
         ),
     )
 

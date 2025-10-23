@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
@@ -15,7 +15,7 @@ from veeksha.generators.length_generator.generator_registry import (
     RequestLengthGeneratorRegistry,
 )
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
-from veeksha.generators.utils import generate_random_prompt
+from veeksha.generators.utils import generate_random_token_ids_fast
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
@@ -52,7 +52,63 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         )
         self.corpus_lines = corpus_lines
 
+        # pre-tokenize
+        logger.info("Pre-tokenizing corpus.")
+        self.pretokenized_lines: List[List[int]] = []
+        if corpus_lines is not None:
+            token_lines = [
+                self.tokenizer.encode(line, add_special_tokens=False)
+                for line in corpus_lines
+            ]
+            self.pretokenized_lines = [t for t in token_lines if t]
+
+        # cache instructions from 10 to 1000 tokens
+        self._instruction_cache: Dict[int, List[int]] = {}
+        for n in range(10, 1001):
+            instr_text = f"Generate at least {n} tokens repeating the following text:\n"
+            self._instruction_cache[n] = self.tokenizer.encode(
+                instr_text, add_special_tokens=False
+            )
+
         self.request_id = 0
+
+    def _get_instruction_ids(
+        self, num_output_tokens: int, use_server_min_tokens: bool
+    ) -> List[int]:
+        """Return cached instruction token IDs or empty if server min-tokens is supported."""
+        if use_server_min_tokens:
+            return []
+        instr_ids = self._instruction_cache.get(num_output_tokens)
+        if instr_ids is not None:
+            return instr_ids
+        instr_text = f"Generate at least {num_output_tokens} tokens repeating the following text:\n"
+        instr_ids = self.tokenizer.encode(instr_text, add_special_tokens=False)
+        self._instruction_cache[num_output_tokens] = instr_ids
+        return instr_ids
+
+    def _generate_body_ids(self, body_token_count: int) -> List[int]:
+        """Generate exactly body_token_count token IDs from the pre-tokenized corpus."""
+        if body_token_count <= 0:
+            return []
+        return generate_random_token_ids_fast(
+            pretokenized_lines=self.pretokenized_lines,
+            num_tokens=body_token_count,
+            rng=self.prompt_rng,
+        )
+
+    def _assemble_prompt(
+        self,
+        num_prompt_tokens: int,
+        num_output_tokens: int,
+        use_server_min_tokens: bool,
+    ) -> Tuple[str, int]:
+        """Build prompt text and exact token count using cached instruction and fast body IDs."""
+        instr_ids = self._get_instruction_ids(num_output_tokens, use_server_min_tokens)
+        body_token_count = max(0, int(num_prompt_tokens) - len(instr_ids))
+        body_ids = self._generate_body_ids(body_token_count)
+        full_ids = instr_ids + body_ids
+        prompt = self.tokenizer.decode(full_ids, skip_special_tokens=False)
+        return prompt, len(full_ids)
 
     def get_request(self) -> RequestConfig:
         (
@@ -72,25 +128,14 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             )
         num_prompt_tokens = int(num_prompt_tokens)
         num_output_tokens = int(num_output_tokens)
+
         # Use server-side min_tokens if available (probing already validated support)
         use_server_min_tokens = self.client_config.min_tokens_param is not None
-        instruction = ""
-        if not use_server_min_tokens:
-            instruction = f"Generate at least {num_output_tokens} tokens repeating the following text:\n"
-            instruction_token_count = len(self.tokenizer.encode(instruction))
-            body_token_count = max(0, num_prompt_tokens - instruction_token_count)
-        else:
-            body_token_count = max(0, num_prompt_tokens)
-
-        prompt_body, _ = generate_random_prompt(
-            tokenizer=self.tokenizer,
-            num_prompt_tokens=body_token_count,
-            corpus_lines=self.corpus_lines,
-            rng=self.prompt_rng,
+        prompt, prompt_token_count = self._assemble_prompt(
+            num_prompt_tokens=num_prompt_tokens,
+            num_output_tokens=num_output_tokens,
+            use_server_min_tokens=use_server_min_tokens,
         )
-
-        prompt = (instruction + prompt_body) if instruction else prompt_body
-        prompt_token_count = len(self.tokenizer.encode(prompt))
 
         default_sampling_params: Dict[str, Any] = {
             "max_tokens": num_output_tokens,
