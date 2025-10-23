@@ -106,12 +106,19 @@ class VajraServerManager(BaseServerManager):
         if "inference_engine_config_global_resource_mapping" in additional_args_dict:
             # Use mapping from additional_args (allows manual override)
             import json
-            mapping = additional_args_dict["inference_engine_config_global_resource_mapping"]
-            args.extend([
-                "--inference_engine_config_global_resource_mapping",
-                json.dumps(mapping),
-            ])
-            logger.info(f"Setting Vajra GPU resource mapping from additional_args: {mapping}")
+
+            mapping = additional_args_dict[
+                "inference_engine_config_global_resource_mapping"
+            ]
+            args.extend(
+                [
+                    "--inference_engine_config_global_resource_mapping",
+                    json.dumps(mapping),
+                ]
+            )
+            logger.info(
+                f"Setting Vajra GPU resource mapping from additional_args: {mapping}"
+            )
         elif self.config.gpu_ids is not None:
             # Auto-generate mapping from gpu_ids in vajra format
             import json
@@ -120,11 +127,12 @@ class VajraServerManager(BaseServerManager):
             node_ip = "localhost"
             try:
                 import ray
+
                 ray.init(ignore_reinit_error=True)
                 nodes = ray.nodes()
                 for node in nodes:
-                    if node.get('alive', False):
-                        node_ip = node['NodeManagerAddress']
+                    if node.get("alive", False):
+                        node_ip = node["NodeManagerAddress"]
                         break
             except Exception:
                 pass  # Fall back to localhost
@@ -136,14 +144,16 @@ class VajraServerManager(BaseServerManager):
                         {"node_ip": node_ip, "gpu_id": gpu_id}
                         for gpu_id in self.config.gpu_ids
                     ],
-                    "worker_type": "GPU"
+                    "worker_type": "GPU",
                 }
             }
 
-            args.extend([
-                "--inference_engine_config_global_resource_mapping",
-                json.dumps(resource_mapping),
-            ])
+            args.extend(
+                [
+                    "--inference_engine_config_global_resource_mapping",
+                    json.dumps(resource_mapping),
+                ]
+            )
             logger.info(f"Setting Vajra GPU resource mapping: {resource_mapping}")
 
         return args

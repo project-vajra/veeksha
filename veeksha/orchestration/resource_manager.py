@@ -5,8 +5,6 @@ This module provides resource-aware scheduling of LLM inference servers,
 enabling efficient utilization of GPU resources across multiple experiments.
 """
 
-import socket
-import subprocess
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -69,11 +67,12 @@ class ResourceManager:
         """Detect available GPUs using Ray."""
         try:
             import ray
+
             ray.init(ignore_reinit_error=True)
             nodes = ray.nodes()
             for node in nodes:
-                node_ip = node['NodeManagerAddress']
-                num_gpus = int(node['Resources'].get('GPU', 0))
+                node_ip = node["NodeManagerAddress"]
+                num_gpus = int(node["Resources"].get("GPU", 0))
                 if num_gpus > 0:
                     gpus = [
                         GPUInfo(
@@ -88,7 +87,7 @@ class ResourceManager:
                         hostname=node_ip,
                         num_gpus=num_gpus,
                         gpus=gpus,
-                        is_fully_free=True
+                        is_fully_free=True,
                     )
                     logger.info(
                         f"Detected {num_gpus} GPUs on node {node_ip}: "
@@ -369,7 +368,7 @@ class ResourceManager:
                     {"node_ip": node_ip, "gpu_id": gpu_id}
                     for node_ip, gpu_id in resource_mapping
                 ],
-                "worker_type": "GPU"
+                "worker_type": "GPU",
             }
         }
         return vajra_mapping
