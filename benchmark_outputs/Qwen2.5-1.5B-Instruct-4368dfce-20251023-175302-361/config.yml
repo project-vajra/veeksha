@@ -1,0 +1,52 @@
+seed: 42
+timeout: 600
+max_completed_requests: 100
+api_url: http://localhost:8000/v1
+api_key: token-abc123
+client_config:
+  model: Qwen/Qwen2.5-1.5B-Instruct
+  tokenizer: Qwen/Qwen2.5-1.5B-Instruct
+  num_clients: 5
+  num_concurrent_requests_per_client: 5
+  auto_spawn_new_clients: false
+  max_clients: null
+  additional_sampling_params: '{}'
+  llm_api: openai_chat
+  address_append_value: chat/completions
+  request_timeout: 60
+  min_tokens_param: min_tokens
+  additional_sampling_params_dict: {}
+metrics_config:
+  output_dir: benchmark_outputs
+  deadline_report:
+    ttft_deadline: 0.1
+    tbt_deadline: 0.05
+    target_deadline_miss_rate: 0.1
+  should_write_metrics_to_wandb: false
+  wandb_project: null
+  wandb_group: null
+  wandb_run_name: null
+  enable_wandb_sweep: false
+  wandb_sweep_id: null
+  wandb_sweep_name: null
+request_generator_config:
+  max_tokens: 8192
+  length_generator_config:
+    max_tokens: 4096
+    exhaustion_policy: stop
+    trace_file: /coc/scratch/docker_safe/amey/revati-v2/external/veeksha/veeksha/data/processed_traces/sharegpt_8k_filtered_stats_llama2_tokenizer.csv
+    input_length_column: num_prefill_tokens
+    output_length_column: num_decode_tokens
+    prefill_scale_factor: 1
+    decode_scale_factor: 1
+    block_size: 512
+    type: trace
+  interval_generator_config:
+    type: static
+  type: synthetic
+dashboard_config:
+  enabled: false
+  max_live_requests: 50
+  max_queue_size: 1000
+  chart_window_seconds: null
+runtime_telemetry_enabled: false

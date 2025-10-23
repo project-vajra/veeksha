@@ -4,9 +4,12 @@ import time
 from multiprocessing import Queue
 from queue import Empty
 from threading import Thread
+import uuid
 from typing import List, Optional
 
 from tqdm import tqdm  # type: ignore
+
+from revati.client import ClientType  # type: ignore
 
 from veeksha.core.dispatch_scheduler import DispatchScheduler
 from veeksha.core.requests_launcher import RequestsLauncher
@@ -16,6 +19,7 @@ from veeksha.dashboard.handler import emit_dashboard_event
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.logger import init_logger
 from veeksha.metrics.service_metrics import ServiceMetrics
+from veeksha.core.llm_clients.revati_helper import create_thread_local_revati_client, get_time, sleep
 
 logger = init_logger(__name__)
 
@@ -66,8 +70,9 @@ def dispatch_requests(
     prefetch_tick_counter = 0
     scheduled_since_log = 0
     total_scheduled = 0  # monotonic count of total requests added to scheduler
-    prefetch_rate_window_start = time.monotonic()
-    next_prefetch_rate_log_time = time.monotonic() + PREFETCH_RATE_LOG_INTERVAL_S
+    create_thread_local_revati_client(f"veeksha-dispatcher-{str(uuid.uuid4())[:8]}", ClientType.ACTOR)
+    prefetch_rate_window_start = get_time()
+    next_prefetch_rate_log_time = get_time() + PREFETCH_RATE_LOG_INTERVAL_S
 
     def _can_send_request() -> bool:
         with prefetch_stats_lock:
@@ -82,16 +87,16 @@ def dispatch_requests(
             time_until_pf is None or time_until_pf >= prefetch_safe_threshold
         )
         if not safe_to_prefetch:
-            time.sleep(0.001)
+            sleep(0.001)
             return True
         if now_pf < next_prefetch_time:
             remaining = next_prefetch_time - now_pf
             if remaining > 0.002:
-                time.sleep(min(remaining - 0.0005, 0.002))
+                sleep(min(remaining - 0.0005, 0.002))
             else:
                 deadline = next_prefetch_time
                 while True:
-                    now_spin = time.monotonic()
+                    now_spin = get_time()
                     if now_spin >= deadline or stop_event.is_set():
                         break
                     time.sleep(0)
@@ -113,7 +118,7 @@ def dispatch_requests(
             current_total = total_scheduled
         if current_total >= scheduled_cap:
             next_prefetch_time = now_pf + PREFETCH_INTERVAL_S
-            time.sleep(0.001)
+            sleep(0.001)
             return True
         return False
 
@@ -174,10 +179,10 @@ def dispatch_requests(
                 break
 
             if not _can_send_request():
-                time.sleep(0.001)
+                sleep(0.001)
                 continue
 
-            now_pf = time.monotonic()
+            now_pf = get_time()
 
             if _prefetch_time_gate(now_pf):
                 continue
@@ -271,16 +276,16 @@ def dispatch_requests(
     def _spin_near_deadline(time_until: Optional[float]) -> bool:
         if time_until is None or time_until > NEAR_DEADLINE_WINDOW_S:
             return False
-        deadline = time.monotonic() + time_until
-        while time.monotonic() < deadline:
+        deadline = get_time() + time_until
+        while get_time() < deadline:
             ready_local = scheduler.pop_ready()
             if ready_local is not None:
                 _dispatch_ready_request(ready_local)
                 return True
-            remaining = deadline - time.monotonic()
+            remaining = deadline - get_time()
             if remaining <= 0:
                 break
-            time.sleep(min(remaining, 0.001))
+            sleep(min(remaining, 0.001))
         ready_local = scheduler.pop_ready()
         if ready_local is not None:
             _dispatch_ready_request(ready_local)
@@ -320,7 +325,7 @@ def dispatch_requests(
                         total_slots,
                     )
                     next_spawn_suppression_time = now + SPAWN_SUPPRESSION_INTERVAL_S
-            next_spawn_time = time.monotonic() + SPAWN_COOLDOWN_S
+            next_spawn_time = get_time() + SPAWN_COOLDOWN_S
 
     def _maybe_warn_backlog(now: float, effective_backlog: int) -> None:
         nonlocal next_backlog_warn_time
@@ -345,7 +350,7 @@ def dispatch_requests(
     prefetch_thread.start()
 
     while not stop_event.is_set():
-        now = time.monotonic()
+        now = get_time()
         effective_backlog = 0  # only used with telemetry enabled
         if telemetry_enabled:
             _maybe_log_backlog(now)
@@ -370,7 +375,7 @@ def dispatch_requests(
         _maybe_auto_spawn_clients(now)
 
         if telemetry_enabled:
-            _maybe_warn_backlog(time.monotonic(), effective_backlog)
+            _maybe_warn_backlog(get_time(), effective_backlog)
 
         # dispatch again after prefetch
         ready = scheduler.pop_ready()
@@ -382,7 +387,7 @@ def dispatch_requests(
         # back off briefly
         time_until = scheduler.time_until_next_ready()
         sleep_time = 0.01 if time_until is None else min(max(time_until, 0.001), 0.1)
-        time.sleep(sleep_time)
+        sleep(sleep_time)
 
     # Join prefetcher on exit
     prefetch_thread.join(timeout=1.0)
@@ -431,7 +436,7 @@ def process_results(
         )
         scheduler.notify_completion(
             request_id=request_metrics.request_id,
-            completed_at_monotonic=time.monotonic(),
+            completed_at_monotonic=get_time(),
             success=success,
         )
         if generated_response is not None:

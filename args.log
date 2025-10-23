@@ -1,0 +1,464 @@
+usage: benchmark.py [-h]
+                    [--benchmark-config-from-file BENCHMARK_CONFIG_FROM_FILE]
+                    [--seed SEED] [--timeout TIMEOUT]
+                    [--max-completed-requests MAX_COMPLETED_REQUESTS]
+                    [--api-url API_URL] [--api-key API_KEY]
+                    [--client-config-from-file CLIENT_CONFIG_FROM_FILE]
+                    [--client-config-model CLIENT_CONFIG_MODEL]
+                    [--client-config-tokenizer CLIENT_CONFIG_TOKENIZER]
+                    [--client-config-num-clients CLIENT_CONFIG_NUM_CLIENTS]
+                    [--client-config-num-concurrent-requests-per-client CLIENT_CONFIG_NUM_CONCURRENT_REQUESTS_PER_CLIENT]
+                    [--client-config-auto-spawn-new-clients | --no-client-config-auto-spawn-new-clients]
+                    [--client-config-max-clients CLIENT_CONFIG_MAX_CLIENTS]
+                    [--client-config-additional-sampling-params CLIENT_CONFIG_ADDITIONAL_SAMPLING_PARAMS]
+                    [--client-config-llm-api CLIENT_CONFIG_LLM_API]
+                    [--client-config-address-append-value CLIENT_CONFIG_ADDRESS_APPEND_VALUE]
+                    [--client-config-request-timeout CLIENT_CONFIG_REQUEST_TIMEOUT]
+                    [--client-config-min-tokens-param CLIENT_CONFIG_MIN_TOKENS_PARAM]
+                    [--metrics-config-from-file METRICS_CONFIG_FROM_FILE]
+                    [--metrics-config-output-dir METRICS_CONFIG_OUTPUT_DIR]
+                    [--metrics-config-deadline-report-from-file METRICS_CONFIG_DEADLINE_REPORT_FROM_FILE]
+                    [--metrics-config-deadline-report-ttft-deadline METRICS_CONFIG_DEADLINE_REPORT_TTFT_DEADLINE]
+                    [--metrics-config-deadline-report-tbt-deadline METRICS_CONFIG_DEADLINE_REPORT_TBT_DEADLINE]
+                    [--metrics-config-deadline-report-target-deadline-miss-rate METRICS_CONFIG_DEADLINE_REPORT_TARGET_DEADLINE_MISS_RATE]
+                    [--metrics-config-should-write-metrics-to-wandb | --no-metrics-config-should-write-metrics-to-wandb]
+                    [--metrics-config-wandb-project METRICS_CONFIG_WANDB_PROJECT]
+                    [--metrics-config-wandb-group METRICS_CONFIG_WANDB_GROUP]
+                    [--metrics-config-wandb-run-name METRICS_CONFIG_WANDB_RUN_NAME]
+                    [--metrics-config-enable-wandb-sweep | --no-metrics-config-enable-wandb-sweep]
+                    [--metrics-config-wandb-sweep-id METRICS_CONFIG_WANDB_SWEEP_ID]
+                    [--metrics-config-wandb-sweep-name METRICS_CONFIG_WANDB_SWEEP_NAME]
+                    [--request-generator-config-type REQUEST_GENERATOR_CONFIG_TYPE]
+                    [--request-generator-config-from-file REQUEST_GENERATOR_CONFIG_FROM_FILE]
+                    [--lmeval-request-generator-config-max-tokens LMEVAL_REQUEST_GENERATOR_CONFIG_MAX_TOKENS]
+                    [--lmeval-request-generator-config-tasks LMEVAL_REQUEST_GENERATOR_CONFIG_TASKS [LMEVAL_REQUEST_GENERATOR_CONFIG_TASKS ...]]
+                    [--lmeval-request-generator-config-num-fewshot LMEVAL_REQUEST_GENERATOR_CONFIG_NUM_FEWSHOT]
+                    [--lmeval-request-generator-config-limit LMEVAL_REQUEST_GENERATOR_CONFIG_LIMIT]
+                    [--lmeval-request-generator-config-interval-generator-config-type LMEVAL_REQUEST_GENERATOR_CONFIG_INTERVAL_GENERATOR_CONFIG_TYPE]
+                    [--lmeval-request-generator-config-gamma-interval-generator-config-qps LMEVAL_REQUEST_GENERATOR_CONFIG_GAMMA_INTERVAL_GENERATOR_CONFIG_QPS]
+                    [--lmeval-request-generator-config-gamma-interval-generator-config-cv LMEVAL_REQUEST_GENERATOR_CONFIG_GAMMA_INTERVAL_GENERATOR_CONFIG_CV]
+                    [--lmeval-request-generator-config-poisson-interval-generator-config-qps LMEVAL_REQUEST_GENERATOR_CONFIG_POISSON_INTERVAL_GENERATOR_CONFIG_QPS]
+                    [--lmeval-request-generator-config-trace-interval-generator-config-exhaustion-policy LMEVAL_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_EXHAUSTION_POLICY]
+                    [--lmeval-request-generator-config-trace-interval-generator-config-trace-file LMEVAL_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_TRACE_FILE]
+                    [--lmeval-request-generator-config-trace-interval-generator-config-timestamp-column LMEVAL_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_TIMESTAMP_COLUMN]
+                    [--lmeval-request-generator-config-trace-interval-generator-config-timestamp-unit LMEVAL_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_TIMESTAMP_UNIT]
+                    [--lmeval-request-generator-config-trace-interval-generator-config-time-scale-factor LMEVAL_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_TIME_SCALE_FACTOR]
+                    [--synthetic-request-generator-config-max-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_MAX_TOKENS]
+                    [--synthetic-request-generator-config-length-generator-config-type SYNTHETIC_REQUEST_GENERATOR_CONFIG_LENGTH_GENERATOR_CONFIG_TYPE]
+                    [--synthetic-request-generator-config-fixed-length-generator-config-max-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_FIXED_LENGTH_GENERATOR_CONFIG_MAX_TOKENS]
+                    [--synthetic-request-generator-config-fixed-length-generator-config-prefill-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_FIXED_LENGTH_GENERATOR_CONFIG_PREFILL_TOKENS]
+                    [--synthetic-request-generator-config-fixed-length-generator-config-decode-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_FIXED_LENGTH_GENERATOR_CONFIG_DECODE_TOKENS]
+                    [--synthetic-request-generator-config-trace-length-generator-config-max-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_LENGTH_GENERATOR_CONFIG_MAX_TOKENS]
+                    [--synthetic-request-generator-config-trace-length-generator-config-exhaustion-policy SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_LENGTH_GENERATOR_CONFIG_EXHAUSTION_POLICY]
+                    [--synthetic-request-generator-config-trace-length-generator-config-trace-file SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_LENGTH_GENERATOR_CONFIG_TRACE_FILE]
+                    [--synthetic-request-generator-config-trace-length-generator-config-input-length-column SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_LENGTH_GENERATOR_CONFIG_INPUT_LENGTH_COLUMN]
+                    [--synthetic-request-generator-config-trace-length-generator-config-output-length-column SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_LENGTH_GENERATOR_CONFIG_OUTPUT_LENGTH_COLUMN]
+                    [--synthetic-request-generator-config-trace-length-generator-config-prefill-scale-factor SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_LENGTH_GENERATOR_CONFIG_PREFILL_SCALE_FACTOR]
+                    [--synthetic-request-generator-config-trace-length-generator-config-decode-scale-factor SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_LENGTH_GENERATOR_CONFIG_DECODE_SCALE_FACTOR]
+                    [--synthetic-request-generator-config-trace-length-generator-config-block-size SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_LENGTH_GENERATOR_CONFIG_BLOCK_SIZE]
+                    [--synthetic-request-generator-config-uniform-length-generator-config-max-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_UNIFORM_LENGTH_GENERATOR_CONFIG_MAX_TOKENS]
+                    [--synthetic-request-generator-config-uniform-length-generator-config-min-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_UNIFORM_LENGTH_GENERATOR_CONFIG_MIN_TOKENS]
+                    [--synthetic-request-generator-config-uniform-length-generator-config-prefill-to-decode-ratio SYNTHETIC_REQUEST_GENERATOR_CONFIG_UNIFORM_LENGTH_GENERATOR_CONFIG_PREFILL_TO_DECODE_RATIO]
+                    [--synthetic-request-generator-config-zipf-length-generator-config-max-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_ZIPF_LENGTH_GENERATOR_CONFIG_MAX_TOKENS]
+                    [--synthetic-request-generator-config-zipf-length-generator-config-theta SYNTHETIC_REQUEST_GENERATOR_CONFIG_ZIPF_LENGTH_GENERATOR_CONFIG_THETA]
+                    [--synthetic-request-generator-config-zipf-length-generator-config-scramble | --no-synthetic-request-generator-config-zipf-length-generator-config-scramble]
+                    [--synthetic-request-generator-config-zipf-length-generator-config-min-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_ZIPF_LENGTH_GENERATOR_CONFIG_MIN_TOKENS]
+                    [--synthetic-request-generator-config-zipf-length-generator-config-prefill-to-decode-ratio SYNTHETIC_REQUEST_GENERATOR_CONFIG_ZIPF_LENGTH_GENERATOR_CONFIG_PREFILL_TO_DECODE_RATIO]
+                    [--synthetic-request-generator-config-interval-generator-config-type SYNTHETIC_REQUEST_GENERATOR_CONFIG_INTERVAL_GENERATOR_CONFIG_TYPE]
+                    [--synthetic-request-generator-config-gamma-interval-generator-config-qps SYNTHETIC_REQUEST_GENERATOR_CONFIG_GAMMA_INTERVAL_GENERATOR_CONFIG_QPS]
+                    [--synthetic-request-generator-config-gamma-interval-generator-config-cv SYNTHETIC_REQUEST_GENERATOR_CONFIG_GAMMA_INTERVAL_GENERATOR_CONFIG_CV]
+                    [--synthetic-request-generator-config-poisson-interval-generator-config-qps SYNTHETIC_REQUEST_GENERATOR_CONFIG_POISSON_INTERVAL_GENERATOR_CONFIG_QPS]
+                    [--synthetic-request-generator-config-trace-interval-generator-config-exhaustion-policy SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_EXHAUSTION_POLICY]
+                    [--synthetic-request-generator-config-trace-interval-generator-config-trace-file SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_TRACE_FILE]
+                    [--synthetic-request-generator-config-trace-interval-generator-config-timestamp-column SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_TIMESTAMP_COLUMN]
+                    [--synthetic-request-generator-config-trace-interval-generator-config-timestamp-unit SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_TIMESTAMP_UNIT]
+                    [--synthetic-request-generator-config-trace-interval-generator-config-time-scale-factor SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_TIME_SCALE_FACTOR]
+                    [--trace-request-generator-config-from-file TRACE_REQUEST_GENERATOR_CONFIG_FROM_FILE]
+                    [--trace-request-generator-config-max-tokens TRACE_REQUEST_GENERATOR_CONFIG_MAX_TOKENS]
+                    [--trace-request-generator-config-exhaustion-policy TRACE_REQUEST_GENERATOR_CONFIG_EXHAUSTION_POLICY]
+                    [--trace-request-generator-config-trace-file TRACE_REQUEST_GENERATOR_CONFIG_TRACE_FILE]
+                    [--trace-request-generator-config-input-length-column TRACE_REQUEST_GENERATOR_CONFIG_INPUT_LENGTH_COLUMN]
+                    [--trace-request-generator-config-output-length-column TRACE_REQUEST_GENERATOR_CONFIG_OUTPUT_LENGTH_COLUMN]
+                    [--trace-request-generator-config-prefill-scale-factor TRACE_REQUEST_GENERATOR_CONFIG_PREFILL_SCALE_FACTOR]
+                    [--trace-request-generator-config-decode-scale-factor TRACE_REQUEST_GENERATOR_CONFIG_DECODE_SCALE_FACTOR]
+                    [--trace-request-generator-config-block-size TRACE_REQUEST_GENERATOR_CONFIG_BLOCK_SIZE]
+                    [--trace-request-generator-config-timestamp-column TRACE_REQUEST_GENERATOR_CONFIG_TIMESTAMP_COLUMN]
+                    [--trace-request-generator-config-timestamp-unit TRACE_REQUEST_GENERATOR_CONFIG_TIMESTAMP_UNIT]
+                    [--trace-request-generator-config-time-scale-factor TRACE_REQUEST_GENERATOR_CONFIG_TIME_SCALE_FACTOR]
+                    [--trace-request-generator-config-use-trace-prefix-hash-ids | --no-trace-request-generator-config-use-trace-prefix-hash-ids]
+                    [--trace-request-generator-config-remap-hash-ids | --no-trace-request-generator-config-remap-hash-ids]
+                    [--trace-request-generator-config-use-trace-sessions | --no-trace-request-generator-config-use-trace-sessions]
+                    [--trace-request-generator-config-session-generator-config-from-file TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_FROM_FILE]
+                    [--trace-request-generator-config-session-generator-config-session-interval-generator-config-type TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_SESSION_INTERVAL_GENERATOR_CONFIG_TYPE]
+                    [--trace-request-generator-config-session-generator-config-gamma-session-interval-generator-config-qps TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_GAMMA_SESSION_INTERVAL_GENERATOR_CONFIG_QPS]
+                    [--trace-request-generator-config-session-generator-config-gamma-session-interval-generator-config-cv TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_GAMMA_SESSION_INTERVAL_GENERATOR_CONFIG_CV]
+                    [--trace-request-generator-config-session-generator-config-poisson-session-interval-generator-config-qps TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_POISSON_SESSION_INTERVAL_GENERATOR_CONFIG_QPS]
+                    [--trace-request-generator-config-session-generator-config-trace-session-interval-generator-config-exhaustion-policy TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_TRACE_SESSION_INTERVAL_GENERATOR_CONFIG_EXHAUSTION_POLICY]
+                    [--trace-request-generator-config-session-generator-config-trace-session-interval-generator-config-trace-file TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_TRACE_SESSION_INTERVAL_GENERATOR_CONFIG_TRACE_FILE]
+                    [--trace-request-generator-config-session-generator-config-trace-session-interval-generator-config-timestamp-column TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_TRACE_SESSION_INTERVAL_GENERATOR_CONFIG_TIMESTAMP_COLUMN]
+                    [--trace-request-generator-config-session-generator-config-trace-session-interval-generator-config-timestamp-unit TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_TRACE_SESSION_INTERVAL_GENERATOR_CONFIG_TIMESTAMP_UNIT]
+                    [--trace-request-generator-config-session-generator-config-trace-session-interval-generator-config-time-scale-factor TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_TRACE_SESSION_INTERVAL_GENERATOR_CONFIG_TIME_SCALE_FACTOR]
+                    [--trace-request-generator-config-session-generator-config-minimum-prefix-match TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_MINIMUM_PREFIX_MATCH]
+                    [--trace-request-generator-config-session-generator-config-min-session-size TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_MIN_SESSION_SIZE]
+                    [--trace-request-generator-config-session-generator-config-max-session-size TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_MAX_SESSION_SIZE]
+                    [--trace-request-generator-config-session-generator-config-max-request-interval TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_MAX_REQUEST_INTERVAL]
+                    [--trace-request-generator-config-session-generator-config-save-as-trace-file | --no-trace-request-generator-config-session-generator-config-save-as-trace-file]
+                    [--trace-request-generator-config-session-generator-config-trace-file-save-dir TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_TRACE_FILE_SAVE_DIR]
+                    [--trace-request-generator-config-session-generator-config-trace-file-name TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_TRACE_FILE_NAME]
+                    [--trace-request-generator-config-session-generator-config-in-session-request-dispatch-policy TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_IN_SESSION_REQUEST_DISPATCH_POLICY]
+                    [--trace-request-generator-config-session-generator-config-cancel-session-on-failure | --no-trace-request-generator-config-session-generator-config-cancel-session-on-failure]
+                    [--dashboard-config-enabled | --no-dashboard-config-enabled]
+                    [--dashboard-config-max-live-requests DASHBOARD_CONFIG_MAX_LIVE_REQUESTS]
+                    [--dashboard-config-max-queue-size DASHBOARD_CONFIG_MAX_QUEUE_SIZE]
+                    [--dashboard-config-chart-window-seconds DASHBOARD_CONFIG_CHART_WINDOW_SECONDS]
+                    [--runtime-telemetry-enabled | --no-runtime-telemetry-enabled]
+
+options:
+  -h, --help            show this help message and exit
+  --benchmark-config-from-file BENCHMARK_CONFIG_FROM_FILE
+                        Path to YAML/JSON configuration file for
+                        BenchmarkConfig. (default: None)
+  --seed SEED           Seed for the random number generator. (default: 42)
+  --timeout TIMEOUT     The amount of time to run the load test for. (default:
+                        1200)
+  --max-completed-requests MAX_COMPLETED_REQUESTS
+                        The number of requests to complete before finishing
+                        the test. Note that its possible for the test to
+                        timeout first. (default: 10)
+  --api-url API_URL     The API URL for the benchmark. (default:
+                        http://localhost:8000/v1)
+  --api-key API_KEY     The API key for the benchmark. (default: token-abc123)
+  --client-config-from-file CLIENT_CONFIG_FROM_FILE
+                        Path to YAML/JSON configuration file for ClientConfig.
+                        (default: None)
+  --client-config-model CLIENT_CONFIG_MODEL
+                        The model to use for this load test. (default: meta-
+                        llama/Meta-Llama-3-8B-Instruct)
+  --client-config-tokenizer CLIENT_CONFIG_TOKENIZER
+                        The tokenizer to use for this load test. By default,
+                        the tokenizer is inferred from the model. (default:
+                        None)
+  --client-config-num-clients CLIENT_CONFIG_NUM_CLIENTS
+                        The default number of clients to use for benchmark.
+                        (default: 2)
+  --client-config-num-concurrent-requests-per-client CLIENT_CONFIG_NUM_CONCURRENT_REQUESTS_PER_CLIENT
+                        The number of concurrent requests each client can
+                        manage. (default: 5)
+  --client-config-auto-spawn-new-clients, --no-client-config-auto-spawn-new-clients
+                        If True, spawn additional clients when requests are
+                        ready to be dispatched but all clients are busy.
+                        Spawned clients use the same per-client concurrency.
+                        (default: False)
+  --client-config-max-clients CLIENT_CONFIG_MAX_CLIENTS
+                        Maximum total number of clients allowed when auto-
+                        spawn is enabled. None means unlimited. (default:
+                        None)
+  --client-config-additional-sampling-params CLIENT_CONFIG_ADDITIONAL_SAMPLING_PARAMS
+                        Additional sampling params to send with the each
+                        request to the LLM API. By default, no additional
+                        sampling params are sent. (default: {})
+  --client-config-llm-api CLIENT_CONFIG_LLM_API
+                        The name of the llm api to use. Can select from
+                        ['openai_chat', 'openai_completions'] (default:
+                        openai_chat)
+  --client-config-address-append-value CLIENT_CONFIG_ADDRESS_APPEND_VALUE
+                        The address append value for OpenAI API. (default:
+                        chat/completions)
+  --client-config-request-timeout CLIENT_CONFIG_REQUEST_TIMEOUT
+                        The timeout for each request to the LLM API (in
+                        seconds). (default: 60)
+  --client-config-min-tokens-param CLIENT_CONFIG_MIN_TOKENS_PARAM
+                        Name of server parameter for minimum tokens to be
+                        generated. If omitted or non accepted by the server,
+                        fallback to prompt-based minimum token request (append
+                        instruction to prompt to generate at least the
+                        requested number of tokens). (default: min_tokens)
+  --metrics-config-from-file METRICS_CONFIG_FROM_FILE
+                        Path to YAML/JSON configuration file for
+                        MetricsConfig. (default: None)
+  --metrics-config-output-dir METRICS_CONFIG_OUTPUT_DIR
+                        The directory to save the benchmark results to.
+                        (default: benchmark_results)
+  --metrics-config-deadline-report-from-file METRICS_CONFIG_DEADLINE_REPORT_FROM_FILE
+                        Path to YAML/JSON configuration file for
+                        DeadlineReportConfig. (default: None)
+  --metrics-config-deadline-report-ttft-deadline METRICS_CONFIG_DEADLINE_REPORT_TTFT_DEADLINE
+                        The deadline, in seconds, for time to first token.
+                        (default: 0.1)
+  --metrics-config-deadline-report-tbt-deadline METRICS_CONFIG_DEADLINE_REPORT_TBT_DEADLINE
+                        The deadline, in seconds, for time between tokens.
+                        (default: 0.05)
+  --metrics-config-deadline-report-target-deadline-miss-rate METRICS_CONFIG_DEADLINE_REPORT_TARGET_DEADLINE_MISS_RATE
+                        The target deadline miss rate [0,1]. Used to report
+                        smallest TBT deadline that would meet it. (default:
+                        0.1)
+  --metrics-config-should-write-metrics-to-wandb, --no-metrics-config-should-write-metrics-to-wandb
+                        Whether to write metrics to wandb. (default: False)
+  --metrics-config-wandb-project METRICS_CONFIG_WANDB_PROJECT
+                        The wandb project to log metrics to. (default: None)
+  --metrics-config-wandb-group METRICS_CONFIG_WANDB_GROUP
+                        The wandb group to log metrics to. (default: None)
+  --metrics-config-wandb-run-name METRICS_CONFIG_WANDB_RUN_NAME
+                        The wandb run name to log metrics to. (default: None)
+  --metrics-config-enable-wandb-sweep, --no-metrics-config-enable-wandb-sweep
+                        Whether to enable wandb sweep. (default: False)
+  --metrics-config-wandb-sweep-id METRICS_CONFIG_WANDB_SWEEP_ID
+                        The wandb sweep id to log metrics to. (default: None)
+  --metrics-config-wandb-sweep-name METRICS_CONFIG_WANDB_SWEEP_NAME
+                        The wandb sweep name to log metrics to. (default:
+                        None)
+  --request-generator-config-type REQUEST_GENERATOR_CONFIG_TYPE
+                        The request generator configuration for the benchmark.
+                        (default: synthetic)
+  --request-generator-config-from-file REQUEST_GENERATOR_CONFIG_FROM_FILE
+                        Path to YAML/JSON configuration file for
+                        BaseRequestGeneratorConfig. (default: None)
+  --lmeval-request-generator-config-max-tokens LMEVAL_REQUEST_GENERATOR_CONFIG_MAX_TOKENS
+                        Maximum number of tokens allowed. (default: 8192)
+  --lmeval-request-generator-config-tasks LMEVAL_REQUEST_GENERATOR_CONFIG_TASKS [LMEVAL_REQUEST_GENERATOR_CONFIG_TASKS ...]
+                        The tasks to evaluate the language model on. (default:
+                        ['hellaswag'])
+  --lmeval-request-generator-config-num-fewshot LMEVAL_REQUEST_GENERATOR_CONFIG_NUM_FEWSHOT
+                        The number of fewshot examples to use for the tasks.
+                        (default: 1)
+  --lmeval-request-generator-config-limit LMEVAL_REQUEST_GENERATOR_CONFIG_LIMIT
+                        The number of examples to evaluate on. (default: 10)
+  --lmeval-request-generator-config-interval-generator-config-type LMEVAL_REQUEST_GENERATOR_CONFIG_INTERVAL_GENERATOR_CONFIG_TYPE
+  --lmeval-request-generator-config-gamma-interval-generator-config-qps LMEVAL_REQUEST_GENERATOR_CONFIG_GAMMA_INTERVAL_GENERATOR_CONFIG_QPS
+                        Queries per second for the Gamma distribution.
+                        (default: 1.0)
+  --lmeval-request-generator-config-gamma-interval-generator-config-cv LMEVAL_REQUEST_GENERATOR_CONFIG_GAMMA_INTERVAL_GENERATOR_CONFIG_CV
+                        Coefficient of variation for the Gamma distribution.
+                        (default: 0.5)
+  --lmeval-request-generator-config-poisson-interval-generator-config-qps LMEVAL_REQUEST_GENERATOR_CONFIG_POISSON_INTERVAL_GENERATOR_CONFIG_QPS
+                        Queries per second for the Poisson distribution.
+                        (default: 1.0)
+  --lmeval-request-generator-config-trace-interval-generator-config-exhaustion-policy LMEVAL_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_EXHAUSTION_POLICY
+                        Behavior when the trace runs out: error | stop | wrap.
+                        (default: stop)
+  --lmeval-request-generator-config-trace-interval-generator-config-trace-file LMEVAL_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_TRACE_FILE
+                        Path to the trace file for request intervals. Should
+                        be a csv or jsonl file. (default: /coc/scratch/docker_
+                        safe/amey/revati-
+                        v2/external/veeksha/veeksha/data/processed_traces/swe_
+                        agent_trace_short.jsonl)
+  --lmeval-request-generator-config-trace-interval-generator-config-timestamp-column LMEVAL_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_TIMESTAMP_COLUMN
+                        Name of the column containing request timestamps.
+                        (default: timestamp)
+  --lmeval-request-generator-config-trace-interval-generator-config-timestamp-unit LMEVAL_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_TIMESTAMP_UNIT
+                        Unit of the timestamps in the trace file. Must be in
+                        ['ms', 's']. (default: ms)
+  --lmeval-request-generator-config-trace-interval-generator-config-time-scale-factor LMEVAL_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_TIME_SCALE_FACTOR
+                        Factor to scale the dispatch intervals in the trace.
+                        (default: 1)
+  --synthetic-request-generator-config-max-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_MAX_TOKENS
+                        Maximum number of tokens allowed. (default: 8192)
+  --synthetic-request-generator-config-length-generator-config-type SYNTHETIC_REQUEST_GENERATOR_CONFIG_LENGTH_GENERATOR_CONFIG_TYPE
+  --synthetic-request-generator-config-fixed-length-generator-config-max-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_FIXED_LENGTH_GENERATOR_CONFIG_MAX_TOKENS
+                        Maximum number of tokens allowed in a request.
+                        (default: 4096)
+  --synthetic-request-generator-config-fixed-length-generator-config-prefill-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_FIXED_LENGTH_GENERATOR_CONFIG_PREFILL_TOKENS
+                        Number of prefill tokens. (default: 4096)
+  --synthetic-request-generator-config-fixed-length-generator-config-decode-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_FIXED_LENGTH_GENERATOR_CONFIG_DECODE_TOKENS
+                        Number of decode tokens. (default: 512)
+  --synthetic-request-generator-config-trace-length-generator-config-max-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_LENGTH_GENERATOR_CONFIG_MAX_TOKENS
+                        Maximum number of tokens allowed in a request.
+                        (default: 4096)
+  --synthetic-request-generator-config-trace-length-generator-config-exhaustion-policy SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_LENGTH_GENERATOR_CONFIG_EXHAUSTION_POLICY
+                        Behavior when the trace runs out: error | stop | wrap.
+                        (default: stop)
+  --synthetic-request-generator-config-trace-length-generator-config-trace-file SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_LENGTH_GENERATOR_CONFIG_TRACE_FILE
+                        Path to the trace file for request lengths. (default: 
+                        /coc/scratch/docker_safe/amey/revati-
+                        v2/external/veeksha/veeksha/data/processed_traces/shar
+                        egpt_8k_filtered_stats_llama2_tokenizer.csv)
+  --synthetic-request-generator-config-trace-length-generator-config-input-length-column SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_LENGTH_GENERATOR_CONFIG_INPUT_LENGTH_COLUMN
+                        Name of the column containing the input (prefill)
+                        length. (default: num_prefill_tokens)
+  --synthetic-request-generator-config-trace-length-generator-config-output-length-column SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_LENGTH_GENERATOR_CONFIG_OUTPUT_LENGTH_COLUMN
+                        Name of the column containing the output (decode)
+                        length. (default: num_decode_tokens)
+  --synthetic-request-generator-config-trace-length-generator-config-prefill-scale-factor SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_LENGTH_GENERATOR_CONFIG_PREFILL_SCALE_FACTOR
+                        Scale factor for prefill tokens. (default: 1)
+  --synthetic-request-generator-config-trace-length-generator-config-decode-scale-factor SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_LENGTH_GENERATOR_CONFIG_DECODE_SCALE_FACTOR
+                        Scale factor for decode tokens. (default: 1)
+  --synthetic-request-generator-config-trace-length-generator-config-block-size SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_LENGTH_GENERATOR_CONFIG_BLOCK_SIZE
+                        Number of tokens per block. (default: 512)
+  --synthetic-request-generator-config-uniform-length-generator-config-max-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_UNIFORM_LENGTH_GENERATOR_CONFIG_MAX_TOKENS
+                        Maximum number of tokens allowed in a request.
+                        (default: 4096)
+  --synthetic-request-generator-config-uniform-length-generator-config-min-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_UNIFORM_LENGTH_GENERATOR_CONFIG_MIN_TOKENS
+                        Minimum number of tokens. (default: 1024)
+  --synthetic-request-generator-config-uniform-length-generator-config-prefill-to-decode-ratio SYNTHETIC_REQUEST_GENERATOR_CONFIG_UNIFORM_LENGTH_GENERATOR_CONFIG_PREFILL_TO_DECODE_RATIO
+                        Ratio of prefill tokens to decode tokens. (default:
+                        20.0)
+  --synthetic-request-generator-config-zipf-length-generator-config-max-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_ZIPF_LENGTH_GENERATOR_CONFIG_MAX_TOKENS
+                        Maximum number of tokens allowed in a request.
+                        (default: 4096)
+  --synthetic-request-generator-config-zipf-length-generator-config-theta SYNTHETIC_REQUEST_GENERATOR_CONFIG_ZIPF_LENGTH_GENERATOR_CONFIG_THETA
+                        Theta parameter for the Zipf distribution. (default:
+                        0.6)
+  --synthetic-request-generator-config-zipf-length-generator-config-scramble, --no-synthetic-request-generator-config-zipf-length-generator-config-scramble
+                        Whether to scramble the Zipf distribution. (default:
+                        False)
+  --synthetic-request-generator-config-zipf-length-generator-config-min-tokens SYNTHETIC_REQUEST_GENERATOR_CONFIG_ZIPF_LENGTH_GENERATOR_CONFIG_MIN_TOKENS
+                        Minimum number of tokens. (default: 1024)
+  --synthetic-request-generator-config-zipf-length-generator-config-prefill-to-decode-ratio SYNTHETIC_REQUEST_GENERATOR_CONFIG_ZIPF_LENGTH_GENERATOR_CONFIG_PREFILL_TO_DECODE_RATIO
+                        Ratio of prefill tokens to decode tokens. (default:
+                        20.0)
+  --synthetic-request-generator-config-interval-generator-config-type SYNTHETIC_REQUEST_GENERATOR_CONFIG_INTERVAL_GENERATOR_CONFIG_TYPE
+  --synthetic-request-generator-config-gamma-interval-generator-config-qps SYNTHETIC_REQUEST_GENERATOR_CONFIG_GAMMA_INTERVAL_GENERATOR_CONFIG_QPS
+                        Queries per second for the Gamma distribution.
+                        (default: 1.0)
+  --synthetic-request-generator-config-gamma-interval-generator-config-cv SYNTHETIC_REQUEST_GENERATOR_CONFIG_GAMMA_INTERVAL_GENERATOR_CONFIG_CV
+                        Coefficient of variation for the Gamma distribution.
+                        (default: 0.5)
+  --synthetic-request-generator-config-poisson-interval-generator-config-qps SYNTHETIC_REQUEST_GENERATOR_CONFIG_POISSON_INTERVAL_GENERATOR_CONFIG_QPS
+                        Queries per second for the Poisson distribution.
+                        (default: 1.0)
+  --synthetic-request-generator-config-trace-interval-generator-config-exhaustion-policy SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_EXHAUSTION_POLICY
+                        Behavior when the trace runs out: error | stop | wrap.
+                        (default: stop)
+  --synthetic-request-generator-config-trace-interval-generator-config-trace-file SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_TRACE_FILE
+                        Path to the trace file for request intervals. Should
+                        be a csv or jsonl file. (default: /coc/scratch/docker_
+                        safe/amey/revati-
+                        v2/external/veeksha/veeksha/data/processed_traces/swe_
+                        agent_trace_short.jsonl)
+  --synthetic-request-generator-config-trace-interval-generator-config-timestamp-column SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_TIMESTAMP_COLUMN
+                        Name of the column containing request timestamps.
+                        (default: timestamp)
+  --synthetic-request-generator-config-trace-interval-generator-config-timestamp-unit SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_TIMESTAMP_UNIT
+                        Unit of the timestamps in the trace file. Must be in
+                        ['ms', 's']. (default: ms)
+  --synthetic-request-generator-config-trace-interval-generator-config-time-scale-factor SYNTHETIC_REQUEST_GENERATOR_CONFIG_TRACE_INTERVAL_GENERATOR_CONFIG_TIME_SCALE_FACTOR
+                        Factor to scale the dispatch intervals in the trace.
+                        (default: 1)
+  --trace-request-generator-config-from-file TRACE_REQUEST_GENERATOR_CONFIG_FROM_FILE
+                        Path to YAML/JSON configuration file for
+                        TraceRequestGeneratorConfig. (default: None)
+  --trace-request-generator-config-max-tokens TRACE_REQUEST_GENERATOR_CONFIG_MAX_TOKENS
+                        Maximum number of tokens allowed in a request.
+                        (default: 4096)
+  --trace-request-generator-config-exhaustion-policy TRACE_REQUEST_GENERATOR_CONFIG_EXHAUSTION_POLICY
+                        Behavior when the trace runs out: error | stop | wrap.
+                        (default: wrap)
+  --trace-request-generator-config-trace-file TRACE_REQUEST_GENERATOR_CONFIG_TRACE_FILE
+                        Path to the trace file for request generation.
+                        (default: /coc/scratch/docker_safe/amey/revati-
+                        v2/external/veeksha/veeksha/data/processed_traces/swe_
+                        agent_trace_short.jsonl)
+  --trace-request-generator-config-input-length-column TRACE_REQUEST_GENERATOR_CONFIG_INPUT_LENGTH_COLUMN
+                        Name of the column containing the input (prefill)
+                        length. (default: num_prefill_tokens)
+  --trace-request-generator-config-output-length-column TRACE_REQUEST_GENERATOR_CONFIG_OUTPUT_LENGTH_COLUMN
+                        Name of the column containing the output (decode)
+                        length. (default: num_decode_tokens)
+  --trace-request-generator-config-prefill-scale-factor TRACE_REQUEST_GENERATOR_CONFIG_PREFILL_SCALE_FACTOR
+                        Scale factor for prefill tokens. (default: 1)
+  --trace-request-generator-config-decode-scale-factor TRACE_REQUEST_GENERATOR_CONFIG_DECODE_SCALE_FACTOR
+                        Scale factor for decode tokens. (default: 1)
+  --trace-request-generator-config-block-size TRACE_REQUEST_GENERATOR_CONFIG_BLOCK_SIZE
+                        Number of tokens per block. (default: 512)
+  --trace-request-generator-config-timestamp-column TRACE_REQUEST_GENERATOR_CONFIG_TIMESTAMP_COLUMN
+                        Name of the column containing request timestamps.
+                        (default: timestamp)
+  --trace-request-generator-config-timestamp-unit TRACE_REQUEST_GENERATOR_CONFIG_TIMESTAMP_UNIT
+                        Unit of the timestamps in the trace file. Must be in
+                        ['ms', 's']. (default: ms)
+  --trace-request-generator-config-time-scale-factor TRACE_REQUEST_GENERATOR_CONFIG_TIME_SCALE_FACTOR
+                        Scale factor for request dispatch intervals. (default:
+                        1)
+  --trace-request-generator-config-use-trace-prefix-hash-ids, --no-trace-request-generator-config-use-trace-prefix-hash-ids
+                        If True, veeksha will use prefix hash IDs of requests
+                        to generate request prompts. Trace file specified by
+                        interval or/and length generator must include
+                        hash_ids: list[int]. (default: False)
+  --trace-request-generator-config-remap-hash-ids, --no-trace-request-generator-config-remap-hash-ids
+                        If True and use_trace_prefix_hash_ids, randomly remap
+                        prefix hash IDs. Will also remap hash_ids when trace
+                        is exhausted and exhaustion_policy is set to 'wrap'.
+                        (default: True)
+  --trace-request-generator-config-use-trace-sessions, --no-trace-request-generator-config-use-trace-sessions
+                        If True, veeksha will use sessions provided in the
+                        trace file (session_id: int). (default: False)
+  --trace-request-generator-config-session-generator-config-from-file TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_FROM_FILE
+                        Path to YAML/JSON configuration file for
+                        SessionGeneratorConfig. (default: None)
+  --trace-request-generator-config-session-generator-config-session-interval-generator-config-type TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_SESSION_INTERVAL_GENERATOR_CONFIG_TYPE
+                        Interval generator for session dispatch. This will
+                        determine how often sessions are dispatched. (default:
+                        poisson)
+  --trace-request-generator-config-session-generator-config-gamma-session-interval-generator-config-qps TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_GAMMA_SESSION_INTERVAL_GENERATOR_CONFIG_QPS
+                        Queries per second for the Gamma distribution.
+                        (default: 1.0)
+  --trace-request-generator-config-session-generator-config-gamma-session-interval-generator-config-cv TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_GAMMA_SESSION_INTERVAL_GENERATOR_CONFIG_CV
+                        Coefficient of variation for the Gamma distribution.
+                        (default: 0.5)
+  --trace-request-generator-config-session-generator-config-poisson-session-interval-generator-config-qps TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_POISSON_SESSION_INTERVAL_GENERATOR_CONFIG_QPS
+                        Queries per second for the Poisson distribution.
+                        (default: 1.0)
+  --trace-request-generator-config-session-generator-config-trace-session-interval-generator-config-exhaustion-policy TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_TRACE_SESSION_INTERVAL_GENERATOR_CONFIG_EXHAUSTION_POLICY
+                        Behavior when the trace runs out: error | stop | wrap.
+                        (default: stop)
+  --trace-request-generator-config-session-generator-config-trace-session-interval-generator-config-trace-file TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_TRACE_SESSION_INTERVAL_GENERATOR_CONFIG_TRACE_FILE
+                        Path to the trace file for request intervals. Should
+                        be a csv or jsonl file. (default: /coc/scratch/docker_
+                        safe/amey/revati-
+                        v2/external/veeksha/veeksha/data/processed_traces/swe_
+                        agent_trace_short.jsonl)
+  --trace-request-generator-config-session-generator-config-trace-session-interval-generator-config-timestamp-column TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_TRACE_SESSION_INTERVAL_GENERATOR_CONFIG_TIMESTAMP_COLUMN
+                        Name of the column containing request timestamps.
+                        (default: timestamp)
+  --trace-request-generator-config-session-generator-config-trace-session-interval-generator-config-timestamp-unit TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_TRACE_SESSION_INTERVAL_GENERATOR_CONFIG_TIMESTAMP_UNIT
+                        Unit of the timestamps in the trace file. Must be in
+                        ['ms', 's']. (default: ms)
+  --trace-request-generator-config-session-generator-config-trace-session-interval-generator-config-time-scale-factor TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_TRACE_SESSION_INTERVAL_GENERATOR_CONFIG_TIME_SCALE_FACTOR
+                        Factor to scale the dispatch intervals in the trace.
+                        (default: 1)
+  --trace-request-generator-config-session-generator-config-minimum-prefix-match TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_MINIMUM_PREFIX_MATCH
+                        Minimum pct. of prefix match between requests in a
+                        session. (default: 0.8)
+  --trace-request-generator-config-session-generator-config-min-session-size TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_MIN_SESSION_SIZE
+                        Minimum number of requests per session. (default: 1)
+  --trace-request-generator-config-session-generator-config-max-session-size TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_MAX_SESSION_SIZE
+                        Maximum number of requests per session. (default: 10)
+  --trace-request-generator-config-session-generator-config-max-request-interval TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_MAX_REQUEST_INTERVAL
+                        Maximum time interval between consecutive requests in
+                        a session, in seconds. (default: 600.0)
+  --trace-request-generator-config-session-generator-config-save-as-trace-file, --no-trace-request-generator-config-session-generator-config-save-as-trace-file
+                        If true, save the trace after session generation as a
+                        jsonl file. (default: False)
+  --trace-request-generator-config-session-generator-config-trace-file-save-dir TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_TRACE_FILE_SAVE_DIR
+                        Directory to save generated trace files when
+                        save_as_trace_file is true. (default:
+                        ./generated_traces)
+  --trace-request-generator-config-session-generator-config-trace-file-name TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_TRACE_FILE_NAME
+                        If save_as_trace_file is true, this is the name of the
+                        trace file, without the extension. Config params will
+                        be appended to the file name. (default: )
+  --trace-request-generator-config-session-generator-config-in-session-request-dispatch-policy TRACE_REQUEST_GENERATOR_CONFIG_SESSION_GENERATOR_CONFIG_IN_SESSION_REQUEST_DISPATCH_POLICY
+                        Policy for in-session request dispatch timing.
+                        Options: 'absolute' (follow timestamps without waiting
+                        for previous response of session) or
+                        'after_prev_response' (dispatch each request after the
+                        previous response plus the inter-request interval).
+                        (default: after_prev_response)
+  --trace-request-generator-config-session-generator-config-cancel-session-on-failure, --no-trace-request-generator-config-session-generator-config-cancel-session-on-failure
+                        If true, cancel the remaining requests in a session
+                        when a prior request errors or times out. (default:
+                        False)
+  --dashboard-config-enabled, --no-dashboard-config-enabled
+                        Enable real-time dashboard (default: False)
+  --dashboard-config-max-live-requests DASHBOARD_CONFIG_MAX_LIVE_REQUESTS
+                        Maximum number of live requests to track concurrently
+                        (default: 50)
+  --dashboard-config-max-queue-size DASHBOARD_CONFIG_MAX_QUEUE_SIZE
+                        Maximum number of dashboard events to queue (default:
+                        1000)
+  --dashboard-config-chart-window-seconds DASHBOARD_CONFIG_CHART_WINDOW_SECONDS
+                        Time window in seconds for chart x-axis. If None,
+                        shows full history. (default: None)
+  --runtime-telemetry-enabled, --no-runtime-telemetry-enabled
+                        Enable verbose dispatch runtime telemetry logs
+                        (backlog, prefetch rate). (default: False)
