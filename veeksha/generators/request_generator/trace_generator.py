@@ -1,5 +1,7 @@
 import ast
-from typing import Any, Dict, List, Optional, Union, cast
+import threading
+import time
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
@@ -11,7 +13,7 @@ from veeksha.core.request_config import RequestConfig
 from veeksha.core.seeding import SeedManager
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.generators.utils import (
-    generate_random_prompt,
+    generate_random_token_ids_fast,
     load_trace,
     process_request_interval_trace,
     process_request_length_trace,
@@ -19,6 +21,8 @@ from veeksha.generators.utils import (
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
+
+TELEMETRY_LOG_INTERVAL_S = 2.0
 
 
 class TraceRequestGenerator(BaseRequestGenerator):
@@ -40,6 +44,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self.request_id = 0
         self.client_config = client_config
         self.past_prompts: Dict[int, str] = {}
+        self.past_prompt_ids: Dict[int, List[int]] = {}
         self.corpus_lines = corpus_lines
         self._remap_seed_for_save: Optional[int] = None
         self._epoch = 0
@@ -98,6 +103,46 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 raise ValueError(
                     "A corpus file must be provided when not using trace prefix hash IDs."
                 )
+            # Pre-tokenize corpus for fast prompt body assembly
+            token_lines = [
+                self.tokenizer.encode(line, add_special_tokens=False)
+                for line in self.corpus_lines
+            ]
+            self.pretokenized_lines: List[List[int]] = [t for t in token_lines if t]
+
+        if self.config.use_trace_prefix_hash_ids:
+            # Precompute hash-based body IDs for all unique hash_ids present
+            self._precompute_hash_body_ids()
+
+        # Cache instruction tokenizations for n in [10..1000]; fill on-demand beyond that
+        self._instruction_cache: Dict[int, List[int]] = {}
+        self._instruction_text_cache: Dict[int, str] = {}
+        for n in range(10, 1001):
+            instr_text = f"Generate at least {n} tokens repeating the following text:\n"
+            self._instruction_cache[n] = self.tokenizer.encode(
+                instr_text, add_special_tokens=False
+            )
+            self._instruction_text_cache[n] = instr_text
+
+        # Telemetry aggregation
+        self._telemetry_lock = threading.Lock()
+        self._telemetry: Dict[str, float] = {
+            "count": 0.0,
+            "dur_row": 0.0,
+            "dur_instr": 0.0,
+            "dur_body_hash": 0.0,
+            "dur_body_corpus": 0.0,
+            "dur_decode": 0.0,
+            "dur_session": 0.0,
+            "dur_config": 0.0,
+            "dur_total": 0.0,
+            "num_hash_path": 0.0,
+            "num_corpus_path": 0.0,
+            "instr_cache_hits": 0.0,
+            "instr_cache_misses": 0.0,
+        }
+        self._telemetry_start = time.monotonic()
+        self._telemetry_next_log_time = self._telemetry_start + TELEMETRY_LOG_INTERVAL_S
 
         if self.config.use_trace_sessions:
             if "session_id" not in self.trace_df.columns:
@@ -313,7 +358,175 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         raise Exception(f"Could not generate stable encoding for value {value}")
 
+    def _get_instruction_ids(self, n: int, use_server_min_tokens: bool) -> List[int]:
+        if use_server_min_tokens:
+            return []
+        ids = self._instruction_cache.get(n)
+        if ids is not None:
+            with self._telemetry_lock:
+                self._telemetry["instr_cache_hits"] += 1
+            return ids
+        instr_text = f"Generate at least {n} tokens repeating the following text:\n"
+        ids = self.tokenizer.encode(instr_text, add_special_tokens=False)
+        self._instruction_cache[n] = ids
+        self._instruction_text_cache[n] = instr_text
+        with self._telemetry_lock:
+            self._telemetry["instr_cache_misses"] += 1
+        return ids
+
+    def _get_instruction_text(self, n: int, use_server_min_tokens: bool) -> str:
+        if use_server_min_tokens:
+            return ""
+        txt = self._instruction_text_cache.get(n)
+        if txt is not None:
+            return txt
+        txt = f"Generate at least {n} tokens repeating the following text:\n"
+        self._instruction_text_cache[n] = txt
+        return txt
+
+    def _precompute_hash_body_ids(self) -> None:
+        """Precompute and cache block-aligned token IDs for all unique hash IDs in the trace."""
+        unique_ids = set()
+        for ids in self.trace_df["hash_ids"]:
+            unique_ids.update(ids)
+        if not unique_ids:
+            return
+        block_size = int(self.config.block_size)
+        logger.info(f"Precomputing body IDs for {len(unique_ids)} unique hash IDs.")
+        for hid in unique_ids:
+            if hid in self.past_prompt_ids:
+                continue
+            chunk = self.generate_unique_encoding(int(hid))
+            block = self.pad_to_block_size(chunk, block_size)
+            self.past_prompt_ids[hid] = block
+            self.past_prompts[hid] = self.decode(block)
+
+    def _build_body_ids_from_hashes(self, request_to_send) -> List[int]:
+        body_ids: List[int] = []
+        block_size = int(self.config.block_size)
+        for hash_id in request_to_send["hash_ids"]:
+            cached = self.past_prompt_ids.get(hash_id)
+            if cached is None:
+                chunk = self.generate_unique_encoding(int(hash_id))
+                block = self.pad_to_block_size(chunk, block_size)
+                self.past_prompt_ids[hash_id] = block
+                cached = block
+                # Maintain original past_prompts (string) for backward compatibility
+                self.past_prompts[hash_id] = self.decode(block)
+            body_ids.extend(cached)
+        return body_ids
+
+    def _build_body_ids_from_corpus(self, num_tokens: int) -> List[int]:
+        return generate_random_token_ids_fast(
+            pretokenized_lines=self.pretokenized_lines,
+            num_tokens=num_tokens,
+            rng=self.prompt_rng,
+        )
+
+    def _assemble_prompt(
+        self,
+        request_to_send,
+        use_server_min_tokens: bool,
+    ) -> Tuple[str, int]:
+        n_out = int(request_to_send["output_length"])
+        t0 = time.monotonic()
+        instr_ids = self._get_instruction_ids(n_out, use_server_min_tokens)
+        instr_text = self._get_instruction_text(n_out, use_server_min_tokens)
+        t1 = time.monotonic()
+
+        if self.config.use_trace_prefix_hash_ids:
+            body_start = time.monotonic()
+            # Build IDs and assemble string from cached per-hash prompt strings
+            body_ids = self._build_body_ids_from_hashes(request_to_send)
+            prompt_parts: List[str] = [instr_text] if instr_text else []
+            for hash_id in request_to_send["hash_ids"]:
+                prompt_parts.append(self.past_prompts[int(hash_id)])
+            d0 = time.monotonic()
+            prompt = "".join(prompt_parts)
+            d1 = time.monotonic()
+            body_end = d0
+            with self._telemetry_lock:
+                self._telemetry["dur_body_hash"] += body_end - body_start
+                self._telemetry["num_hash_path"] += 1
+                self._telemetry["dur_decode"] += d1 - d0
+            full_len = len(instr_ids) + len(body_ids)
+            with self._telemetry_lock:
+                self._telemetry["dur_instr"] += t1 - t0
+            return prompt, full_len
+        else:
+            remaining_prompt_tokens = int(request_to_send["input_length"]) - len(
+                instr_ids
+            )
+            remaining_prompt_tokens = max(0, remaining_prompt_tokens)
+            body_start = time.monotonic()
+            body_ids = self._build_body_ids_from_corpus(remaining_prompt_tokens)
+            body_end = time.monotonic()
+            full_ids = instr_ids + body_ids
+            d0 = time.monotonic()
+            prompt = self.decode(full_ids)
+            d1 = time.monotonic()
+            with self._telemetry_lock:
+                self._telemetry["dur_body_corpus"] += body_end - body_start
+                self._telemetry["num_corpus_path"] += 1
+                self._telemetry["dur_instr"] += t1 - t0
+                self._telemetry["dur_decode"] += d1 - d0
+            return prompt, len(full_ids)
+
+    def _maybe_log_telemetry(self) -> None:
+        now = time.monotonic()
+        if now < self._telemetry_next_log_time:
+            return
+        with self._telemetry_lock:
+            count = int(self._telemetry["count"]) or 1
+            elapsed = max(1e-9, now - self._telemetry_start)
+            req_per_s = self._telemetry["count"] / elapsed
+
+            def ms(x: float) -> float:
+                return 1000.0 * x / count
+
+            logger.info(
+                "TraceGen telemetry | req=%d rate=%.1f/s total=%.3fms row=%.3f instr=%.3f body_hash=%.3f body_corpus=%.3f decode=%.3f session=%.3f config=%.3f hits=%d misses=%d hash_path=%d corpus_path=%d",
+                count,
+                req_per_s,
+                ms(self._telemetry["dur_total"]),
+                ms(self._telemetry["dur_row"]),
+                ms(self._telemetry["dur_instr"]),
+                ms(self._telemetry["dur_body_hash"]),
+                ms(self._telemetry["dur_body_corpus"]),
+                ms(self._telemetry["dur_decode"]),
+                ms(self._telemetry["dur_session"]),
+                ms(self._telemetry["dur_config"]),
+                int(self._telemetry["instr_cache_hits"]),
+                int(self._telemetry["instr_cache_misses"]),
+                int(self._telemetry["num_hash_path"]),
+                int(self._telemetry["num_corpus_path"]),
+            )
+            # reset window
+            for k in self._telemetry.keys():
+                if k in (
+                    "instr_cache_hits",
+                    "instr_cache_misses",
+                    "num_hash_path",
+                    "num_corpus_path",
+                ):
+                    self._telemetry[k] = 0.0
+                elif k in (
+                    "count",
+                    "dur_row",
+                    "dur_instr",
+                    "dur_body_hash",
+                    "dur_body_corpus",
+                    "dur_decode",
+                    "dur_session",
+                    "dur_config",
+                    "dur_total",
+                ):
+                    self._telemetry[k] = 0.0
+            self._telemetry_start = now
+            self._telemetry_next_log_time = now + TELEMETRY_LOG_INTERVAL_S
+
     def get_request(self) -> RequestConfig:
+        total_start = time.monotonic()
         if self.request_idx >= self.capacity():
             if self.config.exhaustion_policy == "error":
                 raise StopIteration(
@@ -350,8 +563,13 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 if self.config.use_trace_prefix_hash_ids and self.config.remap_hash_ids:
                     self._remap_trace_hash_ids()
                     self.past_prompts.clear()
+                    self.past_prompt_ids.clear()
+                    # Recompute cached body IDs for the new epoch mapping
+                    self._precompute_hash_body_ids()
 
+        row_start = time.monotonic()
         request_to_send = self.trace_df.iloc[self.request_idx]
+        row_end = time.monotonic()
 
         dispatch_delay = request_to_send["inter_request_time"]
 
@@ -364,37 +582,11 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 len(request_to_send["hash_ids"]) >= block_count
             ), f"Hash count {len(request_to_send['hash_ids'])} cannot be less than block count {block_count}"
 
-        prompt = ""
-        remaining_prompt_tokens = request_to_send["input_length"]
         use_server_min_tokens = self.client_config.min_tokens_param is not None
-        instruction = ""
-        if not use_server_min_tokens:
-            instruction = f"Generate at least {int(request_to_send['output_length'])} tokens repeating the following text:\n"
-            instruction_token_count = len(self.tokenizer.encode(instruction))
-            remaining_prompt_tokens = max(
-                0, remaining_prompt_tokens - instruction_token_count
-            )
-
-        if self.config.use_trace_prefix_hash_ids:
-            for hash_id in request_to_send["hash_ids"]:
-                if hash_id not in self.past_prompts:
-                    chunk = self.generate_unique_encoding(hash_id)
-                    block = self.pad_to_block_size(chunk, self.config.block_size)
-                    prompt_segment = self.decode(block)
-                    remaining_prompt_tokens -= self.config.block_size
-                    self.past_prompts[hash_id] = prompt_segment
-                prompt += self.past_prompts[hash_id]
-        else:
-            # generate input random text
-            prompt, _ = generate_random_prompt(
-                tokenizer=self.tokenizer,
-                num_prompt_tokens=remaining_prompt_tokens,
-                corpus_lines=self.corpus_lines,
-                rng=self.prompt_rng,
-            )
-
-        prompt = (instruction + prompt) if instruction else prompt
-        final_token_count = len(self.encode(prompt))
+        prompt, final_token_count = self._assemble_prompt(
+            request_to_send=request_to_send,
+            use_server_min_tokens=use_server_min_tokens,
+        )
 
         default_sampling_params: Dict[str, Any] = {
             "max_tokens": int(request_to_send["output_length"]),
@@ -408,6 +600,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
             self.client_config.additional_sampling_params_dict
         )
 
+        config_start = time.monotonic()
         request_config = RequestConfig(
             model=self.client_config.model,
             prompt=(prompt, final_token_count),
@@ -417,9 +610,20 @@ class TraceRequestGenerator(BaseRequestGenerator):
             address_append_value=self.client_config.address_append_value,
             id=self._global_request_id,
         )
+        config_end = time.monotonic()
 
         # attach session scheduling metadata based on configuration
+        session_start = time.monotonic()
         self._attach_session_metadata(request_to_send, request_config)
+        session_end = time.monotonic()
+
+        with self._telemetry_lock:
+            self._telemetry["count"] += 1
+            self._telemetry["dur_row"] += row_end - row_start
+            self._telemetry["dur_session"] += session_end - session_start
+            self._telemetry["dur_config"] += config_end - config_start
+            self._telemetry["dur_total"] += time.monotonic() - total_start
+        self._maybe_log_telemetry()
 
         self.request_idx += 1
         self._global_request_id += 1
