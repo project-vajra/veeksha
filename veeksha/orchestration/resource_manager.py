@@ -64,7 +64,7 @@ class ResourceManager:
             self._detect_gpus()
 
     def _detect_gpus(self) -> None:
-        """Detect available GPUs using Ray."""
+        """Detect available GPUs using Ray and check their memory availability."""
         try:
             import ray
 
@@ -74,29 +74,90 @@ class ResourceManager:
                 node_ip = node["NodeManagerAddress"]
                 num_gpus = int(node["Resources"].get("GPU", 0))
                 if num_gpus > 0:
-                    gpus = [
-                        GPUInfo(
-                            node_hostname=node_ip,
-                            gpu_id=i,
-                            total_memory_mb=0,  # Ray doesn't provide memory info
-                            is_free=True,
+                    # Get GPU memory info using nvidia-smi
+                    gpu_memory_info = self._get_gpu_memory_info()
+                    
+                    gpus = []
+                    for i in range(num_gpus):
+                        total_memory_mb = 0
+                        is_free = True
+                        
+                        if i in gpu_memory_info:
+                            total_memory_mb = int(gpu_memory_info[i]["total"])
+                            free_memory_mb = gpu_memory_info[i]["free"]
+                            # Mark as free only if >= 90% of memory is available
+                            is_free = (free_memory_mb / total_memory_mb) >= 0.90
+                            if not is_free:
+                                logger.warning(
+                                    f"GPU {i} on node {node_ip} has only "
+                                    f"{free_memory_mb / total_memory_mb * 100:.1f}% free memory "
+                                    f"({free_memory_mb:.0f}/{total_memory_mb:.0f} MB), marking as unavailable"
+                                )
+                        
+                        gpus.append(
+                            GPUInfo(
+                                node_hostname=node_ip,
+                                gpu_id=i,
+                                total_memory_mb=total_memory_mb,
+                                is_free=is_free,
+                            )
                         )
-                        for i in range(num_gpus)
-                    ]
+                    
                     self.nodes[node_ip] = NodeInfo(
                         hostname=node_ip,
                         num_gpus=num_gpus,
                         gpus=gpus,
-                        is_fully_free=True,
+                        is_fully_free=all(gpu.is_free for gpu in gpus),
                     )
+                    free_gpus = [g for g in gpus if g.is_free]
                     logger.info(
-                        f"Detected {num_gpus} GPUs on node {node_ip}: "
-                        f"{[f'GPU{g.gpu_id}' for g in gpus]}"
+                        f"Detected {num_gpus} GPUs on node {node_ip}, "
+                        f"{len(free_gpus)} available (>=90% free): "
+                        f"{[f'GPU{g.gpu_id}' for g in free_gpus]}"
                     )
         except ImportError:
             logger.error("Ray not installed. Cannot detect GPUs.")
         except Exception as e:
             logger.error(f"Error detecting GPUs with Ray: {e}")
+
+    def _get_gpu_memory_info(self) -> Dict[int, Dict[str, float]]:
+        """Get GPU memory information using nvidia-smi.
+        
+        Returns:
+            Dictionary mapping GPU ID to memory info (total, free, used in MB)
+        """
+        try:
+            import subprocess
+            
+            result = subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=index,memory.total,memory.free,memory.used",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            
+            gpu_info = {}
+            for line in result.stdout.strip().split("\n"):
+                if line.strip():
+                    parts = [p.strip() for p in line.split(",")]
+                    gpu_id = int(parts[0])
+                    total_mb = float(parts[1])
+                    free_mb = float(parts[2])
+                    used_mb = float(parts[3])
+                    gpu_info[gpu_id] = {
+                        "total": total_mb,
+                        "free": free_mb,
+                        "used": used_mb,
+                    }
+            
+            return gpu_info
+        except Exception as e:
+            logger.warning(f"Failed to get GPU memory info: {e}")
+            return {}
 
     def add_node(
         self, hostname: str, num_gpus: int, gpu_memory_mb: Optional[int] = None
@@ -348,30 +409,6 @@ class ResourceManager:
             status["nodes"][hostname] = node_status
 
         return status
-
-    def get_vajra_resource_mapping(self, job_id: str) -> Optional[Dict[str, Any]]:
-        """Get resource mapping in vajra server format.
-
-        Args:
-            job_id: Job identifier
-
-        Returns:
-            Dictionary in vajra format, or None if job not found
-        """
-        if job_id not in self.allocated_resources:
-            return None
-
-        resource_mapping = self.allocated_resources[job_id]
-        vajra_mapping = {
-            "0": {
-                "resource_mapping": [
-                    {"node_ip": node_ip, "gpu_id": gpu_id}
-                    for node_ip, gpu_id in resource_mapping
-                ],
-                "worker_type": "GPU",
-            }
-        }
-        return vajra_mapping
 
     def wait_for_resources(
         self,
