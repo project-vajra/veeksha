@@ -1,5 +1,4 @@
 import ast
-import time
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
@@ -425,7 +424,6 @@ class TraceRequestGenerator(BaseRequestGenerator):
             return prompt, len(full_ids)
 
     def get_request(self) -> RequestConfig:
-        total_start = time.monotonic()
         if self.request_idx >= self.capacity():
             if self.config.exhaustion_policy == "error":
                 raise StopIteration(

@@ -21,8 +21,8 @@ logger = init_logger(__name__)
 
 
 PREFETCH_BATCH_SIZE = 1
-PREFETCH_INTERVAL_S = 0.002
-MAX_PREFETCH_BACKLOG = 50000
+PREFETCH_INTERVAL_S = 0.004  # 250 rps
+MAX_PREFETCH_BACKLOG = 10000
 NEAR_DEADLINE_WINDOW_S = 0.010
 BACKLOG_LOG_INTERVAL_S = 1.0
 BACKLOG_WARN_INTERVAL_S = 5.0
@@ -180,11 +180,6 @@ def dispatch_requests(
 
             now_pf = time.monotonic()
 
-            # compute effective backlog once per outer iteration (unused beyond checks)
-            blocked_pending_pf = scheduler.get_blocked_pending_count()
-            with prefetch_stats_lock:
-                _ = max(0, scheduled_backlog - blocked_pending_pf)
-
             if _prefetch_time_gate(now_pf):
                 continue
 
@@ -209,6 +204,8 @@ def dispatch_requests(
         if service_metrics.num_requests > service_metrics.max_requests:
             with prefetch_stats_lock:
                 num_errored_requests_handled += 1
+
+        ready.benchmark_id = benchmark_id  # dashboard
         input_queue.put(ready)
         with prefetch_stats_lock:
             if scheduled_backlog > 0:
@@ -216,7 +213,6 @@ def dispatch_requests(
         if telemetry_enabled and logger.isEnabledFor(logging.DEBUG):
             logger.debug("Dispatched request %s", ready.id)
 
-        ready.benchmark_id = benchmark_id
         # Request ID should always be set by the generator
         assert ready.id is not None, f"Request {ready} has no ID"
         emit_dashboard_event(
@@ -299,9 +295,15 @@ def dispatch_requests(
             return
         inflight = service_metrics.num_requests - service_metrics.num_completed_requests
         total_slots = req_launcher.get_total_slots()
-        input_queue_size_now = input_queue.qsize()
+        try:
+            input_queue_size_now = input_queue.qsize()
+        except NotImplementedError:
+            input_queue_size_now = -1  # sentinel for unknown size
         available_slots = max(0, total_slots - inflight)
-        if input_queue_size_now > 0 and available_slots == 0 and now >= next_spawn_time:
+        has_queued_or_unknown = (input_queue_size_now > 0) or (
+            input_queue_size_now == -1
+        )
+        if has_queued_or_unknown and available_slots == 0 and now >= next_spawn_time:
             if req_launcher.can_spawn_more():
                 logger.info(
                     "Auto-spawning new client: reqs_queued=%d inflight=%d total_slots=%d",
@@ -339,7 +341,9 @@ def dispatch_requests(
         next_backlog_warn_time = now + BACKLOG_WARN_INTERVAL_S
 
     # Start prefetcher thread
-    prefetch_thread = Thread(target=prefetch_loop, daemon=True)
+    prefetch_thread = Thread(
+        target=prefetch_loop, name="dispatch-prefetcher", daemon=True
+    )
     prefetch_thread.start()
 
     while not stop_event.is_set():
