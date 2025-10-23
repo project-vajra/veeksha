@@ -118,8 +118,8 @@ def dispatch_requests(
         return False
 
     def _mark_prefetch_tick() -> None:
+        nonlocal prefetch_tick_counter
         with prefetch_stats_lock:
-            nonlocal prefetch_tick_counter
             prefetch_tick_counter += 1
 
     def _try_prefetch_request() -> str:
@@ -240,7 +240,7 @@ def dispatch_requests(
         )
         logger.info(
             "Prefetch backlog | scheduled=%d effective=%d blocked_pending=%d ready=%d ready_now=%d in_q=%d",
-            scheduled_backlog,
+            scheduled_backlog_snapshot,
             effective_backlog_snapshot,
             blocked_pending_snapshot,
             ready_count_snapshot,
