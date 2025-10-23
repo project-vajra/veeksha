@@ -1,5 +1,5 @@
 import ast
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
@@ -11,7 +11,7 @@ from veeksha.core.request_config import RequestConfig
 from veeksha.core.seeding import SeedManager
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.generators.utils import (
-    generate_random_prompt,
+    generate_random_token_ids_fast,
     load_trace,
     process_request_interval_trace,
     process_request_length_trace,
@@ -40,11 +40,12 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self.request_id = 0
         self.client_config = client_config
         self.past_prompts: Dict[int, str] = {}
+        self.past_prompt_ids: Dict[int, List[int]] = {}
         self.corpus_lines = corpus_lines
         self._remap_seed_for_save: Optional[int] = None
         self._epoch = 0
         self._session_id_offset = 0
-        self._session_id_base = 0
+        self._num_sessions_per_epoch = 0
         self._global_request_id = 0
         self._epoch_anchor_offset_s: float = 0.0
         self._session_firsts_span_s: float = 0.0
@@ -98,6 +99,26 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 raise ValueError(
                     "A corpus file must be provided when not using trace prefix hash IDs."
                 )
+            # Pre-tokenize corpus for fast prompt body assembly
+            token_lines = [
+                self.tokenizer.encode(line, add_special_tokens=False)
+                for line in self.corpus_lines
+            ]
+            self.pretokenized_lines: List[List[int]] = [t for t in token_lines if t]
+
+        if self.config.use_trace_prefix_hash_ids:
+            # Precompute hash-based body IDs for all unique hash_ids present
+            self._precompute_hash_body_ids()
+
+        # Cache instruction tokenizations for n in [10..1000]; fill on-demand beyond that
+        self._instruction_cache: Dict[int, List[int]] = {}
+        self._instruction_text_cache: Dict[int, str] = {}
+        for n in range(10, 1001):
+            instr_text = f"Generate at least {n} tokens repeating the following text:\n"
+            self._instruction_cache[n] = self.tokenizer.encode(
+                instr_text, add_special_tokens=False
+            )
+            self._instruction_text_cache[n] = instr_text
 
         if self.config.use_trace_sessions:
             if "session_id" not in self.trace_df.columns:
@@ -135,12 +156,11 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self.request_idx = 0
         self._wrap_warning_logged = False
 
-        #### offsets for wrapping mode
-        # number of sessions per epoch
+        # Determine number of sessions per epoch if sessions are present
         if "session_id" in self.trace_df.columns:
-            self._session_id_base = int(self.trace_df["session_id"].max()) + 1
+            self._num_sessions_per_epoch = int(self.trace_df["session_id"].nunique())
 
-        # distance from first to last session (s)
+        # Pre-compute span of first-request timestamps from first to last session (s)
         if (
             "session_id" in self.trace_df.columns
             and "timestamp" in self.trace_df.columns
@@ -198,7 +218,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         """
         session_id_val = request_to_send.get("session_id", None)
         if session_id_val is not None:
-            # avoid cross-epoch session collisions
+            # Apply per-epoch offset to avoid cross-epoch session collisions
             request_config.session_id = int(session_id_val) + int(
                 self._session_id_offset
             )
@@ -314,6 +334,95 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         raise Exception(f"Could not generate stable encoding for value {value}")
 
+    def _get_instruction_ids(self, n: int, use_server_min_tokens: bool) -> List[int]:
+        if use_server_min_tokens:
+            return []
+        ids = self._instruction_cache.get(n)
+        if ids is not None:
+            return ids
+        instr_text = f"Generate at least {n} tokens repeating the following text:\n"
+        ids = self.tokenizer.encode(instr_text, add_special_tokens=False)
+        self._instruction_cache[n] = ids
+        self._instruction_text_cache[n] = instr_text
+        return ids
+
+    def _get_instruction_text(self, n: int, use_server_min_tokens: bool) -> str:
+        if use_server_min_tokens:
+            return ""
+        txt = self._instruction_text_cache.get(n)
+        if txt is not None:
+            return txt
+        txt = f"Generate at least {n} tokens repeating the following text:\n"
+        self._instruction_text_cache[n] = txt
+        return txt
+
+    def _precompute_hash_body_ids(self) -> None:
+        """Precompute and cache block-aligned token IDs for all unique hash IDs in the trace."""
+        unique_ids = set()
+        for ids in self.trace_df["hash_ids"]:
+            unique_ids.update(ids)
+        if not unique_ids:
+            return
+        block_size = int(self.config.block_size)
+        logger.debug(f"Precomputing body IDs for {len(unique_ids)} unique hash IDs.")
+        for hid in unique_ids:
+            if hid in self.past_prompt_ids:
+                continue
+            chunk = self.generate_unique_encoding(int(hid))
+            block = self.pad_to_block_size(chunk, block_size)
+            self.past_prompt_ids[hid] = block
+            self.past_prompts[hid] = self.decode(block)
+
+    def _build_body_ids_from_hashes(self, request_to_send) -> List[int]:
+        body_ids: List[int] = []
+        block_size = int(self.config.block_size)
+        for hash_id in request_to_send["hash_ids"]:
+            cached = self.past_prompt_ids.get(hash_id)
+            if cached is None:
+                chunk = self.generate_unique_encoding(int(hash_id))
+                block = self.pad_to_block_size(chunk, block_size)
+                self.past_prompt_ids[hash_id] = block
+                cached = block
+                # Maintain original past_prompts (string) for backward compatibility
+                self.past_prompts[hash_id] = self.decode(block)
+            body_ids.extend(cached)
+        return body_ids
+
+    def _build_body_ids_from_corpus(self, num_tokens: int) -> List[int]:
+        return generate_random_token_ids_fast(
+            pretokenized_lines=self.pretokenized_lines,
+            num_tokens=num_tokens,
+            rng=self.prompt_rng,
+        )
+
+    def _assemble_prompt(
+        self,
+        request_to_send,
+        use_server_min_tokens: bool,
+    ) -> Tuple[str, int]:
+        n_out = int(request_to_send["output_length"])
+        instr_ids = self._get_instruction_ids(n_out, use_server_min_tokens)
+        instr_text = self._get_instruction_text(n_out, use_server_min_tokens)
+
+        if self.config.use_trace_prefix_hash_ids:
+            # Build IDs and assemble string from cached per-hash prompt strings
+            body_ids = self._build_body_ids_from_hashes(request_to_send)
+            prompt_parts: List[str] = [instr_text] if instr_text else []
+            for hash_id in request_to_send["hash_ids"]:
+                prompt_parts.append(self.past_prompts[int(hash_id)])
+            prompt = "".join(prompt_parts)
+            full_len = len(instr_ids) + len(body_ids)
+            return prompt, full_len
+        else:
+            remaining_prompt_tokens = int(request_to_send["input_length"]) - len(
+                instr_ids
+            )
+            remaining_prompt_tokens = max(0, remaining_prompt_tokens)
+            body_ids = self._build_body_ids_from_corpus(remaining_prompt_tokens)
+            full_ids = instr_ids + body_ids
+            prompt = self.decode(full_ids)
+            return prompt, len(full_ids)
+
     def get_request(self) -> RequestConfig:
         if self.request_idx >= self.capacity():
             if self.config.exhaustion_policy == "error":
@@ -322,7 +431,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 )
             elif self.config.exhaustion_policy == "stop":
                 # stop policy: return a sentinel request with negative dispatch delay
-                logger.info(
+                logger.debug(
                     f"Stop policy active: request trace exhausted at index {self.request_idx}."
                 )
                 return RequestConfig(
@@ -335,19 +444,24 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 )
             elif self.config.exhaustion_policy == "wrap":
                 if not self._wrap_warning_logged:
-                    logger.warning(
+                    logger.debug(
                         f"Request trace exhausted at index {self.request_idx}; wrapping to start."
                     )
                     self._wrap_warning_logged = True
                 self.request_idx = 0
+                # advance epoch and update per-epoch offsets
                 self._epoch += 1
-                if self._session_id_base > 0:
-                    self._session_id_offset = self._epoch * self._session_id_base
+                if self._num_sessions_per_epoch > 0:
+                    self._session_id_offset = self._epoch * self._num_sessions_per_epoch
+                # shift anchors forward by one epoch span to preserve arrival pattern
                 if self._session_firsts_span_s > 0.0:
                     self._epoch_anchor_offset_s += self._session_firsts_span_s
+                # optional hash remap on wrap
                 if self.config.use_trace_prefix_hash_ids and self.config.remap_hash_ids:
                     self._remap_trace_hash_ids()
                     self.past_prompts.clear()
+                    self.past_prompt_ids.clear()
+                    self._precompute_hash_body_ids()
 
         request_to_send = self.trace_df.iloc[self.request_idx]
 
@@ -362,37 +476,11 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 len(request_to_send["hash_ids"]) >= block_count
             ), f"Hash count {len(request_to_send['hash_ids'])} cannot be less than block count {block_count}"
 
-        prompt = ""
-        remaining_prompt_tokens = request_to_send["input_length"]
         use_server_min_tokens = self.client_config.min_tokens_param is not None
-        instruction = ""
-        if not use_server_min_tokens:
-            instruction = f"Generate at least {int(request_to_send['output_length'])} tokens repeating the following text:\n"
-            instruction_token_count = len(self.tokenizer.encode(instruction))
-            remaining_prompt_tokens = max(
-                0, remaining_prompt_tokens - instruction_token_count
-            )
-
-        if self.config.use_trace_prefix_hash_ids:
-            for hash_id in request_to_send["hash_ids"]:
-                if hash_id not in self.past_prompts:
-                    chunk = self.generate_unique_encoding(hash_id)
-                    block = self.pad_to_block_size(chunk, self.config.block_size)
-                    prompt_segment = self.decode(block)
-                    remaining_prompt_tokens -= self.config.block_size
-                    self.past_prompts[hash_id] = prompt_segment
-                prompt += self.past_prompts[hash_id]
-        else:
-            # generate input random text
-            prompt, _ = generate_random_prompt(
-                tokenizer=self.tokenizer,
-                num_prompt_tokens=remaining_prompt_tokens,
-                corpus_lines=self.corpus_lines,
-                rng=self.prompt_rng,
-            )
-
-        prompt = (instruction + prompt) if instruction else prompt
-        final_token_count = len(self.encode(prompt))
+        prompt, final_token_count = self._assemble_prompt(
+            request_to_send=request_to_send,
+            use_server_min_tokens=use_server_min_tokens,
+        )
 
         default_sampling_params: Dict[str, Any] = {
             "max_tokens": int(request_to_send["output_length"]),
@@ -416,6 +504,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
             id=self._global_request_id,
         )
 
+        # attach session scheduling metadata based on configuration
         self._attach_session_metadata(request_to_send, request_config)
 
         self.request_idx += 1
@@ -455,7 +544,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         unique_list = sorted(unique_ids)
         if unique_list:
             id_map = self._build_epoch_hash_id_map(unique_list)
-            logger.info("Remapping prefix hash IDs on wrap.")
+            logger.debug("Remapping prefix hash IDs on wrap.")
             self.trace_df["hash_ids"] = self.trace_df["hash_ids"].apply(
                 lambda lst: [id_map[x] for x in lst]
             )

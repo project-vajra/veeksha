@@ -63,6 +63,12 @@ class BenchmarkConfig:
     dashboard_config: DashboardConfig = field(
         default_factory=DashboardConfig, metadata={"help": "Dashboard configuration"}
     )
+    runtime_telemetry_enabled: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable verbose dispatch runtime telemetry logs (backlog, prefetch rate)."
+        },
+    )
 
     def __post_init__(self):
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
