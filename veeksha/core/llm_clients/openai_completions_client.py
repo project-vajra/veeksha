@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Tuple
 import aiohttp
 
 from revati.client import ClientType  # type: ignore
+from revati.client.helper import create_thread_local_revati_client, get_time
 
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
 from veeksha.core.llm_clients.streaming_mixin import StreamingMixin
@@ -16,7 +17,6 @@ from veeksha.dashboard.events import TokenBatchEvent
 from veeksha.dashboard.handler import emit_dashboard_event
 from veeksha.logger import init_logger
 from veeksha.metrics.request_metrics import RequestMetrics
-from veeksha.core.llm_clients.revati_helper import create_thread_local_revati_client, get_time
 
 logger = init_logger(__name__)
 

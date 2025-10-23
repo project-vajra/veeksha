@@ -10,6 +10,7 @@ from typing import List, Optional
 from tqdm import tqdm  # type: ignore
 
 from revati.client import ClientType  # type: ignore
+from revati.client.helper import create_thread_local_revati_client, get_time, sleep
 
 from veeksha.core.dispatch_scheduler import DispatchScheduler
 from veeksha.core.requests_launcher import RequestsLauncher
@@ -19,7 +20,6 @@ from veeksha.dashboard.handler import emit_dashboard_event
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.logger import init_logger
 from veeksha.metrics.service_metrics import ServiceMetrics
-from veeksha.core.llm_clients.revati_helper import create_thread_local_revati_client, get_time, sleep
 
 logger = init_logger(__name__)
 

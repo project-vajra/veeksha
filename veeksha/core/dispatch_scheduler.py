@@ -4,9 +4,10 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+from revati.client.helper import get_time
+
 from veeksha.core.request_config import RequestConfig
 from veeksha.logger import init_logger
-from veeksha.core.llm_clients.revati_helper import get_time
 
 logger = init_logger(__name__)
 
