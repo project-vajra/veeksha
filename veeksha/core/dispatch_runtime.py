@@ -20,7 +20,6 @@ from veeksha.metrics.service_metrics import ServiceMetrics
 logger = init_logger(__name__)
 
 
-PREFETCH_BATCH_SIZE = 1
 PREFETCH_INTERVAL_S = 0.004  # 250 rps
 MAX_PREFETCH_BACKLOG = 10000
 NEAR_DEADLINE_WINDOW_S = 0.010
@@ -123,7 +122,7 @@ def dispatch_requests(
             nonlocal prefetch_tick_counter
             prefetch_tick_counter += 1
 
-    def _try_prefetch_one() -> str:
+    def _try_prefetch_request() -> str:
         nonlocal generator_exhausted, scheduled_backlog, scheduled_since_log, total_scheduled
         blocked_pending_pf = scheduler.get_blocked_pending_count()
         with prefetch_stats_lock:
@@ -189,10 +188,9 @@ def dispatch_requests(
             if telemetry_enabled:
                 _mark_prefetch_tick()
 
-            for _ in range(PREFETCH_BATCH_SIZE):
-                status = _try_prefetch_one()
-                if status == "break":
-                    break
+            status = _try_prefetch_request()
+            if status == "break":
+                break
 
             next_prefetch_time = now_pf + PREFETCH_INTERVAL_S
 
