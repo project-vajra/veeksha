@@ -10,7 +10,7 @@ from typing import List, Optional
 from tqdm import tqdm  # type: ignore
 
 from revati.client import ClientType  # type: ignore
-from revati.client.helper import create_thread_local_revati_client, get_time, sleep
+from revati.client.helper import create_thread_local_revati_client, get_time, sleep, is_revati_enabled
 
 from veeksha.core.dispatch_scheduler import DispatchScheduler
 from veeksha.core.requests_launcher import RequestsLauncher
@@ -91,15 +91,18 @@ def dispatch_requests(
             return True
         if now_pf < next_prefetch_time:
             remaining = next_prefetch_time - now_pf
-            if remaining > 0.002:
-                sleep(min(remaining - 0.0005, 0.002))
+            if is_revati_enabled():
+                sleep(remaining)
             else:
-                deadline = next_prefetch_time
-                while True:
-                    now_spin = get_time()
-                    if now_spin >= deadline or stop_event.is_set():
-                        break
-                    time.sleep(0)
+                if remaining > 0.002:
+                    sleep(min(remaining - 0.0005, 0.002))
+                else:
+                    deadline = next_prefetch_time
+                    while True:
+                        now_spin = get_time()
+                        if now_spin >= deadline or stop_event.is_set():
+                            break
+                        time.sleep(0)
             return True
         return False
 
@@ -174,13 +177,14 @@ def dispatch_requests(
 
     def prefetch_loop() -> None:
         nonlocal next_prefetch_time, generator_exhausted
+        create_thread_local_revati_client(f"veeksha-dispatcher-prefetch-loop-{str(uuid.uuid4())[:8]}", ClientType.ACTOR)
+
         while not stop_event.is_set():
             if generator_exhausted:
                 break
 
             if not _can_send_request():
-                sleep(0.001)
-                continue
+                break
 
             now_pf = get_time()
 
@@ -277,15 +281,20 @@ def dispatch_requests(
         if time_until is None or time_until > NEAR_DEADLINE_WINDOW_S:
             return False
         deadline = get_time() + time_until
-        while get_time() < deadline:
-            ready_local = scheduler.pop_ready()
-            if ready_local is not None:
-                _dispatch_ready_request(ready_local)
-                return True
-            remaining = deadline - get_time()
-            if remaining <= 0:
-                break
-            sleep(min(remaining, 0.001))
+        
+        if is_revati_enabled():
+            sleep(time_until)
+        else:
+            while get_time() < deadline:
+                ready_local = scheduler.pop_ready()
+                if ready_local is not None:
+                    _dispatch_ready_request(ready_local)
+                    return True
+                remaining = deadline - get_time()
+                if remaining <= 0:
+                    break
+                sleep(min(remaining, 0.001))
+
         ready_local = scheduler.pop_ready()
         if ready_local is not None:
             _dispatch_ready_request(ready_local)
@@ -380,7 +389,6 @@ def dispatch_requests(
         # dispatch again after prefetch
         ready = scheduler.pop_ready()
         if ready is not None:
-
             _dispatch_ready_request(ready)
             continue
 

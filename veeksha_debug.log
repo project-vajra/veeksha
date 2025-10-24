@@ -1,0 +1,66 @@
+/coc/scratch/docker_safe/amey/revati/env/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:2249: UnsupportedFieldAttributeWarning: The 'repr' attribute with value False was provided to the `Field()` function, which has no effect in the context it was used. 'repr' is field-specific metadata, and can only be attached to a model field using `Annotated` metadata or by assignment. This may have happened because an `Annotated` type alias using the `type` statement was used, or if the `Field()` function was attached to a single member of a union type.
+  warnings.warn(
+/coc/scratch/docker_safe/amey/revati/env/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:2249: UnsupportedFieldAttributeWarning: The 'frozen' attribute with value True was provided to the `Field()` function, which has no effect in the context it was used. 'frozen' is field-specific metadata, and can only be attached to a model field using `Annotated` metadata or by assignment. This may have happened because an `Annotated` type alias using the `type` statement was used, or if the `Field()` function was attached to a single member of a union type.
+  warnings.warn(
+Running benchmark with config: BenchmarkConfig(seed=42, timeout=600, max_completed_requests=100, api_url='http://localhost:8000/v1', api_key='token-abc123', client_config=ClientConfig(model='Qwen/Qwen3-4B-Instruct-2507', tokenizer='Qwen/Qwen3-4B-Instruct-2507', num_clients=5, num_concurrent_requests_per_client=5, auto_spawn_new_clients=False, max_clients=None, additional_sampling_params='{}', llm_api='openai_chat', address_append_value='chat/completions', request_timeout=60, min_tokens_param='min_tokens'), metrics_config=MetricsConfig(output_dir='benchmark_outputs', deadline_report=DeadlineReportConfig(ttft_deadline=0.1, tbt_deadline=0.05, target_deadline_miss_rate=0.1), should_write_metrics_to_wandb=False, wandb_project=None, wandb_group=None, wandb_run_name=None, enable_wandb_sweep=False, wandb_sweep_id=None, wandb_sweep_name=None), request_generator_config=SyntheticRequestGeneratorConfig(max_tokens=8192, length_generator_config=TraceRequestLengthGeneratorConfig(max_tokens=4096, exhaustion_policy='stop', trace_file='/coc/scratch/docker_safe/amey/revati/external/veeksha/veeksha/data/processed_traces/sharegpt_8k_filtered_stats_llama2_tokenizer.csv', input_length_column='num_prefill_tokens', output_length_column='num_decode_tokens', prefill_scale_factor=1, decode_scale_factor=1, block_size=512), interval_generator_config=StaticRequestIntervalGeneratorConfig()), dashboard_config=DashboardConfig(enabled=False, max_live_requests=50, max_queue_size=1000, chart_window_seconds=None), runtime_telemetry_enabled=False)
+INFO 10-24 03:03:14 benchmark.py:241] Benchmark ID: Qwen3-4B-Instruct-2507-b9e537fe-20251024-030314-513, Output directory: benchmark_outputs/Qwen3-4B-Instruct-2507-b9e537fe-20251024-030314-513
+INFO 10-24 03:03:15 benchmark.py:130] min_tokens_param 'min_tokens' supported in request body.
+/coc/scratch/docker_safe/amey/revati/env/lib/python3.12/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+INFO 10-24 03:03:18 utils.py:142] Prompt/decode token ratio stats
+INFO 10-24 03:03:18 utils.py:142] count    30731.000000
+INFO 10-24 03:03:18 utils.py:142] mean        20.060173
+INFO 10-24 03:03:18 utils.py:142] std        138.882529
+INFO 10-24 03:03:18 utils.py:142] min          0.004762
+INFO 10-24 03:03:18 utils.py:142] 25%          1.537747
+INFO 10-24 03:03:18 utils.py:142] 50%          4.553957
+INFO 10-24 03:03:18 utils.py:142] 75%         10.343490
+INFO 10-24 03:03:18 utils.py:142] 90%         23.520958
+INFO 10-24 03:03:18 utils.py:142] 95%         46.061880
+INFO 10-24 03:03:18 utils.py:142] 99%        238.877647
+INFO 10-24 03:03:18 utils.py:142] max       4094.000000
+INFO 10-24 03:03:18 utils.py:142] dtype: float64
+INFO 10-24 03:03:18 trace_generator.py:37] Loaded request length trace file /coc/scratch/docker_safe/amey/revati/external/veeksha/veeksha/data/processed_traces/sharegpt_8k_filtered_stats_llama2_tokenizer.csv with 30731 requests
+INFO 10-24 03:03:18 synthetic_generator.py:56] Pre-tokenizing corpus.
+  0%|          | 0/100 [00:00<?, ?it/s]INFO 10-24 03:03:18 metric_store.py:118] wandb disabled; not initialized
+INFO 10-24 03:03:18 benchmark.py:145] Starting the main loop.
+251024 03:03:18.003105 1559550:140258527942208 main] [INFO] [Client.cpp:33] Client 'veeksha-dispatcher-35205a6e' (type: ACTOR) created with server: ipc:///tmp/revati_server.ipc, reverse: ipc:///tmp/revati_client_veeksha-dispatcher-35205a6e_3e9f7f43.ipc
+251024 03:03:18.003168 1559550:140258527942208 main] [INFO] [Client.cpp:55] Registering with server at: ipc:///tmp/revati_server.ipc
+251024 03:03:18.004075 1559550:140258527942208 main] [INFO] [Client.cpp:96] Client 'veeksha-dispatcher-35205a6e' successfully registered with ID: 2
+251024 03:03:18.004105 1559550:140258553120320 Client-veeksha-dispatcher-35205a6e-Listen] [INFO] [Client.cpp:101] Client 'veeksha-dispatcher-35205a6e' listen loop started
+251024 03:03:18.004595 1559550:140259048273472 main] [INFO] [Client.cpp:33] Client 'veeksha-dispatcher-prefetch-loop-12076f01' (type: ACTOR) created with server: ipc:///tmp/revati_server.ipc, reverse: ipc:///tmp/revati_client_veeksha-dispatcher-prefetch-loop-12076f01_e7daee56.ipc
+251024 03:03:18.004625 1559550:140259048273472 main] [INFO] [Client.cpp:55] Registering with server at: ipc:///tmp/revati_server.ipc
+251024 03:03:18.005206 1559550:140259048273472 main] [INFO] [Client.cpp:96] Client 'veeksha-dispatcher-prefetch-loop-12076f01' successfully registered with ID: 3
+251024 03:03:18.005233 1559550:140259014686272 Client-veeksha-dispatcher-prefetch-loop-12076f01-Listen] [INFO] [Client.cpp:101] Client 'veeksha-dispatcher-prefetch-loop-12076f01' listen loop started
+251024 03:03:19.348272 1560368:140261299480384 main] [INFO] [Client.cpp:33] Client 'veeksha-client-7860d589' (type: OBSERVER) created with server: ipc:///tmp/revati_server.ipc, reverse: ipc:///tmp/revati_client_veeksha-client-7860d589_0f1ecfa1.ipc
+251024 03:03:19.348367 1560368:140261299480384 main] [INFO] [Client.cpp:55] Registering with server at: ipc:///tmp/revati_server.ipc
+251024 03:03:19.349543 1560368:140261299480384 main] [INFO] [Client.cpp:96] Client 'veeksha-client-7860d589' successfully registered with ID: 4
+251024 03:03:19.349581 1560368:140258527942208 Client-veeksha-client-7860d589-Listen] [INFO] [Client.cpp:101] Client 'veeksha-client-7860d589' listen loop started
+251024 03:03:19.361724 1560370:140261299480384 main] [INFO] [Client.cpp:33] Client 'veeksha-client-c22cb3d3' (type: OBSERVER) created with server: ipc:///tmp/revati_server.ipc, reverse: ipc:///tmp/revati_client_veeksha-client-c22cb3d3_1faeb446.ipc
+251024 03:03:19.361812 1560370:140261299480384 main] [INFO] [Client.cpp:55] Registering with server at: ipc:///tmp/revati_server.ipc
+251024 03:03:19.362795 1560370:140261299480384 main] [INFO] [Client.cpp:96] Client 'veeksha-client-c22cb3d3' successfully registered with ID: 5
+251024 03:03:19.362806 1560370:140258527942208 Client-veeksha-client-c22cb3d3-Listen] [INFO] [Client.cpp:101] Client 'veeksha-client-c22cb3d3' listen loop started
+251024 03:03:19.412784 1560369:140261299480384 main] [INFO] [Client.cpp:33] Client 'veeksha-client-1566f7a9' (type: OBSERVER) created with server: ipc:///tmp/revati_server.ipc, reverse: ipc:///tmp/revati_client_veeksha-client-1566f7a9_0563c37d.ipc
+251024 03:03:19.412847 1560369:140261299480384 main] [INFO] [Client.cpp:55] Registering with server at: ipc:///tmp/revati_server.ipc
+251024 03:03:19.413945 1560369:140261299480384 main] [INFO] [Client.cpp:96] Client 'veeksha-client-1566f7a9' successfully registered with ID: 6
+251024 03:03:19.414042 1560369:140258527942208 Client-veeksha-client-1566f7a9-Listen] [INFO] [Client.cpp:101] Client 'veeksha-client-1566f7a9' listen loop started
+251024 03:03:19.432689 1560372:140261299480384 main] [INFO] [Client.cpp:33] Client 'veeksha-client-147382d5' (type: OBSERVER) created with server: ipc:///tmp/revati_server.ipc, reverse: ipc:///tmp/revati_client_veeksha-client-147382d5_fe6e6a43.ipc
+251024 03:03:19.432753 1560372:140261299480384 main] [INFO] [Client.cpp:55] Registering with server at: ipc:///tmp/revati_server.ipc
+251024 03:03:19.433525 1560372:140261299480384 main] [INFO] [Client.cpp:96] Client 'veeksha-client-147382d5' successfully registered with ID: 7
+251024 03:03:19.433576 1560372:140258527942208 Client-veeksha-client-147382d5-Listen] [INFO] [Client.cpp:101] Client 'veeksha-client-147382d5' listen loop started
+251024 03:03:19.479061 1560371:140261299480384 main] [INFO] [Client.cpp:33] Client 'veeksha-client-2029e74e' (type: OBSERVER) created with server: ipc:///tmp/revati_server.ipc, reverse: ipc:///tmp/revati_client_veeksha-client-2029e74e_dea3aa0c.ipc
+251024 03:03:19.479118 1560371:140261299480384 main] [INFO] [Client.cpp:55] Registering with server at: ipc:///tmp/revati_server.ipc
+251024 03:03:19.479900 1560371:140261299480384 main] [INFO] [Client.cpp:96] Client 'veeksha-client-2029e74e' successfully registered with ID: 8
+251024 03:03:19.479969 1560371:140258527942208 Client-veeksha-client-2029e74e-Listen] [INFO] [Client.cpp:101] Client 'veeksha-client-2029e74e' listen loop started
+251024 03:03:19.766520 1559550:140259048273472 main] [INFO] [Client.cpp:210] Client 'veeksha-dispatcher-prefetch-loop-12076f01' deregistering from server
+251024 03:03:19.766669 1559550:140259048273472 main] [INFO] [Client.cpp:221] Client 'veeksha-dispatcher-prefetch-loop-12076f01' deregistered successfully
+251024 03:03:19.767620 1559550:140259048273472 main] [INFO] [Client.cpp:49] Client 'veeksha-dispatcher-prefetch-loop-12076f01' destroyed
+  1%|          | 1/100 [00:00<01:36,  1.03it/s]  2%|▏         | 2/100 [00:01<00:52,  1.85it/s]  4%|▍         | 4/100 [00:01<00:22,  4.25it/s]  7%|▋         | 7/100 [00:01<00:11,  8.23it/s]  9%|▉         | 9/100 [00:01<00:08, 10.14it/s] 11%|█         | 11/100 [00:01<00:08, 10.63it/s] 16%|█▌        | 16/100 [00:01<00:04, 18.39it/s] 19%|█▉        | 19/100 [00:02<00:04, 16.93it/s] 22%|██▏       | 22/100 [00:02<00:04, 18.39it/s] 25%|██▌       | 25/100 [00:02<00:05, 14.16it/s] 27%|██▋       | 27/100 [00:02<00:06, 11.24it/s] 29%|██▉       | 29/100 [00:02<00:05, 12.25it/s] 32%|███▏      | 32/100 [00:03<00:04, 14.20it/s] 34%|███▍      | 34/100 [00:03<00:04, 13.44it/s] 36%|███▌      | 36/100 [00:03<00:04, 13.69it/s] 40%|████      | 40/100 [00:03<00:03, 17.76it/s] 43%|████▎     | 43/100 [00:03<00:02, 20.14it/s] 46%|████▌     | 46/100 [00:03<00:02, 18.45it/s] 50%|█████     | 50/100 [00:03<00:02, 21.77it/s] 55%|█████▌    | 55/100 [00:04<00:01, 24.86it/s] 60%|██████    | 60/100 [00:04<00:01, 29.86it/s] 64%|██████▍   | 64/100 [00:04<00:01, 23.34it/s] 67%|██████▋   | 67/100 [00:04<00:01, 17.00it/s] 72%|███████▏  | 72/100 [00:04<00:01, 21.27it/s] 75%|███████▌  | 75/100 [00:05<00:01, 20.69it/s] 78%|███████▊  | 78/100 [00:05<00:01, 20.50it/s] 81%|████████  | 81/100 [00:05<00:00, 19.12it/s] 84%|████████▍ | 84/100 [00:05<00:00, 19.22it/s] 87%|████████▋ | 87/100 [00:05<00:00, 19.58it/s] 90%|█████████ | 90/100 [00:05<00:00, 17.07it/s] 92%|█████████▏| 92/100 [00:06<00:00,  8.00it/s] 94%|█████████▍| 94/100 [00:06<00:00,  8.37it/s] 97%|█████████▋| 97/100 [00:07<00:00,  6.29it/s] 98%|█████████▊| 98/100 [00:07<00:00,  5.16it/s]INFO 10-24 03:03:27 benchmark.py:197] Stopping the main loop.
+100%|██████████| 100/100 [00:08<00:00,  6.08it/s]251024 03:03:27.145942 1559550:140258527942208 main] [INFO] [Client.cpp:210] Client 'veeksha-dispatcher-35205a6e' deregistering from server
+251024 03:03:27.146142 1559550:140258527942208 main] [INFO] [Client.cpp:221] Client 'veeksha-dispatcher-35205a6e' deregistered successfully
+251024 03:03:27.146160 1559550:140258527942208 main] [INFO] [Client.cpp:49] Client 'veeksha-dispatcher-35205a6e' destroyed
+100%|██████████| 100/100 [00:08<00:00, 12.07it/s]
+INFO 10-24 03:03:27 benchmark.py:217] Main loop completed.
+INFO 10-24 03:03:27 metric_store.py:243] Storing metric artifacts.
+INFO 10-24 03:03:31 benchmark.py:316] Metrics stored to benchmark_outputs/Qwen3-4B-Instruct-2507-b9e537fe-20251024-030314-513
+INFO 10-24 03:03:31 benchmark.py:552] All benchmarks completed.
