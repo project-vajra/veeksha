@@ -1,10 +1,8 @@
-import multiprocessing
 import os
-import platform
 import random
 import threading
 import time
-from multiprocessing import Queue
+from queue import Queue
 from threading import Thread
 from typing import List, Optional, TypedDict
 
@@ -157,7 +155,7 @@ def run_main_loop(
         output_queue=output_queue,
     )
 
-    # Start the request launcher processes
+    # Start the request launcher threads
     req_launcher.start()
 
     # Create and start producer-consumer threads
@@ -204,7 +202,7 @@ def run_main_loop(
     stop_event.set()
     dispatcher_thread.join()
 
-    # Wait for all client processes to terminate
+    # Wait for all client threads to terminate
     req_launcher.wait_for_clients()
 
     # Signal the results processor to finish after draining and join it
@@ -241,7 +239,7 @@ def run_benchmark(
     logger.info(
         f"Benchmark ID: {benchmark_id}, Output directory: {benchmark_config.metrics_config.output_dir}"
     )
-    # Expose output directory to child processes for iterative trace writes
+    # Expose output directory to child threads for iterative trace writes
     os.environ["VEEKSHA_OUTPUT_DIR"] = benchmark_config.metrics_config.output_dir
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
@@ -454,17 +452,14 @@ def run_benchmark_console_only(
 
 
 if __name__ == "__main__":
-    if platform.system() == "Darwin":
-        multiprocessing.set_start_method("fork", force=True)
-
     benchmark_configs = BenchmarkConfig.create_from_cli_args()
 
     # Check if dashboard is enabled
     has_dashboard_enabled = any(bc.dashboard_config.enabled for bc in benchmark_configs)
     if has_dashboard_enabled:
-        # Set environment variable to suppress console logging in child processes
+        # Set environment variable to suppress console logging in child threads
         os.environ["VEEKSHA_SUPPRESS_CONSOLE_LOGS"] = "1"
-        # Suppress tokenizers parallelism warning when forking processes
+        # Suppress tokenizers parallelism warning
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
         # Remove stream handlers from loggers (but don't redirect stdout/stderr yet)

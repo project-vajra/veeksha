@@ -1,6 +1,4 @@
-import multiprocessing
 import os
-import platform
 from typing import List
 
 from veeksha.capacity_search.search_manager import SearchManager
@@ -21,9 +19,9 @@ def run():
         config.get_dashboard_config().enabled for config in capacity_search_configs
     )
     if has_dashboard_enabled:
-        # Set environment variable to suppress console logging in child processes
+        # Set environment variable to suppress console logging in child threads
         os.environ["VEEKSHA_SUPPRESS_CONSOLE_LOGS"] = "1"
-        # Suppress tokenizers parallelism warning when forking processes
+        # Suppress tokenizers parallelism warning
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
         # Remove stream handlers from loggers (but don't redirect stdout/stderr)
@@ -47,9 +45,6 @@ def run():
 
 
 def main():
-    if platform.system() == "Darwin":
-        multiprocessing.set_start_method("fork", force=True)
-
     run()
 
 

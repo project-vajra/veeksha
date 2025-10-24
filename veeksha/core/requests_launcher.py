@@ -1,9 +1,7 @@
 import asyncio
 import functools
-from multiprocessing import Process
-from multiprocessing import Queue as MPQueue
-from queue import Empty
-from threading import Lock
+from queue import Empty, Queue
+from threading import Lock, Thread
 from typing import Any, Callable, List, Optional
 
 import aiohttp  # type: ignore
@@ -17,16 +15,16 @@ from veeksha.metrics.request_metrics import RequestMetrics
 logger = init_logger(__name__)
 
 
-def _client_process_entry(
+def _client_thread_entry(
     client_config: ClientConfig,
-    input_queue: MPQueue,
-    output_queue: MPQueue,
+    input_queue: Queue,
+    output_queue: Queue,
     client_id: int,
 ) -> None:
-    """Module-level entry point for worker processes.
+    """Module-level entry point for worker threads.
 
-    Using a top-level function avoids pickling the RequestsLauncher instance on
-    platforms that use the "spawn" method (e.g., Windows).
+    With GIL-free Python (python -Xgil=0), threads can achieve true parallelism
+    similar to multiprocessing but with lower overhead.
     """
     asyncio.run(
         _run_async_worker(
@@ -40,11 +38,11 @@ def _client_process_entry(
 
 async def _run_async_worker(
     client_config: ClientConfig,
-    input_queue: MPQueue,
-    output_queue: MPQueue,
+    input_queue: Queue,
+    output_queue: Queue,
     client_id: int,
 ) -> None:
-    """Run the async worker that processes requests for a single process."""
+    """Run the async worker that processes requests for a single thread."""
     logger.debug("Starting async worker %s", client_id)
 
     llm_client = construct_client(
@@ -75,8 +73,8 @@ async def _run_async_worker(
 
 
 async def _process_requests_async(
-    input_queue: MPQueue,
-    output_queue: MPQueue,
+    input_queue: Queue,
+    output_queue: Queue,
     client_id: int,
     task_id: int,
     llm_client: "BaseLLMClient",
@@ -185,13 +183,13 @@ class RequestsLauncher:
     def __init__(
         self,
         client_config: ClientConfig,
-        input_queue: MPQueue,
-        output_queue: MPQueue,
+        input_queue: Queue,
+        output_queue: Queue,
     ):
         self.client_config = client_config
         self.input_queue = input_queue
         self.output_queue = output_queue
-        self.clients: List[Process] = []
+        self.clients: List[Thread] = []
         self._lock: Lock = Lock()
         self._next_client_id: int = 0
 
@@ -212,16 +210,18 @@ class RequestsLauncher:
 
     def _spawn_client_locked(self) -> None:
         client_id = self._next_client_id
-        client = Process(
-            target=_client_process_entry,
+        client = Thread(
+            target=_client_thread_entry,
             args=(self.client_config, self.input_queue, self.output_queue, client_id),
+            name=f"client-{client_id}",
+            daemon=False,
         )
         self.clients.append(client)
         self._next_client_id += 1
         client.start()
 
     def spawn_new_client(self) -> None:
-        """Dynamically spawn a new client process that persists for the run."""
+        """Dynamically spawn a new client thread that persists for the run."""
         with self._lock:
             if self._can_spawn_more_locked():
                 self._spawn_client_locked()
@@ -251,13 +251,13 @@ class RequestsLauncher:
         return max_clients is None or len(self.clients) < max_clients
 
     def complete_tasks(self) -> None:
-        """Signal worker processes to complete their tasks and exit."""
+        """Signal worker threads to complete their tasks and exit."""
         total_slots = self.get_total_slots()
         for _ in range(total_slots):
             self.input_queue.put(None)
 
     def wait_for_clients(self) -> None:
-        """Wait for all clients to complete their tasks and exit."""
+        """Wait for all client threads to complete their tasks and exit."""
         self.complete_tasks()
         for client in self.clients:
             client.join()

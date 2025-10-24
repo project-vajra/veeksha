@@ -35,10 +35,8 @@ class DashboardEventHandlerProcessor:
         max_live_requests: int = 50,
         chart_window_seconds: Optional[float] = None,
     ):
-        import multiprocessing as mp
-
-        self.manager = None  # Manager not needed with mp.Queue
-        self.event_queue: mp.Queue = mp.Queue(maxsize=max_queue_size)
+        self.manager = None  # Manager not needed with Queue
+        self.event_queue: queue.Queue = queue.Queue(maxsize=max_queue_size)
         self.dashboard_state = DashboardState(
             max_live_requests=max_live_requests,
             chart_window_seconds=chart_window_seconds,

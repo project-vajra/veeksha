@@ -673,10 +673,12 @@ def _add_field_to_parser(
 
     # build argument parameters
     arg_params = {
-        "type": field_type,
         "action": action,
         "help": help_text,
     }
+    
+    if not is_bool(field_type):
+        arg_params["type"] = field_type
 
     # handle default values
     if field.default is not MISSING:

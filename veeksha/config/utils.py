@@ -4,9 +4,9 @@ import json
 import logging
 import os
 import time
+from pathlib import PosixPath
 from copy import deepcopy
 from dataclasses import fields, is_dataclass
-from importlib.abc import Traversable
 from typing import Any, Dict, List, Union, get_args, get_origin
 
 import yaml
@@ -476,7 +476,7 @@ def has_allow_from_file_attribute(cls: type) -> bool:
     return vars(cls).get("_allow_from_file", False)
 
 
-def get_trace_file_path(filename: str) -> Traversable:
+def get_trace_file_path(filename: str) -> PosixPath:
     """
     Resolves the path to a data file within the package's processed_traces directory.
 
@@ -484,7 +484,7 @@ def get_trace_file_path(filename: str) -> Traversable:
         filename: The name of the file in veeksha.data.processed_traces.
 
     Returns:
-        A Traversable object representing the path to the data file.
+        A PosixPath object representing the path to the data file.
     """
     return importlib.resources.files("veeksha.data.processed_traces").joinpath(filename)
 

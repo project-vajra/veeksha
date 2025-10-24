@@ -1,8 +1,7 @@
 import logging
 import threading
 import time
-from multiprocessing import Queue
-from queue import Empty
+from queue import Empty, Queue
 from threading import Thread
 from typing import List, Optional
 
