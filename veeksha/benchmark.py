@@ -16,11 +16,7 @@ from veeksha.benchmark_data_utils import (
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.client import ClientConfig
 from veeksha.config.utils import prepare_benchmark_output_dir
-from veeksha.core.dispatch_runtime import (
-    dispatch_requests,
-    prefetch_requests,
-    process_results,
-)
+from veeksha.core.context import BenchmarkContext
 from veeksha.core.dispatch_scheduler import DispatchScheduler
 from veeksha.core.hf_utils import get_tokenizer
 from veeksha.core.requests_launcher import RequestsLauncher
@@ -28,6 +24,8 @@ from veeksha.core.response import Response
 from veeksha.core.seeding import (
     SeedManager,
 )
+from veeksha.core.thread_pool import ThreadPoolManager
+from veeksha.core.workers import DispatchWorker, PrefetchWorker, ResultsProcessorWorker
 from veeksha.dashboard.events import (
     BenchmarkStatusEvent,
 )
@@ -59,7 +57,9 @@ def setup_api_environment(
     os.environ["OPENAI_API_BASE"] = api_url
 
 
-def _send_probe_request(url: str, headers: dict, body: dict, min_param: str, param_value) -> bool:
+def _send_probe_request(
+    url: str, headers: dict, body: dict, min_param: str, param_value
+) -> bool:
     """Send a probe request to test if server accepts a parameter."""
     import requests  # type: ignore
 
@@ -155,6 +155,12 @@ def run_main_loop(
     stop_event = threading.Event()
     scheduler = DispatchScheduler()
 
+    # Create benchmark context
+    benchmark_context = BenchmarkContext(
+        benchmark_id=benchmark_id,
+        telemetry_enabled=benchmark_config.runtime_telemetry_enabled,
+    )
+
     # Initialize request launcher
     req_launcher = RequestsLauncher(
         client_config=benchmark_config.client_config,
@@ -170,72 +176,59 @@ def run_main_loop(
     responses_lock = threading.Lock()  # Protects generated_responses list
     pbar_lock = threading.Lock()  # Protects progress bar
 
-    # Create thread pools for each component
-    prefetch_threads = []
-    for i in range(benchmark_config.num_prefetch_threads):
-        thread = Thread(
-            target=prefetch_requests,
-            args=(
-                ready_queue,
-                service_metrics,
-                request_generator,
-                generator_lock,
-                stop_event,
-                i,
-            ),
-            name=f"prefetch-{i}",
-        )
-        prefetch_threads.append(thread)
+    # Create thread pool manager
+    pool_manager = ThreadPoolManager(stop_event=stop_event)
 
-    dispatcher_threads = []
-    for i in range(benchmark_config.num_dispatcher_threads):
-        thread = Thread(
-            target=dispatch_requests,
-            args=(
-                input_queue,
-                ready_queue,
-                service_metrics,
-                stop_event,
-                scheduler,
-                req_launcher,
-                i,
-                benchmark_id,
-                benchmark_config.runtime_telemetry_enabled,
-            ),
-            name=f"dispatcher-{i}",
-        )
-        dispatcher_threads.append(thread)
+    # Create prefetch worker pool
+    pool_manager.create_pool(
+        name="prefetch",
+        worker_class=PrefetchWorker,
+        worker_kwargs={
+            "ready_queue": ready_queue,
+            "service_metrics": service_metrics,
+            "request_generator": request_generator,
+            "generator_lock": generator_lock,
+        },
+        pool_size=benchmark_config.num_prefetch_threads,
+    )
 
-    processor_threads = []
-    for i in range(benchmark_config.num_results_processor_threads):
-        thread = Thread(
-            target=process_results,
-            args=(
-                output_queue,
-                service_metrics,
-                generated_responses,
-                responses_lock,
-                pbar,
-                pbar_lock,
-                stop_event,
-                scheduler,
-                i,
-            ),
-            name=f"processor-{i}",
-        )
-        processor_threads.append(thread)
+    # Create dispatcher worker pool
+    pool_manager.create_pool(
+        name="dispatcher",
+        worker_class=DispatchWorker,
+        worker_kwargs={
+            "input_queue": input_queue,
+            "ready_queue": ready_queue,
+            "service_metrics": service_metrics,
+            "scheduler": scheduler,
+            "req_launcher": req_launcher,
+            "benchmark_context": benchmark_context,
+        },
+        pool_size=benchmark_config.num_dispatcher_threads,
+    )
 
-    # Start all threads
-    for thread in prefetch_threads:
-        thread.start()
-    for thread in dispatcher_threads:
-        thread.start()
-    for thread in processor_threads:
-        thread.start()
+    # Create results processor worker pool
+    pool_manager.create_pool(
+        name="processor",
+        worker_class=ResultsProcessorWorker,
+        worker_kwargs={
+            "output_queue": output_queue,
+            "service_metrics": service_metrics,
+            "generated_responses": generated_responses,
+            "responses_lock": responses_lock,
+            "pbar": pbar,
+            "pbar_lock": pbar_lock,
+            "scheduler": scheduler,
+        },
+        pool_size=benchmark_config.num_results_processor_threads,
+    )
+
+    # Start all thread pools
+    pool_manager.start_all()
 
     logger.info(
-        f"Started {len(prefetch_threads)} prefetch, {len(dispatcher_threads)} dispatcher, "
-        f"{len(processor_threads)} processor, and {req_launcher.get_worker_count()} worker threads"
+        f"Started {pool_manager.get_total_thread_count()} threads across thread pools "
+        f"and {req_launcher.get_worker_count()} worker threads"
     )
 
     # Monitor and wait for completion
@@ -251,26 +244,21 @@ def run_main_loop(
     # Signal threads to stop and wait for completion
     stop_event.set()
 
-    # Wait for all prefetch threads to finish
-    for thread in prefetch_threads:
-        thread.join()
-    logger.debug(f"All {len(prefetch_threads)} prefetch threads joined")
+    # Wait for prefetch threads to finish
+    pool_manager.join_pool("prefetch")
 
-    # Wait for all dispatcher threads to finish
-    for thread in dispatcher_threads:
-        thread.join()
-    logger.debug(f"All {len(dispatcher_threads)} dispatcher threads joined")
+    # Wait for dispatcher threads to finish
+    pool_manager.join_pool("dispatcher")
 
     # Wait for all worker threads to terminate
     req_launcher.wait_for_workers()
     logger.debug("Worker threads joined")
 
     # Signal the results processor threads to finish after draining and join them
-    for _ in range(len(processor_threads)):
+    num_processor_threads = benchmark_config.num_results_processor_threads
+    for _ in range(num_processor_threads):
         output_queue.put(None)  # One sentinel per processor thread
-    for thread in processor_threads:
-        thread.join()
-    logger.debug(f"All {len(processor_threads)} processor threads joined")
+    pool_manager.join_pool("processor")
 
     pbar.close()
 
@@ -521,7 +509,9 @@ def run_benchmark_console_only(
             stop_dashboard_event_processor()
 
 
-def _run_multiple_benchmarks_sequentially(benchmark_configs: List[BenchmarkConfig]) -> None:
+def _run_multiple_benchmarks_sequentially(
+    benchmark_configs: List[BenchmarkConfig],
+) -> None:
     """Run all benchmarks sequentially in a thread."""
     for i, benchmark_config in enumerate(benchmark_configs):
         logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")

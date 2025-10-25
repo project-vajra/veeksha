@@ -1,11 +1,9 @@
-import time
 from queue import Empty, Queue
-from threading import Lock, Thread
+from threading import Thread
 from typing import Any, List, Optional
 
 from veeksha.config.client import ClientConfig
 from veeksha.core.llm_clients import construct_client
-from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
 from veeksha.logger import init_logger
 from veeksha.metrics.request_metrics import RequestMetrics
 
@@ -90,7 +88,7 @@ def _emit_error_result(
 
         error_code = None
         # Check for HTTP error codes from requests library
-        if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+        if hasattr(e, "response") and hasattr(e.response, "status_code"):
             error_code = e.response.status_code
 
         metrics = RequestMetrics(

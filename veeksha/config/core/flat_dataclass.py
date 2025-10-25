@@ -676,7 +676,7 @@ def _add_field_to_parser(
         "action": action,
         "help": help_text,
     }
-    
+
     if not is_bool(field_type):
         arg_params["type"] = field_type
 
