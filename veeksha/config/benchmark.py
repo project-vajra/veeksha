@@ -90,18 +90,18 @@ class BenchmarkConfig:
             "Increase if results aggregation is a bottleneck."
         },
     )
-    max_concurrent_sessions: Optional[int] = field(
-        default=None,
-        metadata={
-            "help": "Maximum number of concurrent sessions allowed. None means unlimited."
-        },
-    )
     num_request_runner_threads: int = field(
         default=10,
         metadata={
             "help": "Number of async worker threads for making concurrent requests. "
             "With GIL-free Python (python -Xgil=0), these threads run in true parallel. "
             "Each thread runs a uvloop event loop for handling concurrent HTTP requests."
+        },
+    )
+    max_concurrent_sessions: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "Maximum number of concurrent sessions allowed. None means unlimited."
         },
     )
 

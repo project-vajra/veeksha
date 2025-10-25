@@ -32,6 +32,7 @@ class RequestDispatcher:
         self.benchmark_id = benchmark_id
         self.telemetry_enabled = telemetry_enabled
         self.request_writer = request_writer
+        self.request_writer = request_writer
         self.worker_contexts = worker_contexts
 
     def _select_worker_power_of_two(self) -> WorkerContext:

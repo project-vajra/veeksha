@@ -24,8 +24,8 @@ from veeksha.core.seeding import (
     SeedManager,
 )
 from veeksha.core.thread_pool import ThreadPoolManager
-from veeksha.core.workers import DispatchWorker, PrefetchWorker, ResultsProcessorWorker, DispatchedRequestWriter
 from veeksha.core.workers.request_runner_manager import RequestRunnerManager
+from veeksha.core.workers import DispatchWorker, PrefetchWorker, ResultsProcessorWorker, DispatchedRequestWriter
 from veeksha.dashboard.events import (
     BenchmarkStatusEvent,
 )

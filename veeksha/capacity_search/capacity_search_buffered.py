@@ -112,19 +112,12 @@ class CapacitySearch:
             wandb_group=effective_group,
         )
 
-        # Adjust num_threads to be min(num_threads, max_concurrent_sessions)
-        base_client_cfg = self.base_benchmark_config.client_config
-        original_num_threads = base_client_cfg.num_threads
+        original_num_threads = self.base_benchmark_config.num_request_runner_threads
         adjusted_num_threads = max(original_num_threads, buffer_size)
 
         logger.info(
             f"Buffer size: {buffer_size}, Original num_threads: {original_num_threads}, "
             f"Adjusted num_threads: {adjusted_num_threads}"
-        )
-
-        new_client_cfg = replace(  # type: ignore[call-overload]
-            cast(Any, base_client_cfg),
-            num_threads=adjusted_num_threads,
         )
 
         if adjusted_num_threads != original_num_threads:
@@ -137,8 +130,8 @@ class CapacitySearch:
         return replace(  # type: ignore[call-overload]
             cast(Any, self.base_benchmark_config),
             metrics_config=new_metrics_cfg,
-            client_config=new_client_cfg,
             max_concurrent_sessions=buffer_size,
+            num_request_runner_threads=adjusted_num_threads,
         )
 
     def _ensure_run_dir(self) -> None:
