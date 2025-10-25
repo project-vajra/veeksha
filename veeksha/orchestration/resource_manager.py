@@ -76,12 +76,12 @@ class ResourceManager:
                 if num_gpus > 0:
                     # Get GPU memory info using nvidia-smi
                     gpu_memory_info = self._get_gpu_memory_info()
-                    
+
                     gpus = []
                     for i in range(num_gpus):
                         total_memory_mb = 0
                         is_free = True
-                        
+
                         if i in gpu_memory_info:
                             total_memory_mb = int(gpu_memory_info[i]["total"])
                             free_memory_mb = gpu_memory_info[i]["free"]
@@ -93,7 +93,7 @@ class ResourceManager:
                                     f"{free_memory_mb / total_memory_mb * 100:.1f}% free memory "
                                     f"({free_memory_mb:.0f}/{total_memory_mb:.0f} MB), marking as unavailable"
                                 )
-                        
+
                         gpus.append(
                             GPUInfo(
                                 node_hostname=node_ip,
@@ -102,7 +102,7 @@ class ResourceManager:
                                 is_free=is_free,
                             )
                         )
-                    
+
                     self.nodes[node_ip] = NodeInfo(
                         hostname=node_ip,
                         num_gpus=num_gpus,
@@ -122,13 +122,13 @@ class ResourceManager:
 
     def _get_gpu_memory_info(self) -> Dict[int, Dict[str, float]]:
         """Get GPU memory information using nvidia-smi.
-        
+
         Returns:
             Dictionary mapping GPU ID to memory info (total, free, used in MB)
         """
         try:
             import subprocess
-            
+
             result = subprocess.run(
                 [
                     "nvidia-smi",
@@ -139,7 +139,7 @@ class ResourceManager:
                 text=True,
                 check=True,
             )
-            
+
             gpu_info = {}
             for line in result.stdout.strip().split("\n"):
                 if line.strip():
@@ -153,7 +153,7 @@ class ResourceManager:
                         "free": free_mb,
                         "used": used_mb,
                     }
-            
+
             return gpu_info
         except Exception as e:
             logger.warning(f"Failed to get GPU memory info: {e}")
@@ -429,7 +429,7 @@ class ResourceManager:
                     {"node_ip": node_ip, "gpu_id": gpu_id}
                     for node_ip, gpu_id in resource_mapping
                 ],
-                "worker_type": "GPU"
+                "worker_type": "GPU",
             }
         }
         return vajra_mapping

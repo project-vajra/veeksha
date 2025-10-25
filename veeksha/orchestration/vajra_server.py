@@ -125,8 +125,10 @@ class VajraServerManager(BaseServerManager):
 
             # Get node IP from allocated resources if available
             node_ip = "localhost"
-            if hasattr(self, '_allocated_job_id') and self._allocated_job_id:
-                vajra_mapping = self.resource_manager.get_vajra_resource_mapping(self._allocated_job_id)
+            if hasattr(self, "_allocated_job_id") and self._allocated_job_id:
+                vajra_mapping = self.resource_manager.get_vajra_resource_mapping(
+                    self._allocated_job_id
+                )
                 if vajra_mapping:
                     # Extract node IP from the first GPU in the mapping
                     resource_mapping = vajra_mapping["0"]["resource_mapping"]
@@ -136,6 +138,7 @@ class VajraServerManager(BaseServerManager):
                 # Fallback: Get local node IP from Ray
                 try:
                     import ray
+
                     ray.init(ignore_reinit_error=True)
                     nodes = ray.nodes()
                     for node in nodes:

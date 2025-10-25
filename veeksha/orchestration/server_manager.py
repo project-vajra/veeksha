@@ -73,26 +73,29 @@ class BaseServerManager(abc.ABC):
             if self.config.gpu_ids is None:
                 num_gpus = self.config.get_num_gpus()
                 logger.info(f"Auto-allocating {num_gpus} GPUs for server...")
-                
+
                 resource_mapping = self.resource_manager.wait_for_resources(
-                    num_gpus=num_gpus, 
+                    num_gpus=num_gpus,
                     timeout=300,  # 5 minute timeout
-                    job_id=f"server_{self.config.host}_{self.config.port}_{int(time.time())}"
+                    job_id=f"server_{self.config.host}_{self.config.port}_{int(time.time())}",
                 )
-                
+
                 if resource_mapping is None:
                     logger.error(f"Failed to allocate {num_gpus} GPUs for server")
                     return False
-                
+
                 # Extract GPU IDs from resource mapping
                 gpu_ids = [gpu_id for _, gpu_id in resource_mapping]
-                self._allocated_job_id = f"server_{self.config.host}_{self.config.port}_{int(time.time())}"
-                
+                self._allocated_job_id = (
+                    f"server_{self.config.host}_{self.config.port}_{int(time.time())}"
+                )
+
                 # Update config with allocated GPUs
                 # Create a new config object with the allocated gpu_ids
                 from dataclasses import replace
+
                 self.config = replace(self.config, gpu_ids=gpu_ids)
-                
+
                 logger.info(f"Allocated GPUs {gpu_ids} for server")
 
             command = self._build_launch_command()
@@ -275,7 +278,9 @@ class BaseServerManager(abc.ABC):
 
             # Release allocated resources if any
             if self._allocated_job_id is not None:
-                logger.info(f"Releasing allocated resources for job {self._allocated_job_id}")
+                logger.info(
+                    f"Releasing allocated resources for job {self._allocated_job_id}"
+                )
                 self.resource_manager.release_resources(self._allocated_job_id)
                 self._allocated_job_id = None
 
