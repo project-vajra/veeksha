@@ -69,6 +69,12 @@ class BenchmarkConfig:
             "help": "Enable verbose dispatch runtime telemetry logs (backlog, prefetch rate)."
         },
     )
+    max_concurrent_sessions: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "Maximum number of concurrent sessions allowed. None means unlimited."
+        },
+    )
 
     def __post_init__(self):
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:

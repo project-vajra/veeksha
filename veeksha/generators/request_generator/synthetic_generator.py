@@ -29,6 +29,7 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         client_config: ClientConfig,
         seed_manager: SeedManager,
         corpus_lines: Optional[List[str]] = None,
+        output_dir: Optional[str] = None,
     ):
         self.config = config
         self.tokenizer = tokenizer

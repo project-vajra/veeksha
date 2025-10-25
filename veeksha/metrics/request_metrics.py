@@ -15,10 +15,9 @@ class RequestMetrics:
     num_prompt_tokens: int
     num_output_tokens: int
     request_id: Optional[int] = None
+    session_id: Optional[int] = None
     error_msg: Optional[str] = None
     error_code: Optional[int] = None
-    # Request id for correlation when Response is None
-    request_id: Optional[int] = None
     benchmark_id: str = "default"
 
     @cached_property

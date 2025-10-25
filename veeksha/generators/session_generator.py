@@ -1,6 +1,6 @@
 import copy
 import os
-from typing import Any, Dict, List, cast
+from typing import Dict, List, Optional, cast, Any
 
 import numpy as np
 import pandas as pd
@@ -58,9 +58,11 @@ class SessionGenerator:
         self,
         config: SessionGeneratorConfig,
         seed_manager: SeedManager,
+        output_dir: Optional[str] = None,
     ):
         self.config = config
         self.seed_manager = seed_manager
+        self.output_dir = output_dir
         self.rng_factory = seed_manager.numpy_factory("sessions")
         self.session_interval_generator = RequestIntervalGeneratorRegistry.get(
             self.config.session_interval_generator_config.get_type(),
@@ -170,7 +172,13 @@ class SessionGenerator:
             suffix = save_suffix if save_suffix else ""
             return f"{base_name}_{'_'.join(params)}{suffix}.jsonl"
 
-        target_dir = self.config.trace_file_save_dir
+        # Use output_dir if trace_file_save_dir is None, otherwise use trace_file_save_dir
+        # Default to "./generated_traces" if both are None
+        target_dir = (
+            self.config.trace_file_save_dir
+            if self.config.trace_file_save_dir is not None
+            else (self.output_dir if self.output_dir is not None else "./generated_traces")
+        )
         file_name = os.path.join(target_dir, create_clean_filename())
         os.makedirs(os.path.dirname(file_name), exist_ok=True)
         requests_df.to_json(file_name, orient="records", lines=True)

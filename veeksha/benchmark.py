@@ -1,3 +1,4 @@
+import json
 import multiprocessing
 import os
 import platform
@@ -44,6 +45,70 @@ from veeksha.metrics.service_metrics import ServiceMetrics
 from veeksha.types import RequestGeneratorType
 
 logger = init_logger(__name__)
+
+
+class DispatchedRequestWriter:
+    """Writes dispatched request metadata to a JSONL file in streaming fashion."""
+
+    def __init__(self, output_file: str, enabled: bool = True):
+        """Initialize the writer.
+
+        Args:
+            output_file: Path to the output JSONL file
+            enabled: Whether writing is enabled
+        """
+        self.output_file = output_file
+        self.enabled = enabled
+        self.file_handle = None
+        self.lock = threading.Lock()
+
+        if self.enabled:
+            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            self.file_handle = open(output_file, "w", encoding="utf-8")
+            logger.info(f"Dispatched requests will be written to: {output_file}")
+
+    def write_request(self, request_config, dispatch_timestamp: float) -> None:
+        """Write a request's metadata to the file.
+
+        Args:
+            request_config: The RequestConfig object being dispatched
+            dispatch_timestamp: The timestamp when the request was dispatched
+        """
+        if not self.enabled or self.file_handle is None:
+            return
+
+        # Extract metadata from RequestConfig
+        _, prompt_length = request_config.prompt
+
+        request_data = {
+            "request_id": request_config.id,
+            "session_id": request_config.session_id,
+            "session_sequence_index": request_config.session_sequence_index,
+            "dispatch_timestamp": dispatch_timestamp,
+            "dispatch_delay": request_config.dispatch_delay,
+            "anchor_at_s": request_config.anchor_at_s,
+            "wait_after_prev_response_s": request_config.wait_after_prev_response_s,
+            "input_length": prompt_length,
+            "output_length": request_config.sampling_params.get("max_tokens") if request_config.sampling_params else None,
+            "model": request_config.model,
+            "llm_api": request_config.llm_api,
+            "benchmark_id": request_config.benchmark_id,
+            "cancel_session_on_failure": request_config.cancel_session_on_failure,
+            "sampling_params": request_config.sampling_params,
+        }
+
+        # Write to file with lock for thread safety
+        with self.lock:
+            self.file_handle.write(json.dumps(request_data) + "\n")
+            self.file_handle.flush()  # Ensure immediate write
+
+    def close(self) -> None:
+        """Close the file handle."""
+        if self.file_handle is not None:
+            with self.lock:
+                self.file_handle.close()
+                self.file_handle = None
+            logger.info(f"Closed dispatched requests file: {self.output_file}")
 
 
 def setup_api_environment(
@@ -131,7 +196,6 @@ def _initialize_min_tokens_support(benchmark_config: BenchmarkConfig) -> None:
                 f"min_tokens_param '{min_tokens_param}' supported in request body."
             )
 
-
 def run_main_loop(
     benchmark_config: BenchmarkConfig,
     request_generator: BaseRequestGenerator,
@@ -148,7 +212,19 @@ def run_main_loop(
     input_queue = Queue()
     output_queue = Queue()
     stop_event = threading.Event()
-    scheduler = DispatchScheduler()
+    scheduler = DispatchScheduler(max_concurrent_sessions=benchmark_config.max_concurrent_sessions)
+
+    # Initialize dispatched request writer if enabled
+    request_writer = None
+    if benchmark_config.metrics_config.dump_dispatched_requests:
+        output_file = os.path.join(
+            benchmark_config.metrics_config.output_dir,
+            benchmark_config.metrics_config.dispatched_requests_file,
+        )
+        request_writer = DispatchedRequestWriter(
+            output_file=output_file,
+            enabled=True,
+        )
 
     # Initialize request launcher
     req_launcher = RequestsLauncher(
@@ -172,6 +248,7 @@ def run_main_loop(
             req_launcher,
             benchmark_id,
             benchmark_config.runtime_telemetry_enabled,
+            request_writer,
         ),
     )
 
@@ -210,6 +287,10 @@ def run_main_loop(
     # Signal the results processor to finish after draining and join it
     output_queue.put(None)
     processor_thread.join()
+
+    # Close the request writer if it was opened
+    if request_writer is not None:
+        request_writer.close()
 
     pbar.close()
 
@@ -285,6 +366,7 @@ def run_benchmark(
         tokenizer=tokenizer,
         client_config=benchmark_config.client_config,
         seed_manager=seed_manager,
+        output_dir=benchmark_config.metrics_config.output_dir,
         **request_generator_params,
     )
 

@@ -4,6 +4,7 @@ from typing import List, Optional
 import wandb
 
 from veeksha.capacity_search.capacity_search import CapacitySearch, SearchResult
+from veeksha.capacity_search.capacity_search_buffered import CapacitySearch as CapacitySearchBuffered
 from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.logger import init_logger
 
@@ -36,6 +37,17 @@ def run_search(
         # required so that wandb doesn't delay flush of child logs
         wandb.finish(quiet=True)
 
+    # Choose the appropriate search class based on search_mode
+    search_mode = capacity_search_config.search_mode.lower()
+    if search_mode == "buffer_size":
+        search_class = CapacitySearchBuffered
+        logger.info("Using buffer size capacity search mode")
+    elif search_mode == "qps":
+        search_class = CapacitySearch
+        logger.info("Using QPS capacity search mode")
+    else:
+        raise ValueError(f"Invalid search_mode: {search_mode}. Must be 'qps' or 'buffer_size'")
+
     # Initialize dashboard if enabled
     dashboard_cfg = capacity_search_config.get_dashboard_config()
     if dashboard_cfg.enabled:
@@ -54,7 +66,7 @@ def run_search(
         result_container: dict[str, Optional[SearchResult]] = {"result": None}
 
         def run_search_thread():
-            capacity_search = CapacitySearch(capacity_search_config)
+            capacity_search = search_class(capacity_search_config)
             result_container["result"] = capacity_search.search()
 
         search_thread = threading.Thread(target=run_search_thread, daemon=False)
@@ -72,7 +84,7 @@ def run_search(
         return result_container["result"]
     else:
         # No dashboard - run normally
-        capacity_search = CapacitySearch(capacity_search_config)
+        capacity_search = search_class(capacity_search_config)
         return capacity_search.search()
 
 

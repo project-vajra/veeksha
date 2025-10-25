@@ -17,10 +17,16 @@ logger = init_logger(__name__)
 class CapacitySearchConfig:
     """Configuration for capacity search benchmark.
 
-    This special benchmark runs multiple benchmarks at different QPS values to
-    find the maximum QPS under the specified SLOs.
+    This special benchmark runs multiple benchmarks at different QPS values or
+    buffer sizes to find the maximum value under the specified SLOs.
     """
 
+    search_mode: str = field(
+        default="qps",
+        metadata={
+            "help": "Search mode: 'qps' to search for maximum QPS, or 'buffer_size' to search for maximum concurrent sessions buffer size."
+        },
+    )
     dashboard_config: Optional[DashboardConfig] = field(
         default=None,
         metadata={
@@ -29,7 +35,7 @@ class CapacitySearchConfig:
     )
     start_qps: float = field(
         default=1,
-        metadata={"help": "The starting QPS for the capacity search."},
+        metadata={"help": "The starting QPS for the capacity search (or starting buffer size if search_mode='buffer_size')."},
     )
     num_qps_steps: int = field(
         default=10,

@@ -81,6 +81,7 @@ class LMEvalRequestGenerator:
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         client_config: ClientConfig,
         seed_manager: SeedManager,
+        output_dir: Optional[str] = None,
     ):
         self.config = config
         self.limit = self.config.limit

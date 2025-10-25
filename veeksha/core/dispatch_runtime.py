@@ -50,6 +50,7 @@ def dispatch_requests(
     req_launcher: RequestsLauncher,
     benchmark_id: str = "default",
     telemetry_enabled: bool = False,
+    request_writer = None,
 ) -> None:
     """Thread function to generate and dispatch requests."""
     num_errored_requests_handled = 0
@@ -205,6 +206,11 @@ def dispatch_requests(
 
         ready.benchmark_id = benchmark_id  # dashboard
         input_queue.put(ready)
+
+        # Write request metadata to file if enabled
+        if request_writer is not None:
+            request_writer.write_request(ready, time.time())
+
         with prefetch_stats_lock:
             if scheduled_backlog > 0:
                 scheduled_backlog -= 1

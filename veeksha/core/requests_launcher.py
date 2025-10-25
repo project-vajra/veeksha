@@ -256,8 +256,27 @@ class RequestsLauncher:
         for _ in range(total_slots):
             self.input_queue.put(None)
 
-    def wait_for_clients(self) -> None:
-        """Wait for all clients to complete their tasks and exit."""
+    def wait_for_clients(self, timeout: float = 2.0) -> None:
+        """Wait for all clients to complete their tasks and exit.
+
+        Args:
+            timeout: Maximum time to wait for each client to join (seconds)
+        """
         self.complete_tasks()
-        for client in self.clients:
-            client.join()
+
+        for i, client in enumerate(self.clients):
+            logger.info(f"Waiting for client {i} to join (timeout={timeout}s)...")
+            client.join(timeout=timeout)
+            if client.is_alive():
+                logger.error(
+                    f"Client {i} (PID={client.pid}) did not exit within {timeout}s, "
+                    "terminating forcefully"
+                )
+                client.terminate()
+                client.join(timeout=5.0)
+                if client.is_alive():
+                    logger.error(f"Client {i} still alive after terminate, killing")
+                    client.kill()
+                    client.join()
+            else:
+                logger.info(f"Client {i} joined successfully")

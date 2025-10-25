@@ -118,10 +118,15 @@ class MetricStore:
             logger.info("wandb disabled; not initialized")
             return
 
+        # Prepend group to run name if group is specified
+        run_name = self.wandb_run_name
+        if self.wandb_group and self.wandb_run_name:
+            run_name = f"{self.wandb_group}_{self.wandb_run_name}"
+
         wandb.init(
             project=self.wandb_project,
             group=self.wandb_group,
-            name=self.wandb_run_name,
+            name=run_name,
             config={
                 "timeout": self.timeout,
                 "max_requests": self.max_requests,

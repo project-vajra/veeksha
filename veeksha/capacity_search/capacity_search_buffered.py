@@ -15,18 +15,6 @@ from veeksha.capacity_search.slo import SloSet
 from veeksha.capacity_search.slo_evaluator import SloEvaluator
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.capacity_search import CapacitySearchConfig
-from veeksha.config.generators.request_generator.base_generator import (
-    BaseRequestGeneratorConfig,
-)
-from veeksha.config.generators.request_generator.lmeval_generator import (
-    LmevalRequestGeneratorConfig,
-)
-from veeksha.config.generators.request_generator.synthetic_generator import (
-    SyntheticRequestGeneratorConfig,
-)
-from veeksha.config.generators.request_generator.trace_generator import (
-    TraceRequestGeneratorConfig,
-)
 from veeksha.config.utils import dataclass_to_dict, get_config_hash
 from veeksha.constants.capacity_search_constants import (
     QPS_INCREASE_SCALE,
@@ -40,8 +28,8 @@ logger = init_logger(__name__)
 class SearchResult(TypedDict, total=False):
     """Result of a capacity search."""
 
-    max_qps_under_sla: Optional[float]
-    slo_metrics_at_max_qps: Optional[Dict[str, float]]
+    max_buffer_size_under_sla: Optional[int]
+    slo_metrics_at_max_buffer_size: Optional[Dict[str, float]]
 
 
 class CapacitySearch:
@@ -51,7 +39,7 @@ class CapacitySearch:
     ) -> None:
         self.capacity_search_config = capacity_search_config
 
-        # will be cloned for each QPS attempt (changing output_dir, wandb_run_name)
+        # will be cloned for each buffer size attempt (changing output_dir, wandb_run_name)
         self.base_benchmark_config: BenchmarkConfig = (
             self.capacity_search_config.benchmark_config
         )
@@ -84,11 +72,11 @@ class CapacitySearch:
         )
         self._capsearch_cache = self._load_cache()
 
-    def _build_benchmark_config_for_qps(
-        self, qps: float, run_dir: str
+    def _build_benchmark_config_for_buffer_size(
+        self, buffer_size: int, run_dir: str
     ) -> BenchmarkConfig:
         """Return a new BenchmarkConfig with metrics_config.output_dir pointing to run_dir and
-        wandb_run_name encoding QPS.
+        wandb_run_name encoding buffer_size, and max_concurrent_sessions set to buffer_size.
         """
 
         # propagate wandb project from capacity search if provided and enable logging
@@ -117,82 +105,18 @@ class CapacitySearch:
         new_metrics_cfg = replace(  # type: ignore[call-overload]
             cast(Any, base_metrics_cfg),
             output_dir=run_dir,
-            wandb_run_name=f"qps_{qps}_model_{self.base_benchmark_config.client_config.model}",
+            wandb_run_name=f"buffer_{buffer_size}_model_{self.base_benchmark_config.client_config.model}",
             should_write_metrics_to_wandb=enable_wandb,
             wandb_project=propagated_project,
             wandb_group=effective_group,
         )
-        # Build a request_generator_config adjusted for this attempt's QPS
-        # using dataclasses.replace to respect frozen dataclasses.
-        new_req_gen_cfg = self._apply_qps_to_request_generator_config(
-            self.base_benchmark_config.request_generator_config, qps
-        )
 
-        if new_req_gen_cfg is self.base_benchmark_config.request_generator_config:
-            logger.warning(
-                f"QPS override (qps={qps}) not applied to request generator type {type(self.base_benchmark_config.request_generator_config).__name__}; run will use the base request rate.",
-            )
-
-        # copy of benchmark_config with updated metrics and request generator config
+        # copy of benchmark_config with updated metrics and max_concurrent_sessions
         return replace(  # type: ignore[call-overload]
             cast(Any, self.base_benchmark_config),
             metrics_config=new_metrics_cfg,
-            request_generator_config=new_req_gen_cfg,  # type: ignore[arg-type]
+            max_concurrent_sessions=buffer_size,
         )
-
-    def _apply_qps_to_request_generator_config(
-        self,
-        base_req_gen_cfg: BaseRequestGeneratorConfig,
-        qps: float,
-    ) -> BaseRequestGeneratorConfig:
-        """Return a copy of request generator config with QPS applied.
-
-        - Synthetic: set interval_generator_config.qps
-        - Trace + sessions: set session_interval_generator_config.qps
-        - LMEval: set interval_generator_config.qps
-        - Trace + use_trace_sessions: set session_interval_generator_config.qps (resamples session arrival)
-        """
-        new_req_gen_cfg: BaseRequestGeneratorConfig = base_req_gen_cfg
-
-        if isinstance(base_req_gen_cfg, SyntheticRequestGeneratorConfig):
-            interval_cfg = base_req_gen_cfg.interval_generator_config
-            if hasattr(interval_cfg, "qps"):
-                new_interval_cfg = replace(cast(Any, interval_cfg), qps=qps)  # type: ignore[call-overload]
-                new_req_gen_cfg = replace(  # type: ignore[call-overload]
-                    cast(Any, base_req_gen_cfg),
-                    interval_generator_config=new_interval_cfg,
-                )
-        elif isinstance(base_req_gen_cfg, LmevalRequestGeneratorConfig):
-            interval_cfg = base_req_gen_cfg.interval_generator_config
-            if hasattr(interval_cfg, "qps"):
-                new_interval_cfg = replace(cast(Any, interval_cfg), qps=qps)  # type: ignore[call-overload]
-                new_req_gen_cfg = replace(  # type: ignore[call-overload]
-                    cast(Any, base_req_gen_cfg),
-                    interval_generator_config=new_interval_cfg,
-                )
-        elif isinstance(base_req_gen_cfg, TraceRequestGeneratorConfig):
-            session_gen_cfg = base_req_gen_cfg.session_generator_config
-            if session_gen_cfg is not None:
-                session_interval_cfg = session_gen_cfg.session_interval_generator_config
-                if session_interval_cfg is not None and hasattr(
-                    session_interval_cfg, "qps"
-                ):
-                    new_session_interval_cfg = replace(  # type: ignore[call-overload]
-                        cast(Any, session_interval_cfg), qps=qps
-                    )
-                    new_session_gen_cfg = replace(  # type: ignore[call-overload]
-                        cast(Any, session_gen_cfg),
-                        session_interval_generator_config=new_session_interval_cfg,
-                    )
-                    new_req_gen_cfg = replace(  # type: ignore[call-overload]
-                        cast(Any, new_req_gen_cfg),
-                        session_generator_config=new_session_gen_cfg,
-                    )
-                    logger.info(
-                        f"Capacity search: detected session trace generator; interpreting qps={qps} as sessions per second (SPS)."
-                    )
-
-        return new_req_gen_cfg
 
     def _ensure_run_dir(self) -> None:
         if self.job_output_dir is None:
@@ -208,28 +132,28 @@ class CapacitySearch:
                 json.dump(self.full_config, f, indent=4)
 
     def _run_capacity_search_benchmark(
-        self, qps: float
+        self, buffer_size: int
     ) -> Tuple[bool, Optional[Dict[str, float]], str, bool]:
-        qps_key = str(qps)
+        buffer_key = str(buffer_size)
 
-        cached_iter = self._capsearch_cache.get("iterations", {}).get(qps_key)
+        cached_iter = self._capsearch_cache.get("iterations", {}).get(buffer_key)
         if cached_iter is not None:
-            logger.info(f"Using capacity search cache for QPS {qps}")
+            logger.info(f"Using capacity search cache for buffer size {buffer_size}")
             return (
                 bool(cached_iter.get("is_under_sla", False)),
                 cached_iter.get("slo_metrics", {}),
-                qps_key,
+                buffer_key,
                 True,  # from_cache = True
             )
 
         # no cache: ensure per-run dir exists now
         self._ensure_run_dir()
         assert self.job_output_dir is not None
-        qps_run_dir = os.path.join(self.job_output_dir, str(qps))
-        os.makedirs(qps_run_dir, exist_ok=True)
+        buffer_run_dir = os.path.join(self.job_output_dir, str(buffer_size))
+        os.makedirs(buffer_run_dir, exist_ok=True)
 
-        # isolated benchmark config for this QPS
-        benchmark_config = self._build_benchmark_config_for_qps(qps, qps_run_dir)
+        # isolated benchmark config for this buffer size
+        benchmark_config = self._build_benchmark_config_for_buffer_size(buffer_size, buffer_run_dir)
 
         service_metrics = run_benchmark_wrapped(benchmark_config)
 
@@ -238,20 +162,20 @@ class CapacitySearch:
         )
 
         self._cache_iteration(
-            qps=qps_key,
+            buffer_size=buffer_key,
             is_under_sla=is_under_sla,
             slo_metrics=slo_metrics_dict,
-            run_id=qps_key,
+            run_id=buffer_key,
         )
 
-        return is_under_sla, slo_metrics_dict, qps_key, False  # from_cache = False
+        return is_under_sla, slo_metrics_dict, buffer_key, False  # from_cache = False
 
-    def _read_wandb_path_for_qps(self, qps_key: str) -> Optional[str]:
-        """Read persisted wandb run path for a given QPS attempt, if present."""
+    def _read_wandb_path_for_buffer_size(self, buffer_key: str) -> Optional[str]:
+        """Read persisted wandb run path for a given buffer size attempt, if present."""
         try:
             if self.job_output_dir is None:
                 return None
-            target_dir = os.path.join(self.job_output_dir, str(qps_key))
+            target_dir = os.path.join(self.job_output_dir, str(buffer_key))
             run_info_path = os.path.join(target_dir, "wandb_run.json")
             if not os.path.exists(run_info_path):
                 candidates = glob.glob(
@@ -267,11 +191,11 @@ class CapacitySearch:
             run_id = info.get("id")
             return f"{entity}/{project}/{run_id}"
         except Exception:
-            logger.debug(f"Could not read wandb path for QPS {qps_key}", exc_info=True)
+            logger.debug(f"Could not read wandb path for buffer size {buffer_key}", exc_info=True)
             return None
 
     def _log_post_search_summary(self, benchmark_id: str) -> None:
-        """Create a standalone wandb run with a QPS vs SLO summary table/plot."""
+        """Create a standalone wandb run with a buffer size vs SLO summary table/plot."""
         if self.capacity_search_config.wandb_project is None:
             return
         # build dataframe from cached iterations
@@ -280,16 +204,16 @@ class CapacitySearch:
             return
         rows = []
         all_metric_keys: set[str] = set()
-        for qps_key, entry in iterations.items():
+        for buffer_key, entry in iterations.items():
             slo_metrics = entry.get("slo_metrics", {}) or {}
             all_metric_keys.update(slo_metrics.keys())
-        for qps_key, entry in iterations.items():
-            row: Dict[str, Any] = {"qps": float(qps_key)}
+        for buffer_key, entry in iterations.items():
+            row: Dict[str, Any] = {"buffer_size": int(buffer_key)}
             slo_metrics = entry.get("slo_metrics", {}) or {}
             for k in all_metric_keys:
                 row[k] = slo_metrics.get(k)
             rows.append(row)
-        df = pd.DataFrame(sorted(rows, key=lambda r: r["qps"]))
+        df = pd.DataFrame(sorted(rows, key=lambda r: r["buffer_size"]))
 
         # use the same effective group as attempts to visually group all runs
         auto_group = (
@@ -306,17 +230,17 @@ class CapacitySearch:
         run = wandb.init(
             project=self.capacity_search_config.wandb_project,
             group=effective_group,
-            name=f"capsearch-summary-{benchmark_id}",
+            name=f"capsearch-buffered-summary-{benchmark_id}",
             config={
                 "benchmark_id": benchmark_id,
                 "model": self.base_benchmark_config.client_config.model,
-                "start_qps": self.capacity_search_config.start_qps,
+                "start_buffer_size": self.capacity_search_config.start_qps,  # reusing start_qps config
                 "max_iterations": self.capacity_search_config.max_iterations,
                 "slos": str(self.slo_evaluator.slo_set),
             },
         )
         try:
-            wandb.log({"capsearch_qps_slo_table": wandb.Table(dataframe=df)}, step=0)
+            wandb.log({"capsearch_buffer_slo_table": wandb.Table(dataframe=df)}, step=0)
         finally:
             wandb.finish(quiet=True)
 
@@ -343,11 +267,11 @@ class CapacitySearch:
 
     def search(self) -> SearchResult:
         """
-        Perform binary search to find the maximum QPS under the SLO
+        Perform binary search to find the maximum buffer size under the SLO
         """
 
         logger.info(
-            f"Starting search. Start QPS: {self.capacity_search_config.start_qps}",
+            f"Starting search. Start buffer size: {self.capacity_search_config.start_qps}",  # reusing start_qps config
         )
         logger.info(f"SLOs: {self.slo_evaluator.slo_set}")
 
@@ -368,16 +292,16 @@ class CapacitySearch:
                 f"wandb: enabled | project={effective_project} | group={effective_group}"
             )
 
-        left = 0
-        right = self.capacity_search_config.start_qps * 2
-        qps = 0
-        last_qps = 0
-        max_qps_under_sla = None
-        min_qps_over_sla = 2**32
+        left = 1  # minimum buffer size of 1
+        right = int(self.capacity_search_config.start_qps * 2)  # reusing start_qps config as start buffer size
+        buffer_size = 0
+        last_buffer_size = 0
+        max_buffer_size_under_sla = None
+        min_buffer_size_over_sla = 2**32
 
-        slo_metrics_at_max_qps = None
+        slo_metrics_at_max_buffer_size = None
         best_run_id = None
-        found_valid_qps = False
+        found_valid_buffer_size = False
         any_new_runs = False
 
         # Generate benchmark_id from base config for dashboard tracking
@@ -410,48 +334,46 @@ class CapacitySearch:
 
         for iteration in range(self.capacity_search_config.max_iterations):
             logger.info(f"Searching between {left} and {right}")
-            # stopping condition - we have reached the minimum granularity
-            if (
-                abs(left - right)
-                < self.capacity_search_config.min_search_granularity * qps / 100
-            ):
+            # stopping condition - we have reached the minimum granularity (buffer sizes are integers)
+            if abs(left - right) <= 1:
                 break
 
-            qps = round((left + right) / 2, 2)
+            buffer_size = int((left + right) / 2)
 
-            if qps == last_qps:
+            if buffer_size == last_buffer_size:
                 break
 
-            last_qps = qps
+            last_buffer_size = buffer_size
 
             (
                 is_under_sla,
                 metrics_dict,
                 run_id,
                 from_cache,
-            ) = self._run_capacity_search_benchmark(qps)
+            ) = self._run_capacity_search_benchmark(buffer_size)
 
             if not from_cache:
                 any_new_runs = True
 
             if is_under_sla:
-                found_valid_qps = True
-                max_qps_under_sla = qps
-                slo_metrics_at_max_qps = metrics_dict
+                found_valid_buffer_size = True
+                max_buffer_size_under_sla = buffer_size
+                slo_metrics_at_max_buffer_size = metrics_dict
                 best_run_id = run_id
 
-                if qps > VICINITY_THRESHOLD * right:
-                    right = min(right * QPS_INCREASE_SCALE, min_qps_over_sla)
+                # For buffer sizes, if we're near the top, expand search range
+                if buffer_size > VICINITY_THRESHOLD * right:
+                    right = min(int(right * QPS_INCREASE_SCALE), min_buffer_size_over_sla)
 
-                left = qps
+                left = buffer_size
             else:
-                right = qps
-                min_qps_over_sla = min(min_qps_over_sla, qps)
+                right = buffer_size
+                min_buffer_size_over_sla = min(min_buffer_size_over_sla, buffer_size)
 
             # Emit event after each iteration
             emit_dashboard_event(
                 CapacitySearchEvent(
-                    current_qps=qps,
+                    current_qps=float(buffer_size),  # using qps field for buffer_size for compatibility
                     is_under_sla=is_under_sla,
                     slo_metrics=metrics_dict or {},
                     slo_target=str(self.slo_evaluator.slo_set),
@@ -459,32 +381,32 @@ class CapacitySearch:
                     total_iterations=self.capacity_search_config.max_iterations,
                     search_left=left,
                     search_right=right,
-                    best_qps=max_qps_under_sla,
-                    best_slo_metrics=slo_metrics_at_max_qps,
+                    best_qps=float(max_buffer_size_under_sla) if max_buffer_size_under_sla else None,  # using qps field for buffer_size
+                    best_slo_metrics=slo_metrics_at_max_buffer_size,
                     is_complete=False,
                     from_cache=from_cache,
                     benchmark_id=benchmark_id,
                 )
             )
 
-        if not found_valid_qps:
+        if not found_valid_buffer_size:
             logger.info(
-                f"No valid QPS found.",
+                f"No valid buffer size found.",
             )
             return {}
 
         logger.info(
             f"{'-'*100}\n"
-            f"Max QPS found by Capacity Search with: \n"
+            f"Max buffer size found by Capacity Search with: \n"
             f"    * SLOs: {self.slo_evaluator.slo_set} \n"
-            f"    * SLO Metrics: {slo_metrics_at_max_qps} \n"
+            f"    * SLO Metrics: {slo_metrics_at_max_buffer_size} \n"
             f"    * Best Run ID: {best_run_id} \n"
-            f"is {max_qps_under_sla} \n"
+            f"is {max_buffer_size_under_sla} \n"
             f"{'-'*100}\n"
         )
 
         if any_new_runs and wandb_enabled and best_run_id is not None:
-            best_path = self._read_wandb_path_for_qps(str(best_run_id))
+            best_path = self._read_wandb_path_for_buffer_size(str(best_run_id))
             if best_path:
                 try:
                     api = wandb.Api()
@@ -499,24 +421,24 @@ class CapacitySearch:
                     )
 
         self._cache_final(
-            max_qps_under_sla=max_qps_under_sla,
-            slo_metrics_at_max_qps=slo_metrics_at_max_qps,
+            max_buffer_size_under_sla=max_buffer_size_under_sla,
+            slo_metrics_at_max_buffer_size=slo_metrics_at_max_buffer_size,
             best_run_id=best_run_id,
         )
 
         # Emit final completion event
         emit_dashboard_event(
             CapacitySearchEvent(
-                current_qps=max_qps_under_sla or 0.0,
+                current_qps=float(max_buffer_size_under_sla) if max_buffer_size_under_sla else 0.0,
                 is_under_sla=True,
-                slo_metrics=slo_metrics_at_max_qps or {},
+                slo_metrics=slo_metrics_at_max_buffer_size or {},
                 slo_target=str(self.slo_evaluator.slo_set),
                 iteration=self.capacity_search_config.max_iterations,
                 total_iterations=self.capacity_search_config.max_iterations,
                 search_left=left,
                 search_right=right,
-                best_qps=max_qps_under_sla,
-                best_slo_metrics=slo_metrics_at_max_qps,
+                best_qps=float(max_buffer_size_under_sla) if max_buffer_size_under_sla else None,
+                best_slo_metrics=slo_metrics_at_max_buffer_size,
                 is_complete=True,
                 benchmark_id=benchmark_id,
             )
@@ -527,8 +449,8 @@ class CapacitySearch:
             self._log_post_search_summary(benchmark_id)
 
         return {
-            "max_qps_under_sla": max_qps_under_sla,
-            "slo_metrics_at_max_qps": slo_metrics_at_max_qps,
+            "max_buffer_size_under_sla": max_buffer_size_under_sla,
+            "slo_metrics_at_max_buffer_size": slo_metrics_at_max_buffer_size,
         }
 
     def _load_cache(self) -> Dict[str, Any]:
@@ -572,14 +494,14 @@ class CapacitySearch:
 
     def _cache_iteration(
         self,
-        qps: str,
+        buffer_size: str,
         is_under_sla: bool,
         slo_metrics: Dict[str, float],
         run_id: str,
     ) -> None:
         if "iterations" not in self._capsearch_cache:
             self._capsearch_cache["iterations"] = {}
-        self._capsearch_cache["iterations"][qps] = {
+        self._capsearch_cache["iterations"][buffer_size] = {
             "is_under_sla": is_under_sla,
             "slo_metrics": slo_metrics,
             "run_id": run_id,
@@ -588,13 +510,13 @@ class CapacitySearch:
 
     def _cache_final(
         self,
-        max_qps_under_sla: Optional[float],
-        slo_metrics_at_max_qps: Optional[Dict[str, float]],
+        max_buffer_size_under_sla: Optional[int],
+        slo_metrics_at_max_buffer_size: Optional[Dict[str, float]],
         best_run_id: Optional[str],
     ) -> None:
         self._capsearch_cache["final"] = {
-            "max_qps_under_sla": max_qps_under_sla,
-            "slo_metrics_at_max_qps": slo_metrics_at_max_qps,
+            "max_buffer_size_under_sla": max_buffer_size_under_sla,
+            "slo_metrics_at_max_buffer_size": slo_metrics_at_max_buffer_size,
             "best_run_id": best_run_id,
             "slos": str(self.slo_evaluator.slo_set),
         }
