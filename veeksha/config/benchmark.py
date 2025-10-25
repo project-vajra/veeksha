@@ -90,6 +90,12 @@ class BenchmarkConfig:
             "Increase if results aggregation is a bottleneck."
         },
     )
+    max_concurrent_sessions: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "Maximum number of concurrent sessions allowed. None means unlimited."
+        },
+    )
 
     def __post_init__(self):
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:

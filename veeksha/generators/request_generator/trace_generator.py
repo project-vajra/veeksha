@@ -1,6 +1,7 @@
 import ast
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
+import pandas as pd
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 from veeksha.config.client import ClientConfig
@@ -29,6 +30,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         client_config: ClientConfig,
         seed_manager: SeedManager,
         corpus_lines: Optional[List[str]] = None,
+        output_dir: Optional[str] = None,
     ):
         from veeksha.generators.session_generator import (
             SessionGenerator,
@@ -128,6 +130,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
             session_generator = SessionGenerator(
                 self.config.session_generator_config,
                 seed_manager=self.seed_manager.child("session"),
+                output_dir=output_dir,
             )
 
             self.trace_df = self.trace_df.pipe(
@@ -152,6 +155,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     session_df_for_saving,
                     save_suffix=save_suffix,
                 )
+
+        # Add num_requests_in_session column
+        self.trace_df["num_requests_in_session"] = self.trace_df.groupby("session_id").transform('size')
 
         self.request_idx = 0
         self._wrap_warning_logged = False
@@ -180,6 +186,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
         """Annotate trace-provided sessions with sequence index, intra-session wait, and anchor.
 
         Assumes `self.trace_df` has `session_id` and `timestamp` columns in seconds.
+
+        If session_generator_config is provided, resample session arrival times using
+        the session_interval_generator while preserving intra-session timing.
         """
         if (
             self.trace_df.empty
@@ -187,6 +196,62 @@ class TraceRequestGenerator(BaseRequestGenerator):
             or "timestamp" not in self.trace_df.columns
         ):
             return
+
+        # Check if we should resample session arrival times
+        resample_sessions = (
+            self.config.session_generator_config is not None
+            and self.config.session_generator_config.session_interval_generator_config is not None
+        )
+
+        if resample_sessions:
+            logger.info(
+                f"Resampling session arrival times using "
+                f"{self.config.session_generator_config.session_interval_generator_config.get_type()} "
+                f"interval generator (use_trace_sessions=True, but applying QPS-based session arrival)"
+            )
+            # Resample session arrival times while preserving intra-session timing
+            from veeksha.generators.interval_generator.generator_registry import (
+                RequestIntervalGeneratorRegistry,
+            )
+
+            session_interval_cfg = self.config.session_generator_config.session_interval_generator_config
+            session_interval_generator = RequestIntervalGeneratorRegistry.get(
+                session_interval_cfg.get_type(),
+                session_interval_cfg,
+                rng=self.session_rng_factory(),
+            )
+
+            # Get unique sessions sorted by their first timestamp
+            session_groups = self.trace_df.groupby("session_id")
+            sessions_with_start_time = [
+                (session_id, group["timestamp"].min(), group)
+                for session_id, group in session_groups
+            ]
+            sessions_with_start_time.sort(key=lambda x: x[1])
+
+            # Resample session arrival times
+            current_timestamp = 0.0
+            resampled_sessions = []
+
+            for session_id, original_start, group in sessions_with_start_time:
+                # Get next session arrival interval
+                next_interval = session_interval_generator.get_next_inter_request_time()
+
+                # Shift all requests in this session to start at current_timestamp
+                group = group.copy()
+                time_offset = current_timestamp - original_start
+                group["timestamp"] = group["timestamp"] + time_offset
+
+                resampled_sessions.append(group)
+                current_timestamp += next_interval
+
+            # Combine resampled sessions
+            self.trace_df = pd.concat(resampled_sessions, ignore_index=True)
+        else:
+            logger.info(
+                "Using original session arrival times from trace "
+                "(use_trace_sessions=True, no session_interval_generator_config provided)"
+            )
 
         def _annotate_group(g):
             g = g.sort_values("timestamp").copy()
@@ -200,6 +265,8 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self.trace_df = self.trace_df.groupby("session_id", group_keys=False).apply(
             _annotate_group
         )
+
+        self.trace_df = self.trace_df.sort_values(by=['timestamp', 'session_id'])
 
     def _apply_session_fields(
         self,
@@ -227,6 +294,8 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         if not set_sequence_fields:
             return
+        
+        request_config.num_requests_in_session = request_to_send["num_requests_in_session"]
 
         seq_idx = int(request_to_send.get("session_sequence_index", 0))
         request_config.session_sequence_index = seq_idx
@@ -368,7 +437,11 @@ class TraceRequestGenerator(BaseRequestGenerator):
         for hid in unique_ids:
             if hid in self.past_prompt_ids:
                 continue
-            chunk = self.generate_unique_encoding(int(hid))
+            try:
+                chunk = self.generate_unique_encoding(int(hid))
+            except:
+                import pdb
+                pdb.set_trace()
             block = self.pad_to_block_size(chunk, block_size)
             self.past_prompt_ids[hid] = block
             self.past_prompts[hid] = self.decode(block)

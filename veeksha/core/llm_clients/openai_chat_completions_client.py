@@ -238,7 +238,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         except requests.Timeout:
             error_response_code = 408
             error_msg = error_msg or "Request timed out"
-            logger.warning(f"Timeout Error: ({error_response_code}) {error_msg}")
+            # logger.warning(f"Timeout Error: ({error_response_code}) {error_msg}")
         except Exception as e:
             error_response_code = error_response_code or 520
             error_msg = error_msg or str(e)
@@ -248,6 +248,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
 
         metrics = RequestMetrics(
             request_id=request_config.id,
+            session_id=request_config.session_id,
             request_dispatched_at=request_dispatched_at,
             inter_token_times=inter_token_times,
             num_prompt_tokens=prompt_len,

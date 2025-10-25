@@ -43,3 +43,15 @@ class MetricsConfig:
         default=None,
         metadata={"help": "The wandb sweep name to log metrics to."},
     )
+    dump_dispatched_requests: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to dump dispatched requests to a JSONL file in streaming fashion."
+        },
+    )
+    dispatched_requests_file: str = field(
+        default="dispatched_requests.jsonl",
+        metadata={
+            "help": "Filename for dumped dispatched requests (saved in output_dir)."
+        },
+    )

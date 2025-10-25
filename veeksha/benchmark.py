@@ -25,7 +25,7 @@ from veeksha.core.seeding import (
     SeedManager,
 )
 from veeksha.core.thread_pool import ThreadPoolManager
-from veeksha.core.workers import DispatchWorker, PrefetchWorker, ResultsProcessorWorker
+from veeksha.core.workers import DispatchWorker, PrefetchWorker, ResultsProcessorWorker, DispatchedRequestWriter
 from veeksha.dashboard.events import (
     BenchmarkStatusEvent,
 )
@@ -153,7 +153,7 @@ def run_main_loop(
     output_queue = Queue()  # Worker output queue
     ready_queue = Queue()  # Prefetch -> Dispatcher queue
     stop_event = threading.Event()
-    scheduler = DispatchScheduler()
+    scheduler = DispatchScheduler(max_concurrent_sessions=benchmark_config.max_concurrent_sessions)
 
     # Create benchmark context
     benchmark_context = BenchmarkContext(
@@ -193,6 +193,14 @@ def run_main_loop(
     )
 
     # Create dispatcher worker pool
+    output_file = os.path.join(
+        benchmark_config.metrics_config.output_dir,
+        benchmark_config.metrics_config.dispatched_requests_file,
+    )
+    request_writer = DispatchedRequestWriter(
+        output_file=output_file,
+        enabled=True,
+    )
     pool_manager.create_pool(
         name="dispatcher",
         worker_class=DispatchWorker,
@@ -203,6 +211,7 @@ def run_main_loop(
             "scheduler": scheduler,
             "req_launcher": req_launcher,
             "benchmark_context": benchmark_context,
+            "request_writer": request_writer,
         },
         pool_size=benchmark_config.num_dispatcher_threads,
     )
@@ -260,6 +269,7 @@ def run_main_loop(
         output_queue.put(None)  # One sentinel per processor thread
     pool_manager.join_pool("processor")
 
+    request_writer.close()
     pbar.close()
 
     if service_metrics.error is None:
@@ -334,6 +344,7 @@ def run_benchmark(
         tokenizer=tokenizer,
         client_config=benchmark_config.client_config,
         seed_manager=seed_manager,
+        output_dir=benchmark_config.metrics_config.output_dir,
         **request_generator_params,
     )
 

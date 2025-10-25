@@ -307,6 +307,7 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
 
         metrics = RequestMetrics(
             request_id=request_config.id,
+            session_id=request_config.session_id,
             request_dispatched_at=request_dispatched_at,
             inter_token_times=inter_token_times,
             num_prompt_tokens=prompt_len,

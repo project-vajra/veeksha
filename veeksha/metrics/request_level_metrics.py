@@ -24,6 +24,8 @@ class RequestLevelMetrics:
         self.target_deadline_miss_rate: float = (
             deadline_config.target_deadline_miss_rate
         )
+        self.request_id: List[int] = []
+        self.session_id: List[int] = []
         self.request_dispatched_at: List[float] = []
         self.num_prompt_tokens: List[int] = []
         self.num_output_tokens: List[int] = []
@@ -38,6 +40,8 @@ class RequestLevelMetrics:
         self.min_tbt_deadline_to_meet: List[float] = []
 
     def put(self, request_metrics: RequestMetrics):
+        self.request_id.append(request_metrics.request_id)
+        self.session_id.append(request_metrics.session_id)
         self.request_dispatched_at.append(request_metrics.request_dispatched_at)
         self.num_prompt_tokens.append(request_metrics.num_prompt_tokens)
         self.num_output_tokens.append(request_metrics.num_output_tokens)
@@ -72,6 +76,8 @@ class RequestLevelMetrics:
 
     def to_dict(self):
         return {
+            "request_id": self.request_id,
+            "session_id": self.session_id,
             "request_dispatched_at": self.request_dispatched_at,
             "num_prompt_tokens": self.num_prompt_tokens,
             "num_output_tokens": self.num_output_tokens,

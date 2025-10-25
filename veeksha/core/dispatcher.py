@@ -21,17 +21,20 @@ class RequestDispatcher:
         service_metrics: ServiceMetrics,
         benchmark_id: str,
         telemetry_enabled: bool,
+        request_writer,
     ):
         self.input_queue = input_queue
         self.service_metrics = service_metrics
         self.benchmark_id = benchmark_id
         self.telemetry_enabled = telemetry_enabled
+        self.request_writer = request_writer
 
     def dispatch_request(self, request_config) -> None:
         """Dispatch a single request to workers."""
         self.service_metrics.register_launched_request()
         request_config.benchmark_id = self.benchmark_id
         self.input_queue.put(request_config)
+        self.request_writer.write_request(request_config, time.time())
 
         if self.telemetry_enabled and logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Dispatched request {request_config.id}")

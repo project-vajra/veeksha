@@ -1,4 +1,5 @@
 from dataclasses import field
+from typing import Optional
 
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.generators.interval_generator.base_generator import (
@@ -46,10 +47,10 @@ class SessionGeneratorConfig:
             "help": "If true, save the trace after session generation as a jsonl file."
         },
     )
-    trace_file_save_dir: str = field(
-        default="./generated_traces",
+    trace_file_save_dir: Optional[str] = field(
+        default=None,
         metadata={
-            "help": "Directory to save generated trace files when save_as_trace_file is true."
+            "help": "Directory to save generated trace files when save_as_trace_file is true. If None, uses the benchmark trial directory."
         },
     )
     trace_file_name: str = field(

@@ -28,7 +28,7 @@ class DispatchScheduler:
     Time base: seconds since scheduler creation (monotonic reference).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, max_concurrent_sessions=None) -> None:
         self._lock = threading.Lock()
         # Priority queue of requests sorted by ready_at time (implemented as min-heap)
         self._ready_queue: List[_ScheduledItem] = []
@@ -39,8 +39,36 @@ class DispatchScheduler:
         self._start_monotonic = time.monotonic()
         self._non_session_ready_cursor: float = 0.0
 
+        self._max_concurrent_sessions = max_concurrent_sessions
+        self._num_active_sessions = 0
+        from collections import deque
+        self._queued_sessions = deque()
+        if self._buffered_mode:
+            logger.debug(f"Buffered session mode enabled. size={max_concurrent_sessions}")
+        self._num_requests_in_session = {}
+
     def _now(self) -> float:
         return time.monotonic() - self._start_monotonic
+    
+    @property
+    def _buffered_mode(self) -> bool:
+        return self._max_concurrent_sessions is not None
+
+    def _is_session_start(self, request):
+        return request.session_sequence_index == 0
+
+    def _mark_session_ready(self, request):
+        # First-in-session: anchor by absolute if provided; else treat as normal delay
+        if self._buffered_mode:
+            # Abide by QPS if possible
+            ready_at = max(self._now(), request.anchor_at_s)
+        elif request.anchor_at_s is not None:
+            ready_at = float(request.anchor_at_s)
+        else:
+            ready_at = self._now() + float(request.dispatch_delay)
+        logger.debug(f"MARKING SESSION READY {request.session_id}")
+        self._add_to_ready_queue(ready_at, request)
+        self._num_active_sessions += 1
 
     def _add_to_ready_queue(self, ready_at: float, request: RequestConfig) -> None:
         """Add a request to the priority queue, sorted by ready time."""
@@ -53,10 +81,12 @@ class DispatchScheduler:
     def add_request(self, request: RequestConfig) -> None:
         with self._lock:
             req_id = request.id if (request.id is not None) else -1
+            request.id = req_id
             self._id_to_session_seq[req_id] = (
                 request.session_id,
                 request.session_sequence_index,
             )
+            self._num_requests_in_session[request.session_id] = request.num_requests_in_session
 
             if (request.session_id is not None) and (
                 request.session_sequence_index is not None
@@ -72,13 +102,11 @@ class DispatchScheduler:
                 if request.cancel_session_on_failure is not None:
                     session.cancel_on_failure = bool(request.cancel_session_on_failure)
 
-                if request.session_sequence_index == 0:
-                    # First-in-session: anchor by absolute if provided; else treat as normal delay
-                    if request.anchor_at_s is not None:
-                        ready_at = float(request.anchor_at_s)
+                if self._is_session_start(request):
+                    if self._buffered_mode and self._num_active_sessions >= self._max_concurrent_sessions:
+                        self._queued_sessions.append(request)
                     else:
-                        ready_at = self._now() + float(request.dispatch_delay)
-                    self._add_to_ready_queue(ready_at, request)
+                        self._mark_session_ready(request)
                 else:
                     # Queue until prior is completed; then we can compute ready time
                     session.pending_requests[request.session_sequence_index] = request
@@ -90,7 +118,7 @@ class DispatchScheduler:
                 self._non_session_ready_cursor = ready_at
                 self._add_to_ready_queue(ready_at, request)
 
-    def _maybe_release_next_locked(self, session_id: int) -> None:
+    def _maybe_release_next_locked(self, session_id) -> None:
         # Release next-in-order pending request if its predecessor is completed
         session = self._sessions.get(session_id)
         if not session:
@@ -108,6 +136,7 @@ class DispatchScheduler:
             ready_at = session.last_completion_time + wait
             self._add_to_ready_queue(ready_at, req)
             # Try to cascade only one step; caller may call again after completions
+
 
     def pop_ready(self) -> Optional[RequestConfig]:
         with self._lock:
@@ -146,4 +175,11 @@ class DispatchScheduler:
                 session.completed_sequence = seq_idx
             session.last_completion_time = completed_at
             # Try releasing next pending
+            logger.debug(f"REQUEST {request_id} FINISHED of {session_id} ({seq_idx+1}/{self._num_requests_in_session[session_id]})")
             self._maybe_release_next_locked(session_id)
+            if self._buffered_mode and (seq_idx+1 >= self._num_requests_in_session[session_id]):
+                logger.debug(f"SESSION FINISHED {session_id}")
+                self._num_active_sessions -= 1
+                if len(self._queued_sessions) > 0:
+                    request = self._queued_sessions.popleft()
+                    self._mark_session_ready(request)

@@ -88,7 +88,9 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
     session_generator_config: Optional[SessionGeneratorConfig] = field(
         default=None,
         metadata={
-            "help": "If not None, it will synthesize sessions based on the trace file and prefix hash IDs of requests (requires use_trace_prefix_hash_ids to be True)."
+            "help": "Session generation config. Can be used in two ways: "
+            "(1) With use_trace_prefix_hash_ids=True: synthesizes new sessions from trace based on prefix matching. "
+            "(2) With use_trace_sessions=True: resamples existing trace session arrival times using session_interval_generator_config (preserves intra-session timing)."
         },
     )
 
@@ -135,13 +137,9 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
         if self.block_size <= 0:
             raise ValueError(f"{self.__class__.__name__}: block_size must be positive")
 
-        # session_generator_config and use_trace_sessions cannot both be provided
-        if self.session_generator_config and self.use_trace_sessions:
-            raise ValueError(
-                f"{self.__class__.__name__}: session_generator_config and use_trace_sessions cannot both be provided"
-            )
-        # if session_generator_config is provided, use_trace_prefix_hash_ids must be True
-        if self.session_generator_config and not self.use_trace_prefix_hash_ids:
+        # if session_generator_config is provided WITHOUT use_trace_sessions,
+        # then use_trace_prefix_hash_ids must be True (for session generation)
+        if self.session_generator_config and not self.use_trace_sessions and not self.use_trace_prefix_hash_ids:
             raise ValueError(
                 f"{self.__class__.__name__}: session_generator_config requires use_trace_prefix_hash_ids to be True"
             )
