@@ -438,7 +438,7 @@ class ResourceManager:
         self,
         num_gpus: int,
         timeout: Optional[float] = None,
-        poll_interval: float = 1.0,
+        poll_interval: float = 3.0,
         job_id: Optional[str] = None,
     ) -> Optional[ResourceMapping]:
         """Wait for resources to become available.
@@ -455,15 +455,15 @@ class ResourceManager:
         start_time = time.time()
 
         while True:
+            # Check timeout before attempting allocation
+            if timeout is not None and (time.time() - start_time) >= timeout:
+                logger.warning(f"Timeout waiting for {num_gpus} GPUs after {timeout}s")
+                return None
+
             # Try to allocate
             resource_mapping = self.allocate_resources(num_gpus, job_id=job_id)
             if resource_mapping:
                 return resource_mapping
-
-            # Check timeout
-            if timeout is not None and (time.time() - start_time) >= timeout:
-                logger.warning(f"Timeout waiting for {num_gpus} GPUs after {timeout}s")
-                return None
 
             # Wait before next attempt
             logger.debug(
