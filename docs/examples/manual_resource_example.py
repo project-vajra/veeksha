@@ -1,8 +1,9 @@
 """
-Example: Manual resource management for fine-grained control.
+Example: Automatic resource management for fine-grained control.
 
-This example shows how to use ResourceManager directly for custom
-scheduling and resource allocation strategies.
+This example shows how server managers automatically allocate GPUs
+when gpu_ids is not specified, using the ResourceManager for intelligent
+resource scheduling.
 """
 
 import time
@@ -32,32 +33,19 @@ def run_experiment_with_resources(
     resource_manager: ResourceManager,
     job_id: str,
 ):
-    """Run a single experiment with manual resource management."""
+    """Run a single experiment with automatic resource management."""
     print(f"\n{'='*60}")
     print(f"Starting: {model} (TP={tp_size})")
     print(f"Job ID: {job_id}")
 
-    # Allocate resources (will wait if not available)
-    print(f"Requesting {tp_size} GPUs...")
-    resource_mapping = resource_manager.wait_for_resources(
-        num_gpus=tp_size, job_id=job_id, timeout=300
-    )
-
-    if not resource_mapping:
-        print(f"ERROR: Failed to allocate {tp_size} GPUs for {job_id}")
-        return None
-
-    gpu_ids = [gpu_id for _, gpu_id in resource_mapping]
-    print(f"Allocated GPUs: {gpu_ids}")
-
     try:
-        # Create server config with allocated GPUs
+        # Create server config - let server manager auto-allocate GPUs
         server_config = ServerConfig(
             engine="vajra",
             model=model,
             port=port,
             tensor_parallel_size=tp_size,
-            gpu_ids=gpu_ids,
+            gpu_ids=None,  # Let server manager auto-allocate
             auto_shutdown=True,
         )
         # Create benchmark config
@@ -94,15 +82,10 @@ def run_experiment_with_resources(
         print(f"ERROR: {e}")
         return None
 
-    finally:
-        # Always release resources
-        print(f"Releasing resources for {job_id}")
-        resource_manager.release_resources(job_id)
-
 
 def main():
-    """Demonstrate manual resource management."""
-    print("Resource Management Example")
+    """Demonstrate automatic resource management."""
+    print("Automatic Resource Management Example")
     print("=" * 60)
 
     # Initialize resource manager

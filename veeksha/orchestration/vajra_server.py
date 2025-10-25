@@ -123,19 +123,27 @@ class VajraServerManager(BaseServerManager):
             # Auto-generate mapping from gpu_ids in vajra format
             import json
 
-            # Get local node IP from Ray
+            # Get node IP from allocated resources if available
             node_ip = "localhost"
-            try:
-                import ray
-
-                ray.init(ignore_reinit_error=True)
-                nodes = ray.nodes()
-                for node in nodes:
-                    if node.get("alive", False):
-                        node_ip = node["NodeManagerAddress"]
-                        break
-            except Exception:
-                pass  # Fall back to localhost
+            if hasattr(self, '_allocated_job_id') and self._allocated_job_id:
+                vajra_mapping = self.resource_manager.get_vajra_resource_mapping(self._allocated_job_id)
+                if vajra_mapping:
+                    # Extract node IP from the first GPU in the mapping
+                    resource_mapping = vajra_mapping["0"]["resource_mapping"]
+                    if resource_mapping:
+                        node_ip = resource_mapping[0]["node_ip"]
+            else:
+                # Fallback: Get local node IP from Ray
+                try:
+                    import ray
+                    ray.init(ignore_reinit_error=True)
+                    nodes = ray.nodes()
+                    for node in nodes:
+                        if node.get("alive", False):
+                            node_ip = node["NodeManagerAddress"]
+                            break
+                except Exception:
+                    pass  # Fall back to localhost
 
             # Create resource mapping in vajra expected format
             resource_mapping = {

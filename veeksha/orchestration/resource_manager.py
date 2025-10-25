@@ -410,6 +410,30 @@ class ResourceManager:
 
         return status
 
+    def get_vajra_resource_mapping(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """Get resource mapping in vajra server format.
+
+        Args:
+            job_id: Job identifier
+
+        Returns:
+            Dictionary in vajra format, or None if job not found
+        """
+        if job_id not in self.allocated_resources:
+            return None
+
+        resource_mapping = self.allocated_resources[job_id]
+        vajra_mapping = {
+            "0": {
+                "resource_mapping": [
+                    {"node_ip": node_ip, "gpu_id": gpu_id}
+                    for node_ip, gpu_id in resource_mapping
+                ],
+                "worker_type": "GPU"
+            }
+        }
+        return vajra_mapping
+
     def wait_for_resources(
         self,
         num_gpus: int,
