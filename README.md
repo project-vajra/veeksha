@@ -23,7 +23,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 Create a virtual environment and install veeksha:
 ```bash
 uv venv --python 3.14t
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate
 uv pip install -e .
 ```
 

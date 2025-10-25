@@ -119,14 +119,6 @@ class DispatchScheduler:
                 return item.request
             return None
 
-    def time_until_next_ready(self) -> Optional[float]:
-        with self._lock:
-            if not self._ready_queue:
-                return None
-            now = self._now()
-            delta = self._ready_queue[0].ready_at - now
-            return max(0.0, delta)
-
     def notify_completion(
         self, request_id: Optional[int], completed_at_monotonic: float, success: bool
     ) -> None:
@@ -155,33 +147,3 @@ class DispatchScheduler:
             session.last_completion_time = completed_at
             # Try releasing next pending
             self._maybe_release_next_locked(session_id)
-
-    def cancel_session(self, session_id: int) -> None:
-        with self._lock:
-            session = self._sessions.get(session_id)
-            if session:
-                session.is_canceled = True
-                session.pending_requests.clear()
-
-    def get_blocked_pending_count(self) -> int:
-        with self._lock:
-            return sum(len(s.pending_requests) for s in self._sessions.values())
-
-    def get_ready_count(self) -> int:
-        with self._lock:
-            return len(self._ready_queue)
-
-    def get_ready_now_count(self) -> int:
-        with self._lock:
-            if not self._ready_queue:
-                return 0
-            now = self._now()
-            # count items at the front that are ready now
-            # contiguous front elements can be ready without popping.
-            count = 0
-            for item in self._ready_queue:
-                if item.ready_at <= now:
-                    count += 1
-                # encountering a not-ready item does not guarantee
-                # later items are not-ready, but scanning all is O(n) and fine for logging
-            return count
