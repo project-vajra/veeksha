@@ -46,15 +46,16 @@ export OPENAI_API_BASE=https://api.endpoints.anyscale.com/v1
 ```
 #### Running Benchmark
 ```bash
-python -m veeksha.benchmark \
+python -Xgil=0 -m veeksha.benchmark \
 --client-config-model "Qwen/Qwen3-4B-Instruct-2507" \
 --max-completed-requests 100 \
 --timeout 600 \
---client-config-num-clients 5 \
---client-config-num-concurrent-requests-per-client 5 \
+--client-config-num-threads 25 \
 --metrics-config-output-dir "benchmark_outputs" \
 --synthetic-request-generator-config-interval-generator-config-type "static"
 ```
+
+**Note:** We recommend running with `-Xgil=0` to enable GIL-free Python for true parallel execution of worker threads.
 
 There are many more arguments for running benchmark, run the following to know more:
 ```bash

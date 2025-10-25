@@ -36,6 +36,7 @@ dependencies = [
     "rekha",
     "textual",
     "textual-plotext",
+    "requests",
 ]
 
 [project.urls]

@@ -1,7 +1,7 @@
 import json
-from typing import AsyncGenerator, Dict, List, Protocol, Tuple, cast
+from typing import Dict, Generator, List, Protocol, Tuple, cast
 
-import aiohttp
+import requests
 
 from veeksha.logger import init_logger
 
@@ -20,15 +20,15 @@ class StreamingMixin:
 
     MAX_RESPONSES_ALLOWED_TO_STORE: int = 5
 
-    async def _process_stream(
-        self, response: aiohttp.ClientResponse
-    ) -> AsyncGenerator[Dict, None]:
+    def _process_stream(
+        self, response: requests.Response
+    ) -> Generator[Dict, None, None]:
         """Process Server-Sent Events (SSE) stream and yield parsed JSON dicts.
 
         Skips non-data lines and stops on "[DONE]" sentinel.
         """
         buffer = b""
-        async for chunk_bytes in response.content.iter_any():
+        for chunk_bytes in response.iter_content(chunk_size=None):
             buffer += chunk_bytes
             while b"\n" in buffer:
                 line_bytes, buffer = buffer.split(b"\n", 1)

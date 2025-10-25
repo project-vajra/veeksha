@@ -202,8 +202,8 @@ def run_main_loop(
     stop_event.set()
     dispatcher_thread.join()
 
-    # Wait for all client threads to terminate
-    req_launcher.wait_for_clients()
+    # Wait for all worker threads to terminate
+    req_launcher.wait_for_workers()
 
     # Signal the results processor to finish after draining and join it
     output_queue.put(None)

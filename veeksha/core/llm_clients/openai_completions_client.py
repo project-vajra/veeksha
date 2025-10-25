@@ -1,9 +1,8 @@
-import asyncio
 import os
 import time
 from typing import Dict, List, Optional, Tuple
 
-import aiohttp
+import requests
 
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
 from veeksha.core.llm_clients.streaming_mixin import StreamingMixin
@@ -98,15 +97,15 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
             logprobs,
         )
 
-    async def send_llm_request(
-        self, request_config: RequestConfig, session: aiohttp.ClientSession
+    def send_llm_request(
+        self, request_config: RequestConfig, timeout: int
     ) -> Tuple[RequestMetrics, Optional[Response]]:
         """Send a single completions request.
 
         Args:
             request_config: The request configuration, including prompt, model,
                 and optional sampling params (e.g., stream, max_tokens, logprobs).
-            session: The aiohttp client session to use.
+            timeout: Request timeout in seconds.
 
         Returns:
             A tuple of (RequestMetrics, Optional[Response]). Response.logprobs is:
@@ -162,12 +161,14 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
         is_first_emission = True  # Track if this is the first dashboard event emission
 
         try:
-            async with session.post(address, json=body, headers=headers) as response:
+            with requests.post(
+                address, json=body, headers=headers, timeout=timeout, stream=stream
+            ) as response:
                 response.raise_for_status()
 
                 if not stream:
                     # expect standard OpenAI-compatible JSON
-                    data = await response.json()
+                    data = response.json()
                     choice = (data.get("choices") or [{}])[0]
                     generated_text = choice.get("text", "") or ""
                     lp = choice.get("logprobs")
@@ -176,7 +177,7 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
                     if isinstance(lp, dict):
                         non_stream_logprobs = lp
                 else:
-                    async for data in self._process_stream(response):
+                    for data in self._process_stream(response):
                         tokens_received_chunk = 0  # Track tokens received in this chunk
                         if "error" in data:
                             err = data.get("error") or {}
@@ -285,17 +286,15 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
                             elif isinstance(raw_lp, dict):
                                 logprobs_chunks.append(raw_lp)
 
-        except aiohttp.ClientResponseError as e:
-            error_response_code = e.status
-            error_msg = error_msg or (e.message if hasattr(e, "message") else str(e))
+        except requests.HTTPError as e:
+            error_response_code = e.response.status_code if e.response else 500
+            error_msg = error_msg or str(e)
             logger.warning(f"HTTP Error: status={error_response_code} msg={error_msg}")
-        except aiohttp.ClientConnectorError as e:
+        except requests.ConnectionError as e:
             error_response_code = 503
             error_msg = error_msg or str(e)
             logger.warning(f"Connection Error: ({error_response_code}) {error_msg}")
-        except asyncio.CancelledError:
-            raise
-        except asyncio.TimeoutError:
+        except requests.Timeout:
             error_response_code = 408
             error_msg = error_msg or "Request timed out"
             logger.warning(f"Timeout Error: ({error_response_code}) {error_msg}")

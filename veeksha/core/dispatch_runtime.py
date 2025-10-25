@@ -24,8 +24,6 @@ MAX_PREFETCH_BACKLOG = 10000
 NEAR_DEADLINE_WINDOW_S = 0.010
 BACKLOG_LOG_INTERVAL_S = 1.0
 BACKLOG_WARN_INTERVAL_S = 5.0
-SPAWN_SUPPRESSION_INTERVAL_S = 10.0
-SPAWN_COOLDOWN_S = 1.0
 PREFETCH_RATE_LOG_INTERVAL_S = 2.0
 PREFETCH_SCHEDULE_SLACK = 512  # number of requests to prefetch beyond max_requests
 
@@ -59,8 +57,6 @@ def dispatch_requests(
     scheduled_backlog = 0
     next_backlog_log_time = 0.0
     next_backlog_warn_time = 0.0
-    next_spawn_time = 0.0
-    next_spawn_suppression_time = 0.0
     prefetch_stats_lock = threading.Lock()
     prefetch_tick_counter = 0
     scheduled_since_log = 0
@@ -286,40 +282,6 @@ def dispatch_requests(
             return True
         return False
 
-    def _maybe_auto_spawn_clients(now: float) -> None:
-        nonlocal next_spawn_time, next_spawn_suppression_time
-        if not req_launcher.client_config.auto_spawn_new_clients:
-            return
-        inflight = service_metrics.num_requests - service_metrics.num_completed_requests
-        total_slots = req_launcher.get_total_slots()
-        try:
-            input_queue_size_now = input_queue.qsize()
-        except NotImplementedError:
-            input_queue_size_now = -1  # sentinel for unknown size
-        available_slots = max(0, total_slots - inflight)
-        has_queued_or_unknown = (input_queue_size_now > 0) or (
-            input_queue_size_now == -1
-        )
-        if has_queued_or_unknown and available_slots == 0 and now >= next_spawn_time:
-            if req_launcher.can_spawn_more():
-                logger.info(
-                    "Auto-spawning new client: reqs_queued=%d inflight=%d total_slots=%d",
-                    input_queue_size_now,
-                    inflight,
-                    total_slots,
-                )
-                req_launcher.spawn_new_client()
-            else:
-                if now >= next_spawn_suppression_time:
-                    logger.info(
-                        "Client spawn suppressed: at max_clients=%s (reqs_queued=%d inflight=%d total_slots=%d)",
-                        str(req_launcher.client_config.max_clients),
-                        input_queue_size_now,
-                        inflight,
-                        total_slots,
-                    )
-                    next_spawn_suppression_time = now + SPAWN_SUPPRESSION_INTERVAL_S
-            next_spawn_time = time.monotonic() + SPAWN_COOLDOWN_S
 
     def _maybe_warn_backlog(now: float, effective_backlog: int) -> None:
         nonlocal next_backlog_warn_time
@@ -365,10 +327,6 @@ def dispatch_requests(
             blocked_pending = scheduler.get_blocked_pending_count()
             with prefetch_stats_lock:
                 effective_backlog = max(0, scheduled_backlog - blocked_pending)
-
-        _maybe_auto_spawn_clients(now)
-
-        if telemetry_enabled:
             _maybe_warn_backlog(time.monotonic(), effective_backlog)
 
         # dispatch again after prefetch

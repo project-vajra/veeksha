@@ -1,9 +1,8 @@
-import asyncio
 import os
 import time
 from typing import Dict, Optional, Tuple
 
-import aiohttp  # type: ignore
+import requests  # type: ignore
 
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
 from veeksha.core.llm_clients.streaming_mixin import StreamingMixin
@@ -74,8 +73,8 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             most_recent_received_token_time,
         )
 
-    async def send_llm_request(
-        self, request_config: RequestConfig, session: aiohttp.ClientSession
+    def send_llm_request(
+        self, request_config: RequestConfig, timeout: int
     ) -> Tuple[RequestMetrics, Optional[Response]]:
         prompt, prompt_len = request_config.prompt
 
@@ -123,10 +122,12 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         is_first_emission = True  # Track if this is the first dashboard event emission
 
         try:
-            async with session.post(address, json=body, headers=headers) as response:
+            with requests.post(
+                address, json=body, headers=headers, timeout=timeout, stream=True
+            ) as response:
                 response.raise_for_status()
 
-                async for data in self._process_stream(response):
+                for data in self._process_stream(response):
                     tokens_received_chunk = 0  # Track tokens received in this chunk
                     if "error" in data:
                         err = data.get("error") or {}
@@ -226,17 +227,15 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                             False  # After first emission, no longer first
                         )
 
-        except aiohttp.ClientResponseError as e:
-            error_response_code = e.status
-            error_msg = error_msg or (e.message if hasattr(e, "message") else str(e))
+        except requests.HTTPError as e:
+            error_response_code = e.response.status_code if e.response else 500
+            error_msg = error_msg or str(e)
             logger.warning(f"HTTP Error: status={error_response_code} msg={error_msg}")
-        except aiohttp.ClientConnectorError as e:
+        except requests.ConnectionError as e:
             error_response_code = 503
             error_msg = error_msg or str(e)
             logger.warning(f"Connection Error: ({error_response_code}) {error_msg}")
-        except asyncio.CancelledError:
-            raise
-        except asyncio.TimeoutError:
+        except requests.Timeout:
             error_response_code = 408
             error_msg = error_msg or "Request timed out"
             logger.warning(f"Timeout Error: ({error_response_code}) {error_msg}")

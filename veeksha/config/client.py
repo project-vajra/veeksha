@@ -18,24 +18,11 @@ class ClientConfig:
             "help": "The tokenizer to use for this load test. By default, the tokenizer is inferred from the model."
         },
     )
-    num_clients: int = field(
-        default=2,
-        metadata={"help": "The default number of clients to use for benchmark."},
-    )
-    num_concurrent_requests_per_client: int = field(
-        default=5,
-        metadata={"help": "The number of concurrent requests each client can manage."},
-    )
-    auto_spawn_new_clients: bool = field(
-        default=False,
+    num_threads: int = field(
+        default=10,
         metadata={
-            "help": "If True, spawn additional clients when requests are ready to be dispatched but all clients are busy. Spawned clients use the same per-client concurrency.",
-        },
-    )
-    max_clients: Optional[int] = field(
-        default=None,
-        metadata={
-            "help": "Maximum total number of clients allowed when auto-spawn is enabled. None means unlimited.",
+            "help": "The number of worker threads to use for making concurrent requests. "
+            "With GIL-free Python (python -Xgil=0), these threads run in true parallel."
         },
     )
     additional_sampling_params: str = field(
@@ -77,25 +64,5 @@ class ClientConfig:
         if self.tokenizer is None:
             self.tokenizer = self.model
 
-        if self.num_clients < 1:
-            raise ValueError("num_clients must be greater than 0")
-        if self.num_concurrent_requests_per_client < 1:
-            raise ValueError(
-                "num_concurrent_requests_per_client must be greater than 0"
-            )
-        if (
-            self.auto_spawn_new_clients
-            and self.max_clients is not None
-            and self.max_clients < 1
-        ):
-            raise ValueError(
-                "max_clients must be greater than 0 when auto_spawn_new_clients is set"
-            )
-        if (
-            self.auto_spawn_new_clients
-            and self.max_clients is not None
-            and self.num_clients >= self.max_clients
-        ):
-            raise ValueError(
-                "num_clients must be less than max_clients when auto_spawn_new_clients is True"
-            )
+        if self.num_threads < 1:
+            raise ValueError("num_threads must be greater than 0")

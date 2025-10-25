@@ -1,8 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Tuple
 
-import aiohttp
-
 from veeksha.core.hf_utils import get_tokenizer
 from veeksha.core.request_config import RequestConfig
 from veeksha.core.response import Response
@@ -23,10 +21,14 @@ class BaseLLMClient(ABC):
         return len(self.tokenizer.encode(text))
 
     @abstractmethod
-    async def send_llm_request(
-        self, request_config: RequestConfig, session: aiohttp.ClientSession
+    def send_llm_request(
+        self, request_config: RequestConfig, timeout: int
     ) -> Tuple[RequestMetrics, Optional[Response]]:
         """Make a single completion request to a LLM API
+
+        Args:
+            request_config: Configuration for the request
+            timeout: Request timeout in seconds
 
         Returns:
             Metrics about the performance characteristics of the request.
