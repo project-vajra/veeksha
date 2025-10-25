@@ -24,6 +24,9 @@ class ServiceMetrics:
         self._error_event = threading.Event()
         self._error: Optional[BaseException] = None
 
+        # Counter for generated requests (protected by external generator_lock in prefetch threads)
+        self.num_generated_requests = 0
+
         self.metric_store = MetricStore(
             timeout=timeout,
             max_requests=max_requests,

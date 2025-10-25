@@ -16,7 +16,11 @@ from veeksha.benchmark_data_utils import (
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.client import ClientConfig
 from veeksha.config.utils import prepare_benchmark_output_dir
-from veeksha.core.dispatch_runtime import dispatch_requests, process_results
+from veeksha.core.dispatch_runtime import (
+    dispatch_requests,
+    prefetch_requests,
+    process_results,
+)
 from veeksha.core.dispatch_scheduler import DispatchScheduler
 from veeksha.core.hf_utils import get_tokenizer
 from veeksha.core.requests_launcher import RequestsLauncher
@@ -55,11 +59,22 @@ def setup_api_environment(
     os.environ["OPENAI_API_BASE"] = api_url
 
 
+def _send_probe_request(url: str, headers: dict, body: dict, min_param: str, param_value) -> bool:
+    """Send a probe request to test if server accepts a parameter."""
+    import requests  # type: ignore
+
+    test_body = body.copy()
+    test_body[min_param] = param_value
+    try:
+        resp = requests.post(url, headers=headers, json=test_body, timeout=10)
+        return 200 <= resp.status_code < 300
+    except Exception:
+        return False
+
+
 def _probe_min_tokens_param_support(client_config: ClientConfig) -> bool:
     """Probe if server accepts the configured min token parameter."""
     import os
-
-    import requests  # type: ignore
 
     min_param: Optional[str] = client_config.min_tokens_param
     if not min_param:
@@ -88,22 +103,13 @@ def _probe_min_tokens_param_support(client_config: ClientConfig) -> bool:
     else:
         body["messages"] = [{"role": "user", "content": "Hello"}]
 
-    def send_probe_request(param_value):
-        test_body = body.copy()
-        test_body[min_param] = param_value
-        try:
-            resp = requests.post(url, headers=headers, json=test_body, timeout=10)
-            return 200 <= resp.status_code < 300
-        except Exception:
-            return False
-
-    if not send_probe_request(1):
+    if not _send_probe_request(url, headers, body, min_param, 1):
         logger.warning(
             f"Server rejected parameter '{min_param}'; falling back to prompt control."
         )
         return False
 
-    if not send_probe_request({"invalid": "type"}):
+    if not _send_probe_request(url, headers, body, min_param, {"invalid": "type"}):
         return True
 
     return False
@@ -143,8 +149,9 @@ def run_main_loop(
     logger.info("Starting the main loop.")
 
     # Create queues for communication
-    input_queue = Queue()
-    output_queue = Queue()
+    input_queue = Queue()  # Worker input queue
+    output_queue = Queue()  # Worker output queue
+    ready_queue = Queue()  # Prefetch -> Dispatcher queue
     stop_event = threading.Event()
     scheduler = DispatchScheduler()
 
@@ -155,38 +162,81 @@ def run_main_loop(
         output_queue=output_queue,
     )
 
-    # Start the request launcher threads
+    # Start the worker threads
     req_launcher.start()
 
-    # Create and start producer-consumer threads
-    dispatcher_thread = Thread(
-        target=dispatch_requests,
-        args=(
-            input_queue,
-            service_metrics,
-            request_generator,
-            stop_event,
-            scheduler,
-            req_launcher,
-            benchmark_id,
-            benchmark_config.runtime_telemetry_enabled,
-        ),
-    )
+    # Create locks for thread-safe access to shared resources
+    generator_lock = threading.Lock()  # Protects request generator
+    responses_lock = threading.Lock()  # Protects generated_responses list
+    pbar_lock = threading.Lock()  # Protects progress bar
 
-    processor_thread = Thread(
-        target=process_results,
-        args=(
-            output_queue,
-            service_metrics,
-            generated_responses,
-            pbar,
-            stop_event,
-            scheduler,
-        ),
-    )
+    # Create thread pools for each component
+    prefetch_threads = []
+    for i in range(benchmark_config.num_prefetch_threads):
+        thread = Thread(
+            target=prefetch_requests,
+            args=(
+                ready_queue,
+                service_metrics,
+                request_generator,
+                generator_lock,
+                stop_event,
+                i,
+            ),
+            name=f"prefetch-{i}",
+        )
+        prefetch_threads.append(thread)
 
-    dispatcher_thread.start()
-    processor_thread.start()
+    dispatcher_threads = []
+    for i in range(benchmark_config.num_dispatcher_threads):
+        thread = Thread(
+            target=dispatch_requests,
+            args=(
+                input_queue,
+                ready_queue,
+                service_metrics,
+                stop_event,
+                scheduler,
+                req_launcher,
+                i,
+                benchmark_id,
+                benchmark_config.runtime_telemetry_enabled,
+            ),
+            name=f"dispatcher-{i}",
+        )
+        dispatcher_threads.append(thread)
+
+    processor_threads = []
+    for i in range(benchmark_config.num_results_processor_threads):
+        thread = Thread(
+            target=process_results,
+            args=(
+                output_queue,
+                service_metrics,
+                generated_responses,
+                responses_lock,
+                pbar,
+                pbar_lock,
+                stop_event,
+                scheduler,
+                i,
+            ),
+            name=f"processor-{i}",
+        )
+        processor_threads.append(thread)
+
+    # Start all threads
+    for thread in prefetch_threads:
+        thread.start()
+    for thread in dispatcher_threads:
+        thread.start()
+    for thread in processor_threads:
+        thread.start()
+
+    logger.info(
+        f"Started {len(prefetch_threads)} prefetch, {len(dispatcher_threads)} dispatcher, "
+        f"{len(processor_threads)} processor, and {req_launcher.get_worker_count()} worker threads"
+    )
 
     # Monitor and wait for completion
     with service_metrics:
@@ -200,14 +250,27 @@ def run_main_loop(
 
     # Signal threads to stop and wait for completion
     stop_event.set()
-    dispatcher_thread.join()
+
+    # Wait for all prefetch threads to finish
+    for thread in prefetch_threads:
+        thread.join()
+    logger.debug(f"All {len(prefetch_threads)} prefetch threads joined")
+
+    # Wait for all dispatcher threads to finish
+    for thread in dispatcher_threads:
+        thread.join()
+    logger.debug(f"All {len(dispatcher_threads)} dispatcher threads joined")
 
     # Wait for all worker threads to terminate
     req_launcher.wait_for_workers()
+    logger.debug("Worker threads joined")
 
-    # Signal the results processor to finish after draining and join it
-    output_queue.put(None)
-    processor_thread.join()
+    # Signal the results processor threads to finish after draining and join them
+    for _ in range(len(processor_threads)):
+        output_queue.put(None)  # One sentinel per processor thread
+    for thread in processor_threads:
+        thread.join()
+    logger.debug(f"All {len(processor_threads)} processor threads joined")
 
     pbar.close()
 
@@ -360,6 +423,18 @@ class BenchmarkResultContainer(TypedDict):
     error: Optional[Exception]
 
 
+def _run_benchmark_in_thread(
+    benchmark_config: BenchmarkConfig, result_container: BenchmarkResultContainer
+) -> None:
+    """Run benchmark in a thread and capture results in the container."""
+    try:
+        service_metrics = run_benchmark(benchmark_config)
+        result_container["service_metrics"] = service_metrics
+    except Exception as e:
+        result_container["error"] = e
+        logger.error(f"Benchmark error: {e}", exc_info=True)
+
+
 def run_benchmark_with_dashboard(benchmark_config: BenchmarkConfig):
     """Run benchmark with TUI dashboard in main thread.
 
@@ -388,17 +463,12 @@ def run_benchmark_with_dashboard(benchmark_config: BenchmarkConfig):
         "error": None,
     }
 
-    def run_benchmark_thread():
-        """Run benchmark in background thread"""
-        try:
-            service_metrics = run_benchmark(benchmark_config)
-            result_container["service_metrics"] = service_metrics
-        except Exception as e:
-            result_container["error"] = e
-            logger.error(f"Benchmark error: {e}", exc_info=True)
-
     # Start benchmark in background thread
-    benchmark_thread = Thread(target=run_benchmark_thread, daemon=False)
+    benchmark_thread = Thread(
+        target=_run_benchmark_in_thread,
+        args=(benchmark_config, result_container),
+        daemon=False,
+    )
     benchmark_thread.start()
 
     # Give benchmark a moment to initialize
@@ -449,6 +519,15 @@ def run_benchmark_console_only(
     finally:
         if stop_processor_after:
             stop_dashboard_event_processor()
+
+
+def _run_multiple_benchmarks_sequentially(benchmark_configs: List[BenchmarkConfig]) -> None:
+    """Run all benchmarks sequentially in a thread."""
+    for i, benchmark_config in enumerate(benchmark_configs):
+        logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
+        is_last = i == len(benchmark_configs) - 1
+        run_benchmark_console_only(benchmark_config, stop_processor_after=is_last)
+        logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")
 
 
 if __name__ == "__main__":
@@ -506,18 +585,12 @@ if __name__ == "__main__":
                 chart_window_seconds=first.dashboard_config.chart_window_seconds,
             )
 
-            def run_all_benchmarks():
-                """Run all benchmarks sequentially in background"""
-                for i, benchmark_config in enumerate(benchmark_configs):
-                    logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
-                    is_last = i == len(benchmark_configs) - 1
-                    run_benchmark_console_only(
-                        benchmark_config, stop_processor_after=is_last
-                    )
-                    logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")
-
             # Start all benchmarks in background thread
-            benchmark_thread = Thread(target=run_all_benchmarks, daemon=False)
+            benchmark_thread = Thread(
+                target=_run_multiple_benchmarks_sequentially,
+                args=(benchmark_configs,),
+                daemon=False,
+            )
             benchmark_thread.start()
 
             # Launch TUI dashboard

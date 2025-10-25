@@ -69,6 +69,27 @@ class BenchmarkConfig:
             "help": "Enable verbose dispatch runtime telemetry logs (backlog, prefetch rate)."
         },
     )
+    num_prefetch_threads: int = field(
+        default=4,
+        metadata={
+            "help": "Number of threads for prefetching/generating requests. "
+            "Increase if request generation is a bottleneck."
+        },
+    )
+    num_dispatcher_threads: int = field(
+        default=4,
+        metadata={
+            "help": "Number of threads for dispatching requests to workers. "
+            "Increase if dispatch scheduling is a bottleneck."
+        },
+    )
+    num_results_processor_threads: int = field(
+        default=4,
+        metadata={
+            "help": "Number of threads for processing completed requests. "
+            "Increase if results aggregation is a bottleneck."
+        },
+    )
 
     def __post_init__(self):
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
