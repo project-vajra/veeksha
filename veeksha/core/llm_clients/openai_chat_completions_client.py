@@ -3,6 +3,7 @@ import time
 from typing import Optional, Tuple
 
 import httpx
+from revati.client.helper import get_time
 
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
 from veeksha.core.llm_clients.streaming_mixin import StreamingMixin
@@ -33,7 +34,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             logger.warning(
                 "Warning: OPENAI_API_KEY environment variable not set. Defaulting to empty string."
             )
-        self.start_time = time.monotonic()
+        self.start_time = get_time()
 
     async def send_llm_request(
         self, request_config: RequestConfig, timeout: int
@@ -73,8 +74,8 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         previous_responses = []
         previous_token_count = 0
 
-        most_recent_received_token_time = time.monotonic()
-        request_dispatched_at = time.monotonic() - self.start_time
+        most_recent_received_token_time = get_time()
+        request_dispatched_at = get_time() - self.start_time
         # Respect a local cap on tokens to avoid mismatches with server/tokenizer
         max_tokens_limit = None
         if isinstance(request_config.sampling_params, dict):
@@ -103,7 +104,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                         delta = data["choices"][0]["delta"]
                         if delta.get("content", None):
                             chunk_arrival_monotonic = (
-                                time.monotonic()
+                                get_time()
                             )  # avoid tokenization overhead
                             (
                                 current_tokens_received,

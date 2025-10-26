@@ -1,10 +1,15 @@
 """Async worker that processes requests using uvloop."""
 
 import asyncio
+import uuid
 from queue import Queue
 from typing import Any, Optional
 
 import uvloop
+from revati.client import ClientType  # type: ignore
+from revati.client.helper import (
+    create_thread_local_revati_client,
+)
 
 from veeksha.config.client import ClientConfig
 from veeksha.core.context import WorkerContext
@@ -40,6 +45,11 @@ class RequestRunnerWorker:
 
         # Install uvloop for this thread
         uvloop.install()
+
+        create_thread_local_revati_client(
+            f"veeksha-request-runner-worker-{str(uuid.uuid4())[:8]}",
+            ClientType.OBSERVER,
+        )
 
         # Run the async event loop
         asyncio.run(self._worker_loop())

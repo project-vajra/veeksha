@@ -2,10 +2,13 @@ import os
 import random
 import threading
 import time
+import uuid
 from queue import Queue
 from threading import Thread
 from typing import List, Optional, TypedDict
 
+from revati.client import ClientType  # type: ignore
+from revati.client.helper import create_thread_local_revati_client
 from tqdm import tqdm  # type: ignore
 
 from veeksha.benchmark_data_utils import (
@@ -346,6 +349,10 @@ def run_benchmark(
     )
     # Disable tqdm progress bar if dashboard is enabled to prevent output conflicts
     pbar = tqdm(total=max_requests, disable=benchmark_config.dashboard_config.enabled)
+
+    create_thread_local_revati_client(
+        f"veeksha-benchmark-{str(uuid.uuid4())[:8]}", ClientType.OBSERVER
+    )
 
     service_metrics = ServiceMetrics(
         max_requests=max_requests,

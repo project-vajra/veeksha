@@ -2,9 +2,12 @@
 
 import heapq
 import threading
-import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
+
+from revati.client import ClientType  # type: ignore
+from revati.client.helper import create_thread_local_revati_client, get_time
 
 from veeksha.core.dispatch_scheduler.session_state import SessionState
 from veeksha.core.request_config import RequestConfig
@@ -36,11 +39,16 @@ class DispatchScheduler:
         self._sessions: Dict[int, SessionState] = {}
         # Reverse mapping from request_id to (session_id, sequence_index)
         self._id_to_session_seq: Dict[int, Tuple[Optional[int], Optional[int]]] = {}
-        self._start_monotonic = time.monotonic()
+
+        create_thread_local_revati_client(
+            f"veeksha-dispatcher-{str(uuid.uuid4())[:8]}", ClientType.OBSERVER
+        )
+
+        self._start_monotonic = get_time()
         self._non_session_ready_cursor: float = 0.0
 
     def _now(self) -> float:
-        return time.monotonic() - self._start_monotonic
+        return get_time() - self._start_monotonic
 
     def _add_to_ready_queue(self, ready_at: float, request: RequestConfig) -> None:
         """Add a request to the priority queue, sorted by ready time."""

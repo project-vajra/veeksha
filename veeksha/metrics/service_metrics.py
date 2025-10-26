@@ -1,6 +1,7 @@
 import threading
-import time
 from typing import Dict, Optional
+
+from revati.client.helper import get_time
 
 from veeksha.config.metrics import MetricsConfig
 from veeksha.metrics.metric_store import MetricStore
@@ -57,10 +58,10 @@ class ServiceMetrics:
         return self.num_completed_requests / self.duration * 60
 
     def __enter__(self):
-        self.start_time = time.perf_counter()
+        self.start_time = get_time()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.end_time = time.perf_counter()
+        self.end_time = get_time()
 
     def should_stop(self):
         assert self.start_time is not None
@@ -70,7 +71,7 @@ class ServiceMetrics:
         if self.timeout == -1:
             return not (self.num_completed_requests < self.max_requests)
         return not (
-            time.perf_counter() - self.start_time < self.timeout
+            get_time() - self.start_time < self.timeout
             and self.num_completed_requests < self.max_requests
         )
 
