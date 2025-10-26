@@ -37,6 +37,10 @@ class CapacitySearchConfig:
         default=1,
         metadata={"help": "The starting QPS for the capacity search (or starting buffer size if search_mode='buffer_size')."},
     )
+    qps_values: Optional[List[float]] = field(
+        default=None,
+        metadata={"help": "Optional list of specific QPS values (or buffer sizes when search_mode='buffer_size') to test. When provided, capacity search will only run benchmarks at these values instead of performing binary search."},
+    )
     num_qps_steps: int = field(
         default=10,
         metadata={"help": "The number of QPS steps for the capacity search."},

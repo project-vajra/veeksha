@@ -408,64 +408,113 @@ class CapacitySearch:
             )
         )
 
-        for iteration in range(self.capacity_search_config.max_iterations):
-            logger.info(f"Searching between {left} and {right}")
-            # stopping condition - we have reached the minimum granularity
-            if (
-                abs(left - right)
-                < self.capacity_search_config.min_search_granularity * qps / 100
-            ):
-                break
+        # If qps_values is provided, run benchmarks only for those specific QPS values
+        if self.capacity_search_config.qps_values is not None:
+            logger.info(f"Running capacity search with specific QPS values: {self.capacity_search_config.qps_values}")
 
-            qps = round((left + right) / 2, 2)
+            qps_list = sorted(self.capacity_search_config.qps_values)
+            total_iterations = len(qps_list)
 
-            if qps == last_qps:
-                break
+            for iteration, qps in enumerate(qps_list):
+                logger.info(f"Testing QPS: {qps} ({iteration + 1}/{total_iterations})")
 
-            last_qps = qps
+                (
+                    is_under_sla,
+                    metrics_dict,
+                    run_id,
+                    from_cache,
+                ) = self._run_capacity_search_benchmark(qps)
 
-            (
-                is_under_sla,
-                metrics_dict,
-                run_id,
-                from_cache,
-            ) = self._run_capacity_search_benchmark(qps)
+                if not from_cache:
+                    any_new_runs = True
 
-            if not from_cache:
-                any_new_runs = True
+                if is_under_sla:
+                    found_valid_qps = True
+                    if max_qps_under_sla is None or qps > max_qps_under_sla:
+                        max_qps_under_sla = qps
+                        slo_metrics_at_max_qps = metrics_dict
+                        best_run_id = run_id
 
-            if is_under_sla:
-                found_valid_qps = True
-                max_qps_under_sla = qps
-                slo_metrics_at_max_qps = metrics_dict
-                best_run_id = run_id
-
-                if qps > VICINITY_THRESHOLD * right:
-                    right = min(right * QPS_INCREASE_SCALE, min_qps_over_sla)
-
-                left = qps
-            else:
-                right = qps
-                min_qps_over_sla = min(min_qps_over_sla, qps)
-
-            # Emit event after each iteration
-            emit_dashboard_event(
-                CapacitySearchEvent(
-                    current_qps=qps,
-                    is_under_sla=is_under_sla,
-                    slo_metrics=metrics_dict or {},
-                    slo_target=str(self.slo_evaluator.slo_set),
-                    iteration=iteration + 1,
-                    total_iterations=self.capacity_search_config.max_iterations,
-                    search_left=left,
-                    search_right=right,
-                    best_qps=max_qps_under_sla,
-                    best_slo_metrics=slo_metrics_at_max_qps,
-                    is_complete=False,
-                    from_cache=from_cache,
-                    benchmark_id=benchmark_id,
+                # Emit event after each iteration
+                emit_dashboard_event(
+                    CapacitySearchEvent(
+                        current_qps=qps,
+                        is_under_sla=is_under_sla,
+                        slo_metrics=metrics_dict or {},
+                        slo_target=str(self.slo_evaluator.slo_set),
+                        iteration=iteration + 1,
+                        total_iterations=total_iterations,
+                        search_left=0,
+                        search_right=max(qps_list),
+                        best_qps=max_qps_under_sla,
+                        best_slo_metrics=slo_metrics_at_max_qps,
+                        is_complete=False,
+                        from_cache=from_cache,
+                        benchmark_id=benchmark_id,
+                    )
                 )
-            )
+
+            # Skip binary search and jump to results logging
+        else:
+            # Original binary search logic
+            for iteration in range(self.capacity_search_config.max_iterations):
+                logger.info(f"Searching between {left} and {right}")
+                # stopping condition - we have reached the minimum granularity
+                if (
+                    abs(left - right)
+                    < self.capacity_search_config.min_search_granularity * qps / 100
+                ):
+                    break
+
+                qps = round((left + right) / 2, 2)
+
+                if qps == last_qps:
+                    break
+
+                last_qps = qps
+
+                (
+                    is_under_sla,
+                    metrics_dict,
+                    run_id,
+                    from_cache,
+                ) = self._run_capacity_search_benchmark(qps)
+
+                if not from_cache:
+                    any_new_runs = True
+
+                if is_under_sla:
+                    found_valid_qps = True
+                    max_qps_under_sla = qps
+                    slo_metrics_at_max_qps = metrics_dict
+                    best_run_id = run_id
+
+                    if qps > VICINITY_THRESHOLD * right:
+                        right = min(right * QPS_INCREASE_SCALE, min_qps_over_sla)
+
+                    left = qps
+                else:
+                    right = qps
+                    min_qps_over_sla = min(min_qps_over_sla, qps)
+
+                # Emit event after each iteration
+                emit_dashboard_event(
+                    CapacitySearchEvent(
+                        current_qps=qps,
+                        is_under_sla=is_under_sla,
+                        slo_metrics=metrics_dict or {},
+                        slo_target=str(self.slo_evaluator.slo_set),
+                        iteration=iteration + 1,
+                        total_iterations=self.capacity_search_config.max_iterations,
+                        search_left=left,
+                        search_right=right,
+                        best_qps=max_qps_under_sla,
+                        best_slo_metrics=slo_metrics_at_max_qps,
+                        is_complete=False,
+                        from_cache=from_cache,
+                        benchmark_id=benchmark_id,
+                    )
+                )
 
         if not found_valid_qps:
             logger.info(

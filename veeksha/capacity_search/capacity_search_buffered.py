@@ -76,7 +76,8 @@ class CapacitySearch:
         self, buffer_size: int, run_dir: str
     ) -> BenchmarkConfig:
         """Return a new BenchmarkConfig with metrics_config.output_dir pointing to run_dir and
-        wandb_run_name encoding buffer_size, and max_concurrent_sessions set to buffer_size.
+        wandb_run_name encoding buffer_size, max_concurrent_sessions set to buffer_size, and
+        num_threads adjusted to min(num_threads, buffer_size).
         """
 
         # propagate wandb project from capacity search if provided and enable logging
@@ -111,10 +112,32 @@ class CapacitySearch:
             wandb_group=effective_group,
         )
 
-        # copy of benchmark_config with updated metrics and max_concurrent_sessions
+        # Adjust num_threads to be min(num_threads, max_concurrent_sessions)
+        base_client_cfg = self.base_benchmark_config.client_config
+        original_num_threads = base_client_cfg.num_threads
+        adjusted_num_threads = max(original_num_threads, buffer_size)
+
+        logger.info(
+            f"Buffer size: {buffer_size}, Original num_threads: {original_num_threads}, "
+            f"Adjusted num_threads: {adjusted_num_threads}"
+        )
+
+        new_client_cfg = replace(  # type: ignore[call-overload]
+            cast(Any, base_client_cfg),
+            num_threads=adjusted_num_threads,
+        )
+
+        if adjusted_num_threads != original_num_threads:
+            logger.info(
+                f"Adjusted num_threads from {original_num_threads} to {adjusted_num_threads} "
+                f"(limited by max_concurrent_sessions={buffer_size})"
+            )
+
+        # copy of benchmark_config with updated metrics, client_config, and max_concurrent_sessions
         return replace(  # type: ignore[call-overload]
             cast(Any, self.base_benchmark_config),
             metrics_config=new_metrics_cfg,
+            client_config=new_client_cfg,
             max_concurrent_sessions=buffer_size,
         )
 
@@ -332,62 +355,111 @@ class CapacitySearch:
             )
         )
 
-        for iteration in range(self.capacity_search_config.max_iterations):
-            logger.info(f"Searching between {left} and {right}")
-            # stopping condition - we have reached the minimum granularity (buffer sizes are integers)
-            if abs(left - right) <= 1:
-                break
+        # If qps_values is provided, use it as buffer_size_values (similar to how start_qps is reused)
+        if self.capacity_search_config.qps_values is not None:
+            logger.info(f"Running capacity search with specific buffer size values: {self.capacity_search_config.qps_values}")
 
-            buffer_size = int((left + right) / 2)
+            buffer_size_list = sorted([int(val) for val in self.capacity_search_config.qps_values])
+            total_iterations = len(buffer_size_list)
 
-            if buffer_size == last_buffer_size:
-                break
+            for iteration, buffer_size in enumerate(buffer_size_list):
+                logger.info(f"Testing buffer size: {buffer_size} ({iteration + 1}/{total_iterations})")
 
-            last_buffer_size = buffer_size
+                (
+                    is_under_sla,
+                    metrics_dict,
+                    run_id,
+                    from_cache,
+                ) = self._run_capacity_search_benchmark(buffer_size)
 
-            (
-                is_under_sla,
-                metrics_dict,
-                run_id,
-                from_cache,
-            ) = self._run_capacity_search_benchmark(buffer_size)
+                if not from_cache:
+                    any_new_runs = True
 
-            if not from_cache:
-                any_new_runs = True
+                if is_under_sla:
+                    found_valid_buffer_size = True
+                    if max_buffer_size_under_sla is None or buffer_size > max_buffer_size_under_sla:
+                        max_buffer_size_under_sla = buffer_size
+                        slo_metrics_at_max_buffer_size = metrics_dict
+                        best_run_id = run_id
 
-            if is_under_sla:
-                found_valid_buffer_size = True
-                max_buffer_size_under_sla = buffer_size
-                slo_metrics_at_max_buffer_size = metrics_dict
-                best_run_id = run_id
-
-                # For buffer sizes, if we're near the top, expand search range
-                if buffer_size > VICINITY_THRESHOLD * right:
-                    right = min(int(right * QPS_INCREASE_SCALE), min_buffer_size_over_sla)
-
-                left = buffer_size
-            else:
-                right = buffer_size
-                min_buffer_size_over_sla = min(min_buffer_size_over_sla, buffer_size)
-
-            # Emit event after each iteration
-            emit_dashboard_event(
-                CapacitySearchEvent(
-                    current_qps=float(buffer_size),  # using qps field for buffer_size for compatibility
-                    is_under_sla=is_under_sla,
-                    slo_metrics=metrics_dict or {},
-                    slo_target=str(self.slo_evaluator.slo_set),
-                    iteration=iteration + 1,
-                    total_iterations=self.capacity_search_config.max_iterations,
-                    search_left=left,
-                    search_right=right,
-                    best_qps=float(max_buffer_size_under_sla) if max_buffer_size_under_sla else None,  # using qps field for buffer_size
-                    best_slo_metrics=slo_metrics_at_max_buffer_size,
-                    is_complete=False,
-                    from_cache=from_cache,
-                    benchmark_id=benchmark_id,
+                # Emit event after each iteration
+                emit_dashboard_event(
+                    CapacitySearchEvent(
+                        current_qps=float(buffer_size),
+                        is_under_sla=is_under_sla,
+                        slo_metrics=metrics_dict or {},
+                        slo_target=str(self.slo_evaluator.slo_set),
+                        iteration=iteration + 1,
+                        total_iterations=total_iterations,
+                        search_left=min(buffer_size_list),
+                        search_right=max(buffer_size_list),
+                        best_qps=float(max_buffer_size_under_sla) if max_buffer_size_under_sla else None,
+                        best_slo_metrics=slo_metrics_at_max_buffer_size,
+                        is_complete=False,
+                        from_cache=from_cache,
+                        benchmark_id=benchmark_id,
+                    )
                 )
-            )
+
+            # Skip binary search and jump to results logging
+        else:
+            # Original binary search logic
+            for iteration in range(self.capacity_search_config.max_iterations):
+                logger.info(f"Searching between {left} and {right}")
+                # stopping condition - we have reached the minimum granularity (buffer sizes are integers)
+                if abs(left - right) <= 1:
+                    break
+
+                buffer_size = int((left + right) / 2)
+
+                if buffer_size == last_buffer_size:
+                    break
+
+                last_buffer_size = buffer_size
+
+                (
+                    is_under_sla,
+                    metrics_dict,
+                    run_id,
+                    from_cache,
+                ) = self._run_capacity_search_benchmark(buffer_size)
+
+                if not from_cache:
+                    any_new_runs = True
+
+                if is_under_sla:
+                    found_valid_buffer_size = True
+                    max_buffer_size_under_sla = buffer_size
+                    slo_metrics_at_max_buffer_size = metrics_dict
+                    best_run_id = run_id
+
+                    # For buffer sizes, if we're near the top, expand search range
+                    if buffer_size > VICINITY_THRESHOLD * right:
+                        right = min(int(right * QPS_INCREASE_SCALE), min_buffer_size_over_sla)
+
+                    left = buffer_size
+                else:
+                    right = buffer_size
+                    min_buffer_size_over_sla = min(min_buffer_size_over_sla, buffer_size)
+
+                # Emit event after each iteration
+                emit_dashboard_event(
+                    CapacitySearchEvent(
+                        current_qps=float(buffer_size),  # using qps field for buffer_size for compatibility
+                        is_under_sla=is_under_sla,
+                        slo_metrics=metrics_dict or {},
+                        slo_target=str(self.slo_evaluator.slo_set),
+                        iteration=iteration + 1,
+                        total_iterations=self.capacity_search_config.max_iterations,
+                        search_left=left,
+                        search_right=right,
+                        best_qps=float(max_buffer_size_under_sla) if max_buffer_size_under_sla else None,  # using qps field for buffer_size
+                        best_slo_metrics=slo_metrics_at_max_buffer_size,
+                        is_complete=False,
+                        from_cache=from_cache,
+                        benchmark_id=benchmark_id,
+                    )
+                )
 
         if not found_valid_buffer_size:
             logger.info(
