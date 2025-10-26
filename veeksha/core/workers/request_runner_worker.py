@@ -46,11 +46,6 @@ class RequestRunnerWorker:
         # Install uvloop for this thread
         uvloop.install()
 
-        create_thread_local_revati_client(
-            f"veeksha-request-runner-worker-{str(uuid.uuid4())[:8]}",
-            ClientType.OBSERVER,
-        )
-
         # Run the async event loop
         asyncio.run(self._worker_loop())
 
@@ -58,7 +53,12 @@ class RequestRunnerWorker:
 
     async def _worker_loop(self) -> None:
         """Main async event loop that dispatches requests as concurrent tasks."""
-        # Construct LLM client
+        # Construct LLM client        
+        create_thread_local_revati_client(
+            f"veeksha-request-runner-worker-{str(uuid.uuid4())[:8]}",
+            ClientType.OBSERVER,
+        )
+
         llm_client = construct_client(
             model_name=self.client_config.model,
             tokenizer_name=self.client_config.tokenizer or self.client_config.model,
