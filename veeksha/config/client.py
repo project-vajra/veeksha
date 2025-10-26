@@ -18,13 +18,6 @@ class ClientConfig:
             "help": "The tokenizer to use for this load test. By default, the tokenizer is inferred from the model."
         },
     )
-    num_threads: int = field(
-        default=10,
-        metadata={
-            "help": "The number of worker threads to use for making concurrent requests. "
-            "With GIL-free Python (python -Xgil=0), these threads run in true parallel."
-        },
-    )
     additional_sampling_params: str = field(
         default="{}",
         metadata={
@@ -63,6 +56,3 @@ class ClientConfig:
 
         if self.tokenizer is None:
             self.tokenizer = self.model
-
-        if self.num_threads < 1:
-            raise ValueError("num_threads must be greater than 0")

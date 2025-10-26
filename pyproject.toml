@@ -37,6 +37,8 @@ dependencies = [
     "textual",
     "textual-plotext",
     "requests",
+    "uvloop",
+    "httpx",
 ]
 
 [project.urls]

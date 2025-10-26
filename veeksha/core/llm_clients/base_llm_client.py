@@ -8,7 +8,7 @@ from veeksha.metrics.request_metrics import RequestMetrics
 
 
 class BaseLLMClient(ABC):
-    """A client for making requests to a LLM API e.g Anyscale Endpoints."""
+    """An async client for making requests to a LLM API e.g Anyscale Endpoints."""
 
     def __init__(self, model_name: str, tokenizer_name: str) -> None:
         self.model_name = model_name
@@ -21,10 +21,10 @@ class BaseLLMClient(ABC):
         return len(self.tokenizer.encode(text))
 
     @abstractmethod
-    def send_llm_request(
+    async def send_llm_request(
         self, request_config: RequestConfig, timeout: int
     ) -> Tuple[RequestMetrics, Optional[Response]]:
-        """Make a single completion request to a LLM API
+        """Make a single completion request to a LLM API asynchronously.
 
         Args:
             request_config: Configuration for the request

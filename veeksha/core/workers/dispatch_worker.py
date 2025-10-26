@@ -8,8 +8,8 @@ from queue import Empty, Queue
 from veeksha.core.context import BenchmarkContext, WorkerContext
 from veeksha.core.dispatch_scheduler import DispatchScheduler
 from veeksha.core.dispatcher import RequestDispatcher
-from veeksha.core.requests_launcher import RequestsLauncher
 from veeksha.core.workers.constants import QUEUE_GET_TIMEOUT_S
+from veeksha.core.workers.request_runner_manager import RequestRunnerManager
 from veeksha.logger import init_logger
 from veeksha.metrics.service_metrics import ServiceMetrics
 
@@ -89,7 +89,7 @@ class DispatchWorker:
         ready_queue: Queue,
         service_metrics: ServiceMetrics,
         scheduler: DispatchScheduler,
-        req_launcher: RequestsLauncher,
+        req_runner: RequestRunnerManager,
         benchmark_context: BenchmarkContext,
         worker_context: WorkerContext,
         request_writer: DispatchedRequestWriter,
@@ -98,7 +98,7 @@ class DispatchWorker:
         self.ready_queue = ready_queue
         self.service_metrics = service_metrics
         self.scheduler = scheduler
-        self.req_launcher = req_launcher
+        self.req_runner = req_runner
         self.benchmark_context = benchmark_context
         self.worker_context = worker_context
         self.dispatcher = RequestDispatcher(
@@ -107,6 +107,7 @@ class DispatchWorker:
             benchmark_id=benchmark_context.benchmark_id,
             telemetry_enabled=benchmark_context.telemetry_enabled,
             request_writer=request_writer,
+            worker_contexts=req_runner.get_worker_contexts(),
         )
 
     def run(self) -> None:

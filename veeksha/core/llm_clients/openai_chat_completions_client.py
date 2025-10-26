@@ -1,8 +1,8 @@
 import os
 import time
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 
-import requests  # type: ignore
+import httpx
 
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
 from veeksha.core.llm_clients.streaming_mixin import StreamingMixin
@@ -17,7 +17,7 @@ logger = init_logger(__name__)
 
 
 class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
-    """Client for OpenAI Chat Completions API."""
+    """Async client for OpenAI Chat Completions API using httpx."""
 
     def __init__(self, model_name: str, tokenizer_name: str) -> None:
         super().__init__(model_name, tokenizer_name)
@@ -35,45 +35,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             )
         self.start_time = time.monotonic()
 
-    def _update_metrics_from_chunk(
-        self,
-        data: Dict,
-        inter_token_times: list,
-        previous_responses: list,
-        previous_token_count: int,
-        most_recent_received_token_time: float,
-    ) -> Tuple[int, int, str, float]:
-        """Update metrics and generated text from a single data chunk."""
-        generated_text_chunk = ""
-        tokens_received_chunk = 0
-
-        delta = data.get("choices", [{}])[0].get("delta", {})
-        if content_chunk := delta.get("content"):
-            (
-                current_tokens_received,
-                previous_token_count,
-            ) = self.get_current_tokens_received(
-                previous_responses=previous_responses,
-                current_response=content_chunk,
-                previous_token_count=previous_token_count,
-            )
-
-            tokens_received_chunk += current_tokens_received
-            inter_token_times.append(time.monotonic() - most_recent_received_token_time)
-            if current_tokens_received > 1:
-                inter_token_times.extend([0] * (current_tokens_received - 1))
-
-            most_recent_received_token_time = time.monotonic()
-            generated_text_chunk = content_chunk
-
-        return (
-            tokens_received_chunk,
-            previous_token_count,
-            generated_text_chunk,
-            most_recent_received_token_time,
-        )
-
-    def send_llm_request(
+    async def send_llm_request(
         self, request_config: RequestConfig, timeout: int
     ) -> Tuple[RequestMetrics, Optional[Response]]:
         prompt, prompt_len = request_config.prompt
@@ -122,120 +84,129 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         is_first_emission = True  # Track if this is the first dashboard event emission
 
         try:
-            with requests.post(
-                address, json=body, headers=headers, timeout=timeout, stream=True
-            ) as response:
-                response.raise_for_status()
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream(
+                    "POST", address, json=body, headers=headers
+                ) as response:
+                    response.raise_for_status()
 
-                for data in self._process_stream(response):
-                    tokens_received_chunk = 0  # Track tokens received in this chunk
-                    if "error" in data:
-                        err = data.get("error") or {}
-                        error_msg = err.get("message", "Unknown error")
-                        code_value = err.get("code")
-                        error_response_code = (
-                            code_value if isinstance(code_value, int) else 400
-                        )
-                        break  # Stop processing on error
-                    delta = data["choices"][0]["delta"]
-                    if delta.get("content", None):
-                        chunk_arrival_monotonic = (
-                            time.monotonic()
-                        )  # avoid tokenization overhead
-                        (
-                            current_tokens_received,
-                            previous_token_count,
-                        ) = self.get_current_tokens_received(
-                            previous_responses=previous_responses,
-                            current_response=delta["content"],
-                            previous_token_count=previous_token_count,
-                        )
-
-                        # Apply local cap against requested max_tokens
-                        allowable_to_add = current_tokens_received
-                        if isinstance(max_tokens_limit, int):
-                            allowable_to_add = max(
-                                0,
-                                min(
-                                    current_tokens_received,
-                                    max_tokens_limit - tokens_received,
-                                ),
+                    async for data in self._process_stream(response):
+                        tokens_received_chunk = 0  # Track tokens received in this chunk
+                        if "error" in data:
+                            err = data.get("error") or {}
+                            error_msg = err.get("message", "Unknown error")
+                            code_value = err.get("code")
+                            error_response_code = (
+                                code_value if isinstance(code_value, int) else 400
+                            )
+                            break  # Stop processing on error
+                        delta = data["choices"][0]["delta"]
+                        if delta.get("content", None):
+                            chunk_arrival_monotonic = (
+                                time.monotonic()
+                            )  # avoid tokenization overhead
+                            (
+                                current_tokens_received,
+                                previous_token_count,
+                            ) = self.get_current_tokens_received(
+                                previous_responses=previous_responses,
+                                current_response=delta["content"],
+                                previous_token_count=previous_token_count,
                             )
 
-                        if allowable_to_add > 0:
-                            tokens_received_chunk += allowable_to_add
-                            inter_token_times.append(
-                                chunk_arrival_monotonic
-                                - most_recent_received_token_time
-                            )
-                            if allowable_to_add > 1:
-                                inter_token_times.extend([0] * (allowable_to_add - 1))
-                            tokens_received += allowable_to_add
-                            most_recent_received_token_time = chunk_arrival_monotonic
-
-                            generated_text += delta["content"]
-
-                            # Truncate generated_text to exactly tokens_received tokens
+                            # Apply local cap against requested max_tokens
+                            allowable_to_add = current_tokens_received
                             if isinstance(max_tokens_limit, int):
-                                output_token_ids = self.tokenizer.encode(generated_text)
-                                if len(output_token_ids) > tokens_received:
-                                    generated_text = self.tokenizer.decode(
-                                        output_token_ids[:tokens_received]
-                                    )
-
-                        # If we've reached or exceeded the cap, stop processing further chunks
-                        if (
-                            isinstance(max_tokens_limit, int)
-                            and tokens_received >= max_tokens_limit
-                        ):
-                            break
-
-                    if (
-                        tokens_received_chunk > 0
-                        and (tokens_received - last_token_batch_emission) >= 10
-                    ):  # TODO: make this configurable/a constant
-                        current_ttft_ms = (
-                            inter_token_times[0] * 1000 if inter_token_times else None
-                        )
-                        current_tpot_ms = None
-                        recent_tbt_ms = None
-                        if len(inter_token_times) > 1:
-                            from statistics import mean
-
-                            current_tpot_ms = mean(inter_token_times[1:]) * 1000
-                            # Get recent TBT values (last 10 or all available)
-                            recent_tbt_ms = [
-                                t * 1000 for t in inter_token_times[1:][-10:]
-                            ]
-
-                        if request_config.id is not None:
-                            emit_dashboard_event(
-                                TokenBatchEvent(
-                                    request_id=request_config.id,
-                                    timestamp=time.time(),
-                                    tokens_received_this_batch=tokens_received_chunk,
-                                    total_output_tokens=tokens_received,
-                                    ttft_ms=current_ttft_ms,
-                                    current_tpot_ms=current_tpot_ms,
-                                    is_first_token=is_first_emission,
-                                    recent_tbt_ms=recent_tbt_ms,
-                                    benchmark_id=request_config.benchmark_id,
+                                allowable_to_add = max(
+                                    0,
+                                    min(
+                                        current_tokens_received,
+                                        max_tokens_limit - tokens_received,
+                                    ),
                                 )
-                            )
-                        last_token_batch_emission = tokens_received
-                        is_first_emission = (
-                            False  # After first emission, no longer first
-                        )
 
-        except requests.HTTPError as e:
+                            if allowable_to_add > 0:
+                                tokens_received_chunk += allowable_to_add
+                                inter_token_times.append(
+                                    chunk_arrival_monotonic
+                                    - most_recent_received_token_time
+                                )
+                                if allowable_to_add > 1:
+                                    inter_token_times.extend(
+                                        [0] * (allowable_to_add - 1)
+                                    )
+                                tokens_received += allowable_to_add
+                                most_recent_received_token_time = (
+                                    chunk_arrival_monotonic
+                                )
+
+                                generated_text += delta["content"]
+
+                                # Truncate generated_text to exactly tokens_received tokens
+                                if isinstance(max_tokens_limit, int):
+                                    output_token_ids = self.tokenizer.encode(
+                                        generated_text
+                                    )
+                                    if len(output_token_ids) > tokens_received:
+                                        generated_text = self.tokenizer.decode(
+                                            output_token_ids[:tokens_received]
+                                        )
+
+                            # If we've reached or exceeded the cap, stop processing further chunks
+                            if (
+                                isinstance(max_tokens_limit, int)
+                                and tokens_received >= max_tokens_limit
+                            ):
+                                break
+
+                        if (
+                            tokens_received_chunk > 0
+                            and (tokens_received - last_token_batch_emission) >= 10
+                        ):  # TODO: make this configurable/a constant
+                            current_ttft_ms = (
+                                inter_token_times[0] * 1000
+                                if inter_token_times
+                                else None
+                            )
+                            current_tpot_ms = None
+                            recent_tbt_ms = None
+                            if len(inter_token_times) > 1:
+                                from statistics import mean
+
+                                current_tpot_ms = mean(inter_token_times[1:]) * 1000
+                                # Get recent TBT values (last 10 or all available)
+                                recent_tbt_ms = [
+                                    t * 1000 for t in inter_token_times[1:][-10:]
+                                ]
+
+                            if request_config.id is not None:
+                                emit_dashboard_event(
+                                    TokenBatchEvent(
+                                        request_id=request_config.id,
+                                        timestamp=time.time(),
+                                        tokens_received_this_batch=tokens_received_chunk,
+                                        total_output_tokens=tokens_received,
+                                        ttft_ms=current_ttft_ms,
+                                        current_tpot_ms=current_tpot_ms,
+                                        is_first_token=is_first_emission,
+                                        recent_tbt_ms=recent_tbt_ms,
+                                        benchmark_id=request_config.benchmark_id,
+                                    )
+                                )
+                            last_token_batch_emission = tokens_received
+                            is_first_emission = (
+                                False  # After first emission, no longer first
+                            )
+
+        except httpx.HTTPStatusError as e:
             error_response_code = e.response.status_code if e.response else 500
             error_msg = error_msg or str(e)
             logger.warning(f"HTTP Error: status={error_response_code} msg={error_msg}")
-        except requests.ConnectionError as e:
+        except httpx.ConnectError as e:
             error_response_code = 503
             error_msg = error_msg or str(e)
             logger.warning(f"Connection Error: ({error_response_code}) {error_msg}")
-        except requests.Timeout:
+        except httpx.TimeoutException:
             error_response_code = 408
             error_msg = error_msg or "Request timed out"
             # logger.warning(f"Timeout Error: ({error_response_code}) {error_msg}")

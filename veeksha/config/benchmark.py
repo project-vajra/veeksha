@@ -96,8 +96,19 @@ class BenchmarkConfig:
             "help": "Maximum number of concurrent sessions allowed. None means unlimited."
         },
     )
+    num_request_runner_threads: int = field(
+        default=10,
+        metadata={
+            "help": "Number of async worker threads for making concurrent requests. "
+            "With GIL-free Python (python -Xgil=0), these threads run in true parallel. "
+            "Each thread runs a uvloop event loop for handling concurrent HTTP requests."
+        },
+    )
 
     def __post_init__(self):
+        if self.num_request_runner_threads < 1:
+            raise ValueError("num_request_runner_threads must be greater than 0")
+
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
             logger.warning("Removing timeout for LMEval.")
             self.timeout = -1

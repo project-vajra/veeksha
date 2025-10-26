@@ -19,13 +19,13 @@ from veeksha.config.utils import prepare_benchmark_output_dir
 from veeksha.core.context import BenchmarkContext
 from veeksha.core.dispatch_scheduler import DispatchScheduler
 from veeksha.core.hf_utils import get_tokenizer
-from veeksha.core.requests_launcher import RequestsLauncher
 from veeksha.core.response import Response
 from veeksha.core.seeding import (
     SeedManager,
 )
 from veeksha.core.thread_pool import ThreadPoolManager
 from veeksha.core.workers import DispatchWorker, PrefetchWorker, ResultsProcessorWorker, DispatchedRequestWriter
+from veeksha.core.workers.request_runner_manager import RequestRunnerManager
 from veeksha.dashboard.events import (
     BenchmarkStatusEvent,
 )
@@ -161,15 +161,16 @@ def run_main_loop(
         telemetry_enabled=benchmark_config.runtime_telemetry_enabled,
     )
 
-    # Initialize request launcher
-    req_launcher = RequestsLauncher(
+    # Initialize request runner
+    req_runner = RequestRunnerManager(
         client_config=benchmark_config.client_config,
         input_queue=input_queue,
         output_queue=output_queue,
+        num_threads=benchmark_config.num_request_runner_threads,
     )
 
     # Start the worker threads
-    req_launcher.start()
+    req_runner.start()
 
     # Create locks for thread-safe access to shared resources
     generator_lock = threading.Lock()  # Protects request generator
@@ -209,7 +210,7 @@ def run_main_loop(
             "ready_queue": ready_queue,
             "service_metrics": service_metrics,
             "scheduler": scheduler,
-            "req_launcher": req_launcher,
+            "req_runner": req_runner,
             "benchmark_context": benchmark_context,
             "request_writer": request_writer,
         },
@@ -237,7 +238,7 @@ def run_main_loop(
 
     logger.info(
         f"Started {pool_manager.get_total_thread_count()} threads across thread pools "
-        f"and {req_launcher.get_worker_count()} worker threads"
+        f"and {req_runner.get_worker_count()} worker threads"
     )
 
     # Monitor and wait for completion
@@ -260,7 +261,7 @@ def run_main_loop(
     pool_manager.join_pool("dispatcher")
 
     # Wait for all worker threads to terminate
-    req_launcher.wait_for_workers()
+    req_runner.wait_for_workers()
     logger.debug("Worker threads joined")
 
     # Signal the results processor threads to finish after draining and join them
