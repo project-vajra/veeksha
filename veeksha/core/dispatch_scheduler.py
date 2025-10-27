@@ -4,7 +4,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-from revati.client.helper import get_time
+from revati.client.helper import get_virtual_time
 
 from veeksha.core.request_config import RequestConfig
 from veeksha.logger import init_logger
@@ -34,11 +34,11 @@ class DispatchScheduler:
         self._canceled_sessions: Dict[int, bool] = {}
         self._cancel_policy_by_session: Dict[int, bool] = {}
         self._id_to_session_seq: Dict[int, Tuple[Optional[int], Optional[int]]] = {}
-        self._start_monotonic = get_time()
+        self._start_monotonic = get_virtual_time()
         self._non_session_ready_cursor: float = 0.0
 
     def _now(self) -> float:
-        return get_time() - self._start_monotonic
+        return get_virtual_time() - self._start_monotonic
 
     def add_request(self, request: RequestConfig) -> None:
         with self._lock:
