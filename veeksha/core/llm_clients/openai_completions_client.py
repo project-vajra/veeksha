@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple
 import aiohttp
 
 from revati.client import ClientType  # type: ignore
-from revati.client.helper import create_thread_local_revati_client, get_time
+from revati.client.helper import create_thread_local_revati_client, get_virtual_time
 
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
 from veeksha.core.llm_clients.streaming_mixin import StreamingMixin
@@ -55,7 +55,7 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
 
         create_thread_local_revati_client(f"veeksha-client-{str(uuid.uuid4())[:8]}", ClientType.OBSERVER)
             
-        self.start_time = get_time()
+        self.start_time = get_virtual_time()
 
     def _update_metrics_from_chunk(
         self,
@@ -82,11 +82,11 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
             )
 
             tokens_received_chunk += current_tokens_received
-            inter_token_times.append(get_time() - most_recent_received_token_time)
+            inter_token_times.append(get_virtual_time() - most_recent_received_token_time)
             if current_tokens_received > 1:
                 inter_token_times.extend([0] * (current_tokens_received - 1))
 
-            most_recent_received_token_time = get_time()
+            most_recent_received_token_time = get_virtual_time()
             generated_text_chunk = text_chunk
             if "logprobs" in choice:
                 raw_logprobs = choice["logprobs"]
@@ -158,8 +158,8 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
         previous_responses = []
         previous_token_count = 0
 
-        most_recent_received_token_time = get_time()
-        request_dispatched_at = get_time() - self.start_time
+        most_recent_received_token_time = get_virtual_time()
+        request_dispatched_at = get_virtual_time() - self.start_time
         # Respect a local cap on tokens to avoid mismatches with server/tokenizer
         max_tokens_limit = None
         if isinstance(request_config.sampling_params, dict):
@@ -217,14 +217,14 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
                                     allowable_to_add  # Track tokens for this chunk
                                 )
                                 inter_token_times.append(
-                                    get_time() - most_recent_received_token_time
+                                    get_virtual_time() - most_recent_received_token_time
                                 )
                                 if allowable_to_add > 1:
                                     inter_token_times.extend(
                                         [0] * (allowable_to_add - 1)
                                     )
                                 tokens_received += allowable_to_add
-                                most_recent_received_token_time = get_time()
+                                most_recent_received_token_time = get_virtual_time()
                                 generated_text += text_chunk
 
                                 # Truncate generated_text to exactly tokens_received tokens
