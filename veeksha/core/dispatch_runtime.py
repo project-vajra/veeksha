@@ -92,8 +92,8 @@ def dispatch_requests(
             return True
         if now_pf < next_prefetch_time:
             remaining = next_prefetch_time - now_pf
-        if is_revati_enabled():
-                 advance_time(remaining)
+            if is_revati_enabled():
+                advance_time(remaining)
             else:
                 if remaining > 0.002:
                     time.sleep(min(remaining - 0.0005, 0.002))
@@ -104,8 +104,8 @@ def dispatch_requests(
                         if now_spin >= deadline or stop_event.is_set():
                             break
                         time.sleep(0)
-                return True
-            return False
+            return True
+        return False
 
     def _is_over_scheduled_cap(now_pf: float) -> bool:
         nonlocal next_prefetch_time
