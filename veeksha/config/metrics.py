@@ -31,6 +31,10 @@ class MetricsConfig:
         default=None,
         metadata={"help": "The wandb run name to log metrics to."},
     )
+    wandb_tags: Optional[str] = field(
+        default=None,
+        metadata={"help": "Comma-separated list of tags to apply to the wandb run."},
+    )
     enable_wandb_sweep: bool = field(
         default=False,
         metadata={"help": "Whether to enable wandb sweep."},

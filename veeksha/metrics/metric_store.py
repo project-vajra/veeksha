@@ -56,6 +56,7 @@ class MetricStore:
         self.wandb_project: Optional[str] = metrics_config.wandb_project
         self.wandb_group: Optional[str] = metrics_config.wandb_group
         self.wandb_run_name: Optional[str] = metrics_config.wandb_run_name
+        self.wandb_tags: Optional[str] = metrics_config.wandb_tags
 
         self.request_level_metrics = RequestLevelMetrics(
             deadline_config=metrics_config.deadline_report,
@@ -118,10 +119,16 @@ class MetricStore:
             logger.info("wandb disabled; not initialized")
             return
 
+        # Parse tags from comma-separated string
+        tags = None
+        if self.wandb_tags:
+            tags = [tag.strip() for tag in self.wandb_tags.split(",") if tag.strip()]
+
         wandb.init(
             project=self.wandb_project,
             group=self.wandb_group,
             name=self.wandb_run_name,
+            tags=tags,
             config={
                 "timeout": self.timeout,
                 "max_requests": self.max_requests,
@@ -232,7 +239,7 @@ class MetricStore:
             **perf_summary,
         }
 
-    def store_output(self, output_dir: str):
+    def store_output(self, output_dir: str, duration_summary: Dict[str, float]):
         perf_csv_path = os.path.join(output_dir, "perf_metrics.csv")
         summary_stats_path = os.path.join(output_dir, "summary_stats.json")
 
@@ -244,6 +251,12 @@ class MetricStore:
         for metric_name, metric_summary in self.summaries.items():
             metric_summary._save_df(metric_summary._to_df(), output_dir, metric_name)
             metric_summary.plot_cdf(output_dir, metric_name)
+
+        # Log summary metrics to wandb (including duration)
+        if self.should_write_metrics_to_wandb and wandb.run:
+            summary_with_duration = {**duration_summary, **self.get_aggregated_summary()}
+            wandb.log(summary_with_duration, step=0)
+            logger.info(f"Logged {len(summary_with_duration)} summary metrics to wandb")
 
         # store service level deadline stats
         with open(os.path.join(output_dir, "service_level_metrics.json"), "w") as f:
@@ -273,7 +286,7 @@ class MetricStore:
         # store summary stats
         with open(summary_stats_path, "w") as f:
             json.dump(
-                {**self.get_summary(), "error_code_freq": dict(self.error_code_freq)}, f
+                {**duration_summary, **self.get_summary(), "error_code_freq": dict(self.error_code_freq)}, f, indent=4
             )
 
         # store additional outputs
