@@ -57,9 +57,11 @@ class DispatchScheduler:
     def _is_session_start(self, request):
         return request.session_sequence_index == 0
 
-    def _mark_session_ready(self, request):
+    def _mark_session_ready(self, request, immediate=False):
         # First-in-session: anchor by absolute if provided; else treat as normal delay
-        if self._buffered_mode:
+        if immediate:
+            ready_at = self._now()
+        elif self._buffered_mode:
             # Abide by QPS if possible
             ready_at = max(self._now(), request.anchor_at_s)
         elif request.anchor_at_s is not None:
@@ -182,4 +184,4 @@ class DispatchScheduler:
                 self._num_active_sessions -= 1
                 if len(self._queued_sessions) > 0:
                     request = self._queued_sessions.popleft()
-                    self._mark_session_ready(request)
+                    self._mark_session_ready(request, immediate=True)

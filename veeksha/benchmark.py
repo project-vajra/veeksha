@@ -1,10 +1,14 @@
 import os
 import random
 import threading
+import signal
 import time
 from queue import Queue
 from threading import Thread
 from typing import List, Optional, TypedDict
+from pathlib import Path
+import subprocess
+import requests
 
 from tqdm import tqdm  # type: ignore
 
@@ -15,10 +19,10 @@ from veeksha.benchmark_data_utils import (
 )
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.client import ClientConfig
-from veeksha.config.utils import prepare_benchmark_output_dir
 from veeksha.core.context import BenchmarkContext
 from veeksha.core.dispatch_scheduler import DispatchScheduler
 from veeksha.core.hf_utils import get_tokenizer
+from veeksha.config.utils import prepare_benchmark_output_dir
 from veeksha.core.response import Response
 from veeksha.core.seeding import (
     SeedManager,
@@ -278,6 +282,57 @@ def run_main_loop(
     else:
         raise service_metrics.error
 
+def wait_for_server(url, process, timeout=240):
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            if process.poll() is not None:
+                exit_code = process.returncode
+                raise RuntimeError(
+                    f"Server process exited with code {exit_code} before port opened. "
+                    f"Check server.log for details."
+            )
+            response = requests.get(url, timeout=1)
+            if response.status_code < 500:  # Any non-500 response means server is up
+                return True
+        except (requests.ConnectionError, requests.Timeout):
+            time.sleep(0.1)
+    raise TimeoutError(f"HTTP server at {url} did not respond within {timeout} seconds")
+
+def start_server(server_boot_cmd, api_url, output_dir):
+    logger.info(f"Booting up the LLM server. Command: {server_boot_cmd}")
+    server_proc = None
+    log_file_path = Path(output_dir) / 'server.log'
+    log_file = open(log_file_path, 'w')
+    import shlex
+    server_proc = subprocess.Popen(
+        shlex.split(server_boot_cmd),
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+    )
+    logger.info(f"Waiting for HTTP port to open. View LLM server logs at {log_file_path}")
+    wait_for_server(api_url, server_proc)
+    logger.info("LLM server is alive!")
+    return server_proc, log_file
+
+
+def wait_for_server_port_release(url, timeout=240):
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            response = requests.get(url, timeout=1)
+            time.sleep(0.1)
+            continue
+        except requests.ConnectionError:
+            return True
+    raise TimeoutError(f"HTTP server at {url} did not release port within {timeout} seconds")
+
+def kill_server(server_proc, log_file, url):
+    # send SIGTERM to the process group
+    server_proc.terminate()
+    server_proc.wait(timeout=240)
+    log_file.close()
+
 
 def run_benchmark(
     benchmark_config: BenchmarkConfig,
@@ -290,133 +345,144 @@ def run_benchmark(
     Returns:
         ServiceMetrics containing the collected metrics (including the `MetricStore`).
     """
+    try:
+        prepare_benchmark_output_dir(benchmark_config)
 
-    prepare_benchmark_output_dir(benchmark_config)
+        # Start the server
+        server_proc = None
+        if benchmark_config.server_boot_cmd:
+            server_proc, log_file = start_server(benchmark_config.server_boot_cmd, benchmark_config.api_url, benchmark_config.metrics_config.output_dir)
 
-    # Ensure reproducibility across all execution paths
-    random.seed(benchmark_config.seed)
+        # Ensure reproducibility across all execution paths
+        random.seed(benchmark_config.seed)
 
-    # Generate unique benchmark ID from output directory
-    benchmark_id = os.path.basename(benchmark_config.metrics_config.output_dir)
-    logger.info(
-        f"Benchmark ID: {benchmark_id}, Output directory: {benchmark_config.metrics_config.output_dir}"
-    )
-    # Expose output directory to child threads for iterative trace writes
-    os.environ["VEEKSHA_OUTPUT_DIR"] = benchmark_config.metrics_config.output_dir
-    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-
-    setup_api_environment(
-        api_key=benchmark_config.api_key,
-        api_url=benchmark_config.api_url,
-    )
-
-    _initialize_min_tokens_support(benchmark_config)
-
-    # Dashboard initialization is now handled by the caller
-    # (either run_benchmark_with_dashboard or run_benchmark_console_only)
-
-    generated_responses: List[Response] = []
-
-    assert (
-        benchmark_config.client_config.tokenizer is not None
-    ), "Tokenizer is required."
-
-    tokenizer = get_tokenizer(
-        tokenizer_name=benchmark_config.client_config.tokenizer,
-        trust_remote_code=True,
-    )
-
-    request_generator_params = {}
-    request_generator_config_type = benchmark_config.request_generator_config.get_type()
-
-    if (
-        request_generator_config_type == RequestGeneratorType.SYNTHETIC
-        or request_generator_config_type == RequestGeneratorType.TRACE
-    ):
-        request_generator_params = {
-            "corpus_lines": load_corpus(),
-        }
-
-    seed_manager = SeedManager(benchmark_config.seed)
-
-    request_generator = RequestGeneratorRegistry.get(
-        benchmark_config.request_generator_config.get_type(),
-        config=benchmark_config.request_generator_config,
-        tokenizer=tokenizer,
-        client_config=benchmark_config.client_config,
-        seed_manager=seed_manager,
-        output_dir=benchmark_config.metrics_config.output_dir,
-        **request_generator_params,
-    )
-
-    max_requests = (
-        request_generator.num_requests
-        if benchmark_config.request_generator_config.get_type()
-        == RequestGeneratorType.LMEVAL
-        else benchmark_config.max_completed_requests
-    )
-    # Disable tqdm progress bar if dashboard is enabled to prevent output conflicts
-    pbar = tqdm(total=max_requests, disable=benchmark_config.dashboard_config.enabled)
-
-    service_metrics = ServiceMetrics(
-        max_requests=max_requests,
-        timeout=benchmark_config.timeout,
-        metrics_config=benchmark_config.metrics_config,
-    )
-
-    run_main_loop(
-        benchmark_config=benchmark_config,
-        request_generator=request_generator,
-        service_metrics=service_metrics,
-        generated_responses=generated_responses,
-        pbar=pbar,
-        benchmark_id=benchmark_id,
-    )
-
-    service_metrics.store_output()
-    logger.info(f"Metrics stored to {service_metrics.output_dir}")
-
-    store_generated_texts(service_metrics.output_dir, generated_responses)
-
-    # lm-eval specific
-    if (
-        benchmark_config.request_generator_config.get_type()
-        == RequestGeneratorType.LMEVAL
-    ):
-        request_generator.get_responses(generated_responses)
-        lmeval_results = request_generator.evaluate()
-
-        store_lmeval_results(service_metrics.output_dir, lmeval_results)
-
-    # Emit benchmark completion event for dashboard
-    # This is done after all processing is complete to ensure accurate counts
-    if service_metrics.start_time and service_metrics.end_time:
-        elapsed = service_metrics.end_time - service_metrics.start_time
-    else:
-        elapsed = 0.0
-
-    logger.debug(
-        f"Emitting BenchmarkStatusEvent: total={service_metrics.num_requests}, "
-        f"completed={service_metrics.num_completed_requests}, "
-        f"errored={service_metrics.num_errored_requests}"
-    )
-
-    emit_dashboard_event(
-        BenchmarkStatusEvent(
-            benchmark_id=benchmark_id,
-            total_requests=service_metrics.num_requests,
-            completed_requests=service_metrics.num_completed_requests,
-            errored_requests=service_metrics.num_errored_requests,
-            active_requests=0,  # All requests done at this point
-            current_qps=(
-                service_metrics.num_completed_requests / elapsed if elapsed > 0 else 0.0
-            ),
-            elapsed_time=elapsed,
+        # Generate unique benchmark ID from output directory
+        benchmark_id = os.path.basename(benchmark_config.metrics_config.output_dir)
+        logger.info(
+            f"Benchmark ID: {benchmark_id}, Output directory: {benchmark_config.metrics_config.output_dir}"
         )
-    )
+        # Expose output directory to child threads for iterative trace writes
+        os.environ["VEEKSHA_OUTPUT_DIR"] = benchmark_config.metrics_config.output_dir
+        os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-    return service_metrics
+        setup_api_environment(
+            api_key=benchmark_config.api_key,
+            api_url=benchmark_config.api_url,
+        )
 
+        _initialize_min_tokens_support(benchmark_config)
+
+        # Dashboard initialization is now handled by the caller
+        # (either run_benchmark_with_dashboard or run_benchmark_console_only)
+
+        generated_responses: List[Response] = []
+
+        assert (
+            benchmark_config.client_config.tokenizer is not None
+        ), "Tokenizer is required."
+
+        tokenizer = get_tokenizer(
+            tokenizer_name=benchmark_config.client_config.tokenizer,
+            trust_remote_code=True,
+        )
+
+        request_generator_params = {}
+        request_generator_config_type = benchmark_config.request_generator_config.get_type()
+
+        if (
+            request_generator_config_type == RequestGeneratorType.SYNTHETIC
+            or request_generator_config_type == RequestGeneratorType.TRACE
+        ):
+            request_generator_params = {
+                "corpus_lines": load_corpus(),
+            }
+
+        seed_manager = SeedManager(benchmark_config.seed)
+
+        request_generator = RequestGeneratorRegistry.get(
+            benchmark_config.request_generator_config.get_type(),
+            config=benchmark_config.request_generator_config,
+            tokenizer=tokenizer,
+            client_config=benchmark_config.client_config,
+            seed_manager=seed_manager,
+            output_dir=benchmark_config.metrics_config.output_dir,
+            **request_generator_params,
+        )
+
+        max_requests = (
+            request_generator.num_requests
+            if benchmark_config.request_generator_config.get_type()
+            == RequestGeneratorType.LMEVAL
+            else benchmark_config.max_completed_requests
+        )
+        # Disable tqdm progress bar if dashboard is enabled to prevent output conflicts
+        pbar = tqdm(total=max_requests, disable=benchmark_config.dashboard_config.enabled)
+
+        service_metrics = ServiceMetrics(
+            max_requests=max_requests,
+            timeout=benchmark_config.timeout,
+            metrics_config=benchmark_config.metrics_config,
+        )
+
+        run_main_loop(
+            benchmark_config=benchmark_config,
+            request_generator=request_generator,
+            service_metrics=service_metrics,
+            generated_responses=generated_responses,
+            pbar=pbar,
+            benchmark_id=benchmark_id,
+        )
+
+        service_metrics.store_output()
+        logger.info(f"Metrics stored to {service_metrics.output_dir}")
+
+        store_generated_texts(service_metrics.output_dir, generated_responses)
+
+        # lm-eval specific
+        if (
+            benchmark_config.request_generator_config.get_type()
+            == RequestGeneratorType.LMEVAL
+        ):
+            request_generator.get_responses(generated_responses)
+            lmeval_results = request_generator.evaluate()
+
+            store_lmeval_results(service_metrics.output_dir, lmeval_results)
+
+        # Emit benchmark completion event for dashboard
+        # This is done after all processing is complete to ensure accurate counts
+        if service_metrics.start_time and service_metrics.end_time:
+            elapsed = service_metrics.end_time - service_metrics.start_time
+        else:
+            elapsed = 0.0
+        
+
+
+        logger.debug(
+            f"Emitting BenchmarkStatusEvent: total={service_metrics.num_requests}, "
+            f"completed={service_metrics.num_completed_requests}, "
+            f"errored={service_metrics.num_errored_requests}"
+        )
+
+        emit_dashboard_event(
+            BenchmarkStatusEvent(
+                benchmark_id=benchmark_id,
+                total_requests=service_metrics.num_requests,
+                completed_requests=service_metrics.num_completed_requests,
+                errored_requests=service_metrics.num_errored_requests,
+                active_requests=0,  # All requests done at this point
+                current_qps=(
+                    service_metrics.num_completed_requests / elapsed if elapsed > 0 else 0.0
+                ),
+                elapsed_time=elapsed,
+            )
+        )
+        return service_metrics
+    finally:
+        # Kill the server
+        if benchmark_config.server_boot_cmd:
+            assert server_proc is not None
+            kill_server(server_proc, log_file, benchmark_config.api_url)
+            logger.info("Killed the LLM server")
 
 class BenchmarkResultContainer(TypedDict):
     service_metrics: Optional[ServiceMetrics]

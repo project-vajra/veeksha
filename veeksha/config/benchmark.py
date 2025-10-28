@@ -104,6 +104,12 @@ class BenchmarkConfig:
             "help": "Maximum number of concurrent sessions allowed. None means unlimited."
         },
     )
+    server_boot_cmd: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Command to boot up the LLM server"
+        }
+    )
 
     def __post_init__(self):
         if self.num_request_runner_threads < 1:
