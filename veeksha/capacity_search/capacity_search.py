@@ -340,12 +340,176 @@ class CapacitySearch:
             return None
 
         return files[0]
+    
+    def _search_fixed_qps_points(self) -> SearchResult:
+        """
+        Run capacity search over a fixed list of QPS points.
+        """
+        qps_list = list(self.capacity_search_config.qps_points or [])
+        if not qps_list:
+            raise ValueError("Explicit QPS mode requires non-empty qps_points.")
+
+        # Emit effective wandb settings (if enabled)
+        effective_project = self.capacity_search_config.wandb_project or getattr(
+            self.base_benchmark_config.metrics_config, "wandb_project", None
+        )
+        effective_group = self.capacity_search_config.wandb_group or getattr(
+            self.base_benchmark_config.metrics_config, "wandb_group", None
+        )
+        wandb_enabled = effective_project is not None or getattr(
+            self.base_benchmark_config.metrics_config,
+            "should_write_metrics_to_wandb",
+            False,
+        )
+        if wandb_enabled:
+            logger.info(
+                f"wandb: enabled | project={effective_project} | group={effective_group}"
+            )
+        max_qps_under_sla = None
+        min_qps_over_sla = 2**32
+        slo_metrics_at_max_qps = None
+        best_run_id = None
+        found_valid_qps = False
+        any_new_runs = False
+        # Generate benchmark_id from base config for dashboard tracking
+        import os
+
+        benchmark_id = os.path.basename(
+            self.base_benchmark_config.metrics_config.output_dir
+        )
+
+        # Emit start event
+        from veeksha.dashboard.events import CapacitySearchEvent
+        from veeksha.dashboard.handler import emit_dashboard_event
+
+        total_iterations = len(qps_list)
+        emit_dashboard_event(
+            CapacitySearchEvent(
+                current_qps=0.0,
+                is_under_sla=False,
+                slo_metrics={},
+                slo_target=str(self.slo_evaluator.slo_set),
+                iteration=0,
+                total_iterations=total_iterations,
+                # Left/right don’t apply to fixed list; keep 0 for UI consistency
+                search_left=0,
+                search_right=0,
+                best_qps=None,
+                best_slo_metrics=None,
+                is_complete=False,
+                benchmark_id=benchmark_id,
+            )
+        )
+
+        for i, qps in enumerate(qps_list, start=1):
+            is_under_sla, metrics_dict, run_id, from_cache = self._run_capacity_search_benchmark(float(qps))
+            if not from_cache:
+                any_new_runs = True
+
+            if is_under_sla:
+                found_valid_qps = True
+                max_qps_under_sla = qps
+                slo_metrics_at_max_qps = metrics_dict
+                best_run_id = run_id
+            else:
+                min_qps_over_sla = min(min_qps_over_sla, qps)
+
+            # Emit event after each iteration
+            emit_dashboard_event(
+                CapacitySearchEvent(
+                    current_qps=float(qps),
+                    is_under_sla=is_under_sla,
+                    slo_metrics=metrics_dict or {},
+                    slo_target=str(self.slo_evaluator.slo_set),
+                    iteration=i,
+                    total_iterations=total_iterations,
+                    search_left=i,
+                    search_right=i,
+                    best_qps=max_qps_under_sla,
+                    best_slo_metrics=slo_metrics_at_max_qps,
+                    is_complete=False,
+                    benchmark_id=benchmark_id,
+                )
+            )
+
+        if not found_valid_qps:
+            logger.info(
+                f"No valid QPS found.",
+            )
+            return {}
+
+        logger.info(
+            f"{'-'*100}\n"
+            f"Max QPS found by Capacity Search with: \n"
+            f"    * SLOs: {self.slo_evaluator.slo_set} \n"
+            f"    * SLO Metrics: {slo_metrics_at_max_qps} \n"
+            f"    * Best Run ID: {best_run_id} \n"
+            f"is {max_qps_under_sla} \n"
+            f"{'-'*100}\n"
+        )
+
+        if any_new_runs and wandb_enabled and best_run_id is not None:
+            best_path = self._read_wandb_path_for_qps(str(best_run_id))
+            if best_path:
+                try:
+                    api = wandb.Api()
+                    best_run = api.run(best_path)
+                    current = list(best_run.tags or [])
+                    if "BEST_CONFIG" not in current:
+                        best_run.tags = current + ["BEST_CONFIG"]
+                        best_run.update()
+                except Exception:
+                    logger.warning(
+                        "Failed to tag BEST_CONFIG for run %s", best_path, exc_info=True
+                    )
+
+        self._cache_final(
+            max_qps_under_sla=max_qps_under_sla,
+            slo_metrics_at_max_qps=slo_metrics_at_max_qps,
+            best_run_id=best_run_id,
+        )
+
+        # Emit final completion event
+        emit_dashboard_event(
+            CapacitySearchEvent(
+                current_qps=max_qps_under_sla or 0.0,
+                is_under_sla=True,
+                slo_metrics=slo_metrics_at_max_qps or {},
+                slo_target=str(self.slo_evaluator.slo_set),
+                iteration=total_iterations,
+                total_iterations=total_iterations,
+                search_left=i,
+                search_right=i,
+                best_qps=max_qps_under_sla,
+                best_slo_metrics=slo_metrics_at_max_qps,
+                is_complete=True,
+                benchmark_id=benchmark_id,
+            )
+        )
+
+        # Log a post-search summary run/table only if new runs occurred
+        if any_new_runs:
+            self._log_post_search_summary(benchmark_id)
+
+        return {
+            "max_qps_under_sla": max_qps_under_sla,
+            "slo_metrics_at_max_qps": slo_metrics_at_max_qps,
+        }
+
 
     def search(self) -> SearchResult:
         """
+        Perform search to find the maximum QPS under the SLO
+        """
+        if self.capacity_search_config.qps_points is not None:
+            return self._search_fixed_qps_points()
+        else:
+            return self._search_binary_qps()
+
+    def _search_binary_qps(self) -> SearchResult:
+        """
         Perform binary search to find the maximum QPS under the SLO
         """
-
         logger.info(
             f"Starting search. Start QPS: {self.capacity_search_config.start_qps}",
         )
@@ -367,7 +531,7 @@ class CapacitySearch:
             logger.info(
                 f"wandb: enabled | project={effective_project} | group={effective_group}"
             )
-
+            
         left = 0
         right = self.capacity_search_config.start_qps * 2
         qps = 0

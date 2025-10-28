@@ -87,6 +87,14 @@ class CapacitySearchConfig:
         default=None,
         metadata={"help": "Wandb sweep id for capacity search"},
     )
+    qps_points: Optional[List[float]] = field(
+        default=None,
+        metadata={"help": "Optional list of specific QPS points to evaluate during capacity search. If provided, these will be used instead of searching within the QPS space."},
+    )
+    buffer_sizes : Optional[List[int]] = field(
+        default=None,
+        metadata={"help": "Optional list of specific buffer sizes to evaluate during capacity search."},
+    )
 
     @classmethod
     def create_from_cli_args(cls):

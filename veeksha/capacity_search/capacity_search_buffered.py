@@ -264,12 +264,178 @@ class CapacitySearch:
             return None
 
         return files[0]
+    
+    def _search_fixed_buffer_sizes(self) -> SearchResult:
+        logger.info(
+            f"Starting fixed buffer size search.",  # reusing start_qps config
+        )
+        logger.info(f"SLOs: {self.slo_evaluator.slo_set}")
+
+        # Emit effective wandb settings (if enabled)
+        effective_project = self.capacity_search_config.wandb_project or getattr(
+            self.base_benchmark_config.metrics_config, "wandb_project", None
+        )
+        effective_group = self.capacity_search_config.wandb_group or getattr(
+            self.base_benchmark_config.metrics_config, "wandb_group", None
+        )
+        wandb_enabled = effective_project is not None or getattr(
+            self.base_benchmark_config.metrics_config,
+            "should_write_metrics_to_wandb",
+            False,
+        )
+        if wandb_enabled:
+            logger.info(
+                f"wandb: enabled | project={effective_project} | group={effective_group}"
+            )
+
+        max_buffer_size_under_sla = None
+        min_buffer_size_over_sla = 2**32
+
+        slo_metrics_at_max_buffer_size = None
+        best_run_id = None
+        found_valid_buffer_size = False
+        any_new_runs = False
+
+        # Generate benchmark_id from base config for dashboard tracking
+        import os
+
+        benchmark_id = os.path.basename(
+            self.base_benchmark_config.metrics_config.output_dir
+        )
+
+        # Emit start event
+        from veeksha.dashboard.events import CapacitySearchEvent
+        from veeksha.dashboard.handler import emit_dashboard_event
+
+        emit_dashboard_event(
+            CapacitySearchEvent(
+                current_qps=0.0,
+                is_under_sla=False,
+                slo_metrics={},
+                slo_target=str(self.slo_evaluator.slo_set),
+                iteration=0,
+                total_iterations=len(self.capacity_search_config.buffer_sizes),
+                search_left=0,
+                search_right=0,
+                best_qps=None,
+                best_slo_metrics=None,
+                is_complete=False,
+                benchmark_id=benchmark_id,
+            )
+        )
+
+        for i, buffer_size in enumerate(self.capacity_search_config.buffer_sizes, start=1):
+            (
+                is_under_sla,
+                metrics_dict,
+                run_id,
+                from_cache,
+            ) = self._run_capacity_search_benchmark(buffer_size)
+
+            if not from_cache:
+                any_new_runs = True
+
+            if is_under_sla:
+                found_valid_buffer_size = True
+                max_buffer_size_under_sla = buffer_size
+                slo_metrics_at_max_buffer_size = metrics_dict
+                best_run_id = run_id
+            else:
+                min_buffer_size_over_sla = min(min_buffer_size_over_sla, buffer_size)
+
+            # Emit event after each iteration
+            emit_dashboard_event(
+                CapacitySearchEvent(
+                    current_qps=float(buffer_size),  # using qps field for buffer_size for compatibility
+                    is_under_sla=is_under_sla,
+                    slo_metrics=metrics_dict or {},
+                    slo_target=str(self.slo_evaluator.slo_set),
+                    iteration=i,
+                    total_iterations=len(self.capacity_search_config.buffer_sizes),
+                    search_left=i,
+                    search_right=i,
+                    best_qps=float(max_buffer_size_under_sla) if max_buffer_size_under_sla else None,  # using qps field for buffer_size
+                    best_slo_metrics=slo_metrics_at_max_buffer_size,
+                    is_complete=False,
+                    from_cache=from_cache,
+                    benchmark_id=benchmark_id,
+                )
+            )
+
+        if not found_valid_buffer_size:
+            logger.info(
+                f"No valid buffer size found.",
+            )
+            return {}
+
+        logger.info(
+            f"{'-'*100}\n"
+            f"Max buffer size found by Capacity Search with: \n"
+            f"    * SLOs: {self.slo_evaluator.slo_set} \n"
+            f"    * SLO Metrics: {slo_metrics_at_max_buffer_size} \n"
+            f"    * Best Run ID: {best_run_id} \n"
+            f"is {max_buffer_size_under_sla} \n"
+            f"{'-'*100}\n"
+        )
+
+        if any_new_runs and wandb_enabled and best_run_id is not None:
+            best_path = self._read_wandb_path_for_buffer_size(str(best_run_id))
+            if best_path:
+                try:
+                    api = wandb.Api()
+                    best_run = api.run(best_path)
+                    current = list(best_run.tags or [])
+                    if "BEST_CONFIG" not in current:
+                        best_run.tags = current + ["BEST_CONFIG"]
+                        best_run.update()
+                except Exception:
+                    logger.warning(
+                        "Failed to tag BEST_CONFIG for run %s", best_path, exc_info=True
+                    )
+
+        self._cache_final(
+            max_buffer_size_under_sla=max_buffer_size_under_sla,
+            slo_metrics_at_max_buffer_size=slo_metrics_at_max_buffer_size,
+            best_run_id=best_run_id,
+        )
+
+        # Emit final completion event
+        emit_dashboard_event(
+            CapacitySearchEvent(
+                current_qps=float(max_buffer_size_under_sla) if max_buffer_size_under_sla else 0.0,
+                is_under_sla=True,
+                slo_metrics=slo_metrics_at_max_buffer_size or {},
+                slo_target=str(self.slo_evaluator.slo_set),
+                iteration=len(self.capacity_search_config.buffer_sizes),
+                total_iterations=len(self.capacity_search_config.buffer_sizes),
+                search_left=i,
+                search_right=i,
+                best_qps=float(max_buffer_size_under_sla) if max_buffer_size_under_sla else None,
+                best_slo_metrics=slo_metrics_at_max_buffer_size,
+                is_complete=True,
+                benchmark_id=benchmark_id,
+            )
+        )
+
+        # Log a post-search summary run/table only if new runs occurred
+        if any_new_runs:
+            self._log_post_search_summary(benchmark_id)
+
+        return {
+            "max_buffer_size_under_sla": max_buffer_size_under_sla,
+            "slo_metrics_at_max_buffer_size": slo_metrics_at_max_buffer_size,
+        }
 
     def search(self) -> SearchResult:
         """
-        Perform binary search to find the maximum buffer size under the SLO
+        Perform search to find the maximum buffer size under the SLO
         """
+        if self.capacity_search_config.buffer_sizes is not None:
+            return self._search_fixed_buffer_sizes()
+        else:
+            return self._search_binary_buffer_sizes()
 
+    def _search_binary_buffer_sizes(self) -> SearchResult:
         logger.info(
             f"Starting search. Start buffer size: {self.capacity_search_config.start_qps}",  # reusing start_qps config
         )

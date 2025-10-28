@@ -41,13 +41,21 @@ def run_search(
     search_mode = capacity_search_config.search_mode.lower()
     if search_mode == "buffer_size":
         search_class = CapacitySearchBuffered
-        logger.info("Using buffer size capacity search mode")
+        if getattr(capacity_search_config, "buffer_sizes", None) is not None:
+            logger.info(f"Using buffer size capacity search mode with specified buffer sizes: {capacity_search_config.buffer_sizes}")
+        else:
+            logger.info("Using buffer size capacity search mode")
     elif search_mode == "qps":
         search_class = CapacitySearch
-        logger.info("Using QPS capacity search mode")
+        if getattr(capacity_search_config, "qps_points", None) is not None:
+            logger.info(f"Using QPS capacity search mode with specified QPS points: {capacity_search_config.qps_points}")
+        else:
+            logger.info("Using QPS capacity search mode")
     else:
         raise ValueError(f"Invalid search_mode: {search_mode}. Must be 'qps' or 'buffer_size'")
-
+    # explicit mode config validity.
+    if getattr(capacity_search_config, "qps_points", None) and (getattr(capacity_search_config, "buffer_sizes", None) or getattr(capacity_search_config, "buffer_size", None) is not None):
+            raise ValueError("Provide either qps_points (QPS mode) OR buffer_size(s) (buffer mode), not both.")
     # Initialize dashboard if enabled
     dashboard_cfg = capacity_search_config.get_dashboard_config()
     if dashboard_cfg.enabled:
