@@ -71,7 +71,10 @@ def dispatch_requests(
     prefetch_tick_counter = 0
     scheduled_since_log = 0
     total_scheduled = 0  # monotonic count of total requests added to scheduler
-    create_thread_local_revati_client(f"veeksha-dispatcher-{str(uuid.uuid4())[:8]}", ClientType.ACTOR)
+
+    if is_revati_enabled():
+        create_thread_local_revati_client(f"veeksha-dispatcher-{str(uuid.uuid4())[:8]}", ClientType.ACTOR)
+
     prefetch_rate_window_start = get_virtual_time()
     next_prefetch_rate_log_time = get_virtual_time() + PREFETCH_RATE_LOG_INTERVAL_S
 
@@ -178,7 +181,9 @@ def dispatch_requests(
 
     def prefetch_loop() -> None:
         nonlocal next_prefetch_time, generator_exhausted
-        create_thread_local_revati_client(f"veeksha-dispatcher-prefetch-loop-{str(uuid.uuid4())[:8]}", ClientType.ACTOR)
+
+        if is_revati_enabled():
+            create_thread_local_revati_client(f"veeksha-dispatcher-prefetch-loop-{str(uuid.uuid4())[:8]}", ClientType.ACTOR)
 
         while not stop_event.is_set():
             if generator_exhausted:

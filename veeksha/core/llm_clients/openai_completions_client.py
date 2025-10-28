@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple
 import aiohttp
 
 from revati.client import ClientType  # type: ignore
-from revati.client.helper import create_thread_local_revati_client, get_virtual_time
+from revati.client.helper import create_thread_local_revati_client, get_virtual_time, is_revati_enabled
 
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
 from veeksha.core.llm_clients.streaming_mixin import StreamingMixin
@@ -53,8 +53,9 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
                 "Warning: OPENAI_API_KEY environment variable not set. Defaulting to empty string."
             )
 
-        create_thread_local_revati_client(f"veeksha-client-{str(uuid.uuid4())[:8]}", ClientType.OBSERVER)
-            
+        if is_revati_enabled():
+            create_thread_local_revati_client(f"veeksha-client-{str(uuid.uuid4())[:8]}", ClientType.OBSERVER)
+
         self.start_time = get_virtual_time()
 
     def _update_metrics_from_chunk(
