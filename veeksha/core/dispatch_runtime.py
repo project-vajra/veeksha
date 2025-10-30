@@ -83,52 +83,6 @@ def dispatch_requests(
             num_err_handled_snapshot = num_errored_requests_handled
         return should_send_new_request(service_metrics, num_err_handled_snapshot)
 
-    def _prefetch_time_gate(now_pf: float) -> bool:
-        nonlocal next_prefetch_time
-        time_until_pf = scheduler.time_until_next_ready()
-        prefetch_safe_threshold = max(PREFETCH_INTERVAL_S, NEAR_DEADLINE_WINDOW_S)
-        safe_to_prefetch = (
-            time_until_pf is None or time_until_pf >= prefetch_safe_threshold
-        )
-        if not safe_to_prefetch:
-            advance_time(0.001)
-            return True
-        if now_pf < next_prefetch_time:
-            remaining = next_prefetch_time - now_pf
-            if is_revati_enabled():
-                advance_time(remaining)
-            else:
-                if remaining > 0.002:
-                    time.sleep(min(remaining - 0.0005, 0.002))
-                else:
-                    deadline = next_prefetch_time
-                    while True:
-                        now_spin = get_virtual_time()
-                        if now_spin >= deadline or stop_event.is_set():
-                            break
-                        time.sleep(0)
-            return True
-        return False
-
-    def _is_over_scheduled_cap(now_pf: float) -> bool:
-        nonlocal next_prefetch_time
-        with prefetch_stats_lock:
-            unhandled_error_allowance = max(
-                0,
-                service_metrics.num_errored_requests - num_errored_requests_handled,
-            )
-            scheduled_cap = (
-                service_metrics.max_requests
-                + PREFETCH_SCHEDULE_SLACK
-                + unhandled_error_allowance
-            )
-            current_total = total_scheduled
-        if current_total >= scheduled_cap:
-            next_prefetch_time = now_pf + PREFETCH_INTERVAL_S
-            advance_time(0.001)
-            return True
-        return False
-
     def _mark_prefetch_tick() -> None:
         nonlocal prefetch_tick_counter
         with prefetch_stats_lock:
@@ -145,13 +99,12 @@ def dispatch_requests(
             )
             scheduled_cap = (
                 service_metrics.max_requests
-                + PREFETCH_SCHEDULE_SLACK
-                + unhandled_error_allowance
+                # + PREFETCH_SCHEDULE_SLACK
+                # + unhandled_error_allowance
             )
             if total_scheduled >= scheduled_cap:
+                generator_exhausted = True
                 return "break"
-        if effective_backlog_pf >= MAX_PREFETCH_BACKLOG:
-            return "break"
 
         try:
             request_config = request_generator.get_request()
@@ -174,42 +127,8 @@ def dispatch_requests(
         scheduler.add_request(request_config)
         with prefetch_stats_lock:
             scheduled_backlog += 1
-            if telemetry_enabled:
-                scheduled_since_log += 1
             total_scheduled += 1
         return "scheduled"
-
-    def prefetch_loop() -> None:
-        nonlocal next_prefetch_time, generator_exhausted
-
-        if is_revati_enabled():
-            create_thread_local_revati_client(f"veeksha-dispatcher-prefetch-loop-{str(uuid.uuid4())[:8]}", ClientType.ACTOR)
-
-        while not stop_event.is_set():
-            if generator_exhausted:
-                break
-
-            if not _can_send_request():
-                break
-
-            now_pf = get_virtual_time()
-
-            if _prefetch_time_gate(now_pf):
-                continue
-
-            if _is_over_scheduled_cap(now_pf):
-                continue
-
-            if telemetry_enabled:
-                _mark_prefetch_tick()
-
-            status = _try_prefetch_request()
-            if status == "break":
-                break
-
-            next_prefetch_time = now_pf + PREFETCH_INTERVAL_S
-
-        # exit prefetch loop
 
     def _dispatch_ready_request(ready) -> None:
         nonlocal scheduled_backlog, num_errored_requests_handled
@@ -355,19 +274,13 @@ def dispatch_requests(
             scheduler.get_ready_now_count(),
         )
         next_backlog_warn_time = now + BACKLOG_WARN_INTERVAL_S
-
-    # Start prefetcher thread
-    prefetch_thread = Thread(
-        target=prefetch_loop, name="dispatch-prefetcher", daemon=True
-    )
-    prefetch_thread.start()
+    
+    while not generator_exhausted:
+        _try_prefetch_request()
 
     while not stop_event.is_set():
         now = get_virtual_time()
         effective_backlog = 0  # only used with telemetry enabled
-        if telemetry_enabled:
-            _maybe_log_backlog(now)
-            _maybe_log_prefetch_rate(now)
 
         # immediate dispatch
         ready = scheduler.pop_ready()
@@ -379,16 +292,7 @@ def dispatch_requests(
         if _spin_near_deadline(time_until):
             continue
 
-        # effective backlog ignores blocked session-followup requests (telemetry only)
-        if telemetry_enabled:
-            blocked_pending = scheduler.get_blocked_pending_count()
-            with prefetch_stats_lock:
-                effective_backlog = max(0, scheduled_backlog - blocked_pending)
-
         _maybe_auto_spawn_clients(now)
-
-        if telemetry_enabled:
-            _maybe_warn_backlog(get_virtual_time(), effective_backlog)
 
         # dispatch again after prefetch
         ready = scheduler.pop_ready()
@@ -398,12 +302,8 @@ def dispatch_requests(
 
         # back off briefly
         time_until = scheduler.time_until_next_ready()
-        sleep_time = 0.01 if time_until is None else min(max(time_until, 0.001), 0.1)
+        sleep_time = 0.01 if time_until is None else time_until
         advance_time(sleep_time)
-
-    # Join prefetcher on exit
-    prefetch_thread.join(timeout=1.0)
-
 
 def process_results(
     output_queue: Queue,
