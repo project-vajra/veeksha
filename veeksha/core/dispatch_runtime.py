@@ -67,7 +67,6 @@ def dispatch_requests(
     next_backlog_warn_time = 0.0
     next_spawn_time = 0.0
     next_spawn_suppression_time = 0.0
-    prefetch_stats_lock = threading.Lock()
     prefetch_tick_counter = 0
     scheduled_since_log = 0
     total_scheduled = 0  # monotonic count of total requests added to scheduler
@@ -79,32 +78,17 @@ def dispatch_requests(
     next_prefetch_rate_log_time = get_virtual_time() + PREFETCH_RATE_LOG_INTERVAL_S
 
     def _can_send_request() -> bool:
-        with prefetch_stats_lock:
-            num_err_handled_snapshot = num_errored_requests_handled
         return should_send_new_request(service_metrics, num_err_handled_snapshot)
 
     def _mark_prefetch_tick() -> None:
         nonlocal prefetch_tick_counter
-        with prefetch_stats_lock:
-            prefetch_tick_counter += 1
 
     def _try_prefetch_request() -> str:
         nonlocal generator_exhausted, scheduled_backlog, scheduled_since_log, total_scheduled
         blocked_pending_pf = scheduler.get_blocked_pending_count()
-        with prefetch_stats_lock:
-            effective_backlog_pf = max(0, scheduled_backlog - blocked_pending_pf)
-            unhandled_error_allowance = max(
-                0,
-                service_metrics.num_errored_requests - num_errored_requests_handled,
-            )
-            scheduled_cap = (
-                service_metrics.max_requests
-                # + PREFETCH_SCHEDULE_SLACK
-                # + unhandled_error_allowance
-            )
-            if total_scheduled >= scheduled_cap:
-                generator_exhausted = True
-                return "break"
+        if total_scheduled >= service_metrics.max_requests:
+            generator_exhausted = True
+            return "break"
 
         try:
             request_config = request_generator.get_request()
@@ -112,49 +96,17 @@ def dispatch_requests(
             generator_exhausted = True
             return "break"
 
-        if request_config.dispatch_delay == -1:
-            logger.info(
-                "Benchmark ending early due to stop policy (generator sentinel received)."
-            )
-            service_metrics.request_stop()
-            stop_event.set()
-            return "break"
-        elif request_config.dispatch_delay < 0:
-            raise ValueError(
-                f"Invalid request dispatch delay '{request_config.dispatch_delay}' from request metadata."
-            )
-
         scheduler.add_request(request_config)
-        with prefetch_stats_lock:
-            scheduled_backlog += 1
-            total_scheduled += 1
+        total_scheduled += 1
         return "scheduled"
 
     def _dispatch_ready_request(ready) -> None:
         nonlocal scheduled_backlog, num_errored_requests_handled
         service_metrics.register_launched_request()
-        if service_metrics.num_requests > service_metrics.max_requests:
-            with prefetch_stats_lock:
-                num_errored_requests_handled += 1
 
         ready.benchmark_id = benchmark_id  # dashboard
         input_queue.put(ready)
-        with prefetch_stats_lock:
-            if scheduled_backlog > 0:
-                scheduled_backlog -= 1
-        if telemetry_enabled and logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Dispatched request %s", ready.id)
 
-        # Request ID should always be set by the generator
-        assert ready.id is not None, f"Request {ready} has no ID"
-        emit_dashboard_event(
-            RequestStartedEvent(
-                request_id=ready.id,
-                timestamp=time.time(),
-                input_tokens=ready.prompt[1],
-                benchmark_id=benchmark_id,
-            )
-        )
 
     def _maybe_log_backlog(now: float) -> None:
         nonlocal next_backlog_log_time
@@ -167,8 +119,7 @@ def dispatch_requests(
             input_queue_size = input_queue.qsize()
         except NotImplementedError:
             input_queue_size = -1
-        with prefetch_stats_lock:
-            scheduled_backlog_snapshot = scheduled_backlog
+
         effective_backlog_snapshot = max(
             0, scheduled_backlog_snapshot - blocked_pending_snapshot
         )
@@ -188,41 +139,6 @@ def dispatch_requests(
         nonlocal prefetch_tick_counter, scheduled_since_log
         if now < next_prefetch_rate_log_time:
             return
-        with prefetch_stats_lock:
-            elapsed = max(1e-9, now - prefetch_rate_window_start)
-            ticks_hz = prefetch_tick_counter / elapsed
-            scheduled_rps = scheduled_since_log / elapsed
-            logger.info(
-                "Prefetch rate | ticks=%.1f Hz scheduled=%.1f req/s",
-                ticks_hz,
-                scheduled_rps,
-            )
-            prefetch_tick_counter = 0
-            scheduled_since_log = 0
-            prefetch_rate_window_start = now
-            next_prefetch_rate_log_time = now + PREFETCH_RATE_LOG_INTERVAL_S
-
-    def _spin_near_deadline(time_until: Optional[float]) -> bool:
-        if time_until is None or time_until > NEAR_DEADLINE_WINDOW_S:
-            return False
-        deadline = get_virtual_time() + time_until
-        if is_revati_enabled():
-            advance_time(time_until)
-        else:
-            while get_virtual_time() < deadline:
-                ready_local = scheduler.pop_ready()
-                if ready_local is not None:
-                    _dispatch_ready_request(ready_local)
-                    return True
-                remaining = deadline - get_virtual_time()
-                if remaining <= 0:
-                    break
-                time.sleep(min(remaining, 0.001))
-        ready_local = scheduler.pop_ready()
-        if ready_local is not None:
-            _dispatch_ready_request(ready_local)
-            return True
-        return False
 
     def _maybe_auto_spawn_clients(now: float) -> None:
         nonlocal next_spawn_time, next_spawn_suppression_time
@@ -263,8 +179,7 @@ def dispatch_requests(
         nonlocal next_backlog_warn_time
         if effective_backlog < MAX_PREFETCH_BACKLOG or now < next_backlog_warn_time:
             return
-        with prefetch_stats_lock:
-            scheduled_backlog_snapshot2 = scheduled_backlog
+
         logger.info(
             "Effective prefetch backlog reached cap (%d). scheduled=%d blocked_pending=%d ready=%d ready_now=%d",
             MAX_PREFETCH_BACKLOG,
@@ -278,9 +193,10 @@ def dispatch_requests(
     while not generator_exhausted:
         _try_prefetch_request()
 
+    print("generator_exhausted, loaded {} requests".format(total_scheduled), flush=True)
+
     while not stop_event.is_set():
         now = get_virtual_time()
-        effective_backlog = 0  # only used with telemetry enabled
 
         # immediate dispatch
         ready = scheduler.pop_ready()
@@ -289,21 +205,11 @@ def dispatch_requests(
             continue
 
         time_until = scheduler.time_until_next_ready()
-        if _spin_near_deadline(time_until):
-            continue
-
+        if time_until is None:
+            break
+        advance_time(time_until)
         _maybe_auto_spawn_clients(now)
 
-        # dispatch again after prefetch
-        ready = scheduler.pop_ready()
-        if ready is not None:
-            _dispatch_ready_request(ready)
-            continue
-
-        # back off briefly
-        time_until = scheduler.time_until_next_ready()
-        sleep_time = 0.01 if time_until is None else time_until
-        advance_time(sleep_time)
 
 def process_results(
     output_queue: Queue,
