@@ -9,7 +9,7 @@ from veeksha.config.generators.request_generator.lmeval_generator_config import 
 )
 from veeksha.core.request_config import Request
 from veeksha.core.response import Response
-from veeksha.generators.request_generator.interval_generator.request_interval_generator_registry import (
+from veeksha.generators.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
 )
 from veeksha.lm_eval.api.instance import Instance

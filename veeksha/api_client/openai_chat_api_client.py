@@ -5,9 +5,9 @@ from typing import Dict, Optional, Tuple
 
 import aiohttp
 
-from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
+from veeksha.core.llm_clients.base_api_client import BaseApiClient
 from veeksha.core.llm_clients.streaming_mixin import StreamingMixin
-from veeksha.core.request_config import RequestConfig
+from veeksha.core.request import Request
 from veeksha.core.response import Response
 from veeksha.logger import init_logger
 from veeksha.metrics.request_metrics import RequestMetrics
@@ -15,8 +15,8 @@ from veeksha.metrics.request_metrics import RequestMetrics
 logger = init_logger(__name__)
 
 
-class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
-    """Client for OpenAI Chat Completions API."""
+class OpenAIChatApiClient(BaseApiClient, StreamingMixin):
+    """Client for OpenAI Chat API."""
 
     def __init__(self, model_name: str, tokenizer_name: str) -> None:
         super().__init__(model_name, tokenizer_name)
@@ -72,21 +72,21 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             most_recent_received_token_time,
         )
 
-    async def send_llm_request(
-        self, request_config: RequestConfig, session: aiohttp.ClientSession
+    async def send_request(
+        self, request: Request, session: aiohttp.ClientSession
     ) -> Tuple[RequestMetrics, Optional[Response]]:
-        prompt, prompt_len = request_config.prompt
+        prompt, prompt_len = request.prompt
 
         message = [
             {"role": "user", "content": prompt},
         ]
-        model = request_config.model
+        model = request.model
         body = {
             "model": model,
             "messages": message,
             "stream": True,
         }
-        sampling_params = request_config.sampling_params
+        sampling_params = request.sampling_params
         body.update(sampling_params or {})
 
         headers = {
@@ -178,7 +178,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             generated_response = None
         else:
             generated_response = Response(
-                id=request_config.id,
+                id=request.id,
                 text=generated_text,
             )
 

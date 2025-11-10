@@ -7,8 +7,8 @@ from veeksha.config.client_config import ClientConfig
 from veeksha.config.generators.request_generator.trace_generator_config import (
     TraceRequestGeneratorConfig,
 )
-from veeksha.core.request_config import RequestConfig
-from veeksha.file_utils import load_corpus
+from veeksha.core.request_config import Request
+from veeksha.generators.utils import load_corpus
 from veeksha.generators.request_generator.base_request_generator import BaseRequestGenerator
 from veeksha.generators.utils import (
     generate_random_prompt,
@@ -31,7 +31,6 @@ class TraceRequestGenerator(BaseRequestGenerator):
     ):
         self.config = config
         self.tokenizer = tokenizer
-        self.request_id = 0
         self.client_config = client_config
         self.past_prompts: Dict[int, str] = {}
         self.corpus_lines = load_corpus()
@@ -152,7 +151,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         raise Exception(f"Could not generate stable encoding for value {value}")
 
-    def get_request(self) -> RequestConfig:
+    def get_request(self) -> Request:
         if self.request_idx >= self.capacity():
             if self.config.exhaustion_policy == "error":
                 raise StopIteration(
@@ -163,12 +162,10 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 logger.info(
                     f"Stop policy active: request trace exhausted at index {self.request_idx}."
                 )
-                return RequestConfig(
+                return Request(
                     model=self.client_config.model,
                     prompt=("", 0),
                     dispatch_delay=-1,
-                    llm_api=self.client_config.llm_api,
-                    id=self.request_idx,
                 )
             elif self.config.exhaustion_policy == "wrap":
                 if not self._wrap_warning_logged:
@@ -226,16 +223,12 @@ class TraceRequestGenerator(BaseRequestGenerator):
             self.client_config.additional_sampling_params_dict
         )
 
-        request_config = RequestConfig(
+        request_config = Request(
             model=self.client_config.model,
             prompt=(prompt, final_token_count),
             dispatch_delay=dispatch_delay,
             sampling_params=default_sampling_params,
-            llm_api=self.client_config.llm_api,
-            id=self.request_idx,
         )
-
-        self.request_idx += 1
 
         return request_config
 

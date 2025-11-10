@@ -12,7 +12,7 @@ To implement a new LLM client, you need to implement the base class ``veeksha.ll
     @ray.remote
     class CustomLLMClient(BaseLLMClient):
 
-        def send_llm_request(self, request_config: RequestConfig) -> Tuple[Metrics, str, RequestConfig]:
+        def send_llm_request(self, request_config: Request) -> Tuple[Metrics, str, Request]:
             """Make a single completion request to a LLM API
 
             Returns:

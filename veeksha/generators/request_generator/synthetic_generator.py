@@ -2,19 +2,19 @@ from typing import Union
 
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
-from veeksha.generators.utils import load_corpus
+from veeksha.file_utils import load_corpus
 from veeksha.config.client_config import ClientConfig
 from veeksha.config.generators.request_generator.synthetic_generator_config import (
     SyntheticRequestGeneratorConfig,
 )
 from veeksha.core.request_config import Request
-from veeksha.generators.request_generator.interval_generator.request_interval_generator_registry import (
+from veeksha.generators.interval_generator.generator_registry import (
     RequestIntervalGeneratorRegistry,
 )
-from veeksha.generators.request_generator.synthetic_generator.length_generator.request_length_generator_registry import (
+from veeksha.generators.length_generator.generator_registry import (
     RequestLengthGeneratorRegistry,
 )
-from veeksha.generators.request_generator.base_request_generator import BaseRequestGenerator
+from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.generators.utils import generate_random_prompt
 from veeksha.logger import init_logger
 
