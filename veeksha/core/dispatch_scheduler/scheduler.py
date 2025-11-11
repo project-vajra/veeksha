@@ -44,7 +44,7 @@ class DispatchScheduler:
         from collections import deque
         self._queued_sessions = deque()
         if self._buffered_mode:
-            logger.debug(f"Buffered session mode enabled. size={max_concurrent_sessions}")
+            logger.info(f"Buffered session mode enabled. size={max_concurrent_sessions}")
         self._num_requests_in_session = {}
 
     def _now(self) -> float:

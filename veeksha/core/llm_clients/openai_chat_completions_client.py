@@ -1,6 +1,6 @@
 import os
 import time
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Any
 
 import httpx
 
@@ -15,6 +15,12 @@ from veeksha.metrics.request_metrics import RequestMetrics
 
 logger = init_logger(__name__)
 
+
+def bc_sampling_params(params):
+    replacements = {
+        'max_tokens': 'max_completion_tokens', # max_tokens got deprecated after o-series models
+    }
+    return {replacements.get(k, k): v for k, v in params.items()}
 
 class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
     """Async client for OpenAI Chat Completions API using httpx."""
@@ -36,20 +42,21 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         self.start_time = time.monotonic()
 
     async def send_llm_request(
-        self, request_config: RequestConfig, timeout: int
+        self, request_config: RequestConfig, timeout: int, chat_history: List[Any] = []
     ) -> Tuple[RequestMetrics, Optional[Response]]:
         prompt, prompt_len = request_config.prompt
 
-        message = [
+        messages = [
+            *chat_history,
             {"role": "user", "content": prompt},
         ]
         model = request_config.model
         body = {
             "model": model,
-            "messages": message,
+            "messages": messages,
             "stream": True,
         }
-        sampling_params = request_config.sampling_params
+        sampling_params = bc_sampling_params(request_config.sampling_params)
         body.update(sampling_params or {})
 
         headers = {

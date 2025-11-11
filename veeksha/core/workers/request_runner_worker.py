@@ -1,18 +1,88 @@
 """Async worker that processes requests using uvloop."""
 
 import asyncio
+import json
+import os
+import threading
 from queue import Queue
 from typing import Any, Optional
+from collections import defaultdict
 
 import uvloop
 
 from veeksha.config.client import ClientConfig
 from veeksha.core.context import WorkerContext
 from veeksha.core.llm_clients import construct_client
+from veeksha.core.response import Response
 from veeksha.logger import init_logger
 from veeksha.metrics.request_metrics import RequestMetrics
 
 logger = init_logger(__name__)
+
+
+class InputOutputWriter:
+    """Writes input prompts and generated outputs to a JSONL file in streaming fashion."""
+
+    def __init__(self, output_file: str, enabled: bool = True):
+        """Initialize the writer.
+
+        Args:
+            output_file: Path to the output JSONL file
+            enabled: Whether writing is enabled
+        """
+        self.output_file = output_file
+        self.enabled = enabled
+        self.file_handle = None
+        self.lock = threading.Lock()
+
+        if self.enabled:
+            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            self.file_handle = open(output_file, "w", encoding="utf-8")
+            logger.info(f"Input/output data will be written to: {output_file}")
+
+    def write_input_output(
+        self,
+        request_id: Optional[int],
+        session_id: Optional[int],
+        session_sequence_index: Optional[int],
+        prompt: str,
+        generated_text: Optional[str],
+        chat_history: Optional[list] = None,
+    ) -> None:
+        """Write input prompt and generated output to the file.
+
+        Args:
+            request_id: The request ID
+            session_id: The session ID
+            session_sequence_index: The position within the session
+            prompt: The input prompt text
+            generated_text: The generated output text (None on error)
+            chat_history: The chat history for this session (None if no session)
+        """
+        if not self.enabled or self.file_handle is None:
+            return
+
+        io_data = {
+            "request_id": request_id,
+            "session_id": session_id,
+            "session_sequence_index": session_sequence_index,
+            "input_prompt": prompt,
+            "generated_text": generated_text,
+            "chat_history": chat_history if chat_history else None,
+        }
+
+        # Write to file with lock for thread safety
+        with self.lock:
+            self.file_handle.write(json.dumps(io_data) + "\n")
+            self.file_handle.flush()  # Ensure immediate write
+
+    def close(self) -> None:
+        """Close the file handle."""
+        if self.file_handle is not None:
+            with self.lock:
+                self.file_handle.close()
+                self.file_handle = None
+            logger.info(f"Closed input/output file: {self.output_file}")
 
 
 class RequestRunnerWorker:
@@ -24,11 +94,15 @@ class RequestRunnerWorker:
         output_queue: Queue,
         worker_context: WorkerContext,
         client_config: ClientConfig,
+        chat_history,
+        input_output_writer: Optional[InputOutputWriter] = None,
     ):
         self.input_queue = input_queue
         self.output_queue = output_queue
         self.worker_context = worker_context
         self.client_config = client_config
+        self.input_output_writer = input_output_writer
+        self._chat_history = chat_history
 
     def run(self) -> None:
         """Main worker loop - runs uvloop event loop for concurrent request processing.
@@ -72,9 +146,54 @@ class RequestRunnerWorker:
     async def _process_request(self, llm_client, request_config: Any) -> None:
         """Process a single request asynchronously."""
         try:
+            if request_config.session_id and len(self._chat_history[request_config.session_id]) != request_config.session_sequence_index*2:
+                raise ValueError(f"Chat history length is incorrect. request={request_config}, chat_history={self._chat_history[request_config.session_id]}")
+
             result = await llm_client.send_llm_request(
-                request_config, self.client_config.request_timeout
+                request_config,
+                self.client_config.request_timeout,
+                chat_history=self._chat_history[request_config.session_id],
             )
+
+            # Write input/output data if enabled
+            if self.input_output_writer is not None:
+                request_metrics, response = result
+                prompt_text = request_config.prompt[0]  # Extract prompt text from tuple
+                generated_text = response.text if response is not None else None
+
+                # Get chat history before it's updated
+                chat_history = (
+                    self._chat_history[request_config.session_id]
+                    if request_config.session_id
+                    else None
+                )
+
+                self.input_output_writer.write_input_output(
+                    request_id=request_config.id,
+                    session_id=request_config.session_id,
+                    session_sequence_index=request_config.session_sequence_index,
+                    prompt=prompt_text,
+                    generated_text=generated_text,
+                    chat_history=chat_history,
+                )
+
+            # Update chat history
+            if request_config.session_id:
+                _, response = result
+                self._chat_history[request_config.session_id].append(
+                    {
+                        "role": "user",
+                        "content": request_config.prompt[0],
+                    }
+                )
+                if response:
+                    self._chat_history[request_config.session_id].append(
+                        {
+                            "role": "assistant",
+                            "content": response.text,
+                        }
+                    )
+
             self.output_queue.put(result)
         except Exception as e:
             logger.exception(

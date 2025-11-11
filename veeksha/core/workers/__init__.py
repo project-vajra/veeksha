@@ -7,12 +7,16 @@ from veeksha.core.workers.constants import (
 )
 from veeksha.core.workers.dispatch_worker import DispatchWorker, DispatchedRequestWriter
 from veeksha.core.workers.prefetch_worker import PrefetchWorker
-from veeksha.core.workers.results_processor_worker import ResultsProcessorWorker
+from veeksha.core.workers.results_processor_worker import ResultsProcessorWorker, RequestMetricsWriter
+from veeksha.core.workers.request_runner_worker import InputOutputWriter
 
 __all__ = [
     "PrefetchWorker",
     "DispatchWorker",
     "ResultsProcessorWorker",
+    "DispatchedRequestWriter",
+    "RequestMetricsWriter",
+    "InputOutputWriter",
     "QUEUE_GET_TIMEOUT_S",
     "RESULT_POLL_TIMEOUT_S",
     "DRAIN_MAX_EMPTY_POLLS",

@@ -2,12 +2,13 @@
 
 from queue import Queue
 from threading import Event, Thread
-from typing import List
+from typing import List, Optional
 
 from veeksha.config.client import ClientConfig
 from veeksha.core.context import WorkerContext
-from veeksha.core.workers.request_runner_worker import RequestRunnerWorker
+from veeksha.core.workers.request_runner_worker import RequestRunnerWorker, InputOutputWriter
 from veeksha.logger import init_logger
+from collections import defaultdict
 
 logger = init_logger(__name__)
 
@@ -21,14 +22,18 @@ class RequestRunnerManager:
         input_queue: Queue,
         output_queue: Queue,
         num_threads: int,
+        input_output_writer: Optional[InputOutputWriter] = None,
     ):
         self.client_config = client_config
         self.input_queue = input_queue
         self.output_queue = output_queue
         self.num_threads = num_threads
+        self.input_output_writer = input_output_writer
         self.workers: List[Thread] = []
         self.worker_contexts: List[WorkerContext] = []
         self.stop_event = Event()
+
+        self._chat_history = defaultdict(list)
 
     def start(self) -> None:
         """Start async worker threads with uvloop event loops."""
@@ -45,6 +50,8 @@ class RequestRunnerManager:
                 output_queue=self.output_queue,
                 worker_context=worker_context,
                 client_config=self.client_config,
+                input_output_writer=self.input_output_writer,
+                chat_history=self._chat_history,
             )
 
             # Create thread running async worker with uvloop

@@ -1,9 +1,11 @@
 """Worker that processes results from the output queue."""
 
+import json
+import os
 import threading
 import time
 from queue import Queue
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from tqdm import tqdm
 
@@ -19,6 +21,68 @@ from veeksha.metrics.service_metrics import ServiceMetrics
 logger = init_logger(__name__)
 
 
+class RequestMetricsWriter:
+    """Writes request metrics to a JSONL file in streaming fashion."""
+
+    def __init__(self, output_file: str, enabled: bool = True):
+        """Initialize the writer.
+
+        Args:
+            output_file: Path to the output JSONL file
+            enabled: Whether writing is enabled
+        """
+        self.output_file = output_file
+        self.enabled = enabled
+        self.file_handle = None
+        self.lock = threading.Lock()
+
+        if self.enabled:
+            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            self.file_handle = open(output_file, "w", encoding="utf-8")
+            logger.info(f"Request metrics will be written to: {output_file}")
+
+    def write_metrics(self, request_metrics: RequestMetrics) -> None:
+        """Write request metrics to the file.
+
+        Args:
+            request_metrics: The RequestMetrics object to write
+        """
+        if not self.enabled or self.file_handle is None:
+            return
+
+        # Extract all metrics data
+        metrics_data = {
+            "request_id": request_metrics.request_id,
+            "session_id": request_metrics.session_id,
+            "benchmark_id": request_metrics.benchmark_id,
+            "request_dispatched_at": request_metrics.request_dispatched_at,
+            "num_prompt_tokens": request_metrics.num_prompt_tokens,
+            "num_output_tokens": request_metrics.num_output_tokens,
+            "num_total_tokens": request_metrics.num_total_tokens,
+            "ttft": request_metrics.ttft,
+            "tpot": request_metrics.tpot,
+            "end_to_end_latency": request_metrics.end_to_end_latency,
+            "normalized_end_to_end_latency": request_metrics.normalized_end_to_end_latency,
+            "output_throughput": request_metrics.output_throughput,
+            "inter_token_times": request_metrics.inter_token_times,
+            "error_msg": request_metrics.error_msg,
+            "error_code": request_metrics.error_code,
+        }
+
+        # Write to file with lock for thread safety
+        with self.lock:
+            self.file_handle.write(json.dumps(metrics_data) + "\n")
+            self.file_handle.flush()  # Ensure immediate write
+
+    def close(self) -> None:
+        """Close the file handle."""
+        if self.file_handle is not None:
+            with self.lock:
+                self.file_handle.close()
+                self.file_handle = None
+            logger.info(f"Closed request metrics file: {self.output_file}")
+
+
 class ResultsProcessorWorker:
     """Worker that processes results from the output queue."""
 
@@ -32,6 +96,7 @@ class ResultsProcessorWorker:
         pbar_lock: threading.Lock,
         scheduler: DispatchScheduler,
         worker_context: WorkerContext,
+        metrics_writer: Optional[RequestMetricsWriter] = None,
     ):
         self.output_queue = output_queue
         self.service_metrics = service_metrics
@@ -41,6 +106,7 @@ class ResultsProcessorWorker:
         self.pbar_lock = pbar_lock
         self.scheduler = scheduler
         self.worker_context = worker_context
+        self.metrics_writer = metrics_writer
 
     def run(self) -> None:
         """Main worker loop."""
@@ -62,6 +128,11 @@ class ResultsProcessorWorker:
     def process_result(self, result: Tuple[RequestMetrics, Response]) -> None:
         """Process a result from the output queue."""
         request_metrics, generated_response = result
+
+        # Write metrics to JSONL file if enabled
+        if self.metrics_writer is not None:
+            self.metrics_writer.write_metrics(request_metrics)
+
         self.service_metrics.add_request_metrics(request_metrics)
         # notify scheduler about completion for session-aware sequencing
         success = (

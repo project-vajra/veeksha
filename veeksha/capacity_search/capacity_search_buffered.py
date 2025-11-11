@@ -24,6 +24,8 @@ from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
 
+MAX_NUM_THREADS = 30
+
 
 class SearchResult(TypedDict, total=False):
     """Result of a capacity search."""
@@ -113,10 +115,10 @@ class CapacitySearch:
         )
 
         original_num_threads = self.base_benchmark_config.num_request_runner_threads
-        adjusted_num_threads = max(original_num_threads, buffer_size)
+        adjusted_num_threads = min(MAX_NUM_THREADS, max(original_num_threads, buffer_size))
 
         logger.info(
-            f"Buffer size: {buffer_size}, Original num_threads: {original_num_threads}, "
+            f"Buffer size: {buffer_size}, Original num_threads: {original_num_threads}, Max num_threads: {MAX_NUM_THREADS} "
             f"Adjusted num_threads: {adjusted_num_threads}"
         )
 
@@ -152,15 +154,15 @@ class CapacitySearch:
     ) -> Tuple[bool, Optional[Dict[str, float]], str, bool]:
         buffer_key = str(buffer_size)
 
-        cached_iter = self._capsearch_cache.get("iterations", {}).get(buffer_key)
-        if cached_iter is not None:
-            logger.info(f"Using capacity search cache for buffer size {buffer_size}")
-            return (
-                bool(cached_iter.get("is_under_sla", False)),
-                cached_iter.get("slo_metrics", {}),
-                buffer_key,
-                True,  # from_cache = True
-            )
+        # cached_iter = self._capsearch_cache.get("iterations", {}).get(buffer_key)
+        # if cached_iter is not None:
+        #     logger.info(f"Using capacity search cache for buffer size {buffer_size}")
+        #     return (
+        #         bool(cached_iter.get("is_under_sla", False)),
+        #         cached_iter.get("slo_metrics", {}),
+        #         buffer_key,
+        #         True,  # from_cache = True
+        #     )
 
         # no cache: ensure per-run dir exists now
         self._ensure_run_dir()

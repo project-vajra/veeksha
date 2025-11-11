@@ -480,19 +480,21 @@ class TraceRequestGenerator(BaseRequestGenerator):
         if self.config.use_trace_prefix_hash_ids:
             # Build IDs and assemble string from cached per-hash prompt strings
             body_ids = self._build_body_ids_from_hashes(request_to_send)
-            prompt_parts: List[str] = [instr_text] if instr_text else []
+            prompt_parts = []
             for hash_id in request_to_send["hash_ids"]:
                 prompt_parts.append(self.past_prompts[int(hash_id)])
+            prompt_parts.append(instr_text)
             prompt = "".join(prompt_parts)
-            full_len = len(instr_ids) + len(body_ids)
+            full_len = len(body_ids) + len(instr_ids)
             return prompt, full_len
         else:
-            remaining_prompt_tokens = int(request_to_send["input_length"]) - len(
+            # TODO(Elton): Hardcoding use of `new_input_length`
+            remaining_prompt_tokens = int(request_to_send["new_input_length"]) - len(
                 instr_ids
             )
             remaining_prompt_tokens = max(0, remaining_prompt_tokens)
             body_ids = self._build_body_ids_from_corpus(remaining_prompt_tokens)
-            full_ids = instr_ids + body_ids
+            full_ids = body_ids + instr_ids
             prompt = self.decode(full_ids)
             return prompt, len(full_ids)
 

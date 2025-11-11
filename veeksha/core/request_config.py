@@ -33,4 +33,4 @@ class RequestConfig(BaseModel):
     num_requests_in_session: Optional[int] = None
 
     def __str__(self) -> str:
-        return f"RequestConfig(id={self.id})"
+        return f"RequestConfig(id={self.id}, session_id={self.session_id}, session_sequence_index={self.session_sequence_index})"

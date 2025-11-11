@@ -55,3 +55,27 @@ class MetricsConfig:
             "help": "Filename for dumped dispatched requests (saved in output_dir)."
         },
     )
+    dump_request_metrics: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to dump request metrics to a JSONL file in streaming fashion."
+        },
+    )
+    request_metrics_file: str = field(
+        default="request_metrics.jsonl",
+        metadata={
+            "help": "Filename for dumped request metrics (saved in output_dir)."
+        },
+    )
+    dump_input_output: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to dump input prompts and generated outputs to a JSONL file in streaming fashion."
+        },
+    )
+    input_output_file: str = field(
+        default="input_output.jsonl",
+        metadata={
+            "help": "Filename for dumped input/output data (saved in output_dir)."
+        },
+    )

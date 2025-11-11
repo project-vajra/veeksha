@@ -29,7 +29,7 @@ from veeksha.core.seeding import (
 )
 from veeksha.core.thread_pool import ThreadPoolManager
 from veeksha.core.workers.request_runner_manager import RequestRunnerManager
-from veeksha.core.workers import DispatchWorker, PrefetchWorker, ResultsProcessorWorker, DispatchedRequestWriter
+from veeksha.core.workers import DispatchWorker, PrefetchWorker, ResultsProcessorWorker, DispatchedRequestWriter, RequestMetricsWriter, InputOutputWriter
 from veeksha.dashboard.events import (
     BenchmarkStatusEvent,
 )
@@ -165,12 +165,23 @@ def run_main_loop(
         telemetry_enabled=benchmark_config.runtime_telemetry_enabled,
     )
 
+    # Initialize input/output writer
+    input_output_file = os.path.join(
+        benchmark_config.metrics_config.output_dir,
+        benchmark_config.metrics_config.input_output_file,
+    )
+    input_output_writer = InputOutputWriter(
+        output_file=input_output_file,
+        enabled=benchmark_config.metrics_config.dump_input_output,
+    )
+
     # Initialize request runner
     req_runner = RequestRunnerManager(
         client_config=benchmark_config.client_config,
         input_queue=input_queue,
         output_queue=output_queue,
         num_threads=benchmark_config.num_request_runner_threads,
+        input_output_writer=input_output_writer,
     )
 
     # Start the worker threads
@@ -198,13 +209,23 @@ def run_main_loop(
     )
 
     # Create dispatcher worker pool
-    output_file = os.path.join(
+    dispatched_requests_file = os.path.join(
         benchmark_config.metrics_config.output_dir,
         benchmark_config.metrics_config.dispatched_requests_file,
     )
     request_writer = DispatchedRequestWriter(
-        output_file=output_file,
-        enabled=True,
+        output_file=dispatched_requests_file,
+        enabled=benchmark_config.metrics_config.dump_dispatched_requests,
+    )
+
+    # Initialize request metrics writer
+    request_metrics_file = os.path.join(
+        benchmark_config.metrics_config.output_dir,
+        benchmark_config.metrics_config.request_metrics_file,
+    )
+    metrics_writer = RequestMetricsWriter(
+        output_file=request_metrics_file,
+        enabled=benchmark_config.metrics_config.dump_request_metrics,
     )
     pool_manager.create_pool(
         name="dispatcher",
@@ -233,6 +254,7 @@ def run_main_loop(
             "pbar": pbar,
             "pbar_lock": pbar_lock,
             "scheduler": scheduler,
+            "metrics_writer": metrics_writer,
         },
         pool_size=benchmark_config.num_results_processor_threads,
     )
@@ -275,6 +297,8 @@ def run_main_loop(
     pool_manager.join_pool("processor")
 
     request_writer.close()
+    metrics_writer.close()
+    input_output_writer.close()
     pbar.close()
 
     if service_metrics.error is None:
@@ -316,7 +340,7 @@ def start_server(server_boot_cmd, api_url, output_dir):
     return server_proc, log_file
 
 
-def wait_for_server_port_release(url, timeout=240):
+def wait_for_server_port_release(url, timeout=600):
     start_time = time.time()
     while time.time() - start_time < timeout:
         try:
@@ -330,7 +354,7 @@ def wait_for_server_port_release(url, timeout=240):
 def kill_server(server_proc, log_file, url):
     # send SIGTERM to the process group
     server_proc.terminate()
-    server_proc.wait(timeout=240)
+    server_proc.wait(timeout=600)
     log_file.close()
 
 
