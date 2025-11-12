@@ -34,7 +34,7 @@ def run_search(
             project=capacity_search_config.wandb_project,
         )
         # required so that wandb doesn't delay flush of child logs
-        wandb.finish(quiet=True)
+        wandb.finish()
 
     # Initialize dashboard if enabled
     dashboard_cfg = capacity_search_config.get_dashboard_config()

@@ -7,6 +7,11 @@ import wandb
 from ddsketch import DDSketch
 
 from veeksha.logger import init_logger
+from veeksha.metrics.plot_utils import (
+    apply_axis_scale,
+    format_axis_label,
+    recommend_axis_scale,
+)
 
 logger = init_logger(__name__)
 
@@ -57,8 +62,8 @@ class CDFSketch:
 
         logger.info(
             f"{plot_name}: {self.metric_name} stats:"
-            f" min: {self.sketch._min},"
-            f" max: {self.sketch._max},"
+            f" min: {self.sketch.get_quantile_value(0)},"
+            f" max: {self.sketch.get_quantile_value(1)},"
             f" mean: {self.sketch.avg},"
             f" 25th percentile: {self.sketch.get_quantile_value(0.25)},"
             f" median: {self.sketch.get_quantile_value(0.5)},"
@@ -70,8 +75,8 @@ class CDFSketch:
         if wandb.run and self.should_write_to_wandb:
             wandb.log(
                 {
-                    f"{plot_name}_min": self.sketch._min,
-                    f"{plot_name}_max": self.sketch._max,
+                    f"{plot_name}_min": self.sketch.get_quantile_value(0),
+                    f"{plot_name}_max": self.sketch.get_quantile_value(1),
                     f"{plot_name}_mean": self.sketch.avg,
                     f"{plot_name}_25th_percentile": self.sketch.get_quantile_value(
                         0.25
@@ -125,25 +130,49 @@ class CDFSketch:
                 f"{self.metric_name}{' (' + self.unit + ')' if self.unit else ''}"
             )
 
-        df = self._to_df()
+        raw_df = self._to_df()
+        scale = recommend_axis_scale(raw_df[self.metric_name], kind="numeric")
 
-        fig = rk.line(
-            df,
+        # Labels
+        linear_x_label = x_axis_label
+        scaled_x_label = (
+            format_axis_label(self.metric_name, self.unit, scale)
+            if scale != "linear"
+            else linear_x_label
+        )
+
+        # Save linear plot always
+        fig_linear = rk.line(
+            raw_df,
             x=self.metric_name,
             y="cdf",
             markers=True,
-            labels={self.metric_name: x_axis_label, "cdf": "CDF"},
+            labels={self.metric_name: linear_x_label, "cdf": "CDF"},
         )
+        fig_linear.save(f"{path}/{plot_name}.png", transparent=False)
+
+        # If scaled (log/symlog), also save a scaled variant
+        if scale != "linear":
+            fig_scaled = rk.line(
+                raw_df,
+                x=self.metric_name,
+                y="cdf",
+                markers=True,
+                labels={self.metric_name: scaled_x_label, "cdf": "CDF"},
+            )
+            apply_axis_scale(fig_scaled, axis="x", scale=scale)
+            suffix = "log" if scale == "log" else "symlog"
+            fig_scaled.save(f"{path}/{plot_name}_{suffix}_x.png", transparent=False)
 
         if wandb.run and self.should_write_to_wandb:
-            wandb_df = df.copy()
-            wandb_df = wandb_df.rename(columns={self.metric_name: x_axis_label})
+            wandb_df = raw_df.copy()
+            wandb_df = wandb_df.rename(columns={self.metric_name: linear_x_label})
 
             wandb.log(
                 {
                     f"{plot_name}_cdf": wandb.plot.line(
                         table=wandb.Table(dataframe=wandb_df),
-                        x=x_axis_label,
+                        x=linear_x_label,
                         y="cdf",
                         title=plot_name,
                     )
@@ -151,8 +180,7 @@ class CDFSketch:
                 step=0,
             )
 
-        fig.save(f"{path}/{plot_name}.png", transparent=False)
-        self._save_df(df, path, plot_name)
+        self._save_df(raw_df, path, plot_name)
 
     def get_summary(self) -> Dict[str, Optional[float]]:
         return (

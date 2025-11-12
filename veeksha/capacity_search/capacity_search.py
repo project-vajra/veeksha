@@ -317,7 +317,7 @@ class CapacitySearch:
         try:
             wandb.log({"capsearch_qps_slo_table": wandb.Table(dataframe=df)}, step=0)
         finally:
-            wandb.finish(quiet=True)
+            wandb.finish()
 
     def _get_result_file(self, run_dir: str, metric_name: str) -> Optional[str]:
         files = glob.glob(os.path.join(run_dir, f"{metric_name}.csv"))
