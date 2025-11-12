@@ -23,3 +23,13 @@ class UniformRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
     @classmethod
     def get_type(cls) -> RequestLengthGeneratorType:
         return RequestLengthGeneratorType.UNIFORM
+
+    def __post_init__(self):
+        if self.prefill_to_decode_ratio <= 0:
+            raise ValueError("prefill_to_decode_ratio must be > 0")
+        if self.min_tokens <= 0:
+            raise ValueError("min_tokens must be > 0")
+        if self.max_tokens <= 0:
+            raise ValueError("max_tokens must be > 0")
+        if self.min_tokens > self.max_tokens:
+            raise ValueError("min_tokens must be <= max_tokens")

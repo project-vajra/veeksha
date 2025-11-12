@@ -438,15 +438,14 @@ class MetricStore:
         if max_len <= min_len:
             # Degenerate case: single prompt length, no binning needed
             base_df["prompt_length_bin"] = pd.Series(
-                [f"{min_len}–{max_len}"] * len(base_df)
+                [f"{min_len}-{max_len}"] * len(base_df)
             ).astype("category")
         else:
-            span = max_len - min_len
             # Target about 12 bins, but adapt to span to avoid overly dense ticks
             target_bins = 12
             bins = max(5, min(20, target_bins))
             edges = np.linspace(min_len, max_len, bins + 1)
-            labels = [f"{int(edges[i])}–{int(edges[i + 1])}" for i in range(bins)]
+            labels = [f"{int(edges[i])}-{int(edges[i + 1])}" for i in range(bins)]
             base_df["prompt_length_bin"] = pd.cut(
                 base_df["prompt_length"],
                 bins=edges,
