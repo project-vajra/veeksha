@@ -241,7 +241,7 @@ class LMEvalRequestGenerator:
                     "stream": False,
                     "logprobs": True,
                     "echo": True,
-                    "max_tokens": 1,
+                    "max_completion_tokens": 1,
                     "top_logprobs": 20,
                 },
                 llm_api=self.client_config.llm_api,
