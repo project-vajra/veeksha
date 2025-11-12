@@ -18,6 +18,11 @@ from veeksha.metrics.metric_utils import (
     get_request_level_deadline_miss_rate,
     get_throughput_metrics,
 )
+from veeksha.metrics.plot_utils import (
+    apply_axis_scale,
+    format_axis_label,
+    recommend_axis_scale,
+)
 from veeksha.metrics.request_level_metrics import RequestLevelMetrics
 from veeksha.metrics.request_metrics import RequestMetrics
 
@@ -290,7 +295,7 @@ class MetricStore:
         if self.should_write_metrics_to_wandb and wandb.run:
             self._persist_wandb_run_info(output_dir)
             try:
-                wandb.finish(quiet=True)
+                wandb.finish()
             except Exception as e:
                 logger.warning(f"wandb.finish() failed: {e}")
 
@@ -454,16 +459,43 @@ class MetricStore:
         # Ensure the categorical keeps its intrinsic left-to-right ordering
         df["prompt_length_bin"] = df["prompt_length_bin"].astype("category")
 
-        fig = rk.box(
+        # Decide scale for TTFT; use native axis scaling to keep original ticks
+        ttft_scale = recommend_axis_scale(df["ttft"], kind="numeric")
+        y_label_linear = "TTFT (s)"
+        y_label_scaled = (
+            format_axis_label("TTFT", "s", ttft_scale)
+            if ttft_scale != "linear"
+            else y_label_linear
+        )
+
+        # 1) Save linear version
+        fig_linear = rk.box(
             df,
             x="prompt_length_bin",
             y="ttft",
             labels={
                 "prompt_length_bin": "Number of Prompt Tokens",
-                "ttft": "TTFT (s)",
+                "ttft": y_label_linear,
             },
         )
-        fig.save(os.path.join(output_dir, "ttft_violin_plot.png"))
+        fig_linear.save(os.path.join(output_dir, "ttft_violin_plot.png"))
+
+        # 2) If scaled, also save a log/symlog variant
+        if ttft_scale != "linear":
+            fig_scaled = rk.box(
+                df,
+                x="prompt_length_bin",
+                y="ttft",
+                labels={
+                    "prompt_length_bin": "Number of Prompt Tokens",
+                    "ttft": y_label_scaled,
+                },
+            )
+            apply_axis_scale(fig_scaled, axis="y", scale=ttft_scale)
+            suffix = "log" if ttft_scale == "log" else "symlog"
+            fig_scaled.save(
+                os.path.join(output_dir, f"ttft_violin_plot_{suffix}_y.png")
+            )
         if self.should_write_metrics_to_wandb and wandb.run:
             wandb.log(
                 {
@@ -487,13 +519,46 @@ class MetricStore:
             "Time (s)": token_generated_times,
             "Tokens Generated": tokens_generated,
         }
-        fig = rk.line(
-            pd.DataFrame(data),
-            x="Time (s)",
+        # Decide scale for time axis; set native axis scaling
+        time_scale = recommend_axis_scale(token_generated_times, kind="numeric")
+        x_label_linear = "Time (s)"
+        x_label_scaled = (
+            format_axis_label("Time", "s", time_scale)
+            if time_scale != "linear"
+            else x_label_linear
+        )
+        plot_df_linear = pd.DataFrame(
+            {
+                x_label_linear: token_generated_times,
+                "Tokens Generated": tokens_generated,
+            }
+        )
+        fig_linear = rk.line(
+            plot_df_linear,
+            x=x_label_linear,
             y="Tokens Generated",
             title="Tokens Generated vs Time",
         )
-        fig.save(os.path.join(output_dir, "tokens_generated_vs_time.png"))
+        fig_linear.save(os.path.join(output_dir, "tokens_generated_vs_time.png"))
+        # Scaled variant if needed
+        if time_scale != "linear":
+            plot_df_scaled = pd.DataFrame(
+                {
+                    x_label_scaled: token_generated_times,
+                    "Tokens Generated": tokens_generated,
+                }
+            )
+            fig_scaled = rk.line(
+                plot_df_scaled,
+                x=x_label_scaled,
+                y="Tokens Generated",
+                title="Tokens Generated vs Time",
+            )
+            apply_axis_scale(fig_scaled, axis="x", scale=time_scale)
+            suffix = "log" if time_scale == "log" else "symlog"
+            fig_scaled.save(
+                os.path.join(output_dir, f"tokens_generated_vs_time_{suffix}_x.png")
+            )
         if self.should_write_metrics_to_wandb and wandb.run:
             wandb.log(
                 {
