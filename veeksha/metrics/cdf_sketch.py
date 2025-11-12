@@ -62,8 +62,8 @@ class CDFSketch:
 
         logger.info(
             f"{plot_name}: {self.metric_name} stats:"
-            f" min: {self.sketch._min},"
-            f" max: {self.sketch._max},"
+            f" min: {self.sketch.get_quantile_value(0)},"
+            f" max: {self.sketch.get_quantile_value(1)},"
             f" mean: {self.sketch.avg},"
             f" 25th percentile: {self.sketch.get_quantile_value(0.25)},"
             f" median: {self.sketch.get_quantile_value(0.5)},"
@@ -75,8 +75,8 @@ class CDFSketch:
         if wandb.run and self.should_write_to_wandb:
             wandb.log(
                 {
-                    f"{plot_name}_min": self.sketch._min,
-                    f"{plot_name}_max": self.sketch._max,
+                    f"{plot_name}_min": self.sketch.get_quantile_value(0),
+                    f"{plot_name}_max": self.sketch.get_quantile_value(1),
                     f"{plot_name}_mean": self.sketch.avg,
                     f"{plot_name}_25th_percentile": self.sketch.get_quantile_value(
                         0.25
