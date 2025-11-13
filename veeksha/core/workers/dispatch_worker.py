@@ -43,7 +43,7 @@ class DispatchWorker:
 
     def run(self) -> None:
         """Main worker loop."""
-        logger.info(f"Dispatch worker {self.worker_context.worker_id} starting")
+        logger.debug("Dispatch worker %s starting", self.worker_context.worker_id)
 
         while not self.worker_context.stop_event.is_set():
             # Check if there's a request ready to dispatch from scheduler
@@ -74,12 +74,13 @@ class DispatchWorker:
         # but that's okay - pop_ready is thread-safe and returns None when empty
         self._drain_scheduler()
 
-        logger.info(f"Dispatch worker {self.worker_context.worker_id} exiting")
+        logger.debug("Dispatch worker %s exiting", self.worker_context.worker_id)
 
     def _drain_scheduler(self) -> None:
         """Drain any remaining ready requests from the scheduler."""
-        logger.info(
-            f"Dispatch worker {self.worker_context.worker_id}: draining scheduler before exit"
+        logger.debug(
+            "Dispatch worker %s: draining scheduler before exit",
+            self.worker_context.worker_id,
         )
         while True:
             ready = self.scheduler.pop_ready()

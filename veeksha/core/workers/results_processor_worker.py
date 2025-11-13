@@ -44,7 +44,7 @@ class ResultsProcessorWorker:
 
     def run(self) -> None:
         """Main worker loop."""
-        logger.info(f"Results processor worker {self.worker_context.worker_id} starting")
+        logger.debug("Results processor worker %s starting", self.worker_context.worker_id)
 
         while not self.worker_context.stop_event.is_set():
             result = self.output_queue.get()
@@ -57,7 +57,7 @@ class ResultsProcessorWorker:
 
             self.process_result(result)
             
-        logger.info(f"Results processor worker {self.worker_context.worker_id} exiting")
+        logger.debug("Results processor worker %s exiting", self.worker_context.worker_id)
 
     def process_result(self, result: Tuple[RequestMetrics, Response]) -> None:
         """Process a result from the output queue."""

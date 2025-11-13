@@ -36,7 +36,7 @@ class RequestRunnerWorker:
         With GIL-free Python (python -Xgil=0), this thread can run in parallel with
         other threads while using uvloop for concurrent HTTP requests.
         """
-        logger.info(f"Request runner worker {self.worker_context.worker_id} starting")
+        logger.debug("Request runner worker %s starting", self.worker_context.worker_id)
 
         # Install uvloop for this thread
         uvloop.install()
@@ -44,7 +44,7 @@ class RequestRunnerWorker:
         # Run the async event loop
         asyncio.run(self._worker_loop())
 
-        logger.info(f"Request runner worker {self.worker_context.worker_id} exiting")
+        logger.debug("Request runner worker %s exiting", self.worker_context.worker_id)
 
     async def _worker_loop(self) -> None:
         """Main async event loop that dispatches requests as concurrent tasks."""
