@@ -20,13 +20,13 @@ class RequestDispatcher:
 
     def __init__(
         self,
-        input_queue: Queue,
+        input_queues: List[Queue],
         service_metrics: ServiceMetrics,
         benchmark_id: str,
         telemetry_enabled: bool,
         worker_contexts: List[WorkerContext],
     ):
-        self.input_queue = input_queue
+        self.input_queues = input_queues
         self.service_metrics = service_metrics
         self.benchmark_id = benchmark_id
         self.telemetry_enabled = telemetry_enabled
@@ -73,7 +73,7 @@ class RequestDispatcher:
                 f"(load: {selected_worker.get_load()})"
             )
 
-        self.input_queue.put(request_config)
+        self.input_queues[selected_worker.worker_id].put(request_config)
 
         # Emit dashboard event
         if request_config.id is not None:

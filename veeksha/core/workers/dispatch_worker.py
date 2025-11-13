@@ -1,6 +1,7 @@
 """Worker that schedules and dispatches requests to worker queue."""
 
 from queue import Empty, Queue
+from typing import List
 
 from veeksha.core.context import BenchmarkContext, WorkerContext
 from veeksha.core.dispatch_scheduler import DispatchScheduler
@@ -18,7 +19,7 @@ class DispatchWorker:
 
     def __init__(
         self,
-        input_queue: Queue,
+        input_queues: List[Queue],
         ready_queue: Queue,
         service_metrics: ServiceMetrics,
         scheduler: DispatchScheduler,
@@ -26,7 +27,7 @@ class DispatchWorker:
         benchmark_context: BenchmarkContext,
         worker_context: WorkerContext,
     ):
-        self.input_queue = input_queue
+        self.input_queues = input_queues
         self.ready_queue = ready_queue
         self.service_metrics = service_metrics
         self.scheduler = scheduler
@@ -34,7 +35,7 @@ class DispatchWorker:
         self.benchmark_context = benchmark_context
         self.worker_context = worker_context
         self.dispatcher = RequestDispatcher(
-            input_queue=input_queue,
+            input_queues=input_queues,
             service_metrics=service_metrics,
             benchmark_id=benchmark_context.benchmark_id,
             telemetry_enabled=benchmark_context.telemetry_enabled,

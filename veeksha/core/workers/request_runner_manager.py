@@ -18,12 +18,12 @@ class RequestRunnerManager:
     def __init__(
         self,
         client_config: ClientConfig,
-        input_queue: Queue,
+        input_queues: List[Queue],
         output_queue: Queue,
         num_threads: int,
     ):
         self.client_config = client_config
-        self.input_queue = input_queue
+        self.input_queues = input_queues
         self.output_queue = output_queue
         self.num_threads = num_threads
         self.workers: List[Thread] = []
@@ -41,7 +41,7 @@ class RequestRunnerManager:
 
             # Create worker instance
             worker_instance = RequestRunnerWorker(
-                input_queue=self.input_queue,
+                input_queue=self.input_queues[i],
                 output_queue=self.output_queue,
                 worker_context=worker_context,
                 client_config=self.client_config,
@@ -67,8 +67,8 @@ class RequestRunnerManager:
     def complete_tasks(self) -> None:
         """Signal worker threads to complete their tasks and exit."""
         # Send one sentinel value per worker
-        for _ in range(len(self.workers)):
-            self.input_queue.put(None)
+        for i in range(len(self.workers)):
+            self.input_queues[i].put(None)
 
         # Set stop event (shared by all workers)
         self.stop_event.set()

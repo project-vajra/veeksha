@@ -100,6 +100,9 @@ class RequestRunnerWorker:
                 error_msg=str(e),
                 error_code=error_code,
                 request_id=request_id,
+                benchmark_id=(
+                    request_config.benchmark_id if request_config else "default"
+                ),
             )
             self.output_queue.put((metrics, None))
         except Exception:

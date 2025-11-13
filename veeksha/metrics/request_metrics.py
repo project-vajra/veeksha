@@ -14,7 +14,6 @@ class RequestMetrics:
     inter_token_times: List[float]
     num_prompt_tokens: int
     num_output_tokens: int
-    request_id: Optional[int] = None
     error_msg: Optional[str] = None
     error_code: Optional[int] = None
     # Request id for correlation when Response is None
