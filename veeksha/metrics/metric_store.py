@@ -5,6 +5,7 @@ from collections import defaultdict
 from itertools import accumulate
 from typing import DefaultDict, Dict, Optional
 
+import numpy as np
 import pandas as pd
 import rekha as rk
 import wandb
@@ -17,6 +18,11 @@ from veeksha.metrics.metric_utils import (
     get_deadline_miss_rate_for_target_tbt_values,
     get_request_level_deadline_miss_rate,
     get_throughput_metrics,
+)
+from veeksha.metrics.plot_utils import (
+    apply_axis_scale,
+    format_axis_label,
+    recommend_axis_scale,
 )
 from veeksha.metrics.request_level_metrics import RequestLevelMetrics
 from veeksha.metrics.request_metrics import RequestMetrics
@@ -280,6 +286,9 @@ class MetricStore:
                 {**self.get_summary(), "error_code_freq": dict(self.error_code_freq)}, f
             )
 
+        # log summary stats table to wandb
+        self.store_summary_stats_table(output_dir)
+
         # store additional outputs
         self.store_additional_outputs(output_dir)
 
@@ -290,7 +299,7 @@ class MetricStore:
         if self.should_write_metrics_to_wandb and wandb.run:
             self._persist_wandb_run_info(output_dir)
             try:
-                wandb.finish(quiet=True)
+                wandb.finish()
             except Exception as e:
                 logger.warning(f"wandb.finish() failed: {e}")
 
@@ -299,6 +308,7 @@ class MetricStore:
         self.store_throughput_metrics(output_dir)
         self.store_ttft_violin_plots(output_dir)
         self.store_generation_stalls(output_dir)
+        self.store_ttft_tbt_scalar_charts()
 
     def _log_artifact_files(self, output_dir: str) -> None:
         if not (self.should_write_metrics_to_wandb and wandb.run):
@@ -367,7 +377,6 @@ class MetricStore:
                         title="Deadline Miss Rate for Target TBT Values",
                     )
                 },
-                step=0,
             )
 
     def store_throughput_metrics(self, output_dir: str):
@@ -409,33 +418,96 @@ class MetricStore:
                         title="Token Throughput",
                     )
                 },
-                step=0,
             )
 
     def store_ttft_violin_plots(self, output_dir: str):
-        data = {}
-        for i, ttft in enumerate(self.request_level_metrics.ttft):
-            if str(self.request_level_metrics.num_prompt_tokens[i]) not in data:
-                data[str(self.request_level_metrics.num_prompt_tokens[i])] = []
-            data[str(self.request_level_metrics.num_prompt_tokens[i])].append(ttft)
-        df = pd.DataFrame(
-            {
-                "ttft": [ttft for ttfts in data.values() for ttft in ttfts],
-                "prompt_length": [
-                    prompt_length
-                    for prompt_length in data.keys()
-                    for _ in data[prompt_length]
-                ],
-            }
+        """Save and log TTFT distribution vs prompt length with a fixed, ordered x-axis.
+
+        We bin prompt lengths into ordered ranges to avoid thousands of categories
+        and to ensure the x-axis is monotonic.
+        """
+        if not self.request_level_metrics.ttft:
+            return
+
+        prompt_lengths = [int(n) for n in self.request_level_metrics.num_prompt_tokens]
+        ttfts = list(self.request_level_metrics.ttft)
+        if len(prompt_lengths) != len(ttfts):
+            return
+
+        base_df = pd.DataFrame({"prompt_length": prompt_lengths, "ttft": ttfts})
+
+        # Choose a reasonable number of bins based on data spread, capped to 20
+        min_len = int(base_df["prompt_length"].min())
+        max_len = int(base_df["prompt_length"].max())
+        if max_len <= min_len:
+            # Degenerate case: single prompt length, no binning needed
+            base_df["prompt_length_bin"] = pd.Series(
+                [f"{min_len}–{max_len}"] * len(base_df)
+            ).astype("category")
+        else:
+            # Target about 12 bins, but adapt to span to avoid overly dense ticks
+            target_bins = 12
+            bins = max(5, min(20, target_bins))
+            # Evenly spaced edges -> coerce to unique integer edges to avoid duplicate labels
+            raw_edges = np.linspace(min_len, max_len, bins + 1)
+            int_edges = np.unique(np.round(raw_edges).astype(int))
+            if int_edges.size < 2:
+                base_df["prompt_length_bin"] = pd.Series(
+                    [f"{min_len}–{max_len}"] * len(base_df)
+                ).astype("category")
+            else:
+                edges = int_edges
+                bins = edges.size - 1
+                labels = [f"{edges[i]}–{edges[i + 1]}" for i in range(bins)]
+                base_df["prompt_length_bin"] = pd.cut(
+                    base_df["prompt_length"],
+                    bins=edges,
+                    include_lowest=True,
+                    labels=labels,
+                    right=True,
+                )
+
+        df = base_df[["prompt_length_bin", "ttft"]].copy()
+        # Ensure the categorical keeps its intrinsic left-to-right ordering
+        df["prompt_length_bin"] = df["prompt_length_bin"].astype("category")
+
+        # Decide scale for TTFT; use native axis scaling to keep original ticks
+        ttft_scale = recommend_axis_scale(df["ttft"], kind="numeric")
+        y_label_linear = "TTFT (s)"
+        y_label_scaled = (
+            format_axis_label("TTFT", "s", ttft_scale)
+            if ttft_scale != "linear"
+            else y_label_linear
         )
-        df = df.sort_values("prompt_length", key=lambda x: x.astype(int))
-        fig = rk.box(
+
+        # 1) Save linear version
+        fig_linear = rk.box(
             df,
-            x="prompt_length",
+            x="prompt_length_bin",
             y="ttft",
-            labels={"prompt_length": "Number of Prompt Tokens", "ttft": "TTFT (s)"},
+            labels={
+                "prompt_length_bin": "Number of Prompt Tokens",
+                "ttft": y_label_linear,
+            },
         )
-        fig.save(os.path.join(output_dir, "ttft_violin_plot.png"))
+        fig_linear.save(os.path.join(output_dir, "ttft_violin_plot.png"))
+
+        # 2) If scaled, also save a log/symlog variant
+        if ttft_scale != "linear":
+            fig_scaled = rk.box(
+                df,
+                x="prompt_length_bin",
+                y="ttft",
+                labels={
+                    "prompt_length_bin": "Number of Prompt Tokens",
+                    "ttft": y_label_scaled,
+                },
+            )
+            apply_axis_scale(fig_scaled, axis="y", scale=ttft_scale)
+            suffix = "log" if ttft_scale == "log" else "symlog"
+            fig_scaled.save(
+                os.path.join(output_dir, f"ttft_violin_plot_{suffix}_y.png")
+            )
         if self.should_write_metrics_to_wandb and wandb.run:
             wandb.log(
                 {
@@ -459,13 +531,46 @@ class MetricStore:
             "Time (s)": token_generated_times,
             "Tokens Generated": tokens_generated,
         }
-        fig = rk.line(
-            pd.DataFrame(data),
-            x="Time (s)",
+        # Decide scale for time axis; set native axis scaling
+        time_scale = recommend_axis_scale(token_generated_times, kind="numeric")
+        x_label_linear = "Time (s)"
+        x_label_scaled = (
+            format_axis_label("Time", "s", time_scale)
+            if time_scale != "linear"
+            else x_label_linear
+        )
+        plot_df_linear = pd.DataFrame(
+            {
+                x_label_linear: token_generated_times,
+                "Tokens Generated": tokens_generated,
+            }
+        )
+        fig_linear = rk.line(
+            plot_df_linear,
+            x=x_label_linear,
             y="Tokens Generated",
             title="Tokens Generated vs Time",
         )
-        fig.save(os.path.join(output_dir, "tokens_generated_vs_time.png"))
+        fig_linear.save(os.path.join(output_dir, "tokens_generated_vs_time.png"))
+        # Scaled variant if needed
+        if time_scale != "linear":
+            plot_df_scaled = pd.DataFrame(
+                {
+                    x_label_scaled: token_generated_times,
+                    "Tokens Generated": tokens_generated,
+                }
+            )
+            fig_scaled = rk.line(
+                plot_df_scaled,
+                x=x_label_scaled,
+                y="Tokens Generated",
+                title="Tokens Generated vs Time",
+            )
+            apply_axis_scale(fig_scaled, axis="x", scale=time_scale)
+            suffix = "log" if time_scale == "log" else "symlog"
+            fig_scaled.save(
+                os.path.join(output_dir, f"tokens_generated_vs_time_{suffix}_x.png")
+            )
         if self.should_write_metrics_to_wandb and wandb.run:
             wandb.log(
                 {
@@ -474,3 +579,94 @@ class MetricStore:
                     )
                 }
             )
+
+    def store_summary_stats_table(self, output_dir: str) -> None:
+        """Create and log a wandb table from summary_stats.json.
+
+        Args:
+            output_dir: Directory where summary_stats.json is written.
+        """
+        try:
+            if not (self.should_write_metrics_to_wandb and wandb.run):
+                return
+            summary_json_path = os.path.join(output_dir, "summary_stats.json")
+            if not os.path.exists(summary_json_path):
+                return
+            with open(summary_json_path, "r") as f:
+                summary_dict = json.load(f)
+            # Log only numeric metrics to avoid mixed-type column issues
+            numeric_rows = []
+            for key, value in summary_dict.items():
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    numeric_rows.append({"Metric": key, "Value": float(value)})
+            if numeric_rows:
+                df = pd.DataFrame.from_records(numeric_rows)
+                df = df[["Metric", "Value"]]
+                wandb.log({"summary_stats_table": wandb.Table(dataframe=df)})
+
+            # Optionally log error_code_freq as a separate table if present
+            error_code_freq = summary_dict.get("error_code_freq")
+            if isinstance(error_code_freq, dict) and len(error_code_freq) > 0:
+                ec_rows = [
+                    {"Error Code": str(code), "Count": int(count)}
+                    for code, count in error_code_freq.items()
+                ]
+                ec_df = pd.DataFrame.from_records(ec_rows)
+                wandb.log({"error_code_freq_table": wandb.Table(dataframe=ec_df)})
+        except Exception as e:
+            logger.warning(f"Failed to log summary_stats table to wandb: {e}")
+
+    def _log_single_value_bar_chart(self, title: str, label: str, value: float) -> None:
+        """Log a one-bar chart to wandb for a single scalar value."""
+        if not (self.should_write_metrics_to_wandb and wandb.run):
+            return
+        try:
+            df = pd.DataFrame({"Label": [label], "Value": [value]})
+            wandb.log(
+                {
+                    title: wandb.plot.bar(
+                        table=wandb.Table(dataframe=df),
+                        label="Label",
+                        value="Value",
+                        title=title,
+                    )
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log bar chart '{title}': {e}")
+
+    def store_ttft_tbt_scalar_charts(self) -> None:
+        """Log single-value charts for ttft and tbt: min, mean, median, p90, p99, max."""
+        if not (self.should_write_metrics_to_wandb and wandb.run):
+            return
+
+        def log_for_sketch(sketch_key: str, short_name: str) -> None:
+            if sketch_key not in self.summaries:
+                return
+            sketch = self.summaries[sketch_key].sketch
+            if sketch.count == 0:
+                return
+            try:
+                stats = {
+                    "Min": sketch._min,
+                    "Mean": sketch.avg,
+                    "Median": sketch.get_quantile_value(0.5),
+                    "P90": sketch.get_quantile_value(0.9),
+                    "P99": sketch.get_quantile_value(0.99),
+                    "Max": sketch._max,
+                }
+            except Exception as e:
+                logger.warning(f"Failed to compute stats for {short_name}: {e}")
+                return
+
+            for stat_name, stat_value in stats.items():
+                title = f"{short_name} {stat_name}"
+                self._log_single_value_bar_chart(
+                    title=title,
+                    label=short_name,
+                    value=float(stat_value),
+                )
+
+        # TTFT (s) and TBT (s)
+        log_for_sketch("ttft", "TTFT (s)")
+        log_for_sketch("tbt", "TBT (s)")
