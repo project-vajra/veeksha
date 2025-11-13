@@ -40,23 +40,23 @@ test: test/unit test/functional test/gpu ## Run all tests
 test/setup: test/setup/314 test/setup/312 ## Create both virtual environments and install deps
 
 test/setup/314: ## Create Python $(PY314) env for unit/lint and install dev deps
-	@bash scripts/test_setup_314.sh
+	@VENV314=$(VENV314) PY314=$(PY314) bash scripts/test_setup_314.sh
 
 test/setup/312: ## Create Python $(PY312) env for vLLM/torch and install test deps
-	@bash scripts/test_setup_312.sh
+	@VENV312=$(VENV312) PY312=$(PY312) bash scripts/test_setup_312.sh
 
 test/functional: ## Run functional tests
 	@echo "Running functional tests..."
-	@bash scripts/run_tests_functional.sh
+	@VENV314=$(VENV314) VENV312=$(VENV312) bash scripts/run_tests_functional.sh
 
 test/gpu: ## Run GPU tests
 	@echo "Running GPU tests..."
-	@bash scripts/run_tests_gpu.sh
+	@VENV314=$(VENV314) VENV312=$(VENV312) bash scripts/run_tests_gpu.sh
 
 # optional: keep unit generating initial data but skip reports, or regenerate at end
 test/unit: ## Run unit tests
 	@echo "Running unit tests..."
-	@bash scripts/run_tests_unit.sh
+	@VENV314=$(VENV314) bash scripts/run_tests_unit.sh
 	
 test/integration: ## Run integration tests
 	@echo "Integration tests not yet implemented..."

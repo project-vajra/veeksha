@@ -5,7 +5,7 @@ set -euo pipefail
 
 # Defaults; can be overridden by env
 VENV314="${VENV314:-.venv314}"
-PY314="${PY314:-3.14}"
+PY314="${PY314:-3.14t}"
 
 echo "Ensuring ${VENV314} (Python ${PY314}) exists..."
 if [[ ! -f "${VENV314}/bin/activate" ]]; then
