@@ -6,6 +6,7 @@ import os
 import time
 from copy import deepcopy
 from dataclasses import fields, is_dataclass
+from importlib.resources.abc import Traversable
 from typing import Any, Dict, List, Union, get_args, get_origin
 
 import yaml
@@ -475,7 +476,7 @@ def has_allow_from_file_attribute(cls: type) -> bool:
     return vars(cls).get("_allow_from_file", False)
 
 
-def get_trace_file_path(filename: str) -> PosixPath:
+def get_trace_file_path(filename: str) -> Traversable:
     """
     Resolves the path to a data file within the package's processed_traces directory.
 
