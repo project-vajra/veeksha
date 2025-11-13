@@ -18,7 +18,7 @@ defaults:
     shell: bash -l {0}
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}  
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
   # we want concurrent jobs on main
 env:
   CONTAINER_NAME: nvidia/cuda:12.9.0-cudnn-devel-ubuntu24.04
@@ -45,6 +45,12 @@ jobs:
           -w /repo \
           --name veeksha-testsuite-${{ github.run_id }} \
           veeksha-ci sleep infinity
+      - name: "Setup test environments"
+        run: |
+          docker exec \
+          -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
+          veeksha-testsuite-${{ github.run_id }} \
+          make test/setup
       - name: "Run unit tests"
         id: run_unit_tests
         run: |
