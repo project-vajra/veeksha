@@ -32,7 +32,7 @@ class RequestRunnerManager:
 
     def start(self) -> None:
         """Start async worker threads with uvloop event loops."""
-        logger.info(f"Starting {self.num_threads} async worker threads with uvloop")
+        logger.debug("Starting %s async worker threads with uvloop", self.num_threads)
 
         for i in range(self.num_threads):
             # Create worker context with load tracking

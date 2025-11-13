@@ -62,7 +62,7 @@ class RequestDispatcher:
 
     def dispatch_request(self, request_config) -> None:
         """Dispatch a single request to workers using power-of-two load balancing."""
-        self.service_metrics.register_launched_request()
+        self.service_metrics.register_launched_request(request_config.id)
         request_config.benchmark_id = self.benchmark_id
 
         # Power-of-two load balancing: select least loaded worker
