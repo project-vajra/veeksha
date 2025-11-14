@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional, Tuple
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RequestConfig(BaseModel):
@@ -16,12 +16,12 @@ class RequestConfig(BaseModel):
     """
 
     model: str
+    id: int = Field(default=-1, ge=0)
     prompt: Tuple[str, int]
     dispatch_delay: float = 0.0
     sampling_params: Optional[Dict[str, Any]] = None
     llm_api: Optional[str] = None
     address_append_value: Optional[str] = None
-    id: Optional[int] = None
     benchmark_id: str = "default"
 
     # session/scheduling metadata

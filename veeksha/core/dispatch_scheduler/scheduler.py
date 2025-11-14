@@ -52,15 +52,13 @@ class DispatchScheduler:
 
     def add_request(self, request: RequestConfig) -> None:
         with self._lock:
-            req_id = request.id if (request.id is not None) else -1
-            self._id_to_session_seq[req_id] = (
-                request.session_id,
-                request.session_sequence_index,
-            )
-
             if (request.session_id is not None) and (
                 request.session_sequence_index is not None
             ):
+                self._id_to_session_seq[request.id] = (
+                    request.session_id,
+                    request.session_sequence_index,
+                )
                 # Get or create session state
                 session = self._sessions.setdefault(request.session_id, SessionState())
 
