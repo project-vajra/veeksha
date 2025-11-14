@@ -46,7 +46,7 @@ class ResultsProcessorWorker:
         """Main worker loop."""
         logger.debug("Results processor worker %s starting", self.worker_context.worker_id)
 
-        while not self.worker_context.stop_event.is_set():
+        while True:
             result = self.output_queue.get()
             if result is None:
                 break
