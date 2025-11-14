@@ -46,7 +46,7 @@ class ResultsProcessorWorker:
         """Main worker loop."""
         logger.debug("Results processor worker %s starting", self.worker_context.worker_id)
 
-        while True:
+        while True: # drain until sentinel is received
             result = self.output_queue.get()
             if result is None:
                 break
@@ -63,16 +63,23 @@ class ResultsProcessorWorker:
         """Process a result from the output queue."""
         request_metrics, generated_response = result
         self.service_metrics.add_request_metrics(request_metrics)
-        # notify scheduler about completion for session-aware sequencing
+
         success = (
-            getattr(request_metrics, "error_code", None) is None
+            not request_metrics.cancelled
+            and getattr(request_metrics, "error_code", None) is None
             and getattr(request_metrics, "error_msg", None) is None
         )
-        self.scheduler.notify_completion(
-            request_id=request_metrics.request_id,
-            completed_at_monotonic=time.monotonic(),
-            success=success,
-        )
+
+        if request_metrics.request_id is not None:
+            self.scheduler.notify_completion(
+                request_id=request_metrics.request_id,
+                completed_at_monotonic=time.monotonic(),
+                success=success,
+            )
+
+        if request_metrics.cancelled:
+            return
+
         if generated_response is not None:
             with self.responses_lock:
                 self.generated_responses.append(generated_response)

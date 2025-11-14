@@ -76,33 +76,53 @@ class RequestRunnerWorker:
                 request_config, self.client_config.request_timeout
             )
             self.output_queue.put(result)
+        except asyncio.CancelledError:
+            # task cancelled due to shutdown / timeout
+            self._emit_error_result(
+                exception=None, request_config=request_config, cancelled=True
+            )
+            raise
         except Exception as e:
             logger.exception(
                 "send_llm_request failed for async worker_id=%s",
                 self.worker_context.worker_id,
             )
-            self._emit_error_result(e, request_config)
+            self._emit_error_result(exception=e, request_config=request_config)
         finally:
             self.worker_context.decrement_load()
 
-    def _emit_error_result(self, e: Exception, request_config: Optional[Any]) -> None:
+    def _emit_error_result(
+        self,
+        exception: Optional[BaseException],
+        request_config: Optional[Any],
+        cancelled: bool = False,
+    ) -> None:
         """Emit an error RequestMetrics tuple to the output queue."""
         try:
             prompt_len = request_config.prompt[1] if request_config else 0
             request_id = request_config.id if request_config else None
-            error_code = getattr(getattr(e, "response", None), "status_code", None)
+            error_code = None
+            error_msg = None
+            if cancelled:
+                error_msg = "Cancelled by Veeksha"
+            elif exception is not None:
+                error_code = getattr(
+                    getattr(exception, "response", None), "status_code", None
+                )
+                error_msg = str(exception)
 
             metrics = RequestMetrics(
                 request_dispatched_at=0.0,
                 inter_token_times=[],
                 num_prompt_tokens=prompt_len,
                 num_output_tokens=0,
-                error_msg=str(e),
+                error_msg=error_msg,
                 error_code=error_code,
                 request_id=request_id,
                 benchmark_id=(
                     request_config.benchmark_id if request_config else "default"
                 ),
+                cancelled=cancelled,
             )
             self.output_queue.put((metrics, None))
         except Exception:

@@ -60,6 +60,10 @@ class ServiceMetrics:
         return self.metric_store.num_errored_requests
 
     @property
+    def num_cancelled_requests(self) -> int:
+        return self.metric_store.num_cancelled_requests
+
+    @property
     def duration(self):
         assert self.end_time is not None
         assert self.start_time is not None
@@ -106,7 +110,9 @@ class ServiceMetrics:
                     )
                     # count finished requests so far
                     initial_done = min(
-                        self.num_completed_requests + self.num_errored_requests,
+                        self.num_completed_requests
+                        + self.num_errored_requests
+                        + self.num_cancelled_requests,
                         self._cutoff_launched_requests,
                     )
                     self._num_pre_timeout_terminal = initial_done
@@ -147,12 +153,12 @@ class ServiceMetrics:
                 ):
                     is_filler = True
 
-        if not is_filler:
-            self.metric_store.add_request_metrics(request_metrics)
-        else:
+        if is_filler and not request_metrics.cancelled:
             logger.debug(
                 "Dropping metrics for filler request_id=%s (post-timeout).", str(req_id)
             )
+        else:
+            self.metric_store.add_request_metrics(request_metrics)
 
         # In tail phase, count terminal outcomes for pre-timeout launched requests
         with self._state_lock:

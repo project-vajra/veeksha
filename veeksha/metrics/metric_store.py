@@ -48,6 +48,7 @@ class MetricStore:
         self.num_requests: int = 0
         self.num_errored_requests: int = 0
         self.num_completed_requests: int = 0
+        self.num_cancelled_requests: int = 0
         self.start_time: Optional[float] = None
         self.end_time: Optional[float] = None
         self.error_code_freq: DefaultDict[int, int] = defaultdict(int)
@@ -178,6 +179,10 @@ class MetricStore:
 
     def add_request_metrics(self, request_metrics: RequestMetrics):
         with self.lock:
+            if request_metrics.cancelled:
+                self.num_cancelled_requests += 1
+                self.request_level_metrics.put_dispatch_only(request_metrics)
+                return
             if request_metrics.error_code:
                 # Do not add errored requests to metric sketches, but persist
                 # dispatch times at request-level
@@ -223,7 +228,13 @@ class MetricStore:
             "Number of Requests": self.num_requests,
             "Number of Errored Requests": self.num_errored_requests,
             "Number of Completed Requests": self.num_completed_requests,
+            "Number of Cancelled Requests": self.num_cancelled_requests,
             "Error Rate": self.error_rate,
+            "Cancellation Rate": (
+                self.num_cancelled_requests / self.num_requests
+                if self.num_requests > 0
+                else 0.0
+            ),
             "Deadline Miss Rate": (
                 self.service_level_missed_deadlines / self.service_level_total_deadlines
                 if self.service_level_total_deadlines > 0
