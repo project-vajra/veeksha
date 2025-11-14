@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional, Tuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class RequestConfig(BaseModel):
@@ -8,6 +8,7 @@ class RequestConfig(BaseModel):
 
     Args:
         model: The model to use.
+        id: The id of the request. Should be unique within a scheduler instance.
         prompt: The prompt to provide to the LLM API.
         dispatch_delay: The delay in seconds before dispatching the request to the LLM API.
         sampling_params: Additional sampling parameters to send with the request.
@@ -16,7 +17,7 @@ class RequestConfig(BaseModel):
     """
 
     model: str
-    id: int = Field(default=-1, ge=0)
+    id: int
     prompt: Tuple[str, int]
     dispatch_delay: float = 0.0
     sampling_params: Optional[Dict[str, Any]] = None
