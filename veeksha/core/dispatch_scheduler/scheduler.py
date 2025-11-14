@@ -55,6 +55,7 @@ class DispatchScheduler:
             if (request.session_id is not None) and (
                 request.session_sequence_index is not None
             ):
+                # req id is monotonic increasing
                 self._id_to_session_seq[request.id] = (
                     request.session_id,
                     request.session_sequence_index,

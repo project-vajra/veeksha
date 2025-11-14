@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from queue import Queue
+from queue import Full, Queue
 from typing import Any, Optional
 
 import uvloop
@@ -77,10 +77,12 @@ class RequestRunnerWorker:
                 request_config, self.client_config.request_timeout
             )
             completed_at = time.monotonic()
-            self.output_queue.put((metrics, response, completed_at))
+            await asyncio.to_thread(
+                self.output_queue.put, (metrics, response, completed_at)
+            )
         except asyncio.CancelledError:
             # task cancelled due to shutdown / timeout
-            self._emit_error_result(
+            await self._emit_error_result(
                 exception=None, request_config=request_config, cancelled=True
             )
             raise
@@ -89,11 +91,11 @@ class RequestRunnerWorker:
                 "send_llm_request failed for async worker_id=%s",
                 self.worker_context.worker_id,
             )
-            self._emit_error_result(exception=e, request_config=request_config)
+            await self._emit_error_result(exception=e, request_config=request_config)
         finally:
             self.worker_context.decrement_load()
 
-    def _emit_error_result(
+    async def _emit_error_result(
         self,
         exception: Optional[BaseException],
         request_config: Optional[Any],
@@ -127,7 +129,11 @@ class RequestRunnerWorker:
                 ),
                 cancelled=cancelled,
             )
-            self.output_queue.put((metrics, None, completed_at))
+            result = (metrics, None, completed_at)
+            try:
+                self.output_queue.put_nowait(result)
+            except Full:
+                await asyncio.to_thread(self.output_queue.put, result)
         except Exception:
             logger.exception(
                 "Failed to enqueue error result for worker %s",

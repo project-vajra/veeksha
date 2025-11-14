@@ -287,9 +287,9 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
                             if "logprobs" in data["choices"][0]:
                                 raw_lp = data["choices"][0]["logprobs"]
                                 if isinstance(raw_lp, list):
-                                    logprobs_chunks = [
+                                    logprobs_chunks.extend(
                                         lp for lp in raw_lp if isinstance(lp, dict)
-                                    ]
+                                    )
                                 elif isinstance(raw_lp, dict):
                                     logprobs_chunks.append(raw_lp)
 
