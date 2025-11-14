@@ -261,6 +261,7 @@ veeksha/benchmark_config_files/
 veeksha/capacity_search/capsearch_config_files/
 veeksha/_version.py
 test_output/
+venv*/
 .coverage
 
 # cursor
@@ -269,3 +270,4 @@ test_output/
 
 # claude
 CLAUDE.md
+benchmark_outputs/

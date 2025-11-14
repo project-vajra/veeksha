@@ -8,6 +8,7 @@ class RequestConfig(BaseModel):
 
     Args:
         model: The model to use.
+        id: The id of the request. Should be unique within a scheduler instance.
         prompt: The prompt to provide to the LLM API.
         dispatch_delay: The delay in seconds before dispatching the request to the LLM API.
         sampling_params: Additional sampling parameters to send with the request.
@@ -16,12 +17,12 @@ class RequestConfig(BaseModel):
     """
 
     model: str
+    id: int
     prompt: Tuple[str, int]
     dispatch_delay: float = 0.0
     sampling_params: Optional[Dict[str, Any]] = None
     llm_api: Optional[str] = None
     address_append_value: Optional[str] = None
-    id: Optional[int] = None
     benchmark_id: str = "default"
 
     # session/scheduling metadata

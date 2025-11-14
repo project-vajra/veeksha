@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 from collections import defaultdict
 from itertools import accumulate
 from typing import DefaultDict, Dict, Optional
@@ -43,9 +44,11 @@ class MetricStore:
         self.timeout = timeout
         self.max_requests = max_requests
 
+        self.lock = threading.Lock()
         self.num_requests: int = 0
         self.num_errored_requests: int = 0
         self.num_completed_requests: int = 0
+        self.num_cancelled_requests: int = 0
         self.start_time: Optional[float] = None
         self.end_time: Optional[float] = None
         self.error_code_freq: DefaultDict[int, int] = defaultdict(int)
@@ -171,17 +174,20 @@ class MetricStore:
         )
 
     def register_launched_request(self):
-        self.num_requests += 1
+        with self.lock:
+            self.num_requests += 1
 
     def add_request_metrics(self, request_metrics: RequestMetrics):
-        if request_metrics.error_code:
-            # Do not add errored requests to metric sketches, but persist
-            # dispatch times at request-level
-            self.error_code_freq[request_metrics.error_code] += 1
-            self.num_errored_requests += 1
-            self.request_level_metrics.put_dispatch_only(request_metrics)
-            return
-        else:
+        with self.lock:
+            if request_metrics.cancelled:
+                self.num_cancelled_requests += 1
+                return
+            if request_metrics.error_code is not None or request_metrics.error_msg:
+                if request_metrics.error_code is not None:
+                    self.error_code_freq[request_metrics.error_code] += 1
+                self.num_errored_requests += 1
+                return
+
             self.num_completed_requests += 1
 
             for metric_name, cdf_sketch in self.summaries.items():
@@ -211,15 +217,21 @@ class MetricStore:
                 else:
                     cdf_sketch.put(getattr(request_metrics, metric_name))
 
-        # Record full request-level metrics for successful requests
-        self.request_level_metrics.put(request_metrics)
+            # Record full request-level metrics for successful requests
+            self.request_level_metrics.put(request_metrics)
 
     def get_aggregated_summary(self) -> Dict[str, float]:
         return {
             "Number of Requests": self.num_requests,
             "Number of Errored Requests": self.num_errored_requests,
             "Number of Completed Requests": self.num_completed_requests,
+            "Number of Cancelled Requests": self.num_cancelled_requests,
             "Error Rate": self.error_rate,
+            "Cancellation Rate": (
+                self.num_cancelled_requests / self.num_requests
+                if self.num_requests > 0
+                else 0.0
+            ),
             "Deadline Miss Rate": (
                 self.service_level_missed_deadlines / self.service_level_total_deadlines
                 if self.service_level_total_deadlines > 0

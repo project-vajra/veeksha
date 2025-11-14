@@ -69,8 +69,40 @@ class BenchmarkConfig:
             "help": "Enable verbose dispatch runtime telemetry logs (backlog, prefetch rate)."
         },
     )
+    num_prefetch_threads: int = field(
+        default=4,
+        metadata={
+            "help": "Number of threads for prefetching/generating requests. "
+            "Increase if request generation is a bottleneck."
+        },
+    )
+    num_dispatcher_threads: int = field(
+        default=4,
+        metadata={
+            "help": "Number of threads for dispatching requests to workers. "
+            "Increase if dispatch scheduling is a bottleneck."
+        },
+    )
+    num_results_processor_threads: int = field(
+        default=4,
+        metadata={
+            "help": "Number of threads for processing completed requests. "
+            "Increase if results aggregation is a bottleneck."
+        },
+    )
+    num_request_runner_threads: int = field(
+        default=10,
+        metadata={
+            "help": "Number of async worker threads for making concurrent requests. "
+            "With GIL-free Python (python -Xgil=0), these threads run in true parallel. "
+            "Each thread runs a uvloop event loop for handling concurrent HTTP requests."
+        },
+    )
 
     def __post_init__(self):
+        if self.num_request_runner_threads < 1:
+            raise ValueError("num_request_runner_threads must be greater than 0")
+
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
             logger.warning("Removing timeout for LMEval.")
             self.timeout = -1
