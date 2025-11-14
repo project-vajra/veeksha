@@ -181,14 +181,11 @@ class MetricStore:
         with self.lock:
             if request_metrics.cancelled:
                 self.num_cancelled_requests += 1
-                self.request_level_metrics.put_dispatch_only(request_metrics)
                 return
-            if request_metrics.error_code:
-                # Do not add errored requests to metric sketches, but persist
-                # dispatch times at request-level
-                self.error_code_freq[request_metrics.error_code] += 1
+            if request_metrics.error_code is not None or request_metrics.error_msg:
+                if request_metrics.error_code is not None:
+                    self.error_code_freq[request_metrics.error_code] += 1
                 self.num_errored_requests += 1
-                self.request_level_metrics.put_dispatch_only(request_metrics)
                 return
 
             self.num_completed_requests += 1

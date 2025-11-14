@@ -1,6 +1,7 @@
 """Async worker that processes requests using uvloop."""
 
 import asyncio
+import time
 from queue import Queue
 from typing import Any, Optional
 
@@ -72,10 +73,11 @@ class RequestRunnerWorker:
     async def _process_request(self, llm_client, request_config: Any) -> None:
         """Process a single request asynchronously."""
         try:
-            result = await llm_client.send_llm_request(
+            metrics, response = await llm_client.send_llm_request(
                 request_config, self.client_config.request_timeout
             )
-            self.output_queue.put(result)
+            completed_at = time.monotonic()
+            self.output_queue.put((metrics, response, completed_at))
         except asyncio.CancelledError:
             # task cancelled due to shutdown / timeout
             self._emit_error_result(
@@ -103,6 +105,7 @@ class RequestRunnerWorker:
             request_id = request_config.id if request_config else None
             error_code = None
             error_msg = None
+            completed_at = time.monotonic()
             if cancelled:
                 error_msg = "Cancelled by Veeksha"
             elif exception is not None:
@@ -124,7 +127,7 @@ class RequestRunnerWorker:
                 ),
                 cancelled=cancelled,
             )
-            self.output_queue.put((metrics, None))
+            self.output_queue.put((metrics, None, completed_at))
         except Exception:
             logger.exception(
                 "Failed to enqueue error result for worker %s",

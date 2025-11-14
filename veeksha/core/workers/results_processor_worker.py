@@ -3,7 +3,7 @@
 import threading
 import time
 from queue import Queue
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from tqdm import tqdm
 
@@ -59,9 +59,11 @@ class ResultsProcessorWorker:
             
         logger.debug("Results processor worker %s exiting", self.worker_context.worker_id)
 
-    def process_result(self, result: Tuple[RequestMetrics, Response]) -> None:
+    def process_result(
+        self, result: Tuple[RequestMetrics, Optional[Response], float]
+    ) -> None:
         """Process a result from the output queue."""
-        request_metrics, generated_response = result
+        request_metrics, generated_response, completed_at_monotonic = result
         self.service_metrics.add_request_metrics(request_metrics)
 
         success = (
@@ -73,7 +75,7 @@ class ResultsProcessorWorker:
         if request_metrics.request_id is not None:
             self.scheduler.notify_completion(
                 request_id=request_metrics.request_id,
-                completed_at_monotonic=time.monotonic(),
+                completed_at_monotonic=completed_at_monotonic,
                 success=success,
             )
 
