@@ -11,6 +11,16 @@ class MetricsConfig:
         default="benchmark_results",
         metadata={"help": "The directory to save the benchmark results to."},
     )
+    stream_metrics: bool = field(
+        default=True,
+        metadata={
+            "help": "Stream metrics artifacts while the benchmark runs instead of waiting for completion."
+        },
+    )
+    stream_metrics_interval: float = field(
+        default=10.0,
+        metadata={"help": "The interval at which to stream metrics."},
+    )
     deadline_report: DeadlineReportConfig = field(
         default_factory=DeadlineReportConfig,
         metadata={"help": "Reporting-only deadline thresholds for derived metrics."},

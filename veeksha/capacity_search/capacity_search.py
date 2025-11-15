@@ -327,7 +327,7 @@ class CapacitySearch:
         return files[0]
 
     def _get_request_level_metrics(self, run_dir: str) -> Optional[str]:
-        files = glob.glob(os.path.join(run_dir, f"request_level_metrics.json"))
+        files = glob.glob(os.path.join(run_dir, f"request_level_metrics.jsonl"))
         if len(files) == 0:
             return None
 

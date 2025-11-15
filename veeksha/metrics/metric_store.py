@@ -3,7 +3,7 @@ import os
 import threading
 from collections import defaultdict
 from itertools import accumulate
-from typing import DefaultDict, Dict, Optional
+from typing import Any, DefaultDict, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -65,6 +65,16 @@ class MetricStore:
         self.wandb_project: Optional[str] = metrics_config.wandb_project
         self.wandb_group: Optional[str] = metrics_config.wandb_group
         self.wandb_run_name: Optional[str] = metrics_config.wandb_run_name
+        self.output_dir: Optional[str] = metrics_config.output_dir
+        self.stream_metrics_enabled: bool = metrics_config.stream_metrics
+        self.stream_metrics_interval: float = metrics_config.stream_metrics_interval
+
+        self._stream_trigger = threading.Event()
+        self._stream_stop_event = threading.Event()
+        self._stream_has_updates = threading.Event()
+        self._stream_thread: Optional[threading.Thread] = None
+        self._request_rows_streamed: int = 0
+        self._request_level_stream_path: Optional[str] = None
 
         self.request_level_metrics = RequestLevelMetrics(
             deadline_config=metrics_config.deadline_report,
@@ -121,6 +131,8 @@ class MetricStore:
         }
 
         self._init_wandb()
+        if self.stream_metrics_enabled:
+            self._start_metric_streamer()
 
     def _init_wandb(self):
         if not self.should_write_metrics_to_wandb:
@@ -140,6 +152,141 @@ class MetricStore:
             },
         )
         logger.info("wandb enabled")
+
+    def _start_metric_streamer(self) -> None:
+        if not self.output_dir:
+            logger.warning(
+                "stream_metrics enabled but output directory is missing; disabling streaming."
+            )
+            self.stream_metrics_enabled = False
+            return
+
+        os.makedirs(self.output_dir, exist_ok=True)
+        self._request_level_stream_path = os.path.join(
+            self.output_dir, "request_level_metrics.jsonl"
+        )
+        with open(self._request_level_stream_path, "w") as stream_file:
+            stream_file.write("")
+
+        self._stream_thread = threading.Thread(
+            target=self._stream_loop,
+            name="metric-store-streamer",
+            daemon=True,
+        )
+        self._stream_thread.start()
+        logger.info(
+            "Metric streaming enabled; flushing artifacts every %.1fs",
+            self.stream_metrics_interval,
+        )
+
+    def _stream_loop(self) -> None:
+        while True:
+            triggered = self._stream_trigger.wait(timeout=self.stream_metrics_interval)
+            if triggered:
+                self._stream_trigger.clear()
+            if triggered or self._stream_has_updates.is_set():
+                try:
+                    self._flush_streaming_outputs()
+                    self._stream_has_updates.clear()
+                except Exception as exc:
+                    logger.warning(f"Streaming metrics flush failed: {exc}")
+            if self._stream_stop_event.is_set():
+                # ensure final flush on shutdown
+                if not triggered and not self._stream_has_updates.is_set():
+                    try:
+                        self._flush_streaming_outputs()
+                    except Exception as exc:
+                        logger.warning(f"Final streaming flush failed: {exc}")
+                break
+
+    def _flush_streaming_outputs(self) -> None:
+        if not (self.stream_metrics_enabled and self.output_dir):
+            return
+
+        with self.lock:
+            perf_header = self.summaries["num_prompt_tokens"].get_csv_header()
+            perf_rows = [perf_header]
+            for cdf_sketch in self.summaries.values():
+                perf_rows.append(cdf_sketch.to_csv_row())
+
+            summary_stats = {
+                **self.get_summary(),
+                "error_code_freq": dict(self.error_code_freq),
+            }
+
+            if self.service_level_total_deadlines > 0:
+                service_level_deadline_miss_rate = (
+                    self.service_level_missed_deadlines
+                    / self.service_level_total_deadlines
+                )
+            else:
+                service_level_deadline_miss_rate = 0.0
+
+            service_level_metrics = {
+                "service_level_missed_deadlines": self.service_level_missed_deadlines,
+                "service_level_total_deadlines": self.service_level_total_deadlines,
+                "service_level_deadline_miss_rate": service_level_deadline_miss_rate,
+            }
+
+            cdf_frames = {
+                metric_name: metric_summary._to_df()
+                for metric_name, metric_summary in self.summaries.items()
+            }
+
+            request_rows: List[Dict[str, Any]]
+            request_rows_end: int
+            request_rows, request_rows_end = self.request_level_metrics.export_rows(
+                self._request_rows_streamed
+            )
+
+        perf_path = os.path.join(self.output_dir, "perf_metrics.csv")
+        with open(perf_path, "w") as perf_file:
+            perf_file.write("\n".join(perf_rows))
+
+        self._write_summary_stats_stream(summary_stats)
+        self._write_service_level_metrics_stream(service_level_metrics)
+        self._write_cdf_csvs(cdf_frames)
+
+        if request_rows:
+            self._append_request_level_rows(request_rows)
+            self._request_rows_streamed = request_rows_end
+
+    def _write_summary_stats_stream(self, summary_stats: Dict[str, float]) -> None:
+        if not self.output_dir:
+            return
+        summary_stats_path = os.path.join(self.output_dir, "summary_stats.json")
+        with open(summary_stats_path, "w") as summary_file:
+            json.dump(summary_stats, summary_file)
+
+    def _write_service_level_metrics_stream(self, metrics: Dict[str, float]) -> None:
+        if not self.output_dir:
+            return
+        json_path = os.path.join(self.output_dir, "service_level_metrics.json")
+        with open(json_path, "w") as json_file:
+            json.dump(metrics, json_file)
+
+    def _write_cdf_csvs(self, cdf_frames: Dict[str, pd.DataFrame]) -> None:
+        if not self.output_dir:
+            return
+        for metric_name, df in cdf_frames.items():
+            df.to_csv(os.path.join(self.output_dir, f"{metric_name}.csv"), index=False)
+
+    def _append_request_level_rows(self, rows: List[Dict[str, Any]]) -> None:
+        if not rows or not self._request_level_stream_path:
+            return
+        with open(self._request_level_stream_path, "a") as stream_file:
+            for row in rows:
+                stream_file.write(json.dumps(row))
+                stream_file.write("\n")
+
+    def _shutdown_metric_streamer(self) -> None:
+        if not self._stream_thread:
+            return
+        self._stream_trigger.set()
+        self._stream_stop_event.set()
+        self._stream_thread.join()
+        self._stream_thread = None
+        self.stream_metrics_enabled = False
 
     def _persist_wandb_run_info(self, output_dir: str) -> None:
         """Persist basic wandb run identifiers for downstream consumers.
@@ -220,6 +367,9 @@ class MetricStore:
             # Record full request-level metrics for successful requests
             self.request_level_metrics.put(request_metrics)
 
+        if self.stream_metrics_enabled and self._stream_thread:
+            self._stream_has_updates.set()
+
     def get_aggregated_summary(self) -> Dict[str, float]:
         return {
             "Number of Requests": self.num_requests,
@@ -251,11 +401,14 @@ class MetricStore:
         }
 
     def store_output(self, output_dir: str):
+        if self.stream_metrics_enabled:
+            self._shutdown_metric_streamer()
+
         perf_csv_path = os.path.join(output_dir, "perf_metrics.csv")
         summary_stats_path = os.path.join(output_dir, "summary_stats.json")
 
-        # store request level metrics
-        self.request_level_metrics.save(output_dir)
+        # store request level metrics as JSONL (final full dump)
+        self.request_level_metrics.save_jsonl(output_dir)
 
         # store metric objects
         logger.info("Storing metric artifacts.")
@@ -329,7 +482,7 @@ class MetricStore:
 
         files_to_log = [
             "config.yml",
-            "request_level_metrics.json",
+            "request_level_metrics.jsonl",
             "service_level_metrics.json",
             "summary_stats.json",
             f"p{int(QUANTILE_FOR_DEADLINE_MISS_RATE * 100)}_deadline_miss_rate_for_target_tbt_values.json",
