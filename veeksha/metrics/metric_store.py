@@ -192,11 +192,11 @@ class MetricStore:
                     logger.warning(f"Streaming metrics flush failed: {exc}")
             if self._stream_stop_event.is_set():
                 # ensure final flush on shutdown
-                if not triggered and not self._stream_has_updates.is_set():
-                    try:
-                        self._flush_streaming_outputs()
-                    except Exception as exc:
-                        logger.warning(f"Final streaming flush failed: {exc}")
+                try:
+                    self._flush_streaming_outputs()
+                    self._stream_has_updates.clear()
+                except Exception as exc:
+                    logger.warning(f"Final streaming flush failed: {exc}")
                 break
 
     def _flush_streaming_outputs(self) -> None:

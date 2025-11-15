@@ -19,7 +19,7 @@ class MetricsConfig:
     )
     stream_metrics_interval: float = field(
         default=10.0,
-        metadata={"help": "The interval at which to stream metrics."},
+        metadata={"help": "The interval (seconds) at which to stream metrics."},
     )
     deadline_report: DeadlineReportConfig = field(
         default_factory=DeadlineReportConfig,
