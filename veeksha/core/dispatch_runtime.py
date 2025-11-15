@@ -259,6 +259,16 @@ def process_results(
         )
         if generated_response is not None:
             generated_responses.append(generated_response)
+            # # Print the completed request response
+            # logger.info(
+            #     f"Request {request_metrics.request_id} completed | "
+            #     f"prompt_tokens={request_metrics.num_prompt_tokens} "
+            #     f"output_tokens={request_metrics.num_output_tokens} "
+            #     f"ttft={request_metrics.ttft:.3f}s "
+            #     f"e2e_latency={request_metrics.end_to_end_latency:.3f}s | "
+            #     # f"Response: {generated_response.text[:100]}{'...' if len(generated_response.text) > 100 else ''}"
+            #     # f"Response: {generated_response.text}"
+            # )
 
         # Emit completion event - ensure request_id is set
         assert (
