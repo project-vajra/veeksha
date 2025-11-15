@@ -7,7 +7,7 @@ seed: 42
 client_config:
   model: meta-llama/Meta-Llama-3-8B-Instruct
   llm_api: openai_chat
-    
+
 request_generator_config:
   type: synthetic
   interval_generator_config:
