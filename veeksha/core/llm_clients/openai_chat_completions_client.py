@@ -96,6 +96,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             "model": model,
             "messages": message,
             "stream": True,
+            "return_token_ids": True,
         }
         sampling_params = request_config.sampling_params
         body.update(sampling_params or {})
@@ -119,7 +120,6 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         tokens_received = 0
         generated_text = ""
         previous_responses = []
-        previous_token_count = 0
 
         most_recent_received_token_time = get_virtual_time()
         request_dispatched_at = get_virtual_time() - self.start_time
@@ -146,57 +146,50 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                         )
                         break  # Stop processing on error
                     delta = data["choices"][0]["delta"]
-                    if delta.get("content", None):
-                        chunk_arrival_monotonic = (
-                            get_virtual_time()
-                        )  # avoid tokenization overhead
-                        (
-                            current_tokens_received,
-                            previous_token_count,
-                        ) = self.get_current_tokens_received(
-                            previous_responses=previous_responses,
-                            current_response=delta["content"],
-                            previous_token_count=previous_token_count,
+
+                    # If output doesn't have token_ids, skip this chunk
+                    # TODO: this only works for vllm right now, we need to generalize this
+                    if "token_ids" not in data["choices"][0]:
+                        continue
+
+                    chunk_arrival_monotonic = (
+                        get_virtual_time()
+                    )
+                    current_tokens_received = len(data["choices"][0]["token_ids"])
+
+                    allowable_to_add = current_tokens_received
+                    if allowable_to_add > 0:
+                        tokens_received_chunk += allowable_to_add
+                        inter_token_times.append(
+                            chunk_arrival_monotonic
+                            - most_recent_received_token_time
                         )
+                        if allowable_to_add > 1:
+                            inter_token_times.extend([0] * (allowable_to_add - 1))
+                        tokens_received += allowable_to_add
+                        most_recent_received_token_time = chunk_arrival_monotonic
 
-                        # Apply local cap against requested max_tokens
-                        allowable_to_add = current_tokens_received
+                        generated_text += delta["content"]
+
+                        # Truncate generated_text to exactly tokens_received tokens
                         if isinstance(max_tokens_limit, int):
-                            allowable_to_add = max(
-                                0,
-                                min(
-                                    current_tokens_received,
-                                    max_tokens_limit - tokens_received,
-                                ),
-                            )
+                            output_token_ids = self.tokenizer.encode(generated_text)
+                            if len(output_token_ids) > tokens_received:
+                                generated_text = self.tokenizer.decode(
+                                    output_token_ids[:tokens_received]
+                                )
 
-                        if allowable_to_add > 0:
-                            tokens_received_chunk += allowable_to_add
-                            inter_token_times.append(
-                                chunk_arrival_monotonic
-                                - most_recent_received_token_time
-                            )
-                            if allowable_to_add > 1:
-                                inter_token_times.extend([0] * (allowable_to_add - 1))
-                            tokens_received += allowable_to_add
-                            most_recent_received_token_time = chunk_arrival_monotonic
-
-                            generated_text += delta["content"]
-
-                            # Truncate generated_text to exactly tokens_received tokens
-                            if isinstance(max_tokens_limit, int):
-                                output_token_ids = self.tokenizer.encode(generated_text)
-                                if len(output_token_ids) > tokens_received:
-                                    generated_text = self.tokenizer.decode(
-                                        output_token_ids[:tokens_received]
-                                    )
-
-                        # If we've reached or exceeded the cap, stop processing further chunks
-                        if (
-                            isinstance(max_tokens_limit, int)
-                            and tokens_received >= max_tokens_limit
-                        ):
-                            break
+                    # If we've reached or exceeded the cap, throw an error
+                    if (
+                        isinstance(max_tokens_limit, int)
+                        and tokens_received > max_tokens_limit
+                    ):
+                        logger.exception(
+                            f"Tokens received ({tokens_received}) exceeded max tokens limit ({max_tokens_limit})"
+                        )
+                        error_msg = f"Tokens received ({tokens_received}) exceeded max tokens limit ({max_tokens_limit})"
+                        error_response_code = 400
+                        break
 
                     if (
                         tokens_received_chunk > 0
@@ -234,6 +227,18 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                         is_first_emission = (
                             False  # After first emission, no longer first
                         )
+
+                if (
+                    isinstance(request_config.sampling_params, dict)
+                    and request_config.sampling_params.get("min_tokens") is not None
+                ):
+                    min_tokens = request_config.sampling_params.get("min_tokens")
+                    if isinstance(min_tokens, int) and tokens_received < min_tokens:
+                        logger.exception(
+                            f"Tokens received ({tokens_received}) is less than min tokens ({min_tokens})"
+                        )
+                        error_msg = f"Tokens received ({tokens_received}) is less than min tokens ({min_tokens})"
+                        error_response_code = 400
 
         except aiohttp.ClientResponseError as e:
             error_response_code = e.status
