@@ -101,13 +101,6 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         sampling_params = request_config.sampling_params
         body.update(sampling_params or {})
 
-        # # Log the outgoing request with all parameters
-        # logger.info(
-        #     f"Request {request_config.id} sending | "
-        #     f"prompt_tokens={prompt_len} "
-        #     f"sampling_params={sampling_params}"
-        # )
-
         headers = {
             "Authorization": f"Bearer {self.key}",
             "Content-Type": "application/json",
