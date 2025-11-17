@@ -42,7 +42,7 @@ def create_server_manager(config: ServerConfig) -> BaseServerManager:
     elif engine == "vajra":
         return VajraServerManager(config)
     else:
-        raise ValueError(f"Unsupported engine: {engine}. Currently supported: vllm")
+        raise ValueError(f"Unsupported engine: {engine}. Currently supported: vllm, vajra")
 
 
 @contextmanager
