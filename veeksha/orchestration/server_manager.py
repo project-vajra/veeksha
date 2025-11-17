@@ -106,9 +106,9 @@ class BaseServerManager(abc.ABC):
 
             env = os.environ.copy()
 
-            # Set CUDA_VISIBLE_DEVICES if gpu_ids specified (but not for Vajra, which uses command-line args)
+            # Set CUDA_VISIBLE_DEVICES if gpu_ids specified 
             gpu_env = self.config.get_gpu_env_var()
-            if gpu_env is not None and self.config.engine.lower() != "vajra":
+            if gpu_env is not None:
                 env["CUDA_VISIBLE_DEVICES"] = gpu_env
                 logger.info(f"Setting CUDA_VISIBLE_DEVICES={gpu_env}")
 

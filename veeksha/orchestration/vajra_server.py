@@ -41,7 +41,7 @@ class VajraServerManager(BaseServerManager):
             sys.executable,
             "-m",
             "vajra.entrypoints.openai.server",
-            "--model_config_model",
+            "--model_deployment_config_model",
             self.config.model,
             "--host",
             self.config.host,
@@ -65,7 +65,7 @@ class VajraServerManager(BaseServerManager):
         # max model length / context
         if self.config.max_model_len is not None:
             command.extend(
-                ["--model_config_max_model_len", str(self.config.max_model_len)]
+                ["--model_deployment_config_max_model_len", str(self.config.max_model_len)]
             )
 
             # Process additional arguments from the configuration
