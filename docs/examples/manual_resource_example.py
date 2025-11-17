@@ -64,6 +64,7 @@ def run_experiment_with_resources(
                 ),
             ),
             metrics_config=MetricsConfig(output_dir=f"results/{job_id}"),
+            server_config=server_config
         )
 
         # Use managed_server for automatic lifecycle management
