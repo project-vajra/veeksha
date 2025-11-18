@@ -12,15 +12,19 @@ git clone https://github.com/project-vajra/veeksha.git
 cd veeksha
 ```
 
-### Create conda environment
+### Create uv environment and install the dependencies
+
+Install uv if you haven't already:
+
 ```bash
-conda create -p ./env python=3.12
-conda activate ./env
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### Install veeksha
+Create a virtual environment and install Veeksha. We recommend using Python 3.14 free-threaded:
 ```bash
-pip install -e .
+uv venv --python 3.14t
+source .venv/bin/activate
+uv pip install -e .
 ```
 
 ### Setup Wandb [Optional]
@@ -42,25 +46,15 @@ export OPENAI_API_BASE=https://api.endpoints.anyscale.com/v1
 ```
 #### Running Benchmark
 ```bash
-python -m veeksha.benchmark \
---client_config_model "meta-llama/Meta-Llama-3-8B-Instruct" \
---max_completed_requests 150 \
+python -Xgil=0 -m veeksha.benchmark \
+--client-config-model "Qwen/Qwen3-4B-Instruct-2507" \
+--max-completed-requests 100 \
 --timeout 600 \
---client_config_num_clients 2 \
---client_config_num_concurrent_requests_per_client 5 \
---metrics_config_output_dir "result_outputs" \
---request_interval_generator_config_type "poisson" \
---poisson_request_interval_generator_config_qps 0.5 \
---request_length_generator_config_type "trace" \
---trace_request_length_generator_config_trace_file "./data/processed_traces/arxiv_summarization_filtered_stats_llama2_tokenizer.csv" \
---trace_request_length_generator_config_max_tokens 8192 \
---deadline_config_ttft_deadline 0.3 \
---deadline_config_tbt_deadline 0.03 \
---metrics_config_should_write_metrics \
---metrics_config_wandb_project Project \
---metrics_config_wandb_group Group \
---metrics_config_wandb_run_name Run
+--metrics-config-output-dir "benchmark_outputs" \
+--synthetic-request-generator-config-interval-generator-config-type "static"
 ```
+
+**Note:** We recommend running with `-Xgil=0` to enable GIL-free Python with true parallel execution of worker threads.
 
 There are many more arguments for running benchmark, run the following to know more:
 ```bash

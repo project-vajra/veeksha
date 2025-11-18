@@ -128,7 +128,7 @@ def test_scheduler_cancel_session_on_failure_drops_pending() -> None:
 
 @pytest.mark.unit
 def test_request_level_metrics_record_errored_and_successful_requests() -> None:
-    # Ensure MetricStore persists request-level arrays for both success and error
+    # Ensure MetricStore persists request-level arrays for only successful requests
     ms = MetricStore(timeout=10, max_requests=10, metrics_config=MetricsConfig())
 
     # One successful request
@@ -143,7 +143,7 @@ def test_request_level_metrics_record_errored_and_successful_requests() -> None:
     )
     ms.add_request_metrics(ok)
 
-    # One errored request; should still appear in request-level arrays
+    # One errored request; should not appear in request-level arrays
     err = RequestMetrics(
         request_dispatched_at=0.05,
         inter_token_times=[],
@@ -156,6 +156,5 @@ def test_request_level_metrics_record_errored_and_successful_requests() -> None:
     ms.add_request_metrics(err)
 
     rlm = ms.request_level_metrics
-    assert len(rlm.request_dispatched_at) == 2
+    assert len(rlm.request_dispatched_at) == 1
     assert rlm.request_dispatched_at[0] == 0.01
-    assert rlm.request_dispatched_at[1] == 0.05

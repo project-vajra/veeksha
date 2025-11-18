@@ -3,8 +3,11 @@ import time
 from typing import Dict, Optional
 
 from veeksha.config.metrics import MetricsConfig
+from veeksha.logger import init_logger
 from veeksha.metrics.metric_store import MetricStore
 from veeksha.metrics.request_metrics import RequestMetrics
+
+logger = init_logger(__name__)
 
 
 class ServiceMetrics:
@@ -24,11 +27,25 @@ class ServiceMetrics:
         self._error_event = threading.Event()
         self._error: Optional[BaseException] = None
 
+        # Counter for generated requests (protected by external generator_lock in prefetch threads)
+        self.num_generated_requests = 0
+
         self.metric_store = MetricStore(
             timeout=timeout,
             max_requests=max_requests,
             metrics_config=metrics_config,
         )
+
+        # synchronization for tail-phase state
+        self._state_lock = threading.Lock()
+        self._last_launched_request_id: Optional[int] = None  # as seen by dispatcher
+        # tail-phase activation and data for first timeout crossing
+        self._cutoff_active: bool = False
+        self._cutoff_time: Optional[float] = None
+        self._cutoff_last_launched_request_id: Optional[int] = None
+        self._cutoff_launched_requests: int = 0
+        # n outcomes (success or error) for pre-timeout launched requests
+        self._num_pre_timeout_terminal: int = 0
 
     @property
     def num_requests(self) -> int:
@@ -41,6 +58,10 @@ class ServiceMetrics:
     @property
     def num_errored_requests(self) -> int:
         return self.metric_store.num_errored_requests
+
+    @property
+    def num_cancelled_requests(self) -> int:
+        return self.metric_store.num_cancelled_requests
 
     @property
     def duration(self):
@@ -66,16 +87,95 @@ class ServiceMetrics:
             return True
         if self.timeout == -1:
             return not (self.num_completed_requests < self.max_requests)
-        return not (
-            time.perf_counter() - self.start_time < self.timeout
-            and self.num_completed_requests < self.max_requests
-        )
 
-    def register_launched_request(self):
+        now = time.perf_counter()
+        elapsed = now - self.start_time
+
+        # before cutoff we only stop if we have completed the max number of requests
+        if not self._cutoff_active:
+            if self.num_completed_requests >= self.max_requests:
+                return True
+            if elapsed < self.timeout:
+                return False
+            # tail-phase: timeout has been crossed
+            with self._state_lock:
+                if not self._cutoff_active:
+                    self._cutoff_active = True
+                    self._cutoff_time = now
+                    self._cutoff_last_launched_request_id = (
+                        self._last_launched_request_id
+                    )
+                    self._cutoff_launched_requests = min(
+                        self.num_requests, self.max_requests
+                    )
+                    # count finished requests so far
+                    initial_done = min(
+                        self.num_completed_requests
+                        + self.num_errored_requests
+                        + self.num_cancelled_requests,
+                        self._cutoff_launched_requests,
+                    )
+                    self._num_pre_timeout_terminal = initial_done
+                    logger.info(
+                        "Timeout reached; entering tail phase. Now waiting for %s requests to finish while still dispatching.",
+                        self._cutoff_launched_requests - initial_done,
+                    )
+
+        # in tail phase we continue running until all pre-timout requests
+        # are a success or error.
+        # only requests launched before timeout count towards target
+        with self._state_lock:
+            target = self._cutoff_launched_requests
+            done = self._num_pre_timeout_terminal
+            if done >= target and self._cutoff_active:
+                logger.info("Tail phase complete!")
+        return done >= target
+
+    def register_launched_request(self, request_id: Optional[int] = None):
         self.metric_store.register_launched_request()
+        # track last launched request id for cutoff snapshot
+        if request_id is not None:
+            with self._state_lock:
+                self._last_launched_request_id = request_id
 
     def add_request_metrics(self, request_metrics: RequestMetrics):
-        self.metric_store.add_request_metrics(request_metrics)
+        # if this result is for a post-timeout request, we drop it
+        is_filler = False
+        req_id = request_metrics.request_id
+        with self._state_lock:
+            if (
+                self._cutoff_active
+                and self._cutoff_last_launched_request_id is not None
+            ):
+                if (
+                    req_id is not None
+                    and req_id > self._cutoff_last_launched_request_id
+                ):
+                    is_filler = True
+
+        if is_filler and not request_metrics.cancelled:
+            logger.debug(
+                "Dropping metrics for filler request_id=%s (post-timeout).", str(req_id)
+            )
+        else:
+            self.metric_store.add_request_metrics(request_metrics)
+
+        # In tail phase, count terminal outcomes for pre-timeout launched requests
+        with self._state_lock:
+            if (
+                self._cutoff_active
+                and self._cutoff_last_launched_request_id is not None
+            ):
+                if (
+                    req_id is not None
+                    and req_id <= self._cutoff_last_launched_request_id
+                ):
+                    self._num_pre_timeout_terminal += 1
+                    logger.debug(
+                        "Tail progress: pre_timeout_terminal=%d/%d",
+                        self._num_pre_timeout_terminal,
+                        self._cutoff_launched_requests,
+                    )
 
     def get_duration_summary(self) -> Dict[str, float]:
         return {

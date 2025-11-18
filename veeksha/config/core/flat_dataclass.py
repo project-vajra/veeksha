@@ -668,15 +668,17 @@ def _add_field_to_parser(
     elif is_dict(field_type):
         assert is_composed_of_primitives(field_type)
         field_type = json.loads
-    elif is_bool(field_type):
+    elif isinstance(field_type, type) and is_bool(field_type):
         action = BooleanOptionalAction
 
     # build argument parameters
     arg_params = {
-        "type": field_type,
         "action": action,
         "help": help_text,
     }
+
+    if not (isinstance(field_type, type) and is_bool(field_type)):
+        arg_params["type"] = field_type
 
     # handle default values
     if field.default is not MISSING:

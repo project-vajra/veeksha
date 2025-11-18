@@ -1,9 +1,4 @@
-import torch
 from sklearn.metrics import f1_score, precision_score, recall_score
-
-inference_decorator = (
-    torch.inference_mode if torch.__version__ >= "2.0.0" else torch.no_grad
-)
 
 
 def _aggreg_ls(predictions):

@@ -121,7 +121,7 @@ class LMEvalRequestGenerator:
         self.limits: List[Optional[int]] = []
         self.generate_requests()
 
-        self.req_idx = 0
+        self._global_request_id = 0
 
         self.responses = []
 
@@ -200,11 +200,10 @@ class LMEvalRequestGenerator:
                 self.cloned_requests.extend([req] * req.repeats)  # type: ignore
 
     def get_request(self) -> RequestConfig:
-        if self.req_idx >= len(self.cloned_requests):
+        if self._global_request_id >= len(self.cloned_requests):
             raise StopIteration
-        req: Instance = self.cloned_requests[self.req_idx]
+        req: Instance = self.cloned_requests[self._global_request_id]
         dispatch_delay = self.requests_interval_generator.get_next_inter_request_time()
-        self.req_idx += 1
 
         # just need context to send to the model
         if req.request_type == str(LMEvalOutputType.GENERATE_UNTIL):
@@ -221,19 +220,19 @@ class LMEvalRequestGenerator:
                     logger.warning(
                         f"Context length exceeds max tokens limit. Truncated context to {context_length} tokens."
                     )
-            return RequestConfig(
+            request_config = RequestConfig(
                 model=self.client_config.model,
                 prompt=(context, context_length),
                 dispatch_delay=dispatch_delay,
                 sampling_params=all_gen_kwargs,
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
-                id=self.req_idx - 1,
+                id=self._global_request_id,
             )
         elif req.request_type == str(LMEvalOutputType.LOGLIKELIHOOD):
             context, target = req.args  # type: ignore
             context = context + target
-            return RequestConfig(
+            request_config = RequestConfig(
                 model=self.client_config.model,
                 prompt=(context, len(self.tokenizer.encode(context))),
                 dispatch_delay=dispatch_delay,
@@ -246,12 +245,15 @@ class LMEvalRequestGenerator:
                 },
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
-                id=self.req_idx - 1,
+                id=self._global_request_id,
             )
         else:
             raise NotImplementedError(
                 f"Request type {req.request_type} not supported yet."
             )
+
+        self._global_request_id += 1
+        return request_config
 
     def parse_logprobs(self, req: Instance, response: Response) -> Tuple[float, bool]:
         """Parse per-token logprobs for completions responses.

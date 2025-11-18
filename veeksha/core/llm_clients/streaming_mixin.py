@@ -1,7 +1,7 @@
 import json
-from typing import AsyncGenerator, Dict, List, Protocol, Tuple, cast
+from typing import AsyncIterator, Dict, List, Protocol, Tuple, cast
 
-import aiohttp
+import httpx
 
 from veeksha.logger import init_logger
 
@@ -13,39 +13,30 @@ class _HasTokenLength(Protocol):
 
 
 class StreamingMixin:
-    """Shared streaming and token-count helpers for LLM clients.
+    """Shared streaming and token-count helpers for async LLM clients.
 
     Requires the consumer class to implement `get_token_length(text: str) -> int`.
     """
 
     MAX_RESPONSES_ALLOWED_TO_STORE: int = 5
 
-    async def _process_stream(
-        self, response: aiohttp.ClientResponse
-    ) -> AsyncGenerator[Dict, None]:
+    async def _process_stream(self, response: httpx.Response) -> AsyncIterator[Dict]:
         """Process Server-Sent Events (SSE) stream and yield parsed JSON dicts.
 
         Skips non-data lines and stops on "[DONE]" sentinel.
         """
-        buffer = b""
-        async for chunk_bytes in response.content.iter_any():
-            buffer += chunk_bytes
-            while b"\n" in buffer:
-                line_bytes, buffer = buffer.split(b"\n", 1)
-                line = line_bytes.decode("utf-8").strip()
-
-                if not line or not line.startswith("data:"):
-                    # Skip empty lines, comments, etc.
-                    continue
-
-                payload = line[len("data:") :].strip()
-                if payload == "[DONE]":
-                    return
-
+        async for line in response.aiter_lines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("data: "):
+                data_str = line[6:]  # Remove "data: " prefix
+                if data_str == "[DONE]":
+                    break
                 try:
-                    yield json.loads(payload)
+                    yield json.loads(data_str)
                 except json.JSONDecodeError:
-                    logger.exception(f"JSON decode error with chunk: {payload}")
+                    logger.exception(f"JSON decode error with chunk: {data_str}")
 
     def total_tokens(self, response_list: List[str]) -> int:
         """Return token length of concatenated responses using client's tokenizer."""

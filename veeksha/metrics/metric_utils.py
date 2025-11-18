@@ -103,7 +103,9 @@ def get_deadline_miss_rate_for_target_tbt_values(
     target_tbt_deadline_array: List[float],
     quantile: float = 0.99,
 ) -> List[float]:
-    assert len(tbt_times)
+    # no completed requests
+    if len(tbt_times) == 0:
+        return [0.0 for _ in target_tbt_deadline_array]
     num_requests = len(tbt_times)
     quantile_based_miss_rate = []
     for tbt_deadline in target_tbt_deadline_array:
@@ -127,12 +129,11 @@ def get_throughput_metrics(
 ) -> Tuple[float, float, float]:
     assert len(tpot_times) == len(tbt_times)
     num_requests = len(tpot_times)
+    # no requests have completed
+    if num_requests == 0:
+        return 0.0, 0.0, 0.0
     mean_tpot = np.mean(tpot_times)
-
-    if mean_tpot == 0:
-        tpot_based_throughput = float("inf")
-    else:
-        tpot_based_throughput = float(1 / mean_tpot)
+    tpot_based_throughput = float("inf") if mean_tpot == 0 else float(1 / mean_tpot)
 
     tbt_times_flattened = []
     for tbt_time in tbt_times:

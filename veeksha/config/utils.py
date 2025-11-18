@@ -484,7 +484,7 @@ def get_trace_file_path(filename: str) -> Traversable:
         filename: The name of the file in veeksha.data.processed_traces.
 
     Returns:
-        A Traversable object representing the path to the data file.
+        A PosixPath object representing the path to the data file.
     """
     return importlib.resources.files("veeksha.data.processed_traces").joinpath(filename)
 
