@@ -6,7 +6,7 @@ import os
 import time
 from copy import deepcopy
 from dataclasses import fields, is_dataclass
-from pathlib import PosixPath
+from importlib.resources.abc import Traversable
 from typing import Any, Dict, List, Union, get_args, get_origin
 
 import yaml

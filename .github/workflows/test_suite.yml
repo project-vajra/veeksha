@@ -18,7 +18,7 @@ defaults:
     shell: bash -l {0}
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}  
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
   # we want concurrent jobs on main
 env:
   CONTAINER_NAME: nvidia/cuda:12.9.0-cudnn-devel-ubuntu24.04
@@ -45,6 +45,20 @@ jobs:
           -w /repo \
           --name veeksha-testsuite-${{ github.run_id }} \
           veeksha-ci sleep infinity
+      - name: "Install Rust" # allows source builds for some dependencies
+        run: |
+          docker exec \
+          veeksha-testsuite-${{ github.run_id }} \
+          bash -lc "set -euo pipefail; \
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal; \
+          source \$HOME/.cargo/env; \
+          rustc --version; cargo --version"
+      - name: "Setup test environments"
+        run: |
+          docker exec \
+          -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
+          veeksha-testsuite-${{ github.run_id }} \
+          bash -lc "source \$HOME/.cargo/env && make test/setup"
       - name: "Run unit tests"
         id: run_unit_tests
         run: |
@@ -76,7 +90,8 @@ jobs:
       - name: "Generate coverage reports"
         id: generate_test_reports
         run: |
-          docker exec veeksha-testsuite-${{ github.run_id }} make coverage/report
+          docker exec veeksha-testsuite-${{ github.run_id }} \
+          bash -lc "source .venv314/bin/activate && make coverage/report"
 
       - name: Publish Test Report
         uses: mikepenz/action-junit-report@v5

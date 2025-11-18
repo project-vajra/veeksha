@@ -2,13 +2,13 @@
 
 from queue import Queue
 from threading import Event, Thread
-from typing import List, Optional
+from typing import List
+from collections import defaultdict
 
 from veeksha.config.client import ClientConfig
 from veeksha.core.context import WorkerContext
 from veeksha.core.workers.request_runner_worker import RequestRunnerWorker, InputOutputWriter
 from veeksha.logger import init_logger
-from collections import defaultdict
 
 logger = init_logger(__name__)
 
@@ -19,25 +19,24 @@ class RequestRunnerManager:
     def __init__(
         self,
         client_config: ClientConfig,
-        input_queue: Queue,
+        input_queues: List[Queue],
         output_queue: Queue,
         num_threads: int,
         input_output_writer: Optional[InputOutputWriter] = None,
     ):
         self.client_config = client_config
-        self.input_queue = input_queue
+        self.input_queues = input_queues
         self.output_queue = output_queue
         self.num_threads = num_threads
         self.input_output_writer = input_output_writer
         self.workers: List[Thread] = []
         self.worker_contexts: List[WorkerContext] = []
         self.stop_event = Event()
-
         self._chat_history = defaultdict(list)
 
     def start(self) -> None:
         """Start async worker threads with uvloop event loops."""
-        logger.info(f"Starting {self.num_threads} async worker threads with uvloop")
+        logger.debug("Starting %s async worker threads with uvloop", self.num_threads)
 
         for i in range(self.num_threads):
             # Create worker context with load tracking
@@ -46,7 +45,7 @@ class RequestRunnerManager:
 
             # Create worker instance
             worker_instance = RequestRunnerWorker(
-                input_queue=self.input_queue,
+                input_queue=self.input_queues[i],
                 output_queue=self.output_queue,
                 worker_context=worker_context,
                 client_config=self.client_config,
@@ -74,8 +73,8 @@ class RequestRunnerManager:
     def complete_tasks(self) -> None:
         """Signal worker threads to complete their tasks and exit."""
         # Send one sentinel value per worker
-        for _ in range(len(self.workers)):
-            self.input_queue.put(None)
+        for i in range(len(self.workers)):
+            self.input_queues[i].put(None)
 
         # Set stop event (shared by all workers)
         self.stop_event.set()

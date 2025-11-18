@@ -19,10 +19,10 @@ from veeksha.benchmark_data_utils import (
 )
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.client import ClientConfig
+from veeksha.config.utils import prepare_benchmark_output_dir
 from veeksha.core.context import BenchmarkContext
 from veeksha.core.dispatch_scheduler import DispatchScheduler
 from veeksha.core.hf_utils import get_tokenizer
-from veeksha.config.utils import prepare_benchmark_output_dir
 from veeksha.core.response import Response
 from veeksha.core.seeding import (
     SeedManager,
@@ -100,7 +100,7 @@ def _probe_min_tokens_param_support(client_config: ClientConfig) -> bool:
     body = {
         "model": client_config.model,
         "stream": False,
-        "max_tokens": 1,
+        "max_completion_tokens": 1,
     }
     if client_config.llm_api == "openai_completions":
         body["prompt"] = "Hello"
@@ -153,7 +153,8 @@ def run_main_loop(
     logger.info("Starting the main loop.")
 
     # Create queues for communication
-    input_queue = Queue()  # Worker input queue
+    # Worker input queues; 1 per worker thread
+    input_queues = [Queue() for _ in range(benchmark_config.num_request_runner_threads)]
     output_queue = Queue()  # Worker output queue
     ready_queue = Queue()  # Prefetch -> Dispatcher queue
     stop_event = threading.Event()
@@ -178,7 +179,7 @@ def run_main_loop(
     # Initialize request runner
     req_runner = RequestRunnerManager(
         client_config=benchmark_config.client_config,
-        input_queue=input_queue,
+        input_queues=input_queues,
         output_queue=output_queue,
         num_threads=benchmark_config.num_request_runner_threads,
         input_output_writer=input_output_writer,
@@ -231,7 +232,7 @@ def run_main_loop(
         name="dispatcher",
         worker_class=DispatchWorker,
         worker_kwargs={
-            "input_queue": input_queue,
+            "input_queues": input_queues,
             "ready_queue": ready_queue,
             "service_metrics": service_metrics,
             "scheduler": scheduler,

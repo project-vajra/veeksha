@@ -18,7 +18,7 @@ class BaseLLMClient(ABC):
         )
 
     def get_token_length(self, text: str) -> int:
-        return len(self.tokenizer.encode(text))
+        return len(self.tokenizer.encode(text, add_special_tokens=False))
 
     @abstractmethod
     async def send_llm_request(

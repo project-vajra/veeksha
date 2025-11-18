@@ -82,7 +82,10 @@ class CapacitySearch:
         self._capsearch_cache_file = os.path.join(
             self.job_root_dir, "_capsearch_cache.json"
         )
-        self._capsearch_cache = self._load_cache()
+        if not self.capacity_search_config.enable_experiment_cache:
+            self._capsearch_cache = {}
+        else:
+            self._capsearch_cache = self._load_cache()
 
     def _build_benchmark_config_for_qps(
         self, qps: float, run_dir: str
@@ -318,7 +321,7 @@ class CapacitySearch:
         try:
             wandb.log({"capsearch_qps_slo_table": wandb.Table(dataframe=df)}, step=0)
         finally:
-            wandb.finish(quiet=True)
+            wandb.finish()
 
     def _get_result_file(self, run_dir: str, metric_name: str) -> Optional[str]:
         files = glob.glob(os.path.join(run_dir, f"{metric_name}.csv"))
@@ -328,14 +331,14 @@ class CapacitySearch:
         return files[0]
 
     def _get_request_level_metrics(self, run_dir: str) -> Optional[str]:
-        files = glob.glob(os.path.join(run_dir, f"request_level_metrics.json"))
+        files = glob.glob(os.path.join(run_dir, "request_level_metrics.jsonl"))
         if len(files) == 0:
             return None
 
         return files[0]
 
     def _get_service_level_metrics(self, run_dir: str) -> Optional[str]:
-        files = glob.glob(os.path.join(run_dir, f"service_level_metrics.json"))
+        files = glob.glob(os.path.join(run_dir, "service_level_metrics.json"))
         if len(files) == 0:
             return None
 

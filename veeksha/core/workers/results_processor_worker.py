@@ -20,7 +20,6 @@ from veeksha.metrics.service_metrics import ServiceMetrics
 
 logger = init_logger(__name__)
 
-
 class RequestMetricsWriter:
     """Writes request metrics to a JSONL file in streaming fashion."""
 
@@ -110,9 +109,9 @@ class ResultsProcessorWorker:
 
     def run(self) -> None:
         """Main worker loop."""
-        logger.info(f"Results processor worker {self.worker_context.worker_id} starting")
+        logger.debug("Results processor worker %s starting", self.worker_context.worker_id)
 
-        while not self.worker_context.stop_event.is_set():
+        while True: # drain until sentinel is received
             result = self.output_queue.get()
             if result is None:
                 break
@@ -123,27 +122,36 @@ class ResultsProcessorWorker:
 
             self.process_result(result)
             
-        logger.info(f"Results processor worker {self.worker_context.worker_id} exiting")
+        logger.debug("Results processor worker %s exiting", self.worker_context.worker_id)
 
-    def process_result(self, result: Tuple[RequestMetrics, Response]) -> None:
+    def process_result(
+        self, result: Tuple[RequestMetrics, Optional[Response], float]
+    ) -> None:
         """Process a result from the output queue."""
-        request_metrics, generated_response = result
-
+        request_metrics, generated_response, completed_at_monotonic = result
+        
         # Write metrics to JSONL file if enabled
         if self.metrics_writer is not None:
             self.metrics_writer.write_metrics(request_metrics)
 
         self.service_metrics.add_request_metrics(request_metrics)
-        # notify scheduler about completion for session-aware sequencing
+
         success = (
-            getattr(request_metrics, "error_code", None) is None
+            not request_metrics.cancelled
+            and getattr(request_metrics, "error_code", None) is None
             and getattr(request_metrics, "error_msg", None) is None
         )
-        self.scheduler.notify_completion(
-            request_id=request_metrics.request_id,
-            completed_at_monotonic=time.monotonic(),
-            success=success,
-        )
+
+        if request_metrics.request_id is not None:
+            self.scheduler.notify_completion(
+                request_id=request_metrics.request_id,
+                completed_at_monotonic=completed_at_monotonic,
+                success=success,
+            )
+
+        if request_metrics.cancelled:
+            return
+
         if generated_response is not None:
             with self.responses_lock:
                 self.generated_responses.append(generated_response)

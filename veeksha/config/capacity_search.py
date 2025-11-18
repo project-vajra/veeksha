@@ -59,6 +59,12 @@ class CapacitySearchConfig:
             "help": "Output directory for capacity search benchmarks and results. Overrides output_dir in benchmark_config.metrics_config."
         },
     )
+    enable_experiment_cache: bool = field(
+        default=True,
+        metadata={
+            "help": "Enable cache for capacity search experiments. If disabled, cache will be ignored and experiments will always be performed."
+        },
+    )
     benchmark_config: BenchmarkConfig = field(
         default_factory=BenchmarkConfig,
         metadata={"help": "Benchmark config for capacity search."},

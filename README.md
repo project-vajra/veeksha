@@ -12,7 +12,7 @@ git clone https://github.com/project-vajra/veeksha.git
 cd veeksha
 ```
 
-### Create uv enc and install the dependencies
+### Create uv environment and install the dependencies
 
 Install uv if you haven't already:
 
@@ -20,7 +20,7 @@ Install uv if you haven't already:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Create a virtual environment and install veeksha:
+Create a virtual environment and install Veeksha. We recommend using Python 3.14 free-threaded:
 ```bash
 uv venv --python 3.14t
 source .venv/bin/activate
@@ -50,12 +50,11 @@ python -Xgil=0 -m veeksha.benchmark \
 --client-config-model "Qwen/Qwen3-4B-Instruct-2507" \
 --max-completed-requests 100 \
 --timeout 600 \
---client-config-num-threads 25 \
 --metrics-config-output-dir "benchmark_outputs" \
 --synthetic-request-generator-config-interval-generator-config-type "static"
 ```
 
-**Note:** We recommend running with `-Xgil=0` to enable GIL-free Python for true parallel execution of worker threads.
+**Note:** We recommend running with `-Xgil=0` to enable GIL-free Python with true parallel execution of worker threads.
 
 There are many more arguments for running benchmark, run the following to know more:
 ```bash

@@ -71,7 +71,7 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
                 instr_text, add_special_tokens=False
             )
 
-        self.request_id = 0
+        self._global_request_id = 0
 
     def _get_instruction_ids(
         self, num_output_tokens: int, use_server_min_tokens: bool
@@ -125,7 +125,7 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
                 dispatch_delay=-1,
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
-                id=self.request_id,
+                id=self._global_request_id,
             )
         num_prompt_tokens = int(num_prompt_tokens)
         num_output_tokens = int(num_output_tokens)
@@ -139,7 +139,7 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         )
 
         default_sampling_params: Dict[str, Any] = {
-            "max_tokens": num_output_tokens,
+            "max_completion_tokens": num_output_tokens,
         }
         if use_server_min_tokens:
             min_token_value = num_output_tokens
@@ -156,9 +156,8 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             sampling_params=default_sampling_params,
             llm_api=self.client_config.llm_api,
             address_append_value=self.client_config.address_append_value,
-            id=self.request_id,
+            id=self._global_request_id,
         )
 
-        self.request_id += 1
-
+        self._global_request_id += 1
         return request_config

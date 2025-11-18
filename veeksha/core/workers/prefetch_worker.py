@@ -30,7 +30,7 @@ class PrefetchWorker:
 
     def run(self) -> None:
         """Main worker loop."""
-        logger.info(f"Prefetch worker {self.worker_context.worker_id} starting")
+        logger.debug("Prefetch worker %s starting", self.worker_context.worker_id)
 
         while not self.worker_context.stop_event.is_set():
             request_config = self._generate_request()
@@ -45,33 +45,39 @@ class PrefetchWorker:
                     f"Prefetch progress: {self.service_metrics.num_generated_requests} requests generated"
                 )
 
-        logger.info(f"Prefetch worker {self.worker_context.worker_id} exiting")
+        logger.debug("Prefetch worker %s exiting", self.worker_context.worker_id)
 
     def _generate_request(self):
         """Generate next request in a thread-safe manner. Returns None if should stop."""
         with self.generator_lock:
-            # Check if we've generated enough requests
+            # enough requests generated?
             if (
                 self.service_metrics.num_generated_requests
                 >= self.service_metrics.max_requests
             ):
-                logger.info(
-                    f"Prefetch worker {self.worker_context.worker_id}: max requests reached"
+                logger.debug(
+                    "Prefetch worker %s: max requests reached",
+                    self.worker_context.worker_id,
                 )
                 return None
 
             try:
                 request_config = self.request_generator.get_request()
+            # error exhaustion policy is active
             except StopIteration:
-                logger.info(
-                    f"Prefetch worker {self.worker_context.worker_id}: generator exhausted"
+                self.service_metrics.notify_error(
+                    RuntimeError(
+                        "Request generator exhausted with 'error' policy. Aborting benchmark."
+                    )
                 )
+                self.worker_context.stop_event.set()
                 return None
 
-            # Handle special sentinel values
+            # stop exhaustion policy is active
             if request_config.dispatch_delay == -1:
-                logger.info(
-                    f"Prefetch worker {self.worker_context.worker_id}: stop policy triggered"
+                logger.debug(
+                    "Prefetch worker %s: stop policy triggered",
+                    self.worker_context.worker_id,
                 )
                 self.service_metrics.request_stop()
                 self.worker_context.stop_event.set()

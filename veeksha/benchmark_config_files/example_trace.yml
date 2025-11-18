@@ -5,8 +5,6 @@ api_key: token-abc123
 
 client_config:
   model: meta-llama/Meta-Llama-3-8B-Instruct
-  num_clients: 15
-  num_concurrent_requests_per_client: 10
   llm_api: openai_chat
 
 request_generator_config:

@@ -1,6 +1,7 @@
 """Shared fixtures for functional tests."""
 
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -35,8 +36,10 @@ class VLLMServer:
 
     def start(self) -> None:
         """Start vLLM server."""
+        # cross-env CI
+        py = os.environ.get("VLLM_PYTHON") or shutil.which("python3.12") or "python"
         cmd = [
-            "python", "-m", "vllm.entrypoints.openai.api_server",
+            py, "-m", "vllm.entrypoints.openai.api_server",
             "--model", self.model,
             "--port", str(self.port),
             "--served-model-name", self.model,

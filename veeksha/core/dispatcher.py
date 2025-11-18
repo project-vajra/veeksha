@@ -20,20 +20,19 @@ class RequestDispatcher:
 
     def __init__(
         self,
-        input_queue: Queue,
+        input_queues: List[Queue],
         service_metrics: ServiceMetrics,
         benchmark_id: str,
         telemetry_enabled: bool,
-        request_writer,
         worker_contexts: List[WorkerContext],
+        request_writer
     ):
-        self.input_queue = input_queue
+        self.input_queues = input_queues
         self.service_metrics = service_metrics
         self.benchmark_id = benchmark_id
         self.telemetry_enabled = telemetry_enabled
-        self.request_writer = request_writer
-        self.request_writer = request_writer
         self.worker_contexts = worker_contexts
+        self.request_writer = request_writer
 
     def _select_worker_power_of_two(self) -> WorkerContext:
         """Select worker using power-of-two load balancing.
@@ -65,7 +64,7 @@ class RequestDispatcher:
 
     def dispatch_request(self, request_config) -> None:
         """Dispatch a single request to workers using power-of-two load balancing."""
-        self.service_metrics.register_launched_request()
+        self.service_metrics.register_launched_request(request_config.id)
         request_config.benchmark_id = self.benchmark_id
 
         # Power-of-two load balancing: select least loaded worker
@@ -76,8 +75,10 @@ class RequestDispatcher:
                 f"(load: {selected_worker.get_load()})"
             )
 
-        self.input_queue.put(request_config)
-        self.request_writer.write_request(request_config, time.time())
+        self.input_queues[selected_worker.worker_id].put(request_config)
+
+        if self.request_writer:
+            self.request_writer.write_request(request_config, time.time())
 
         # Emit dashboard event
         if request_config.id is not None:

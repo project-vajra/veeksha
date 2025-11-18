@@ -35,7 +35,7 @@ def run_search(
             project=capacity_search_config.wandb_project,
         )
         # required so that wandb doesn't delay flush of child logs
-        wandb.finish(quiet=True)
+        wandb.finish()
 
     # Choose the appropriate search class based on search_mode
     search_mode = capacity_search_config.search_mode.lower()

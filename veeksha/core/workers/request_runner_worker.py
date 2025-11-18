@@ -4,9 +4,9 @@ import asyncio
 import json
 import os
 import threading
-from queue import Queue
+from queue import Full, Queue
 from typing import Any, Optional
-from collections import defaultdict
+import time
 
 import uvloop
 
@@ -149,15 +149,15 @@ class RequestRunnerWorker:
             if request_config.session_id and len(self._chat_history[request_config.session_id]) != request_config.session_sequence_index*2:
                 raise ValueError(f"Chat history length is incorrect. request={request_config}, chat_history={self._chat_history[request_config.session_id]}")
 
-            result = await llm_client.send_llm_request(
+            metrics, response = await llm_client.send_llm_request(
                 request_config,
                 self.client_config.request_timeout,
                 chat_history=self._chat_history[request_config.session_id],
             )
+            completed_at = time.monotonic()
 
             # Write input/output data if enabled
             if self.input_output_writer is not None:
-                request_metrics, response = result
                 prompt_text = request_config.prompt[0]  # Extract prompt text from tuple
                 generated_text = response.text if response is not None else None
 
@@ -179,7 +179,6 @@ class RequestRunnerWorker:
 
             # Update chat history
             if request_config.session_id:
-                _, response = result
                 self._chat_history[request_config.session_id].append(
                     {
                         "role": "user",
@@ -194,33 +193,63 @@ class RequestRunnerWorker:
                         }
                     )
 
-            self.output_queue.put(result)
+            await asyncio.to_thread(
+                self.output_queue.put, (metrics, response, completed_at)
+            )
+        except asyncio.CancelledError:
+            # task cancelled due to shutdown / timeout
+            await self._emit_error_result(
+                exception=None, request_config=request_config, cancelled=True
+            )
+            raise
         except Exception as e:
             logger.exception(
                 "send_llm_request failed for async worker_id=%s",
                 self.worker_context.worker_id,
             )
-            self._emit_error_result(e, request_config)
+            await self._emit_error_result(exception=e, request_config=request_config)
         finally:
             self.worker_context.decrement_load()
 
-    def _emit_error_result(self, e: Exception, request_config: Optional[Any]) -> None:
+    async def _emit_error_result(
+        self,
+        exception: Optional[BaseException],
+        request_config: Optional[Any],
+        cancelled: bool = False,
+    ) -> None:
         """Emit an error RequestMetrics tuple to the output queue."""
         try:
             prompt_len = request_config.prompt[1] if request_config else 0
             request_id = request_config.id if request_config else None
-            error_code = getattr(getattr(e, "response", None), "status_code", None)
+            error_code = None
+            error_msg = None
+            completed_at = time.monotonic()
+            if cancelled:
+                error_msg = "Cancelled by Veeksha"
+            elif exception is not None:
+                error_code = getattr(
+                    getattr(exception, "response", None), "status_code", None
+                )
+                error_msg = str(exception)
 
             metrics = RequestMetrics(
                 request_dispatched_at=0.0,
                 inter_token_times=[],
                 num_prompt_tokens=prompt_len,
                 num_output_tokens=0,
-                error_msg=str(e),
+                error_msg=error_msg,
                 error_code=error_code,
                 request_id=request_id,
+                benchmark_id=(
+                    request_config.benchmark_id if request_config else "default"
+                ),
+                cancelled=cancelled,
             )
-            self.output_queue.put((metrics, None))
+            result = (metrics, None, completed_at)
+            try:
+                self.output_queue.put_nowait(result)
+            except Full:
+                await asyncio.to_thread(self.output_queue.put, result)
         except Exception:
             logger.exception(
                 "Failed to enqueue error result for worker %s",

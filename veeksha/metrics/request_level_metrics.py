@@ -1,6 +1,6 @@
 import json
 import os
-from typing import List
+from typing import Any, Dict, List, Tuple
 
 from veeksha.config.deadline import DeadlineReportConfig
 from veeksha.metrics.metric_utils import (
@@ -70,10 +70,6 @@ class RequestLevelMetrics:
         )
         self.min_tbt_deadline_to_meet.append(min_tbt_deadline_to_meet)
 
-    def put_dispatch_only(self, request_metrics: RequestMetrics):
-        """Record only dispatch time for errored requests."""
-        self.request_dispatched_at.append(request_metrics.request_dispatched_at)
-
     def to_dict(self):
         return {
             "request_id": self.request_id,
@@ -92,6 +88,35 @@ class RequestLevelMetrics:
             "min_tbt_deadline_to_meet": self.min_tbt_deadline_to_meet,
         }
 
-    def save(self, output_dir: str):
-        with open(os.path.join(output_dir, "request_level_metrics.json"), "w") as f:
-            json.dump(self.to_dict(), f)
+    def export_rows(self, start_index: int = 0) -> Tuple[List[Dict[str, Any]], int]:
+        rows: List[Dict[str, Any]] = []
+        for idx in range(start_index, len(self.ttft)):
+            rows.append(
+                {
+                    "request_index": idx,
+                    "request_dispatched_at": self.request_dispatched_at[idx],
+                    "num_prompt_tokens": self.num_prompt_tokens[idx],
+                    "num_output_tokens": self.num_output_tokens[idx],
+                    "num_total_tokens": self.num_total_tokens[idx],
+                    "tpot": self.tpot[idx],
+                    "ttft": self.ttft[idx],
+                    "end_to_end_latency": self.end_to_end_latency[idx],
+                    "normalized_end_to_end_latency": self.normalized_end_to_end_latency[
+                        idx
+                    ],
+                    "output_throughput": self.output_throughput[idx],
+                    "deadline_miss_rate": self.deadline_miss_rate[idx],
+                    "min_tbt_deadline_to_meet": self.min_tbt_deadline_to_meet[idx],
+                    "tbt": self.tbt[idx],
+                }
+            )
+        return rows, len(self.ttft)
+
+    def save_jsonl(self, output_dir: str) -> str:
+        path = os.path.join(output_dir, "request_level_metrics.jsonl")
+        rows, _ = self.export_rows(0)
+        with open(path, "w") as stream_file:
+            for row in rows:
+                stream_file.write(json.dumps(row))
+                stream_file.write("\n")
+        return path

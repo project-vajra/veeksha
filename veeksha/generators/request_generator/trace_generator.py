@@ -39,7 +39,6 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self.config = config
         self.tokenizer = tokenizer
         self.seed_manager = seed_manager
-        self.request_id = 0
         self.client_config = client_config
         self.past_prompts: Dict[int, str] = {}
         self.past_prompt_ids: Dict[int, List[int]] = {}
@@ -48,6 +47,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         self._epoch = 0
         self._session_id_offset = 0
         self._num_sessions_per_epoch = 0
+        self._request_idx = 0  # index into the trace_df
         self._global_request_id = 0
         self._epoch_anchor_offset_s: float = 0.0
         self._session_firsts_span_s: float = 0.0
@@ -499,15 +499,15 @@ class TraceRequestGenerator(BaseRequestGenerator):
             return prompt, len(full_ids)
 
     def get_request(self) -> RequestConfig:
-        if self.request_idx >= self.capacity():
+        if self._request_idx >= self.capacity():
             if self.config.exhaustion_policy == "error":
                 raise StopIteration(
-                    f"Trace exhausted for requests at index {self.request_idx}"
+                    f"Trace exhausted for requests at index {self._request_idx}"
                 )
             elif self.config.exhaustion_policy == "stop":
                 # stop policy: return a sentinel request with negative dispatch delay
                 logger.debug(
-                    f"Stop policy active: request trace exhausted at index {self.request_idx}."
+                    f"Stop policy active: request trace exhausted at index {self._request_idx}."
                 )
                 return RequestConfig(
                     model=self.client_config.model,
@@ -515,15 +515,15 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     dispatch_delay=-1,
                     llm_api=self.client_config.llm_api,
                     address_append_value=self.client_config.address_append_value,
-                    id=self.request_idx,
+                    id=self._global_request_id,
                 )
             elif self.config.exhaustion_policy == "wrap":
                 if not self._wrap_warning_logged:
                     logger.debug(
-                        f"Request trace exhausted at index {self.request_idx}; wrapping to start."
+                        f"Request trace exhausted at index {self._request_idx}; wrapping to start."
                     )
                     self._wrap_warning_logged = True
-                self.request_idx = 0
+                self._request_idx = 0
                 # advance epoch and update per-epoch offsets
                 self._epoch += 1
                 if self._num_sessions_per_epoch > 0:
@@ -538,7 +538,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     self.past_prompt_ids.clear()
                     self._precompute_hash_body_ids()
 
-        request_to_send = self.trace_df.iloc[self.request_idx]
+        request_to_send = self.trace_df.iloc[self._request_idx]
 
         dispatch_delay = request_to_send["inter_request_time"]
 
@@ -558,7 +558,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         )
 
         default_sampling_params: Dict[str, Any] = {
-            "max_tokens": int(request_to_send["output_length"]),
+            "max_completion_tokens": int(request_to_send["output_length"]),
         }
         if use_server_min_tokens:
             min_token_value = int(request_to_send["output_length"])
@@ -582,9 +582,8 @@ class TraceRequestGenerator(BaseRequestGenerator):
         # attach session scheduling metadata based on configuration
         self._attach_session_metadata(request_to_send, request_config)
 
-        self.request_idx += 1
+        self._request_idx += 1
         self._global_request_id += 1
-
         return request_config
 
     def capacity(self) -> int:

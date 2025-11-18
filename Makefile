@@ -1,6 +1,11 @@
 .PHONY: help lint format
 .DEFAULT_GOAL := help
 
+VENV314 ?= .venv314
+VENV312 ?= .venv312
+PY314 ?= 3.14t
+PY312 ?= 3.12
+
 lint/black: ## check style with black
 	black --check --extend-exclude 'veeksha/lm_eval' veeksha
 
@@ -14,7 +19,7 @@ lint/pyright: ## run type checking
 	pyright
 
 lint/codespell:
-	codespell --skip './env/**,./docs/_build/**,./veeksha/lm_eval/**,./veeksha.egg-info/**,./test_output/**,./benchmark_results/**' -L inout
+	codespell --skip './env/**,./docs/_build/**,./veeksha/lm_eval/**,./veeksha.egg-info/**,./test_output/**,./benchmark_results/**,./build/**,./wandb/**' -L inout
 
 lint: lint/isort lint/black lint/autoflake lint/codespell lint/pyright	## check style
 
@@ -32,32 +37,29 @@ format: format/isort format/autoflake format/black ## format code
 # Test targets
 test: test/unit test/functional test/gpu ## Run all tests
 
+test/setup: test/setup/314 test/setup/312 ## Create both virtual environments and install deps
+
+test/setup/314: ## Create Python $(PY314) env for unit/lint and install dev deps
+	@VENV314=$(VENV314) PY314=$(PY314) bash scripts/test_setup_314.sh
+
+test/setup/312: ## Create Python $(PY312) env for vLLM/torch and install test deps
+	@VENV312=$(VENV312) PY312=$(PY312) bash scripts/test_setup_312.sh
+
 test/functional: ## Run functional tests
 	@echo "Running functional tests..."
-	python -m pytest -s tests/functional -v -m "functional and not gpu" --tb=short \
-			--junitxml=test_output/pytest-functional-nogpu-results.xml \
-			--cov=veeksha --cov-append --cov-report=
+	@VENV314=$(VENV314) VENV312=$(VENV312) bash scripts/run_tests_functional.sh
 
 test/gpu: ## Run GPU tests
 	@echo "Running GPU tests..."
-	python -m pytest -s tests/functional -v -m "gpu" --tb=short \
-			--junitxml=test_output/pytest-functional-gpu-results.xml \
-			--cov=veeksha --cov-append --cov-report=
+	@VENV314=$(VENV314) VENV312=$(VENV312) bash scripts/run_tests_gpu.sh
 
 # optional: keep unit generating initial data but skip reports, or regenerate at end
 test/unit: ## Run unit tests
 	@echo "Running unit tests..."
-	python -m pytest -s tests -v -m "unit" --tb=short \
-			--junitxml=test_output/pytest-unit-results.xml \
-			--cov=veeksha --cov-report=
+	@VENV314=$(VENV314) bash scripts/run_tests_unit.sh
 	
 test/integration: ## Run integration tests
 	@echo "Integration tests not yet implemented..."
-
-test/all: ## Run all tests including GPU
-	@echo "Running all tests..."
-	python -m pytest -s tests -v --tb=short  \
-		--junitxml=test_output/pytest-all-results.xml \
 
 # Emit final coverage reports into mounted test_output directory
 coverage/report:
