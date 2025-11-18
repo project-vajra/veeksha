@@ -73,10 +73,10 @@ class DispatchScheduler:
 
                 if request.session_sequence_index == 0:
                     # First-in-session: anchor by absolute if provided; else treat as normal delay
-                    if request.anchor_at_s is not None:
-                        ready_at = float(request.anchor_at_s)
+                    if request.arrival_time is not None:
+                        ready_at = float(request.arrival_time)
                     else:
-                        ready_at = self._now() + float(request.dispatch_delay)
+                        ready_at = self._now() + float(request.delay)
                     self._add_to_ready_queue(ready_at, request)
                 else:
                     # Queue until prior is completed; then we can compute ready time
@@ -85,7 +85,7 @@ class DispatchScheduler:
             else:
                 # Non-session request: schedule by dispatch_delay
                 anchor_base = max(self._non_session_ready_cursor, self._now())
-                ready_at = anchor_base + float(request.dispatch_delay)
+                ready_at = anchor_base + float(request.delay)
                 self._non_session_ready_cursor = ready_at
                 self._add_to_ready_queue(ready_at, request)
 
@@ -98,8 +98,8 @@ class DispatchScheduler:
         next_seq = session.completed_sequence + 1
         if next_seq in session.pending_requests:
             req = session.pending_requests.pop(next_seq)
-            # compute ready_at using last completion time + wait_after_prev_response_s
-            wait = float(req.wait_after_prev_response_s or 0.0)
+            # compute ready_at using last completion time + delay
+            wait = float(req.delay or 0.0)
             if session.last_completion_time is None:
                 # If predecessor completion is unknown, keep it pending
                 session.pending_requests[next_seq] = req
