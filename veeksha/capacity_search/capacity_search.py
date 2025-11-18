@@ -87,7 +87,6 @@ class CapacitySearch:
         else:
             self._capsearch_cache = self._load_cache()
 
-
     def _build_benchmark_config_for_qps(
         self, qps: float, run_dir: str
     ) -> BenchmarkConfig:
