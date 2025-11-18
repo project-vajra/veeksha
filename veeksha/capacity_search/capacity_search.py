@@ -82,7 +82,11 @@ class CapacitySearch:
         self._capsearch_cache_file = os.path.join(
             self.job_root_dir, "_capsearch_cache.json"
         )
-        self._capsearch_cache = self._load_cache()
+        if not self.capacity_search_config.enable_experiment_cache:
+            self._capsearch_cache = {}
+        else:
+            self._capsearch_cache = self._load_cache()
+
 
     def _build_benchmark_config_for_qps(
         self, qps: float, run_dir: str
