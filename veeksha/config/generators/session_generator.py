@@ -66,7 +66,7 @@ class SessionGeneratorConfig:
         },
     )
     cancel_session_on_failure: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "If true, cancel the remaining requests in a session when a prior request errors or times out."
         },

@@ -306,7 +306,7 @@ def run_main_loop(
     else:
         raise service_metrics.error
 
-def wait_for_server(url, process, timeout=240):
+def wait_for_server(url, process, timeout=600):
     start_time = time.time()
     while time.time() - start_time < timeout:
         try:
@@ -334,11 +334,7 @@ def start_server(server_boot_cmd, api_url, output_dir):
         stdout=log_file,
         stderr=subprocess.STDOUT,
     )
-    logger.info(f"Waiting for HTTP port to open. View LLM server logs at {log_file_path}")
-    wait_for_server(api_url, server_proc)
-    logger.info("LLM server is alive!")
-    return server_proc, log_file
-
+    return server_proc, log_file, log_file_path
 
 def wait_for_server_port_release(url, timeout=600):
     start_time = time.time()
@@ -375,7 +371,10 @@ def run_benchmark(
         # Start the server
         server_proc = None
         if benchmark_config.server_boot_cmd:
-            server_proc, log_file = start_server(benchmark_config.server_boot_cmd, benchmark_config.api_url, benchmark_config.metrics_config.output_dir)
+            server_proc, log_file, log_file_path = start_server(benchmark_config.server_boot_cmd, benchmark_config.api_url, benchmark_config.metrics_config.output_dir)
+            logger.info(f"Waiting for HTTP port to open. View LLM server logs at {log_file_path}")
+            wait_for_server(benchmark_config.api_url, server_proc)
+            logger.info("LLM server is alive!")
 
         # Ensure reproducibility across all execution paths
         random.seed(benchmark_config.seed)

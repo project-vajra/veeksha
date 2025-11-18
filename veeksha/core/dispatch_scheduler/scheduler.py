@@ -123,9 +123,8 @@ class DispatchScheduler:
     def _maybe_release_next_locked(self, session_id) -> None:
         # Release next-in-order pending request if its predecessor is completed
         session = self._sessions.get(session_id)
-        if not session:
+        if not session or session.is_canceled:
             return
-
         next_seq = session.completed_sequence + 1
         if next_seq in session.pending_requests:
             req = session.pending_requests.pop(next_seq)

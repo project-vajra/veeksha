@@ -24,7 +24,7 @@ from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
 
-MAX_NUM_THREADS = 30
+MAX_NUM_THREADS = 72
 
 
 class SearchResult(TypedDict, total=False):
