@@ -78,7 +78,9 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         # Respect a local cap on tokens to avoid mismatches with server/tokenizer
         max_tokens_limit = None
         if isinstance(request_config.sampling_params, dict):
-            max_tokens_limit = request_config.sampling_params.get("max_tokens")
+            max_tokens_limit = request_config.sampling_params.get(
+                "max_completion_tokens"
+            )
 
         last_token_batch_emission = 0
         is_first_emission = True  # Track if this is the first dashboard event emission

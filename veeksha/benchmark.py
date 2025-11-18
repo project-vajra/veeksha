@@ -96,7 +96,7 @@ def _probe_min_tokens_param_support(client_config: ClientConfig) -> bool:
     body = {
         "model": client_config.model,
         "stream": False,
-        "max_tokens": 1,
+        "max_completion_tokens": 1,
     }
     if client_config.llm_api == "openai_completions":
         body["prompt"] = "Hello"

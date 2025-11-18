@@ -104,7 +104,7 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
 
         Args:
             request_config: The request configuration, including prompt, model,
-                and optional sampling params (e.g., stream, max_tokens, logprobs).
+                and optional sampling params (e.g., stream, max_completion_tokens, logprobs).
             timeout: Request timeout in seconds.
 
         Returns:
@@ -155,7 +155,9 @@ class OpenAICompletionsClient(BaseLLMClient, StreamingMixin):
         # Respect a local cap on tokens to avoid mismatches with server/tokenizer
         max_tokens_limit = None
         if isinstance(request_config.sampling_params, dict):
-            max_tokens_limit = request_config.sampling_params.get("max_tokens")
+            max_tokens_limit = request_config.sampling_params.get(
+                "max_completion_tokens"
+            )
 
         last_token_batch_emission = 0
         is_first_emission = True  # Track if this is the first dashboard event emission

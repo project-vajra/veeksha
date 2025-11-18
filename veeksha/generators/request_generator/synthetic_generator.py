@@ -138,7 +138,7 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         )
 
         default_sampling_params: Dict[str, Any] = {
-            "max_tokens": num_output_tokens,
+            "max_completion_tokens": num_output_tokens,
         }
         if use_server_min_tokens:
             min_token_value = num_output_tokens

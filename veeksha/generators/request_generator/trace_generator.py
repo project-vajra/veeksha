@@ -482,7 +482,7 @@ class TraceRequestGenerator(BaseRequestGenerator):
         )
 
         default_sampling_params: Dict[str, Any] = {
-            "max_tokens": int(request_to_send["output_length"]),
+            "max_completion_tokens": int(request_to_send["output_length"]),
         }
         if use_server_min_tokens:
             min_token_value = int(request_to_send["output_length"])
