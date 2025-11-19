@@ -57,7 +57,7 @@ class VajraServerManager(BaseServerManager):
         if self.config.tensor_parallel_size and self.config.tensor_parallel_size > 1:
             command.extend(
                 [
-                    "--parallel_config_tensor_parallel_size",
+                    "--model_deployment_config_tensor_parallel_size",
                     str(self.config.tensor_parallel_size),
                 ]
             )
