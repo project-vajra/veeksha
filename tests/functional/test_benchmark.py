@@ -253,7 +253,6 @@ max_completed_requests: 1
             trace_output_length_column="output_length",
             trace_use_prefix_hash_ids=True,
             trace_remap_hash_ids=False,
-            trace_use_sessions=False,
             # Use a large block size so required block_count <= len(hash_ids)
             trace_block_size=2048,
             session_generator_config=session_gen_cfg,
@@ -315,7 +314,6 @@ max_completed_requests: 1
             trace_input_length_column="input_length",
             trace_output_length_column="output_length",
             trace_use_prefix_hash_ids=True,
-            trace_use_sessions=True,
             interval_generator_type="static",
             duration=0.05,
         )
@@ -323,7 +321,7 @@ max_completed_requests: 1
         runner.run_benchmark(
             config_content,
             "trace_sessions_from_trace.yml",
-            expected_return_code=1,
+            expected_return_code=0,
             check_output_files=False,
         )
 

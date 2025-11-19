@@ -142,4 +142,4 @@ class TestSeeding:
 
         for req1, req2 in zip(requests, requests2):
             assert req1.prompt == req2.prompt
-            assert req1.dispatch_delay == req2.dispatch_delay
+            assert req1.delay == req2.delay

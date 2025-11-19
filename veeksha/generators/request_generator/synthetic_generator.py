@@ -121,10 +121,13 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             return RequestConfig(
                 model=self.client_config.model,
                 prompt=("", 0),
-                dispatch_delay=-1,
+                delay=-1.0,
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
                 id=self._global_request_id,
+                session_id=self._global_request_id,
+                session_sequence_index=0,
+                cancel_session_on_failure=True,
             )
         num_prompt_tokens = int(num_prompt_tokens)
         num_output_tokens = int(num_output_tokens)
@@ -151,11 +154,14 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
         request_config = RequestConfig(
             model=self.client_config.model,
             prompt=(prompt, prompt_token_count),
-            dispatch_delay=dispatch_delay,
+            delay=dispatch_delay,
             sampling_params=default_sampling_params,
             llm_api=self.client_config.llm_api,
             address_append_value=self.client_config.address_append_value,
             id=self._global_request_id,
+            session_id=self._global_request_id,
+            session_sequence_index=0,
+            cancel_session_on_failure=True,
         )
 
         self._global_request_id += 1

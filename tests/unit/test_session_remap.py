@@ -86,7 +86,6 @@ def _build_generator(
         time_scale_factor=1.0,
         use_trace_prefix_hash_ids=True,
         remap_hash_ids=remap_hash_ids,
-        use_trace_sessions=False,
         session_generator_config=session_cfg,
         max_tokens=4096,
         exhaustion_policy=exhaustion_policy,

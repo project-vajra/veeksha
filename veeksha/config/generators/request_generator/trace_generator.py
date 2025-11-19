@@ -79,12 +79,6 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
             "help": "If True and use_trace_prefix_hash_ids, randomly remap prefix hash IDs. Will also remap hash_ids when trace is exhausted and exhaustion_policy is set to 'wrap'.",
         },
     )
-    use_trace_sessions: Optional[bool] = field(
-        default=False,
-        metadata={
-            "help": "If True, veeksha will use sessions provided in the trace file (session_id: int)."
-        },
-    )
     session_generator_config: Optional[SessionGeneratorConfig] = field(
         default=None,
         metadata={
@@ -135,11 +129,6 @@ class TraceRequestGeneratorConfig(BaseRequestGeneratorConfig):
         if self.block_size <= 0:
             raise ValueError(f"{self.__class__.__name__}: block_size must be positive")
 
-        # session_generator_config and use_trace_sessions cannot both be provided
-        if self.session_generator_config and self.use_trace_sessions:
-            raise ValueError(
-                f"{self.__class__.__name__}: session_generator_config and use_trace_sessions cannot both be provided"
-            )
         # if session_generator_config is provided, use_trace_prefix_hash_ids must be True
         if self.session_generator_config and not self.use_trace_prefix_hash_ids:
             raise ValueError(

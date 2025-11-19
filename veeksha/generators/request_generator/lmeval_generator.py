@@ -223,7 +223,9 @@ class LMEvalRequestGenerator:
             request_config = RequestConfig(
                 model=self.client_config.model,
                 prompt=(context, context_length),
-                dispatch_delay=dispatch_delay,
+                delay=dispatch_delay,
+                session_id=self._global_request_id,
+                session_sequence_index=0,
                 sampling_params=all_gen_kwargs,
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
@@ -235,7 +237,9 @@ class LMEvalRequestGenerator:
             request_config = RequestConfig(
                 model=self.client_config.model,
                 prompt=(context, len(self.tokenizer.encode(context))),
-                dispatch_delay=dispatch_delay,
+                delay=dispatch_delay,
+                session_id=self._global_request_id,
+                session_sequence_index=0,
                 sampling_params={
                     "stream": False,
                     "logprobs": True,
