@@ -1,4 +1,5 @@
 import time
+from typing import Dict, Optional
 
 import pytest
 
@@ -20,6 +21,7 @@ def wait_until(predicate, timeout_s=0.5, interval_s=0.005):
 
 @pytest.mark.unit
 def test_scheduler_first_in_session_anchor_ready() -> None:
+    """First-in-session request honors absolute arrival anchor."""
     scheduler = DispatchScheduler()
 
     req = RequestConfig(
@@ -42,6 +44,7 @@ def test_scheduler_first_in_session_anchor_ready() -> None:
 
 @pytest.mark.unit
 def test_scheduler_first_in_session_delay_ready() -> None:
+    """First-in-session request honors relative delay scheduling."""
     scheduler = DispatchScheduler()
     
     # Request scheduled relative to now
@@ -66,6 +69,7 @@ def test_scheduler_first_in_session_delay_ready() -> None:
 
 @pytest.mark.unit
 def test_scheduler_in_session_waits_for_prev_completion_then_gap() -> None:
+    """Subsequent requests wait for completion plus delay gap."""
     scheduler = DispatchScheduler()
 
     first = RequestConfig(
@@ -108,6 +112,7 @@ def test_scheduler_in_session_waits_for_prev_completion_then_gap() -> None:
 
 @pytest.mark.unit
 def test_scheduler_cancel_session_on_failure_drops_pending() -> None:
+    """Failure with cancel policy drops pending in-session requests."""
     scheduler = DispatchScheduler()
 
     first = RequestConfig(
@@ -147,6 +152,7 @@ def test_scheduler_cancel_session_on_failure_drops_pending() -> None:
 
 @pytest.mark.unit
 def test_request_level_metrics_record_errored_and_successful_requests() -> None:
+    """Metric store only records successful requests."""
     # Ensure MetricStore persists request-level arrays for only successful requests
     ms = MetricStore(timeout=10, max_requests=10, metrics_config=MetricsConfig())
 
@@ -181,7 +187,7 @@ def test_request_level_metrics_record_errored_and_successful_requests() -> None:
     
 @pytest.mark.unit
 def test_scheduler_interleaved_sessions() -> None:
-    """Test that two independent sessions can be scheduled concurrently without interference."""
+    """Independent sessions interleave without interference."""
     scheduler = DispatchScheduler()
 
     # Session A: Starts at t=0.01, 2nd req after 0.05s delay
@@ -223,7 +229,7 @@ def test_scheduler_interleaved_sessions() -> None:
 
 @pytest.mark.unit
 def test_scheduler_out_of_order_arrival() -> None:
-    """Test adding requests for a session in non-sequential order."""
+    """Pending requests arriving before session start remain blocked."""
     scheduler = DispatchScheduler()
     
     # Req 2 (dependent) arrives before Req 1 (start)
@@ -245,7 +251,7 @@ def test_scheduler_out_of_order_arrival() -> None:
 
 @pytest.mark.unit
 def test_scheduler_cancellation_cascade() -> None:
-    """Test that failure cancels ALL subsequent requests in the session."""
+    """Failure cascades cancellation across remaining session steps."""
     scheduler = DispatchScheduler()
     
     # Chain of 3 requests
@@ -271,4 +277,408 @@ def test_scheduler_cancellation_cascade() -> None:
     scheduler.notify_completion(request_id=2, completed_at_monotonic=time.monotonic(), success=True)
     assert scheduler.pop_ready() is None
 
+
+@pytest.mark.unit
+def test_scheduler_garbage_collects_completed_sessions() -> None:
+    """Session state is removed once all requests finish."""
+    scheduler = DispatchScheduler()
+
+    req = RequestConfig(
+        model="m",
+        prompt=("", 0),
+        id=123,
+        session_id=321,
+        session_sequence_index=0,
+        arrival_time=0.0,
+    )
+
+    scheduler.add_request(req)
+    assert len(scheduler._sessions) == 1
+
+    holder: Dict[str, Optional[RequestConfig]] = {"ready": None}
+
+    def _grab_ready() -> bool:
+        ready = scheduler.pop_ready()
+        if ready is None:
+            return False
+        holder["ready"] = ready
+        return True
+
+    assert wait_until(_grab_ready, timeout_s=0.2)
+    ready_req = holder["ready"]
+    assert ready_req is not None
+
+    scheduler.notify_completion(
+        request_id=ready_req.id,
+        completed_at_monotonic=time.monotonic(),
+        success=True,
+    )
+
+    assert len(scheduler._sessions) == 0
+
+
+@pytest.mark.unit
+def test_scheduler_failure_without_cancel_policy_continues_session() -> None:
+    """Failures without cancel policy still release downstream requests."""
+    scheduler = DispatchScheduler()
+
+    first = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=200,
+        session_id=300,
+        session_sequence_index=0,
+        arrival_time=0.0,
+        cancel_session_on_failure=False,
+    )
+    second = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=201,
+        session_id=300,
+        session_sequence_index=1,
+        delay=0.03,
+        cancel_session_on_failure=False,
+    )
+
+    scheduler.add_request(first)
+    scheduler.add_request(second)
+
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.2)
+
+    scheduler.notify_completion(
+        request_id=200, completed_at_monotonic=time.monotonic(), success=False
+    )
+
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.3)
+
+
+@pytest.mark.unit
+def test_scheduler_garbage_collects_cancelled_sessions() -> None:
+    """Cancelled sessions free their state immediately."""
+    scheduler = DispatchScheduler()
+
+    r1 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=400,
+        session_id=401,
+        session_sequence_index=0,
+        arrival_time=0.0,
+        cancel_session_on_failure=True,
+    )
+    r2 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=401,
+        session_id=401,
+        session_sequence_index=1,
+        delay=0.01,
+        cancel_session_on_failure=True,
+    )
+
+    scheduler.add_request(r1)
+    scheduler.add_request(r2)
+
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.2)
+    scheduler.notify_completion(
+        request_id=400, completed_at_monotonic=time.monotonic(), success=False
+    )
+
+    assert len(scheduler._sessions) == 0
+
+
+@pytest.mark.unit
+def test_scheduler_notify_completion_unknown_request_safe() -> None:
+    """Unknown request IDs in notify_completion are ignored safely."""
+    scheduler = DispatchScheduler()
+
+    r1 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=500,
+        session_id=600,
+        session_sequence_index=0,
+        arrival_time=0.0,
+    )
+    r2 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=501,
+        session_id=600,
+        session_sequence_index=1,
+        delay=0.01,
+    )
+
+    scheduler.add_request(r1)
+    scheduler.add_request(r2)
+
+    scheduler.notify_completion(
+        request_id=999999, completed_at_monotonic=time.monotonic(), success=True
+    )
+
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.2)
+    scheduler.notify_completion(
+        request_id=500, completed_at_monotonic=time.monotonic(), success=True
+    )
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.2)
+
+
+@pytest.mark.unit
+def test_scheduler_releases_multi_step_session_in_order() -> None:
+    """Multi-step session releases requests strictly in sequence."""
+    scheduler = DispatchScheduler()
+
+    r1 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=610,
+        session_id=700,
+        session_sequence_index=0,
+        arrival_time=0.0,
+    )
+    r2 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=611,
+        session_id=700,
+        session_sequence_index=1,
+        delay=0.02,
+    )
+    r3 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=612,
+        session_id=700,
+        session_sequence_index=2,
+        delay=0.03,
+    )
+
+    scheduler.add_request(r1)
+    scheduler.add_request(r2)
+    scheduler.add_request(r3)
+
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.2)
+    scheduler.notify_completion(
+        request_id=610, completed_at_monotonic=time.monotonic(), success=True
+    )
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.3)
+    scheduler.notify_completion(
+        request_id=611, completed_at_monotonic=time.monotonic(), success=True
+    )
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.3)
+
+
+@pytest.mark.unit
+def test_scheduler_head_of_line_blocking_until_missing_sequence_arrives() -> None:
+    """Later sequence stays blocked until intermediate step arrives and completes."""
+    scheduler = DispatchScheduler()
+
+    r0 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=800,
+        session_id=900,
+        session_sequence_index=0,
+        arrival_time=0.0,
+    )
+    r2 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=802,
+        session_id=900,
+        session_sequence_index=2,
+        delay=0.01,
+    )
+
+    scheduler.add_request(r0)
+    scheduler.add_request(r2)
+
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.2)
+    scheduler.notify_completion(
+        request_id=800, completed_at_monotonic=time.monotonic(), success=True
+    )
+    time.sleep(0.05)
+    assert scheduler.pop_ready() is None
+
+    r1 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=801,
+        session_id=900,
+        session_sequence_index=1,
+        delay=0.01,
+    )
+    scheduler.add_request(r1)
+
+    scheduler.notify_completion(
+        request_id=801, completed_at_monotonic=time.monotonic(), success=True
+    )
+
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.3)
+
+
+@pytest.mark.unit
+def test_scheduler_zero_delay_chaining_releases_immediately() -> None:
+    """Zero-delay requests release consecutively right after completion."""
+    scheduler = DispatchScheduler()
+
+    r0 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=850,
+        session_id=851,
+        session_sequence_index=0,
+        arrival_time=0.0,
+    )
+    r1 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=851,
+        session_id=851,
+        session_sequence_index=1,
+        delay=0.0,
+    )
+    r2 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=852,
+        session_id=851,
+        session_sequence_index=2,
+        delay=0.0,
+    )
+
+    scheduler.add_request(r0)
+    scheduler.add_request(r1)
+    scheduler.add_request(r2)
+
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.2)
+    scheduler.notify_completion(
+        request_id=850, completed_at_monotonic=time.monotonic(), success=True
+    )
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.2)
+    scheduler.notify_completion(
+        request_id=851, completed_at_monotonic=time.monotonic(), success=True
+    )
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.2)
+
+
+@pytest.mark.unit
+def test_scheduler_only_sequence_zero_honors_arrival_time() -> None:
+    """Anchors on later sequence indices are ignored."""
+    scheduler = DispatchScheduler()
+
+    r0 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=900,
+        session_id=901,
+        session_sequence_index=0,
+        arrival_time=0.05,
+    )
+    r1 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=901,
+        session_id=901,
+        session_sequence_index=1,
+        delay=0.01,
+    )
+    r2 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=902,
+        session_id=901,
+        session_sequence_index=2,
+        arrival_time=999.0,
+        delay=0.02,
+    )
+
+    scheduler.add_request(r0)
+    scheduler.add_request(r1)
+    scheduler.add_request(r2)
+
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.2)
+    scheduler.notify_completion(
+        request_id=900, completed_at_monotonic=time.monotonic(), success=True
+    )
+
+    start = time.monotonic()
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.5)
+    mid_elapsed = time.monotonic() - start
+
+    scheduler.notify_completion(
+        request_id=901, completed_at_monotonic=time.monotonic(), success=True
+    )
+
+    start2 = time.monotonic()
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.5)
+    end_elapsed = time.monotonic() - start2
+
+    assert mid_elapsed < 0.2
+    assert end_elapsed < 0.2
+
+
+@pytest.mark.unit
+def test_scheduler_duplicate_request_additions_are_idempotent() -> None:
+    """Adding same request twice does not corrupt state or deadlock."""
+    scheduler = DispatchScheduler()
+
+    req = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=950,
+        session_id=951,
+        session_sequence_index=0,
+        arrival_time=0.0,
+    )
+
+    scheduler.add_request(req)
+    scheduler.add_request(req)
+
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.2)
+    scheduler.notify_completion(
+        request_id=950, completed_at_monotonic=time.monotonic(), success=True
+    )
+    assert len(scheduler._sessions) == 0
+
+
+@pytest.mark.unit
+def test_scheduler_cancellation_followed_by_superfluous_completions_safe() -> None:
+    """Completion notifications after cancellation remain no-ops."""
+    scheduler = DispatchScheduler()
+
+    r0 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=990,
+        session_id=991,
+        session_sequence_index=0,
+        arrival_time=0.0,
+        cancel_session_on_failure=True,
+    )
+    r1 = RequestConfig(
+        model="dummy",
+        prompt=("", 0),
+        id=991,
+        session_id=991,
+        session_sequence_index=1,
+        delay=0.01,
+        cancel_session_on_failure=True,
+    )
+
+    scheduler.add_request(r0)
+    scheduler.add_request(r1)
+
+    assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.2)
+    scheduler.notify_completion(
+        request_id=990, completed_at_monotonic=time.monotonic(), success=False
+    )
+
+    scheduler.notify_completion(
+        request_id=991, completed_at_monotonic=time.monotonic(), success=True
+    )
+
+    assert scheduler.pop_ready() is None
+    assert len(scheduler._sessions) == 0
 

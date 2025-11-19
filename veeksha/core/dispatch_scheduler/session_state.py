@@ -19,3 +19,6 @@ class SessionState:
         self.is_canceled: bool = False
         # Cancel-on-failure policy for this session
         self.cancel_on_failure: Optional[bool] = None
+        # Number of requests for this session that are still active (queued, running, or pending)
+        # only as seen by the scheduler
+        self.open_requests: int = 0
