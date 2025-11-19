@@ -41,6 +41,7 @@ dependencies = [
     "requests",
     "uvloop",
     "httpx",
+    "ray==2.51.1"
 ]
 
 [project.urls]
