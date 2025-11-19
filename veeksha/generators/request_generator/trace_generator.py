@@ -96,17 +96,16 @@ class TraceRequestGenerator(BaseRequestGenerator):
                     )
                 if self.config.remap_hash_ids:
                     self._remap_trace_hash_ids()
-        else:
-            if self.corpus_lines is None:
-                raise ValueError(
-                    "A corpus file must be provided when not using trace prefix hash IDs."
-                )
-            # Pre-tokenize corpus for fast prompt body assembly
-            token_lines = [
-                self.tokenizer.encode(line, add_special_tokens=False)
-                for line in self.corpus_lines
-            ]
-            self.pretokenized_lines: List[List[int]] = [t for t in token_lines if t]
+
+        if self.corpus_lines is None:
+            raise ValueError(
+                "A corpus file must be provided."
+            )
+        token_lines = [
+            self.tokenizer.encode(line, add_special_tokens=False)
+            for line in self.corpus_lines
+        ]
+        self.pretokenized_lines: List[List[int]] = [t for t in token_lines if t]
 
         if self.config.use_trace_prefix_hash_ids:
             # Precompute hash-based body IDs for all unique hash_ids present
@@ -475,28 +474,21 @@ class TraceRequestGenerator(BaseRequestGenerator):
     ) -> Tuple[str, int]:
         n_out = int(request_to_send["output_length"])
         instr_ids = self._get_instruction_ids(n_out, use_server_min_tokens)
-        instr_text = self._get_instruction_text(n_out, use_server_min_tokens)
 
         if self.config.use_trace_prefix_hash_ids:
-            # Build IDs and assemble string from cached per-hash prompt strings
-            body_ids = self._build_body_ids_from_hashes(request_to_send)
-            prompt_parts = []
-            for hash_id in request_to_send["hash_ids"]:
-                prompt_parts.append(self.past_prompts[int(hash_id)])
-            prompt_parts.append(instr_text)
-            prompt = "".join(prompt_parts)
-            full_len = len(body_ids) + len(instr_ids)
-            return prompt, full_len
+            remaining_prompt_tokens = len(
+                self._build_body_ids_from_hashes(request_to_send)
+            )
         else:
             # TODO(Elton): Hardcoding use of `new_input_length`
             remaining_prompt_tokens = int(request_to_send["new_input_length"]) - len(
                 instr_ids
             )
-            remaining_prompt_tokens = max(0, remaining_prompt_tokens)
-            body_ids = self._build_body_ids_from_corpus(remaining_prompt_tokens)
-            full_ids = body_ids + instr_ids
-            prompt = self.decode(full_ids)
-            return prompt, len(full_ids)
+        remaining_prompt_tokens = max(0, remaining_prompt_tokens)
+        body_ids = self._build_body_ids_from_corpus(remaining_prompt_tokens)
+        full_ids = body_ids + instr_ids
+        prompt = self.decode(full_ids)
+        return prompt, len(full_ids)
 
     def get_request(self) -> RequestConfig:
         if self._request_idx >= self.capacity():
