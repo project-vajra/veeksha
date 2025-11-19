@@ -65,7 +65,10 @@ class VajraServerManager(BaseServerManager):
         # max model length / context
         if self.config.max_model_len is not None:
             command.extend(
-                ["--model_deployment_config_max_model_len", str(self.config.max_model_len)]
+                [
+                    "--model_deployment_config_max_model_len",
+                    str(self.config.max_model_len),
+                ]
             )
 
             # Process additional arguments from the configuration

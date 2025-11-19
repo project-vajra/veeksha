@@ -106,7 +106,7 @@ class BaseServerManager(abc.ABC):
 
             env = os.environ.copy()
 
-            # Set CUDA_VISIBLE_DEVICES if gpu_ids specified 
+            # Set CUDA_VISIBLE_DEVICES if gpu_ids specified
             gpu_env = self.config.get_gpu_env_var()
             if gpu_env is not None:
                 env["CUDA_VISIBLE_DEVICES"] = gpu_env

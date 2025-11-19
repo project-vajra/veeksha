@@ -33,6 +33,10 @@ from veeksha.orchestration.benchmark_orchestrator import (
 )
 from veeksha.orchestration.resource_manager import ResourceManager
 from veeksha.orchestration.server_manager import BaseServerManager
+from veeksha.orchestration.sglang_server import (
+    SGLangServerManager,
+    create_sglang_server_manager,
+)
 from veeksha.orchestration.vajra_server import (
     VajraServerManager,
     create_vajra_server_manager,
@@ -40,10 +44,6 @@ from veeksha.orchestration.vajra_server import (
 from veeksha.orchestration.vllm_server import (
     VLLMServerManager,
     create_vllm_server_manager,
-)
-from veeksha.orchestration.sglang_server import (
-    SGLangServerManager,
-    create_sglang_server_manager,
 )
 
 __all__ = [
