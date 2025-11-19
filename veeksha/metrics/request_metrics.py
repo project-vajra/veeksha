@@ -14,6 +14,10 @@ class RequestMetrics:
     inter_token_times: List[float]
     num_prompt_tokens: int
     num_output_tokens: int
+    session_id: Optional[int] = None
+    session_sequence_index: Optional[int] = None
+    session_total_requests: Optional[int] = None
+    cancel_session_on_failure: bool = True
     error_msg: Optional[str] = None
     error_code: Optional[int] = None
     # Request id for correlation when Response is None
@@ -28,6 +32,10 @@ class RequestMetrics:
     @cached_property
     def end_to_end_latency(self):
         return sum(self.inter_token_times)
+
+    @cached_property
+    def completed_at(self) -> float:
+        return self.request_dispatched_at + self.end_to_end_latency
 
     @cached_property
     def normalized_end_to_end_latency(self):

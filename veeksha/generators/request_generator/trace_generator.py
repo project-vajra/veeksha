@@ -173,6 +173,15 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 span = float(firsts.max() - firsts.min())
                 self._session_firsts_span_s = max(0.0, span)
 
+        if "session_id" in self.trace_df.columns:
+            self.trace_df["session_total_requests"] = (
+                self.trace_df.groupby("session_id")["session_id"]
+                .transform("size")
+                .astype(int)
+            )
+        else:
+            self.trace_df["session_total_requests"] = 1
+
     def _annotate_trace_sessions(self) -> None:
         """Annotate trace-provided sessions with sequence index, intra-session wait, and anchor.
 
@@ -352,12 +361,14 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 return RequestConfig(
                     model=self.client_config.model,
                     prompt=("", 0),
-                    delay=-1,
+                    session_start_time=None,
+                    wait_after_prev_response_s=-1.0,
                     llm_api=self.client_config.llm_api,
                     address_append_value=self.client_config.address_append_value,
                     id=self._global_request_id,
                     session_id=self._global_request_id,
                     session_sequence_index=0,
+                    session_total_requests=1,
                 )
             elif self.config.exhaustion_policy == "wrap":
                 if not self._wrap_warning_logged:
@@ -387,9 +398,10 @@ class TraceRequestGenerator(BaseRequestGenerator):
         # defaults for non-session traces (session size 1)
         session_id = self._global_request_id
         session_sequence_index = 0
+        session_total_requests = 1
         cancel_session_on_failure = True
-        delay = 0.0
-        arrival_time: Optional[float] = None
+        wait_after_prev_response_s: Optional[float] = None
+        session_start_time: Optional[float] = None
         has_session_info = "session_id" in request_to_send
 
         if has_session_info:
@@ -399,6 +411,8 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
             if "session_sequence_index" in request_to_send:
                 session_sequence_index = int(request_to_send["session_sequence_index"])
+            if "session_total_requests" in request_to_send:
+                session_total_requests = int(request_to_send["session_total_requests"])
 
             # determine cancel policy
             # If session_generator_config is present, it might override
@@ -423,14 +437,16 @@ class TraceRequestGenerator(BaseRequestGenerator):
                 ts = request_to_send.get("timestamp")
 
             if ts is not None:
-                arrival_time = float(ts) + self._epoch_anchor_offset_s
+                session_start_time = float(ts) + self._epoch_anchor_offset_s
             else:
                 raise ValueError(
                     "No timestamp or anchor_at_s found for first-in-session request"
                 )
         else:
             # within session: relative delay
-            delay = float(request_to_send.get("wait_after_prev_response_s", 0.0))
+            wait_after_prev_response_s = float(
+                request_to_send.get("wait_after_prev_response_s", 0.0)
+            )
 
         # request assembly
         if self.config.use_trace_prefix_hash_ids:
@@ -463,14 +479,15 @@ class TraceRequestGenerator(BaseRequestGenerator):
         request_config = RequestConfig(
             model=self.client_config.model,
             prompt=(prompt, final_token_count),
-            delay=delay,
-            arrival_time=arrival_time,
+            session_start_time=session_start_time,
+            wait_after_prev_response_s=wait_after_prev_response_s,
             sampling_params=default_sampling_params,
             llm_api=self.client_config.llm_api,
             address_append_value=self.client_config.address_append_value,
             id=self._global_request_id,
             session_id=session_id,
             session_sequence_index=session_sequence_index,
+            session_total_requests=session_total_requests,
             cancel_session_on_failure=cancel_session_on_failure,
         )
 

@@ -101,8 +101,11 @@ class CDFSketch:
     def _to_df(self) -> pd.DataFrame:
         # get quantiles at 1% intervals
         quantiles = np.linspace(0, 1, 101)
-        # get quantile values
-        quantile_values = [self.sketch.get_quantile_value(q) for q in quantiles]
+        # get quantile values (fall back to zeros when no samples were observed)
+        if self.sketch.count == 0:
+            quantile_values = [0.0 for _ in quantiles]
+        else:
+            quantile_values = [self.sketch.get_quantile_value(q) for q in quantiles]
         # create dataframe
         df = pd.DataFrame({"cdf": quantiles, self.metric_name: quantile_values})
 
@@ -122,9 +125,6 @@ class CDFSketch:
     def plot_cdf(
         self, path: str, plot_name: str, x_axis_label: Optional[str] = None
     ) -> None:
-        if self.sketch._count == 0:
-            return
-
         if x_axis_label is None:
             x_axis_label = (
                 f"{self.metric_name}{' (' + self.unit + ')' if self.unit else ''}"

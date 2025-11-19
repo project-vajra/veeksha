@@ -86,11 +86,13 @@ class DispatchScheduler:
             session.open_requests += 1
 
             if seq_idx == 0:
-                # First-in-session: anchor by absolute if provided; else treat as normal delay
-                if request.arrival_time is not None:
-                    ready_at = float(request.arrival_time)
+                # must be anchored by absolute timestamp
+                if request.session_start_time is not None:
+                    ready_at = float(request.session_start_time)
                 else:
-                    ready_at = self._now() + float(request.delay)
+                    raise ValueError(
+                        "session_start_time is required for first-in-session requests"
+                    )
                 self._add_to_ready_queue(ready_at, request)
             else:
                 # Queue until prior is completed; then we can compute ready time
@@ -107,7 +109,7 @@ class DispatchScheduler:
         if next_seq in session.pending_requests:
             req = session.pending_requests.pop(next_seq)
             # compute ready_at using last completion time + delay
-            wait = float(req.delay or 0.0)
+            wait = float(req.wait_after_prev_response_s or 0.0)
             if session.last_completion_time is None:
                 # If predecessor completion is unknown, keep it pending
                 session.pending_requests[next_seq] = req

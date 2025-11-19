@@ -98,9 +98,9 @@ def test_legacy_trace_no_sessions(tmp_path):
     req1 = gen.get_request()
     assert req1.session_sequence_index == 0
     assert req1.session_id == 0  # global request ID
-    assert req1.arrival_time is not None
+    assert req1.session_start_time is not None
     # Should use absolute timestamp from trace as arrival time (1000ms = 1.0s)
-    assert req1.arrival_time == pytest.approx(1.0) 
+    assert req1.session_start_time == pytest.approx(1.0) 
     # Token count check: input(10)
     # The generator attempts to match input_length exactly, including instruction tokens.
     # If input_length is large enough to hold instructions, total length == input_length.
@@ -114,7 +114,7 @@ def test_legacy_trace_no_sessions(tmp_path):
     req2 = gen.get_request()
     assert req2.session_sequence_index == 0
     assert req2.session_id == 1  # global request ID increments
-    assert req2.arrival_time == pytest.approx(2.0)
+    assert req2.session_start_time == pytest.approx(2.0)
 
 
 @pytest.mark.unit
@@ -136,7 +136,7 @@ def test_explicit_session_trace_auto_detect(tmp_path):
     assert req1.session_id == 100
     assert req1.session_sequence_index == 0
     # First in session uses anchor/absolute arrival
-    assert req1.arrival_time == pytest.approx(1.0)
+    assert req1.session_start_time == pytest.approx(1.0)
     
     # Request 2
     req2 = gen.get_request()
@@ -144,8 +144,8 @@ def test_explicit_session_trace_auto_detect(tmp_path):
     assert req2.session_sequence_index == 1
     # Subsequent request uses relative delay (think time)
     # 1500ms - 1000ms = 500ms = 0.5s
-    assert req2.delay == pytest.approx(0.5)
-    assert req2.arrival_time is None  # subsequent requests are relative
+    assert req2.wait_after_prev_response_s == pytest.approx(0.5)
+    assert req2.session_start_time is None  # subsequent requests are relative
 
 
 @pytest.mark.unit
@@ -184,9 +184,9 @@ def test_generated_sessions(tmp_path):
     
     # Timestamps are re-generated/processed by SessionGenerator, 
     # but behavior should be consistent: first absolute, second relative.
-    assert req1.arrival_time is not None
-    assert req2.arrival_time is None
-    assert req2.delay >= 0.0
+    assert req1.session_start_time is not None
+    assert req2.session_start_time is None
+    assert req2.wait_after_prev_response_s >= 0.0
 
 
 @pytest.mark.unit
@@ -283,4 +283,5 @@ def test_sampling_params_override(tmp_path):
     assert req.sampling_params["top_p"] == 0.9
     # max_completion_tokens should come from trace output_length
     assert req.sampling_params["max_completion_tokens"] == 5
+
 

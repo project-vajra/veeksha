@@ -30,7 +30,8 @@ def test_scheduler_first_in_session_anchor_ready() -> None:
         id=1,
         session_id=10,
         session_sequence_index=0,
-        arrival_time=0.05,
+        session_start_time=0.05,
+        session_total_requests=1,
     )
 
     scheduler.add_request(req)
@@ -44,18 +45,19 @@ def test_scheduler_first_in_session_anchor_ready() -> None:
 
 @pytest.mark.unit
 def test_scheduler_first_in_session_delay_ready() -> None:
-    """First-in-session request honors relative delay scheduling."""
+    """First-in-session request honors provided session_start_time."""
     scheduler = DispatchScheduler()
     
     # Request scheduled relative to now
-    delay = 0.05
+    session_start = 0.05
     req = RequestConfig(
         model="dummy",
         prompt=("", 0),
         id=99,
         session_id=99,
         session_sequence_index=0,
-        delay=delay,
+        session_start_time=session_start,
+        session_total_requests=1,
     )
     
     scheduler.add_request(req)
@@ -63,7 +65,7 @@ def test_scheduler_first_in_session_delay_ready() -> None:
     # Not ready immediately
     assert scheduler.pop_ready() is None
     
-    # Becomes ready after delay
+    # Becomes ready after configured start time
     assert wait_until(lambda: scheduler.pop_ready() is not None, timeout_s=0.5)
 
 
@@ -78,7 +80,8 @@ def test_scheduler_in_session_waits_for_prev_completion_then_gap() -> None:
         id=1,
         session_id=42,
         session_sequence_index=0,
-        arrival_time=0.01,
+        session_start_time=0.01,
+        session_total_requests=2,
     )
     second = RequestConfig(
         model="dummy",
@@ -86,7 +89,8 @@ def test_scheduler_in_session_waits_for_prev_completion_then_gap() -> None:
         id=2,
         session_id=42,
         session_sequence_index=1,
-        delay=0.07,
+        wait_after_prev_response_s=0.07,
+        session_total_requests=2,
     )
 
     scheduler.add_request(first)
@@ -121,8 +125,9 @@ def test_scheduler_cancel_session_on_failure_drops_pending() -> None:
         id=11,
         session_id=77,
         session_sequence_index=0,
-        arrival_time=0.0,
+        session_start_time=0.0,
         cancel_session_on_failure=True,
+        session_total_requests=2,
     )
     second = RequestConfig(
         model="dummy",
@@ -130,8 +135,9 @@ def test_scheduler_cancel_session_on_failure_drops_pending() -> None:
         id=12,
         session_id=77,
         session_sequence_index=1,
-        delay=0.02,
+        wait_after_prev_response_s=0.02,
         cancel_session_on_failure=True,
+        session_total_requests=2,
     )
 
     scheduler.add_request(first)
@@ -186,17 +192,110 @@ def test_request_level_metrics_record_errored_and_successful_requests() -> None:
     
     
 @pytest.mark.unit
+def test_metric_store_tracks_session_metrics() -> None:
+    """Metric store aggregates per-session statistics and outcomes."""
+    ms = MetricStore(timeout=10, max_requests=10, metrics_config=MetricsConfig())
+
+    # Successful two-request session
+    sess_req0 = RequestMetrics(
+        request_dispatched_at=1.0,
+        inter_token_times=[0.5],
+        num_prompt_tokens=10,
+        num_output_tokens=1,
+        session_id=101,
+        session_sequence_index=0,
+        session_total_requests=2,
+    )
+    sess_req1 = RequestMetrics(
+        request_dispatched_at=2.0,
+        inter_token_times=[0.4],
+        num_prompt_tokens=12,
+        num_output_tokens=1,
+        session_id=101,
+        session_sequence_index=1,
+        session_total_requests=2,
+    )
+    ms.add_request_metrics(sess_req0)
+    ms.add_request_metrics(sess_req1)
+
+    # Errored single-request session
+    err_session = RequestMetrics(
+        request_dispatched_at=5.0,
+        inter_token_times=[],
+        num_prompt_tokens=8,
+        num_output_tokens=0,
+        session_id=202,
+        session_sequence_index=0,
+        session_total_requests=1,
+        error_msg="boom",
+        error_code=500,
+    )
+    ms.add_request_metrics(err_session)
+
+    summary = ms.get_aggregated_summary()
+    assert summary["Number of Sessions Seen"] == pytest.approx(2.0)
+    assert summary["Successful Sessions"] == pytest.approx(1.0)
+    assert summary["Errored Sessions"] == pytest.approx(1.0)
+    assert summary["Cancelled Sessions"] == pytest.approx(0.0)
+    assert summary["Observed Session Dispatch Rate"] == pytest.approx(0.25)
+
+    session_size_sketch = ms.summaries["session_size"].sketch
+    assert session_size_sketch.count == 2
+    assert session_size_sketch.avg == pytest.approx(1.5, rel=0.05)
+
+    think_time_sketch = ms.summaries["session_think_time"].sketch
+    assert think_time_sketch.count == 1
+    assert think_time_sketch.get_quantile_value(0.5) == pytest.approx(0.5, rel=0.2)
+
+    dispatch_gap_sketch = ms.summaries["session_dispatch_gap"].sketch
+    assert dispatch_gap_sketch.count == 1
+    assert dispatch_gap_sketch.get_quantile_value(0.5) == pytest.approx(4.0, rel=0.2)
+
+
+@pytest.mark.unit
 def test_scheduler_interleaved_sessions() -> None:
     """Independent sessions interleave without interference."""
     scheduler = DispatchScheduler()
 
     # Session A: Starts at t=0.01, 2nd req after 0.05s delay
-    sA_req1 = RequestConfig(model="m", prompt=("", 0), id=10, session_id=100, session_sequence_index=0, arrival_time=0.01)
-    sA_req2 = RequestConfig(model="m", prompt=("", 0), id=11, session_id=100, session_sequence_index=1, delay=0.05)
+    sA_req1 = RequestConfig(
+        model="m",
+        prompt=("", 0),
+        id=10,
+        session_id=100,
+        session_sequence_index=0,
+        session_start_time=0.01,
+        session_total_requests=2,
+    )
+    sA_req2 = RequestConfig(
+        model="m",
+        prompt=("", 0),
+        id=11,
+        session_id=100,
+        session_sequence_index=1,
+        wait_after_prev_response_s=0.05,
+        session_total_requests=2,
+    )
 
     # Session B: Starts at t=0.02, 2nd req after 0.05s delay
-    sB_req1 = RequestConfig(model="m", prompt=("", 0), id=20, session_id=200, session_sequence_index=0, arrival_time=0.02)
-    sB_req2 = RequestConfig(model="m", prompt=("", 0), id=21, session_id=200, session_sequence_index=1, delay=0.05)
+    sB_req1 = RequestConfig(
+        model="m",
+        prompt=("", 0),
+        id=20,
+        session_id=200,
+        session_sequence_index=0,
+        session_start_time=0.02,
+        session_total_requests=2,
+    )
+    sB_req2 = RequestConfig(
+        model="m",
+        prompt=("", 0),
+        id=21,
+        session_id=200,
+        session_sequence_index=1,
+        wait_after_prev_response_s=0.05,
+        session_total_requests=2,
+    )
 
     scheduler.add_request(sA_req1)
     scheduler.add_request(sA_req2)
@@ -233,8 +332,24 @@ def test_scheduler_out_of_order_arrival() -> None:
     scheduler = DispatchScheduler()
     
     # Req 2 (dependent) arrives before Req 1 (start)
-    req2 = RequestConfig(model="m", prompt=("", 0), id=2, session_id=50, session_sequence_index=1, delay=0.01)
-    req1 = RequestConfig(model="m", prompt=("", 0), id=1, session_id=50, session_sequence_index=0, arrival_time=0.01)
+    req2 = RequestConfig(
+        model="m",
+        prompt=("", 0),
+        id=2,
+        session_id=50,
+        session_sequence_index=1,
+        wait_after_prev_response_s=0.01,
+        session_total_requests=2,
+    )
+    req1 = RequestConfig(
+        model="m",
+        prompt=("", 0),
+        id=1,
+        session_id=50,
+        session_sequence_index=0,
+        session_start_time=0.01,
+        session_total_requests=2,
+    )
     
     scheduler.add_request(req2)
     scheduler.add_request(req1)
@@ -255,9 +370,34 @@ def test_scheduler_cancellation_cascade() -> None:
     scheduler = DispatchScheduler()
     
     # Chain of 3 requests
-    r1 = RequestConfig(model="m", prompt=("", 0), id=1, session_id=9, session_sequence_index=0, arrival_time=0.0, cancel_session_on_failure=True)
-    r2 = RequestConfig(model="m", prompt=("", 0), id=2, session_id=9, session_sequence_index=1, delay=0.0)
-    r3 = RequestConfig(model="m", prompt=("", 0), id=3, session_id=9, session_sequence_index=2, delay=0.0)
+    r1 = RequestConfig(
+        model="m",
+        prompt=("", 0),
+        id=1,
+        session_id=9,
+        session_sequence_index=0,
+        session_start_time=0.0,
+        cancel_session_on_failure=True,
+        session_total_requests=3,
+    )
+    r2 = RequestConfig(
+        model="m",
+        prompt=("", 0),
+        id=2,
+        session_id=9,
+        session_sequence_index=1,
+        wait_after_prev_response_s=0.0,
+        session_total_requests=3,
+    )
+    r3 = RequestConfig(
+        model="m",
+        prompt=("", 0),
+        id=3,
+        session_id=9,
+        session_sequence_index=2,
+        wait_after_prev_response_s=0.0,
+        session_total_requests=3,
+    )
     
     scheduler.add_request(r1)
     scheduler.add_request(r2)
@@ -289,7 +429,8 @@ def test_scheduler_garbage_collects_completed_sessions() -> None:
         id=123,
         session_id=321,
         session_sequence_index=0,
-        arrival_time=0.0,
+        session_start_time=0.0,
+        session_total_requests=1,
     )
 
     scheduler.add_request(req)
@@ -328,8 +469,9 @@ def test_scheduler_failure_without_cancel_policy_continues_session() -> None:
         id=200,
         session_id=300,
         session_sequence_index=0,
-        arrival_time=0.0,
+        session_start_time=0.0,
         cancel_session_on_failure=False,
+        session_total_requests=2,
     )
     second = RequestConfig(
         model="dummy",
@@ -337,8 +479,9 @@ def test_scheduler_failure_without_cancel_policy_continues_session() -> None:
         id=201,
         session_id=300,
         session_sequence_index=1,
-        delay=0.03,
+        wait_after_prev_response_s=0.03,
         cancel_session_on_failure=False,
+        session_total_requests=2,
     )
 
     scheduler.add_request(first)
@@ -364,8 +507,9 @@ def test_scheduler_garbage_collects_cancelled_sessions() -> None:
         id=400,
         session_id=401,
         session_sequence_index=0,
-        arrival_time=0.0,
+        session_start_time=0.0,
         cancel_session_on_failure=True,
+        session_total_requests=2,
     )
     r2 = RequestConfig(
         model="dummy",
@@ -373,8 +517,9 @@ def test_scheduler_garbage_collects_cancelled_sessions() -> None:
         id=401,
         session_id=401,
         session_sequence_index=1,
-        delay=0.01,
+        wait_after_prev_response_s=0.01,
         cancel_session_on_failure=True,
+        session_total_requests=2,
     )
 
     scheduler.add_request(r1)
@@ -399,7 +544,8 @@ def test_scheduler_notify_completion_unknown_request_safe() -> None:
         id=500,
         session_id=600,
         session_sequence_index=0,
-        arrival_time=0.0,
+        session_start_time=0.0,
+        session_total_requests=2,
     )
     r2 = RequestConfig(
         model="dummy",
@@ -407,7 +553,8 @@ def test_scheduler_notify_completion_unknown_request_safe() -> None:
         id=501,
         session_id=600,
         session_sequence_index=1,
-        delay=0.01,
+        wait_after_prev_response_s=0.01,
+        session_total_requests=2,
     )
 
     scheduler.add_request(r1)
@@ -435,7 +582,8 @@ def test_scheduler_releases_multi_step_session_in_order() -> None:
         id=610,
         session_id=700,
         session_sequence_index=0,
-        arrival_time=0.0,
+        session_start_time=0.0,
+        session_total_requests=3,
     )
     r2 = RequestConfig(
         model="dummy",
@@ -443,7 +591,8 @@ def test_scheduler_releases_multi_step_session_in_order() -> None:
         id=611,
         session_id=700,
         session_sequence_index=1,
-        delay=0.02,
+        wait_after_prev_response_s=0.02,
+        session_total_requests=3,
     )
     r3 = RequestConfig(
         model="dummy",
@@ -451,7 +600,8 @@ def test_scheduler_releases_multi_step_session_in_order() -> None:
         id=612,
         session_id=700,
         session_sequence_index=2,
-        delay=0.03,
+        wait_after_prev_response_s=0.03,
+        session_total_requests=3,
     )
 
     scheduler.add_request(r1)
@@ -480,7 +630,8 @@ def test_scheduler_head_of_line_blocking_until_missing_sequence_arrives() -> Non
         id=800,
         session_id=900,
         session_sequence_index=0,
-        arrival_time=0.0,
+        session_start_time=0.0,
+        session_total_requests=3,
     )
     r2 = RequestConfig(
         model="dummy",
@@ -488,7 +639,8 @@ def test_scheduler_head_of_line_blocking_until_missing_sequence_arrives() -> Non
         id=802,
         session_id=900,
         session_sequence_index=2,
-        delay=0.01,
+        wait_after_prev_response_s=0.01,
+        session_total_requests=3,
     )
 
     scheduler.add_request(r0)
@@ -507,7 +659,8 @@ def test_scheduler_head_of_line_blocking_until_missing_sequence_arrives() -> Non
         id=801,
         session_id=900,
         session_sequence_index=1,
-        delay=0.01,
+        wait_after_prev_response_s=0.01,
+        session_total_requests=3,
     )
     scheduler.add_request(r1)
 
@@ -529,7 +682,8 @@ def test_scheduler_zero_delay_chaining_releases_immediately() -> None:
         id=850,
         session_id=851,
         session_sequence_index=0,
-        arrival_time=0.0,
+        session_start_time=0.0,
+        session_total_requests=3,
     )
     r1 = RequestConfig(
         model="dummy",
@@ -537,7 +691,8 @@ def test_scheduler_zero_delay_chaining_releases_immediately() -> None:
         id=851,
         session_id=851,
         session_sequence_index=1,
-        delay=0.0,
+        wait_after_prev_response_s=0.0,
+        session_total_requests=3,
     )
     r2 = RequestConfig(
         model="dummy",
@@ -545,7 +700,8 @@ def test_scheduler_zero_delay_chaining_releases_immediately() -> None:
         id=852,
         session_id=851,
         session_sequence_index=2,
-        delay=0.0,
+        wait_after_prev_response_s=0.0,
+        session_total_requests=3,
     )
 
     scheduler.add_request(r0)
@@ -564,7 +720,7 @@ def test_scheduler_zero_delay_chaining_releases_immediately() -> None:
 
 
 @pytest.mark.unit
-def test_scheduler_only_sequence_zero_honors_arrival_time() -> None:
+def test_scheduler_only_sequence_zero_honors_session_start_time() -> None:
     """Anchors on later sequence indices are ignored."""
     scheduler = DispatchScheduler()
 
@@ -574,7 +730,8 @@ def test_scheduler_only_sequence_zero_honors_arrival_time() -> None:
         id=900,
         session_id=901,
         session_sequence_index=0,
-        arrival_time=0.05,
+        session_start_time=0.05,
+        session_total_requests=3,
     )
     r1 = RequestConfig(
         model="dummy",
@@ -582,7 +739,8 @@ def test_scheduler_only_sequence_zero_honors_arrival_time() -> None:
         id=901,
         session_id=901,
         session_sequence_index=1,
-        delay=0.01,
+        wait_after_prev_response_s=0.01,
+        session_total_requests=3,
     )
     r2 = RequestConfig(
         model="dummy",
@@ -590,8 +748,9 @@ def test_scheduler_only_sequence_zero_honors_arrival_time() -> None:
         id=902,
         session_id=901,
         session_sequence_index=2,
-        arrival_time=999.0,
-        delay=0.02,
+        session_start_time=999.0,
+        wait_after_prev_response_s=0.02,
+        session_total_requests=3,
     )
 
     scheduler.add_request(r0)
@@ -630,7 +789,8 @@ def test_scheduler_duplicate_request_additions_are_idempotent() -> None:
         id=950,
         session_id=951,
         session_sequence_index=0,
-        arrival_time=0.0,
+        session_start_time=0.0,
+        session_total_requests=1,
     )
 
     scheduler.add_request(req)
@@ -654,8 +814,9 @@ def test_scheduler_cancellation_followed_by_superfluous_completions_safe() -> No
         id=990,
         session_id=991,
         session_sequence_index=0,
-        arrival_time=0.0,
+        session_start_time=0.0,
         cancel_session_on_failure=True,
+        session_total_requests=2,
     )
     r1 = RequestConfig(
         model="dummy",
@@ -663,8 +824,9 @@ def test_scheduler_cancellation_followed_by_superfluous_completions_safe() -> No
         id=991,
         session_id=991,
         session_sequence_index=1,
-        delay=0.01,
+        wait_after_prev_response_s=0.01,
         cancel_session_on_failure=True,
+        session_total_requests=2,
     )
 
     scheduler.add_request(r0)

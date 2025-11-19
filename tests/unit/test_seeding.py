@@ -142,4 +142,7 @@ class TestSeeding:
 
         for req1, req2 in zip(requests, requests2):
             assert req1.prompt == req2.prompt
-            assert req1.delay == req2.delay
+            assert req1.session_start_time == req2.session_start_time
+            assert (
+                req1.wait_after_prev_response_s == req2.wait_after_prev_response_s
+            )

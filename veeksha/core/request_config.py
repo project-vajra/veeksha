@@ -12,8 +12,9 @@ class RequestConfig(BaseModel):
         prompt: Tuple of (prompt_text, token_count).
         session_id: Session identifier.
         session_sequence_index: Order within the session (0-based).
-        delay: Relative scheduling delay (inter-arrival if index=0, think-time if >0).
-        arrival_time: Absolute timestamp override (e.g. for trace replay).
+        session_total_requests: Total number of requests planned for the session.
+        session_start_time: Absolute timestamp for first-in-session dispatch.
+        wait_after_prev_response_s: Think time after previous response in session.
         sampling_params: LLM sampling parameters.
         llm_api: Target LLM API name.
     """
@@ -31,16 +32,18 @@ class RequestConfig(BaseModel):
     # -- session metadata
     session_id: int
     session_sequence_index: int
+    session_total_requests: int
     cancel_session_on_failure: bool = True
 
     # -- scheduling
 
-    # if seq_index == 0: delay since prev session start
-    # if seq_index > 0: delay since prev response
-    delay: float = 0.0
+    # absolute scheduling for first-in-session requests
+    # None for all other requests
+    session_start_time: Optional[float] = None
 
-    # absolute scheduling (overrides delay)
-    arrival_time: Optional[float] = None
+    # None for first-in-session requests
+    # delay since prev response of same session for all other requests
+    wait_after_prev_response_s: Optional[float] = None
 
     def __str__(self) -> str:
         return f"RequestConfig(id={self.id})"
