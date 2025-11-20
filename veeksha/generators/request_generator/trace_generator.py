@@ -16,6 +16,7 @@ from veeksha.generators.utils import (
     load_trace,
     process_request_interval_trace,
     process_request_length_trace,
+    base10_to_basen
 )
 from veeksha.logger import init_logger
 
@@ -461,12 +462,47 @@ class TraceRequestGenerator(BaseRequestGenerator):
         return body_ids
 
     def _build_body_ids_from_corpus(self, num_tokens: int) -> List[int]:
-        return generate_random_token_ids_fast(
+        """
+        This function
+        """
+        if num_tokens < 0:
+            raise ValueError("num_tokens must be >= 0")
+        if num_tokens == 0:
+            return []
+
+        # hardcoding page size
+        page_size = 16
+        
+        vocab = sorted(self.tokenizer.vocab.values())[:self.tokenizer.vocab_size]
+
+        if self._global_request_id >= len(vocab) ** page_size:
+            raise RuntimeError(
+                f"Ran out of unique {page_size}-token prefixes"
+            )
+
+        digits = base10_to_basen(self._global_request_id, len(vocab))
+
+        if len(digits) < page_size:
+            digits = [0] * (page_size - len(digits)) + digits
+
+        prefix_ids = [vocab[d] for d in digits]
+
+        if num_tokens <= page_size:
+            return prefix_ids[:page_size]
+
+        if num_tokens < len(prefix_ids):
+            return prefix_ids
+        
+        tokens_remaining = num_tokens - page_size
+        
+        remaining_ids = generate_random_token_ids_fast(
             pretokenized_lines=self.pretokenized_lines,
-            num_tokens=num_tokens,
+            num_tokens=tokens_remaining,
             rng=self.prompt_rng,
         )
 
+        return prefix_ids + remaining_ids
+    
     def _assemble_prompt(
         self,
         request_to_send,

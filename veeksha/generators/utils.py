@@ -374,3 +374,13 @@ def generate_random_token_ids_fast(
             rng.shuffle(indices)
 
     return out
+
+def base10_to_basen(x, n):
+    assert x >= 0
+    assert n >= 2
+    digits = []
+    while x > 0:
+        digits.append(x%n)
+        x = x // n
+    digits.reverse()
+    return digits
