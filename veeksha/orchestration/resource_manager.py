@@ -6,6 +6,7 @@ enabling efficient utilization of GPU resources across multiple experiments.
 """
 
 import time
+import socket
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -64,96 +65,82 @@ class ResourceManager:
             self._detect_gpus()
 
     def _detect_gpus(self) -> None:
-        """Detect available GPUs using Ray and check their memory availability."""
+        """Detect available GPUs using nvidia-ml-py and check their memory availability."""
         try:
-            import ray
+            # Get GPU memory info using nvidia-ml-py
+            gpu_memory_info = self._get_gpu_memory_info()
 
-            ray.init(ignore_reinit_error=True)
-            nodes = ray.nodes()
-            for node in nodes:
-                node_ip = node["NodeManagerAddress"]
-                num_gpus = int(node["Resources"].get("GPU", 0))
-                if num_gpus > 0:
-                    # Get GPU memory info using nvidia-smi
-                    gpu_memory_info = self._get_gpu_memory_info()
+            hostname = socket.gethostname()
+            num_gpus = len(gpu_memory_info)
 
-                    gpus = []
-                    for i in range(num_gpus):
-                        total_memory_mb = 0
-                        is_free = True
+            if num_gpus > 0:
+                gpus = []
+                for i in range(num_gpus):
+                    total_memory_mb = 0
+                    is_free = True
 
-                        if i in gpu_memory_info:
-                            total_memory_mb = int(gpu_memory_info[i]["total"])
-                            free_memory_mb = gpu_memory_info[i]["free"]
-                            # Mark as free only if >= 90% of memory is available
-                            is_free = (free_memory_mb / total_memory_mb) >= 0.90
-                            if not is_free:
-                                logger.warning(
-                                    f"GPU {i} on node {node_ip} has only "
-                                    f"{free_memory_mb / total_memory_mb * 100:.1f}% free memory "
-                                    f"({free_memory_mb:.0f}/{total_memory_mb:.0f} MB), marking as unavailable"
-                                )
-
-                        gpus.append(
-                            GPUInfo(
-                                node_hostname=node_ip,
-                                gpu_id=i,
-                                total_memory_mb=total_memory_mb,
-                                is_free=is_free,
+                    if i in gpu_memory_info:
+                        total_memory_mb = int(gpu_memory_info[i]["total"])
+                        free_memory_mb = gpu_memory_info[i]["free"]
+                        # Mark as free only if >= 90% of memory is available
+                        is_free = (free_memory_mb / total_memory_mb) >= 0.90
+                        if not is_free:
+                            logger.warning(
+                                f"GPU {i} on node {hostname} has only "
+                                f"{free_memory_mb / total_memory_mb * 100:.1f}% free memory "
+                                f"({free_memory_mb:.0f}/{total_memory_mb:.0f} MB), marking as unavailable"
                             )
-                        )
 
-                    self.nodes[node_ip] = NodeInfo(
-                        hostname=node_ip,
-                        num_gpus=num_gpus,
-                        gpus=gpus,
-                        is_fully_free=all(gpu.is_free for gpu in gpus),
+                    gpus.append(
+                        GPUInfo(
+                            node_hostname=hostname,
+                            gpu_id=i,
+                            total_memory_mb=total_memory_mb,
+                            is_free=is_free,
+                        )
                     )
-                    free_gpus = [g for g in gpus if g.is_free]
-                    logger.info(
-                        f"Detected {num_gpus} GPUs on node {node_ip}, "
-                        f"{len(free_gpus)} available (>=90% free): "
-                        f"{[f'GPU{g.gpu_id}' for g in free_gpus]}"
-                    )
+
+                self.nodes[hostname] = NodeInfo(
+                    hostname=hostname,
+                    num_gpus=num_gpus,
+                    gpus=gpus,
+                    is_fully_free=all(gpu.is_free for gpu in gpus),
+                )
+                free_gpus = [g for g in gpus if g.is_free]
+                logger.info(
+                    f"Detected {num_gpus} GPUs on node {hostname}, "
+                    f"{len(free_gpus)} available (>=90% free): "
+                    f"{[f'GPU{g.gpu_id}' for g in free_gpus]}"
+                )
         except ImportError:
-            logger.error("Ray not installed. Cannot detect GPUs.")
+            logger.error("nvidia-ml-py not installed. Cannot detect GPUs.")
         except Exception as e:
-            logger.error(f"Error detecting GPUs with Ray: {e}")
+            logger.error(f"Error detecting GPUs with nvidia-ml-py: {e}")
 
     def _get_gpu_memory_info(self) -> Dict[int, Dict[str, float]]:
-        """Get GPU memory information using nvidia-smi.
+        """Get GPU memory information using nvidia-ml-py.
 
         Returns:
             Dictionary mapping GPU ID to memory info (total, free, used in MB)
         """
         try:
-            import subprocess
+            import pynvml
 
-            result = subprocess.run(
-                [
-                    "nvidia-smi",
-                    "--query-gpu=index,memory.total,memory.free,memory.used",
-                    "--format=csv,noheader,nounits",
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-
+            pynvml.nvmlInit()
+            device_count = pynvml.nvmlDeviceGetCount()
             gpu_info = {}
-            for line in result.stdout.strip().split("\n"):
-                if line.strip():
-                    parts = [p.strip() for p in line.split(",")]
-                    gpu_id = int(parts[0])
-                    total_mb = float(parts[1])
-                    free_mb = float(parts[2])
-                    used_mb = float(parts[3])
-                    gpu_info[gpu_id] = {
-                        "total": total_mb,
-                        "free": free_mb,
-                        "used": used_mb,
-                    }
-
+            for i in range(device_count):
+                handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+                mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                total_mb = int(mem_info.total) / (1024 * 1024)
+                free_mb = int(mem_info.free) / (1024 * 1024)
+                used_mb = int(mem_info.used) / (1024 * 1024)
+                gpu_info[i] = {
+                    "total": total_mb,
+                    "free": free_mb,
+                    "used": used_mb,
+                }
+            pynvml.nvmlShutdown()
             return gpu_info
         except Exception as e:
             logger.warning(f"Failed to get GPU memory info: {e}")
