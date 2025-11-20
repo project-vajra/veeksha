@@ -483,16 +483,17 @@ class TraceRequestGenerator(BaseRequestGenerator):
             )
 
         digits = base10_to_basen(self._global_request_id, len(vocab))
-
-        if len(digits) < page_size:
-            digits = [0] * (page_size - len(digits)) + digits
-
         prefix_ids = [vocab[d] for d in digits]
 
-        if num_tokens <= page_size:
-            return prefix_ids[:page_size]
+        # add random tokens to match page_size
+        while page_size - len(prefix_ids):
+            i = self.prompt_rng.randint(0, len(vocab) - 1)
+            prefix_ids.append(vocab[i])
+
+        if num_tokens <= len(prefix_ids):
+            return prefix_ids[:num_tokens]
         
-        tokens_remaining = num_tokens - page_size
+        tokens_remaining = num_tokens - len(prefix_ids)
         
         remaining_ids = generate_random_token_ids_fast(
             pretokenized_lines=self.pretokenized_lines,
