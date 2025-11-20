@@ -28,6 +28,14 @@ class ServerConfig:
         },
     )
 
+    python_executable: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Path to Python executable to use for launching the server. "
+            "If None, uses sys.executable"
+        },
+    )
+
     # Model configuration
     # Note: When used with BenchmarkConfig, this will be auto-populated from ClientConfig
     model: str = field(
@@ -147,6 +155,7 @@ class ServerConfig:
 
         return {
             "engine": self.engine,
+            "python_executable": self.python_executable,
             "host": self.host,
             "port": self.port,
             "api_key": self.api_key,

@@ -38,7 +38,7 @@ class BaseServerManager(abc.ABC):
         self._log_file = None  # Store log file for cleanup
         self.resource_manager = ResourceManager()
         self._allocated_job_id: Optional[str] = None  # Track allocated resources
-
+        
     @property
     def is_running(self) -> bool:
         """Check if server is currently running."""
@@ -47,6 +47,15 @@ class BaseServerManager(abc.ABC):
             and self.process is not None
             and self.process.poll() is None
         )
+    @property
+    def python_executable(self) -> str:
+        """Get the Python executable to use for launching the server.
+        
+        Returns:
+            Path to Python executable (from config or sys.executable)
+        """
+        import sys
+        return self.config.python_executable or sys.executable
 
     @abc.abstractmethod
     def _build_launch_command(self) -> list[str]:
