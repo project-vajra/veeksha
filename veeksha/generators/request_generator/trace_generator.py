@@ -463,7 +463,9 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
     def _build_body_ids_from_corpus(self, num_tokens: int) -> List[int]:
         """
-        This function
+        This function creates unique first page_size tokens based on self._global_request_id.
+        The rest of the tokens are populated from the corpus.
+        However, for return list x, it is not guaranteed that encode(decode(x)) = x.
         """
         if num_tokens < 0:
             raise ValueError("num_tokens must be >= 0")
@@ -489,9 +491,6 @@ class TraceRequestGenerator(BaseRequestGenerator):
 
         if num_tokens <= page_size:
             return prefix_ids[:page_size]
-
-        if num_tokens < len(prefix_ids):
-            return prefix_ids
         
         tokens_remaining = num_tokens - page_size
         
