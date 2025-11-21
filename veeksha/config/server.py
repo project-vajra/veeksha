@@ -156,6 +156,7 @@ class ServerConfig:
 
         return {
             "engine": self.engine,
+            "model": self.model if isinstance(self.model, str) else str(self.model),
             "environment_path": self.environment_path,
             "host": self.host,
             "port": self.port,
