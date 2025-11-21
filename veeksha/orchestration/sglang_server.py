@@ -99,7 +99,6 @@ class SGLangServerManager(BaseServerManager):
             List of formatted command-line arguments
         """
         args = []
-        additional_args_dict = self.get_additional_args_dict()
 
         # Handle special cases if any (similar to vLLM's rope_scaling)
         # For now, no special handling needed, but this can be extended

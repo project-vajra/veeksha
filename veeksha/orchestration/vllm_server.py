@@ -71,7 +71,11 @@ class VLLMServerManager(BaseServerManager):
 
         # Process additional arguments (parsed from JSON string in __post_init__)
         additional_args_dict = self.get_additional_args_dict()
+        # Keys that are handled specially by _parse_additional_vllm_args
+        special_keys = {"rope_scaling"}
         for key, value in additional_args_dict.items():
+            if key in special_keys:
+                continue
             if value is True:
                 # Boolean flags
                 command.append(f"--{key}")
