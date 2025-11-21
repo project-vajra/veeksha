@@ -42,7 +42,7 @@ class VLLMServerManager(BaseServerManager):
             List of command arguments
         """
         command = [
-            self.python_executable,
+            "python",
             "-m",
             "vllm.entrypoints.openai.api_server",
             "--model",

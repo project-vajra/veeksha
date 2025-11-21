@@ -48,17 +48,6 @@ class BaseServerManager(abc.ABC):
             and self.process.poll() is None
         )
 
-    @property
-    def python_executable(self) -> str:
-        """Get the Python executable to use for launching the server.
-
-        Returns:
-            Path to Python executable (from config or sys.executable)
-        """
-        import sys
-
-        return self.config.python_executable or sys.executable
-
     @abc.abstractmethod
     def _build_launch_command(self) -> list[str]:
         """Build the command to launch the server.
@@ -116,6 +105,23 @@ class BaseServerManager(abc.ABC):
             import os
 
             env = os.environ.copy()
+
+            # If an environment path is provided in the config, prepend its
+            # bin/Scripts directory to PATH so the subprocess resolves the
+            # `python` executable from that environment.
+            env_path = getattr(self.config, "environment_path", None)
+            if env_path:
+                # Determine platform-specific scripts directory
+                scripts_dir = "Scripts" if os.name == "nt" else "bin"
+                bin_dir = os.path.join(env_path, scripts_dir)
+                if os.path.isdir(bin_dir):
+                    old_path = env.get("PATH", "")
+                    env["PATH"] = f"{bin_dir}{os.pathsep}{old_path}"
+                    logger.info(f"Prepended {bin_dir} to PATH for subprocess")
+                else:
+                    logger.warning(
+                        f"Configured environment_path '{env_path}' does not contain {scripts_dir} at {bin_dir}"
+                    )
 
             # Set CUDA_VISIBLE_DEVICES if gpu_ids specified
             gpu_env = self.config.get_gpu_env_var()

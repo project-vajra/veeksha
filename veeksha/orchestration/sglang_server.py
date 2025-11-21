@@ -42,7 +42,7 @@ class SGLangServerManager(BaseServerManager):
             List of command arguments
         """
         command = [
-            self.python_executable,
+            "python",
             "-m",
             "sglang.launch_server",
             "--model-path",

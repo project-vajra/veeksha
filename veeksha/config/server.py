@@ -28,11 +28,12 @@ class ServerConfig:
         },
     )
 
-    python_executable: Optional[str] = field(
+    environment_path: Optional[str] = field(
         default=None,
         metadata={
-            "help": "Path to Python executable to use for launching the server. "
-            "If None, uses sys.executable"
+            "help": "Path to a Python environment directory (virtualenv/conda). "
+            "If provided, the environment's bin/Scripts directory will be prepended to PATH "
+            "when launching servers. If None, the current PATH is used."
         },
     )
 
@@ -155,7 +156,7 @@ class ServerConfig:
 
         return {
             "engine": self.engine,
-            "python_executable": self.python_executable,
+            "environment_path": self.environment_path,
             "host": self.host,
             "port": self.port,
             "api_key": self.api_key,

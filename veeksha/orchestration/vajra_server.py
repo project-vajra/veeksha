@@ -36,7 +36,7 @@ class VajraServerManager(BaseServerManager):
             List of command arguments
         """
         command = [
-            self.python_executable,
+            "python",
             "-m",
             "vajra.entrypoints.openai.server",
             "--model_deployment_config_model",
