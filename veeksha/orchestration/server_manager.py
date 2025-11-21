@@ -74,21 +74,24 @@ class BaseServerManager(abc.ABC):
                 num_gpus = self.config.get_num_gpus()
                 logger.info(f"Auto-allocating {num_gpus} GPUs for server...")
 
+                job_id = (
+                    f"server_{self.config.host}_{self.config.port}_{int(time.time())}"
+                )
                 resource_mapping = self.resource_manager.wait_for_resources(
                     num_gpus=num_gpus,
                     timeout=300,  # 5 minute timeout
-                    job_id=f"server_{self.config.host}_{self.config.port}_{int(time.time())}",
+                    job_id=job_id,
                 )
 
                 if resource_mapping is None:
                     logger.error(f"Failed to allocate {num_gpus} GPUs for server")
                     return False
 
+                # Track allocated job id for later release / Vajra mapping
+                self._allocated_job_id = job_id
+
                 # Extract GPU IDs from resource mapping
                 gpu_ids = [gpu_id for _, gpu_id in resource_mapping]
-                self._allocated_job_id = (
-                    f"server_{self.config.host}_{self.config.port}_{int(time.time())}"
-                )
 
                 # Update config with allocated GPUs
                 # Create a new config object with the allocated gpu_ids
@@ -152,6 +155,13 @@ class BaseServerManager(abc.ABC):
 
         except Exception as e:
             logger.error(f"Failed to launch server: {e}")
+            # If we allocated GPUs earlier, make sure to release them
+            if self._allocated_job_id is not None:
+                logger.info(
+                    f"Releasing allocated resources for job {self._allocated_job_id} due to launch failure"
+                )
+                self.resource_manager.release_resources(self._allocated_job_id)
+                self._allocated_job_id = None
             return False
 
     def health_check(self) -> bool:
