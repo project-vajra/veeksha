@@ -62,7 +62,7 @@ class ResourceManager:
         """
         self.nodes: Dict[str, NodeInfo] = {}
         self.allocated_resources: Dict[str, ResourceMapping] = {}  # job_id -> resources
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
         if detect_gpus:
             self._detect_gpus()
@@ -184,13 +184,15 @@ class ResourceManager:
 
     def get_total_gpus(self) -> int:
         """Get total number of GPUs across all nodes."""
-        return sum(node.num_gpus for node in self.nodes.values())
+        with self._lock:
+            return sum(node.num_gpus for node in self.nodes.values())
 
     def get_free_gpus(self) -> int:
         """Get number of free GPUs across all nodes."""
-        return sum(
-            sum(1 for gpu in node.gpus if gpu.is_free) for node in self.nodes.values()
-        )
+        with self._lock:
+            return sum(
+                sum(1 for gpu in node.gpus if gpu.is_free) for node in self.nodes.values()
+            )
 
     def allocate_resources(
         self, num_gpus: int, job_id: Optional[str] = None, contiguous: bool = True
@@ -302,15 +304,16 @@ class ResourceManager:
         Returns:
             Total GPU memory in MB across all allocated GPUs
         """
-        total_memory = 0
-        for hostname, gpu_id in resource_mapping:
-            if hostname in self.nodes:
-                node = self.nodes[hostname]
-                for gpu in node.gpus:
-                    if gpu.gpu_id == gpu_id:
-                        total_memory += gpu.total_memory_mb
-                        break
-        return total_memory
+        with self._lock:
+            total_memory = 0
+            for hostname, gpu_id in resource_mapping:
+                if hostname in self.nodes:
+                    node = self.nodes[hostname]
+                    for gpu in node.gpus:
+                        if gpu.gpu_id == gpu_id:
+                            total_memory += gpu.total_memory_mb
+                            break
+            return total_memory
 
     def _allocate_contiguous(
         self, free_gpus: List[GPUInfo], num_gpus: int
@@ -383,32 +386,33 @@ class ResourceManager:
         Returns:
             Dictionary with resource information
         """
-        status = {
-            "total_nodes": len(self.nodes),
-            "total_gpus": self.get_total_gpus(),
-            "free_gpus": self.get_free_gpus(),
-            "allocated_gpus": self.get_total_gpus() - self.get_free_gpus(),
-            "active_jobs": len(self.allocated_resources),
-            "nodes": {},
-        }
-
-        for hostname, node in self.nodes.items():
-            node_status = {
-                "num_gpus": node.num_gpus,
-                "free_gpus": sum(1 for gpu in node.gpus if gpu.is_free),
-                "fully_free": node.is_fully_free,
-                "gpus": [
-                    {
-                        "gpu_id": gpu.gpu_id,
-                        "free": gpu.is_free,
-                        "memory_mb": gpu.total_memory_mb,
-                    }
-                    for gpu in node.gpus
-                ],
+        with self._lock:
+            status = {
+                "total_nodes": len(self.nodes),
+                "total_gpus": self.get_total_gpus(),
+                "free_gpus": self.get_free_gpus(),
+                "allocated_gpus": self.get_total_gpus() - self.get_free_gpus(),
+                "active_jobs": len(self.allocated_resources),
+                "nodes": {},
             }
-            status["nodes"][hostname] = node_status
 
-        return status
+            for hostname, node in self.nodes.items():
+                node_status = {
+                    "num_gpus": node.num_gpus,
+                    "free_gpus": sum(1 for gpu in node.gpus if gpu.is_free),
+                    "fully_free": node.is_fully_free,
+                    "gpus": [
+                        {
+                            "gpu_id": gpu.gpu_id,
+                            "free": gpu.is_free,
+                            "memory_mb": gpu.total_memory_mb,
+                        }
+                        for gpu in node.gpus
+                    ],
+                }
+                status["nodes"][hostname] = node_status
+
+            return status
 
     def wait_for_resources(
         self,
