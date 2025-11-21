@@ -6,6 +6,7 @@ enabling efficient utilization of GPU resources across multiple experiments.
 """
 
 import socket
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -60,6 +61,7 @@ class ResourceManager:
         """
         self.nodes: Dict[str, NodeInfo] = {}
         self.allocated_resources: Dict[str, ResourceMapping] = {}  # job_id -> resources
+        self._lock = threading.Lock()
 
         if detect_gpus:
             self._detect_gpus()
@@ -156,20 +158,21 @@ class ResourceManager:
             num_gpus: Number of GPUs on the node
             gpu_memory_mb: Memory per GPU in MB (optional)
         """
-        gpus = []
-        for gpu_id in range(num_gpus):
-            gpu_info = GPUInfo(
-                node_hostname=hostname,
-                gpu_id=gpu_id,
-                total_memory_mb=gpu_memory_mb or 0,
-                is_free=True,
-            )
-            gpus.append(gpu_info)
+        with self._lock:
+            gpus = []
+            for gpu_id in range(num_gpus):
+                gpu_info = GPUInfo(
+                    node_hostname=hostname,
+                    gpu_id=gpu_id,
+                    total_memory_mb=gpu_memory_mb or 0,
+                    is_free=True,
+                )
+                gpus.append(gpu_info)
 
-        self.nodes[hostname] = NodeInfo(
-            hostname=hostname, num_gpus=num_gpus, gpus=gpus, is_fully_free=True
-        )
-        logger.info(f"Added node {hostname} with {num_gpus} GPUs")
+            self.nodes[hostname] = NodeInfo(
+                hostname=hostname, num_gpus=num_gpus, gpus=gpus, is_fully_free=True
+            )
+            logger.info(f"Added node {hostname} with {num_gpus} GPUs")
 
     def get_total_gpus(self) -> int:
         """Get total number of GPUs across all nodes."""
@@ -194,44 +197,80 @@ class ResourceManager:
         Returns:
             ResourceMapping of allocated (hostname, gpu_id) pairs, or None if allocation failed
         """
-        if num_gpus <= 0:
-            logger.error(f"Invalid num_gpus: {num_gpus}")
-            return None
+        with self._lock:
+            if num_gpus <= 0:
+                logger.error(f"Invalid num_gpus: {num_gpus}")
+                return None
 
-        if num_gpus > self.get_total_gpus():
-            logger.error(
-                f"Requested {num_gpus} GPUs, but only {self.get_total_gpus()} available in cluster"
-            )
-            return None
+            if num_gpus > self.get_total_gpus():
+                logger.error(
+                    f"Requested {num_gpus} GPUs, but only {self.get_total_gpus()} available in cluster"
+                )
+                return None
 
-        if num_gpus > self.get_free_gpus():
-            logger.warning(
-                f"Requested {num_gpus} GPUs, but only {self.get_free_gpus()} currently free"
-            )
-            return None
+            if num_gpus > self.get_free_gpus():
+                logger.warning(
+                    f"Requested {num_gpus} GPUs, but only {self.get_free_gpus()} currently free"
+                )
+                return None
 
-        # Try to allocate on a single node first
-        for node in self.nodes.values():
-            free_gpus = [gpu for gpu in node.gpus if gpu.is_free]
+            # Try to allocate on a single node first
+            for node in self.nodes.values():
+                free_gpus = [gpu for gpu in node.gpus if gpu.is_free]
 
-            if len(free_gpus) >= num_gpus:
-                # Check for contiguous allocation if required
-                if contiguous:
-                    allocated = self._allocate_contiguous(free_gpus, num_gpus)
-                else:
-                    allocated = free_gpus[:num_gpus]
+                if len(free_gpus) >= num_gpus:
+                    # Check for contiguous allocation if required
+                    if contiguous:
+                        allocated = self._allocate_contiguous(free_gpus, num_gpus)
+                    else:
+                        allocated = free_gpus[:num_gpus]
 
-                if allocated:
+                    if allocated:
+                        resource_mapping = [
+                            (gpu.node_hostname, gpu.gpu_id) for gpu in allocated
+                        ]
+
+                        # Mark GPUs as allocated
+                        for gpu in allocated:
+                            gpu.is_free = False
+
+                        # Update node status
+                        node.is_fully_free = all(gpu.is_free for gpu in node.gpus)
+
+                        # Track allocation
+                        if job_id is None:
+                            job_id = f"job_{int(time.time() * 1000)}"
+                        self.allocated_resources[job_id] = resource_mapping
+
+                        logger.info(
+                            f"Allocated {num_gpus} GPUs for {job_id}: "
+                            f"{[(h, g) for h, g in resource_mapping]}"
+                        )
+                        return resource_mapping
+
+            # Multi-node allocation (if single-node failed and we have multiple nodes)
+            if len(self.nodes) > 1 and not contiguous:
+                allocated_gpus = []
+                for node in self.nodes.values():
+                    if len(allocated_gpus) >= num_gpus:
+                        break
+
+                    free_gpus = [gpu for gpu in node.gpus if gpu.is_free]
+                    remaining_needed = num_gpus - len(allocated_gpus)
+                    allocated_gpus.extend(free_gpus[:remaining_needed])
+
+                if len(allocated_gpus) == num_gpus:
                     resource_mapping = [
-                        (gpu.node_hostname, gpu.gpu_id) for gpu in allocated
+                        (gpu.node_hostname, gpu.gpu_id) for gpu in allocated_gpus
                     ]
 
                     # Mark GPUs as allocated
-                    for gpu in allocated:
+                    for gpu in allocated_gpus:
                         gpu.is_free = False
 
-                    # Update node status
-                    node.is_fully_free = all(gpu.is_free for gpu in node.gpus)
+                    # Update all node statuses
+                    for node in self.nodes.values():
+                        node.is_fully_free = all(gpu.is_free for gpu in node.gpus)
 
                     # Track allocation
                     if job_id is None:
@@ -239,47 +278,12 @@ class ResourceManager:
                     self.allocated_resources[job_id] = resource_mapping
 
                     logger.info(
-                        f"Allocated {num_gpus} GPUs for {job_id}: "
-                        f"{[(h, g) for h, g in resource_mapping]}"
+                        f"Allocated {num_gpus} GPUs across multiple nodes for {job_id}"
                     )
                     return resource_mapping
 
-        # Multi-node allocation (if single-node failed and we have multiple nodes)
-        if len(self.nodes) > 1 and not contiguous:
-            allocated_gpus = []
-            for node in self.nodes.values():
-                if len(allocated_gpus) >= num_gpus:
-                    break
-
-                free_gpus = [gpu for gpu in node.gpus if gpu.is_free]
-                remaining_needed = num_gpus - len(allocated_gpus)
-                allocated_gpus.extend(free_gpus[:remaining_needed])
-
-            if len(allocated_gpus) == num_gpus:
-                resource_mapping = [
-                    (gpu.node_hostname, gpu.gpu_id) for gpu in allocated_gpus
-                ]
-
-                # Mark GPUs as allocated
-                for gpu in allocated_gpus:
-                    gpu.is_free = False
-
-                # Update all node statuses
-                for node in self.nodes.values():
-                    node.is_fully_free = all(gpu.is_free for gpu in node.gpus)
-
-                # Track allocation
-                if job_id is None:
-                    job_id = f"job_{int(time.time() * 1000)}"
-                self.allocated_resources[job_id] = resource_mapping
-
-                logger.info(
-                    f"Allocated {num_gpus} GPUs across multiple nodes for {job_id}"
-                )
-                return resource_mapping
-
-        logger.warning(f"Could not allocate {num_gpus} GPUs")
-        return None
+            logger.warning(f"Could not allocate {num_gpus} GPUs")
+            return None
 
     def get_gpu_memory_mb(self, resource_mapping: ResourceMapping) -> int:
         """Get total GPU memory for allocated resources.
@@ -340,29 +344,30 @@ class ResourceManager:
         Returns:
             True if resources were released, False if job_id not found
         """
-        if job_id not in self.allocated_resources:
-            logger.warning(f"No allocation found for job_id: {job_id}")
-            return False
+        with self._lock:
+            if job_id not in self.allocated_resources:
+                logger.warning(f"No allocation found for job_id: {job_id}")
+                return False
 
-        resource_mapping = self.allocated_resources[job_id]
+            resource_mapping = self.allocated_resources[job_id]
 
-        # Free the GPUs
-        for hostname, gpu_id in resource_mapping:
-            if hostname in self.nodes:
-                node = self.nodes[hostname]
-                for gpu in node.gpus:
-                    if gpu.gpu_id == gpu_id:
-                        gpu.is_free = True
-                        break
+            # Free the GPUs
+            for hostname, gpu_id in resource_mapping:
+                if hostname in self.nodes:
+                    node = self.nodes[hostname]
+                    for gpu in node.gpus:
+                        if gpu.gpu_id == gpu_id:
+                            gpu.is_free = True
+                            break
 
-                # Update node status
-                node.is_fully_free = all(gpu.is_free for gpu in node.gpus)
+                    # Update node status
+                    node.is_fully_free = all(gpu.is_free for gpu in node.gpus)
 
-        # Remove from tracking
-        del self.allocated_resources[job_id]
+            # Remove from tracking
+            del self.allocated_resources[job_id]
 
-        logger.info(f"Released resources for {job_id}")
-        return True
+            logger.info(f"Released resources for {job_id}")
+            return True
 
     def get_resource_status(self) -> Dict[str, Any]:
         """Get current resource status.
