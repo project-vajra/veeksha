@@ -15,6 +15,8 @@ This is useful for:
 
 import json
 import os
+import sys
+import argparse
 
 from veeksha.benchmark import run_benchmark
 from veeksha.config.benchmark import BenchmarkConfig
@@ -30,7 +32,7 @@ from veeksha.orchestration import managed_server
 logger = init_logger(__name__)
 
 
-def example_hellaswag():
+def example_hellaswag(env_path=None):
     """Run HellaSwag benchmark with automatic server orchestration."""
 
     logger.info("=" * 80)
@@ -46,10 +48,12 @@ def example_hellaswag():
         tensor_parallel_size=1,
         auto_shutdown=True,
         startup_timeout=300,
+        environment_path=env_path,
     )
 
     # Configure lm_eval benchmark
     benchmark_config = BenchmarkConfig(
+        api_url=f"http://localhost:{server_config.port}/v1",
         seed=42,
         timeout=1800,  # 30 minutes
         max_completed_requests=10000,  # Process all requests for lm_eval
@@ -65,6 +69,7 @@ def example_hellaswag():
         metrics_config=MetricsConfig(
             output_dir="./lmeval_results/hellaswag",
         ),
+        server_config=server_config,
     )
 
     # Run with orchestration
@@ -91,7 +96,7 @@ def example_hellaswag():
     logger.info("Server shut down")
 
 
-def example_multiple_tasks():
+def example_multiple_tasks(env_path=None):
     """Run multiple lm_eval tasks with automatic server orchestration."""
 
     logger.info("=" * 80)
@@ -107,10 +112,12 @@ def example_multiple_tasks():
         tensor_parallel_size=1,
         auto_shutdown=True,
         startup_timeout=300,
+        environment_path=env_path,
     )
 
     # Configure lm_eval benchmark with multiple tasks
     benchmark_config = BenchmarkConfig(
+        api_url=f"http://localhost:{server_config.port}/v1",
         seed=42,
         timeout=3600,  # 1 hour
         max_completed_requests=10000,  # Process all requests for lm_eval
@@ -126,6 +133,7 @@ def example_multiple_tasks():
         metrics_config=MetricsConfig(
             output_dir="./lmeval_results/multiple_tasks",
         ),
+        server_config=server_config,
     )
 
     # Run with orchestration
@@ -159,7 +167,7 @@ def example_multiple_tasks():
     logger.info("Server shut down")
 
 
-def example_model_comparison():
+def example_model_comparison(env_path=None):
     """Compare multiple models on the same task."""
 
     logger.info("=" * 80)
@@ -187,10 +195,12 @@ def example_model_comparison():
             tensor_parallel_size=1,
             auto_shutdown=True,
             startup_timeout=300,
+            environment_path=env_path,
         )
 
         # Create benchmark config
         benchmark_config = BenchmarkConfig(
+            api_url=f"http://localhost:{server_config.port}/v1",
             seed=42,
             timeout=1800,
             max_completed_requests=10000,  # Process all requests for lm_eval
@@ -206,6 +216,7 @@ def example_model_comparison():
             metrics_config=MetricsConfig(
                 output_dir=f"./lmeval_results/comparison/{model.replace('/', '_')}",
             ),
+            server_config=server_config,
         )
 
         try:
@@ -248,16 +259,40 @@ def example_model_comparison():
 
 def main():
     """Run example based on command line argument or run all."""
-    import sys
+    parser = argparse.ArgumentParser(
+        description="Run lm_eval orchestration examples"
+    )
+    parser.add_argument(
+        "--env-path",
+        dest="env_path",
+        default=None,
+        help=(
+            "Path to the server environment to use."
+            " If omitted, defaults to the Python environment root (parent of `bin/`)."
+        ),
+    )
+    parser.add_argument(
+        "example",
+        nargs="?",
+        help="Specific example to run: hellaswag, multiple, comparison"
+    )
+    args = parser.parse_args()
 
-    if len(sys.argv) > 1:
-        example = sys.argv[1]
+    # If env path not provided, use the environment root for the running Python
+    logger.info("%s", args)
+    if args.env_path:
+        env_path = args.env_path
+    else:
+        env_path = os.path.dirname(os.path.dirname(sys.executable))
+
+    if args.example:
+        example = args.example
         if example == "hellaswag":
-            example_hellaswag()
+            example_hellaswag(env_path=env_path)
         elif example == "multiple":
-            example_multiple_tasks()
+            example_multiple_tasks(env_path=env_path)
         elif example == "comparison":
-            example_model_comparison()
+            example_model_comparison(env_path=env_path)
         else:
             logger.error(f"Unknown example: {example}")
             logger.info("Available examples: hellaswag, multiple, comparison")
@@ -268,13 +303,13 @@ def main():
         )
         logger.info("")
 
-        example_hellaswag()
+        example_hellaswag(env_path=env_path)
         logger.info("\n" * 2)
 
-        example_multiple_tasks()
+        example_multiple_tasks(env_path=env_path)
         logger.info("\n" * 2)
 
-        example_model_comparison()
+        example_model_comparison(env_path=env_path)
 
 
 if __name__ == "__main__":
