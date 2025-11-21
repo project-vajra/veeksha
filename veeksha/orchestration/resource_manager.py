@@ -8,6 +8,7 @@ enabling efficient utilization of GPU resources across multiple experiments.
 import socket
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -115,9 +116,9 @@ class ResourceManager:
                     f"{[f'GPU{g.gpu_id}' for g in free_gpus]}"
                 )
         except ImportError:
-            logger.error("nvidia-ml-py not installed. Cannot detect GPUs.")
+            logger.exception("nvidia-ml-py not installed. Cannot detect GPUs.")
         except Exception as e:
-            logger.error(f"Error detecting GPUs with nvidia-ml-py: {e}")
+            logger.exception("Error detecting GPUs with nvidia-ml-py")
 
     def _get_gpu_memory_info(self) -> Dict[int, Dict[str, float]]:
         """Get GPU memory information using nvidia-ml-py.
@@ -168,6 +169,13 @@ class ResourceManager:
                     is_free=True,
                 )
                 gpus.append(gpu_info)
+
+            if hostname in self.nodes:
+                existing = self.nodes[hostname]
+                logger.warning(
+                    f"Overwriting existing node {hostname}: "
+                    f"num_gpus={existing.num_gpus}, is_fully_free={existing.is_fully_free}"
+                )
 
             self.nodes[hostname] = NodeInfo(
                 hostname=hostname, num_gpus=num_gpus, gpus=gpus, is_fully_free=True
@@ -239,7 +247,7 @@ class ResourceManager:
 
                         # Track allocation
                         if job_id is None:
-                            job_id = f"job_{int(time.time() * 1000)}"
+                            job_id = f"job_{uuid.uuid4().hex}"
                         self.allocated_resources[job_id] = resource_mapping
 
                         logger.info(
@@ -274,7 +282,7 @@ class ResourceManager:
 
                     # Track allocation
                     if job_id is None:
-                        job_id = f"job_{int(time.time() * 1000)}"
+                        job_id = f"job_{uuid.uuid4().hex}"
                     self.allocated_resources[job_id] = resource_mapping
 
                     logger.info(
