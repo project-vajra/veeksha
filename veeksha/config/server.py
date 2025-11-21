@@ -81,7 +81,7 @@ class ServerConfig:
         default="{}",
         metadata={
             "help": "Additional engine-specific arguments as JSON string, dict, or None. "
-            "Example: '{\"enable-prefix-caching\": true}' or {\"enable-prefix-caching\": true}"
+            'Example: \'{"enable-prefix-caching": true}\' or {"enable-prefix-caching": true}'
         },
     )
 

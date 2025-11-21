@@ -368,7 +368,9 @@ class BaseServerManager(abc.ABC):
             # file object's current pointer. This avoids disturbing the file
             # pointer used by the subprocess and reads bytes safely even while
             # the subprocess is still running.
-            with open(self._log_file.name, "r", encoding="utf-8", errors="replace") as f:
+            with open(
+                self._log_file.name, "r", encoding="utf-8", errors="replace"
+            ) as f:
                 all_lines = f.read().splitlines()
 
             if lines <= 0:
@@ -394,8 +396,8 @@ class BaseServerManager(abc.ABC):
         Returns:
             Dictionary of parsed additional arguments
         """
-        import json
         import copy
+        import json
 
         additional_args = self.config.additional_args
         if additional_args is None:
@@ -406,7 +408,9 @@ class BaseServerManager(abc.ABC):
             try:
                 return json.loads(additional_args)
             except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON in additional_args: {additional_args!r}. Error: {e}")
+                raise ValueError(
+                    f"Invalid JSON in additional_args: {additional_args!r}. Error: {e}"
+                )
         else:
             raise TypeError(
                 f"additional_args must be None, dict, or str (JSON), got {type(additional_args).__name__}: {additional_args!r}"
