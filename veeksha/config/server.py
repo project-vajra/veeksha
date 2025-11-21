@@ -7,7 +7,7 @@ LLM inference servers like vLLM.
 
 import json
 from dataclasses import field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 
@@ -77,11 +77,11 @@ class ServerConfig:
         default=None, metadata={"help": "Maximum model context length"}
     )
 
-    additional_args: str = field(
+    additional_args: Union[str, Dict[str, Any], None] = field(
         default="{}",
         metadata={
-            "help": "Additional engine-specific arguments as JSON string. "
-            "Example: '{\"enable-prefix-caching\": true}'"
+            "help": "Additional engine-specific arguments as JSON string, dict, or None. "
+            "Example: '{\"enable-prefix-caching\": true}' or {\"enable-prefix-caching\": true}"
         },
     )
 
@@ -149,15 +149,23 @@ class ServerConfig:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""
-        # Parse additional_args from JSON string
+        # Parse additional_args
         additional_args_dict: Dict[str, Any] = {}
-        if self.additional_args:
+        if self.additional_args is None:
+            additional_args_dict = {}
+        elif isinstance(self.additional_args, dict):
+            additional_args_dict = self.additional_args
+        elif isinstance(self.additional_args, str):
             try:
                 additional_args_dict = json.loads(self.additional_args)
             except (json.JSONDecodeError, ValueError) as e:
                 raise ValueError(
                     f"Invalid JSON in configuration field 'additional_args': {self.additional_args[:100]}{'...' if len(self.additional_args) > 100 else ''}. Original error: {e}"
                 ) from e
+        else:
+            raise TypeError(
+                f"additional_args must be None, dict, or str (JSON), got {type(self.additional_args).__name__}: {self.additional_args!r}"
+            )
 
         return {
             "engine": self.engine,

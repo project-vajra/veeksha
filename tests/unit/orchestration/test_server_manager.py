@@ -168,11 +168,34 @@ class TestBaseServerManager:
 
     def test_get_additional_args_dict(self):
         """Test parsing additional args."""
+        # Test string (JSON)
         config = ServerConfig(additional_args='{"key": "value"}')
         manager = TestServerManager(config)
-        
         args = manager.get_additional_args_dict()
         assert args == {"key": "value"}
+
+        # Test None
+        config = ServerConfig(additional_args=None)
+        manager = TestServerManager(config)
+        args = manager.get_additional_args_dict()
+        assert args == {}
+
+        # Test dict
+        config = ServerConfig(additional_args={"key": "value"})
+        manager = TestServerManager(config)
+        args = manager.get_additional_args_dict()
+        assert args == {"key": "value"}
+        # Ensure it's a shallow copy
+        args["new"] = "added"
+        assert config.additional_args == {"key": "value"}
+
+        # Test invalid JSON string
+        config = ServerConfig(additional_args='{"invalid": json}')
+        manager = TestServerManager(config)
+        with pytest.raises(ValueError, match="Invalid JSON in additional_args"):
+            manager.get_additional_args_dict()
+
+        # Test invalid type - can't test directly since ServerConfig is frozen, but method handles it
 
     def test_auto_allocation(self):
         """Test auto-allocation of GPUs during launch."""
@@ -203,4 +226,31 @@ class TestBaseServerManager:
             call_args = mock_popen.call_args
             env = call_args[1]['env']
             assert env['CUDA_VISIBLE_DEVICES'] == "0,1"
+
+    def test_get_server_logs_reads_last_n_lines(self, tmp_path, manager):
+        """Test that get_server_logs returns the last N lines from the log file."""
+        import tempfile
+        # Create a temporary file and write some lines
+        tmp = tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".log")
+        try:
+            tmp.write("line1\nline2\nline3\n")
+            tmp.flush()
+            # Attach the file object to the manager
+            manager._log_file = tmp
+
+            stdout, stderr = manager.get_server_logs(lines=2)
+            assert stdout.strip() == "line2\nline3"
+            assert stderr == ""
+        finally:
+            try:
+                tmp.close()
+            except Exception:
+                pass
+
+    def test_get_server_logs_no_log_file(self, manager):
+        """If no log file was created, return two empty strings."""
+        manager._log_file = None
+        stdout, stderr = manager.get_server_logs(lines=10)
+        assert stdout == ""
+        assert stderr == ""
 

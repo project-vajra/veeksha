@@ -343,39 +343,74 @@ class BaseServerManager(abc.ABC):
             lines: Number of lines to retrieve
 
         Returns:
-            Tuple of (stdout, stderr)
+            Tuple of (stdout, stderr). Note that by default the server
+            subprocess redirects stderr into stdout, so stderr will usually
+            be an empty string and stdout will contain both streams.
         """
-        if self.process is None:
+        # If we never set up a log file we can't return anything useful
+        if self._log_file is None:
             return "", ""
 
         # Note: This is a simple implementation that reads available output
-        # For production, consider using proper log file management
+        # For production, consider using proper log file management (rotation,
+        # streaming, or structured logs). The server's launch() redirects
+        # both stdout and stderr to the same temporary file, so we return
+        # that combined stream as stdout and leave stderr empty.
         try:
-            # Try to read without blocking
-            pass
+            # Ensure any buffered output is flushed before we read the file
+            try:
+                self._log_file.flush()
+            except Exception:
+                # Ignore any flush errors; we'll still attempt to read the file
+                pass
 
-            stdout_lines = []
-            stderr_lines = []
+            # Read the log file content from disk rather than relying on the
+            # file object's current pointer. This avoids disturbing the file
+            # pointer used by the subprocess and reads bytes safely even while
+            # the subprocess is still running.
+            with open(self._log_file.name, "r", encoding="utf-8", errors="replace") as f:
+                all_lines = f.read().splitlines()
 
-            # This is a simplified version - for production use proper logging
-            return "", ""
+            if lines <= 0:
+                tail = "\n".join(all_lines)
+            else:
+                tail = "\n".join(all_lines[-lines:])
 
+            # stderr is merged into stdout by launch(); return stderr as empty.
+            return tail, ""
         except Exception as e:
-            logger.error(f"Error reading server logs: {e}")
+            logger.exception(f"Error reading server logs: {e}")
             return "", ""
 
     def get_additional_args_dict(self) -> Dict[str, Any]:
-        """Parse additional_args JSON string into a dictionary.
+        """Parse additional_args into a dictionary.
+
+        additional_args can be None, a dict, or a JSON string.
+        - If None, returns an empty dict.
+        - If already a dict, returns a shallow copy.
+        - If a str, attempts to parse as JSON; raises ValueError on invalid JSON.
+        - For any other type, raises TypeError.
 
         Returns:
             Dictionary of parsed additional arguments
         """
         import json
+        import copy
 
-        additional_args_dict: Dict[str, Any] = {}
-        if self.config.additional_args:
-            additional_args_dict = json.loads(self.config.additional_args)
-        return additional_args_dict
+        additional_args = self.config.additional_args
+        if additional_args is None:
+            return {}
+        elif isinstance(additional_args, dict):
+            return copy.copy(additional_args)
+        elif isinstance(additional_args, str):
+            try:
+                return json.loads(additional_args)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON in additional_args: {additional_args!r}. Error: {e}")
+        else:
+            raise TypeError(
+                f"additional_args must be None, dict, or str (JSON), got {type(additional_args).__name__}: {additional_args!r}"
+            )
 
     def __enter__(self):
         """Context manager entry."""
