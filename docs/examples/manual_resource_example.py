@@ -8,6 +8,10 @@ resource scheduling.
 
 import time
 
+import argparse
+import sys
+import os
+
 from veeksha.benchmark import run_benchmark
 from veeksha.config.benchmark import (
     BenchmarkConfig,
@@ -32,6 +36,7 @@ def run_experiment_with_resources(
     port: int,
     resource_manager: ResourceManager,
     job_id: str,
+    environment_path: str,
 ):
     """Run a single experiment with automatic resource management."""
     print(f"\n{'='*60}")
@@ -47,6 +52,7 @@ def run_experiment_with_resources(
             tensor_parallel_size=tp_size,
             gpu_ids=None,  # Let server manager auto-allocate
             auto_shutdown=True,
+            environment_path=environment_path,
         )
         # Create benchmark config
         benchmark_config = BenchmarkConfig(
@@ -89,6 +95,27 @@ def main():
     print("Automatic Resource Management Example")
     print("=" * 60)
 
+    parser = argparse.ArgumentParser(
+        description="Run resource-managed fine-grained benchmarks with an env path"
+    )
+    parser.add_argument(
+        "--env-path",
+        dest="env_path",
+        default=None,
+        help=(
+            "Path to the server environment to use."
+            " If omitted, defaults to the Python environment root (parent of `bin/`)."
+        ),
+    )
+    args = parser.parse_args()
+
+    # If env path not provided, use the environment root for the running Python
+    if args.env_path:
+        env_path = args.env_path
+    else:
+        # sys.executable is typically .../env/bin/python; we want the env root (.../env)
+        env_path = os.path.dirname(os.path.dirname(sys.executable))
+
     # Initialize resource manager
     resource_manager = ResourceManager(detect_gpus=True)
 
@@ -119,6 +146,7 @@ def main():
             port=port,
             resource_manager=resource_manager,
             job_id=job_id,
+            environment_path=env_path,
         )
 
         results.append(result)
