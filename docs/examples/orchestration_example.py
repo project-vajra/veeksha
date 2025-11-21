@@ -34,7 +34,6 @@ def run_experiment_with_resources(
     model: str,
     tp_size: int,
     port: int,
-    resource_manager: ResourceManager,
     job_id: str,
     environment_path: str,
 ):
@@ -144,7 +143,6 @@ def main():
             model=model,
             tp_size=tp_size,
             port=port,
-            resource_manager=resource_manager,
             job_id=job_id,
             environment_path=env_path,
         )
