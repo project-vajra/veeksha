@@ -41,6 +41,7 @@ dependencies = [
     "requests",
     "uvloop",
     "httpx",
+    "nvidia-ml-py"
 ]
 
 [project.urls]
