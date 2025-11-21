@@ -195,7 +195,8 @@ class ResourceManager:
         """Get number of free GPUs across all nodes."""
         with self._lock:
             return sum(
-                sum(1 for gpu in node.gpus if gpu.is_free) for node in self.nodes.values()
+                sum(1 for gpu in node.gpus if gpu.is_free)
+                for node in self.nodes.values()
             )
 
     def allocate_resources(

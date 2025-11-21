@@ -155,7 +155,9 @@ class ServerConfig:
             try:
                 additional_args_dict = json.loads(self.additional_args)
             except (json.JSONDecodeError, ValueError) as e:
-                raise ValueError(f"Invalid JSON in configuration field 'additional_args': {self.additional_args[:100]}{'...' if len(self.additional_args) > 100 else ''}. Original error: {e}") from e
+                raise ValueError(
+                    f"Invalid JSON in configuration field 'additional_args': {self.additional_args[:100]}{'...' if len(self.additional_args) > 100 else ''}. Original error: {e}"
+                ) from e
 
         return {
             "engine": self.engine,
