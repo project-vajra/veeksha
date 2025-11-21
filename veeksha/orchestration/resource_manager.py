@@ -126,10 +126,12 @@ class ResourceManager:
         Returns:
             Dictionary mapping GPU ID to memory info (total, free, used in MB)
         """
+        initialized = False
         try:
             import pynvml
 
             pynvml.nvmlInit()
+            initialized = True
             device_count = pynvml.nvmlDeviceGetCount()
             gpu_info = {}
             for i in range(device_count):
@@ -143,11 +145,13 @@ class ResourceManager:
                     "free": free_mb,
                     "used": used_mb,
                 }
-            pynvml.nvmlShutdown()
             return gpu_info
         except Exception as e:
             logger.warning(f"Failed to get GPU memory info: {e}")
             return {}
+        finally:
+            if initialized:
+                pynvml.nvmlShutdown()
 
     def add_node(
         self, hostname: str, num_gpus: int, gpu_memory_mb: Optional[int] = None
