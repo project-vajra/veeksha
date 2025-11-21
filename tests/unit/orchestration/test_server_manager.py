@@ -1,11 +1,13 @@
 
-import pytest
+import pytest  # type: ignore[import]
 import os
 import time
 import tempfile
 from unittest.mock import MagicMock, patch, ANY
 from veeksha.orchestration.server_manager import BaseServerManager
 from veeksha.config.server import ServerConfig
+
+pytestmark = pytest.mark.unit
 
 class TestServerManager(BaseServerManager):
     """Concrete implementation for testing."""
@@ -126,10 +128,11 @@ class TestBaseServerManager:
         mock_get.return_value = mock_response
         
         # Mock time.time to simulate timeout
+        time_calls = {"value": 0}
+
         def time_mock():
-            time_mock.calls += 1
-            return time_mock.calls * 0.2  # 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, ...
-        time_mock.calls = 0
+            time_calls["value"] += 1
+            return time_calls["value"] * 0.2  # 0.2, 0.4, 0.6, ...
         
         with patch("time.time", side_effect=time_mock):
             assert not manager.wait_for_ready(timeout=1)

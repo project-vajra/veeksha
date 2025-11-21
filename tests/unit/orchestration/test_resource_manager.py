@@ -1,6 +1,8 @@
 
-import pytest
+import pytest  # type: ignore[import]
 from veeksha.orchestration.resource_manager import ResourceManager, NodeInfo, GPUInfo
+
+pytestmark = pytest.mark.unit
 
 class TestResourceManager:
     def test_initialization_no_detect(self):
@@ -107,6 +109,7 @@ class TestResourceManager:
         rm.add_node("node1", num_gpus=2, gpu_memory_mb=1000)
         
         allocation = rm.allocate_resources(num_gpus=2, job_id="job1")
+        assert allocation is not None
         total_mem = rm.get_gpu_memory_mb(allocation)
         assert total_mem == 2000
 

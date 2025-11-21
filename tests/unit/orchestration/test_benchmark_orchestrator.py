@@ -1,6 +1,8 @@
 
-import pytest
+import pytest  # type: ignore[import]
 from unittest.mock import MagicMock, patch
+
+pytestmark = pytest.mark.unit
 from veeksha.orchestration.benchmark_orchestrator import create_server_manager, managed_server
 from veeksha.config.server import ServerConfig
 from veeksha.orchestration.vllm_server import VLLMServerManager
