@@ -261,54 +261,55 @@ class BaseServerManager(abc.ABC):
         Returns:
             True if shutdown was successful, False otherwise
         """
-        if not self.is_running:
-            logger.warning("Server is not running")
-            return True
-
-        if self.process is None:
-            logger.error("Server process is None, cannot shutdown")
-            return False
-
+        success = True
         try:
-            logger.info(f"Shutting down server (PID: {self.process.pid})")
-
-            if force:
-                self.process.kill()
-                logger.info("Force killed server process")
+            if not self.is_running:
+                logger.warning("Server is not running")
+            elif self.process is None:
+                logger.error("Server process is None, cannot shutdown")
+                success = False
             else:
-                self.process.terminate()
-                logger.info("Sent termination signal to server")
+                logger.info(f"Shutting down server (PID: {self.process.pid})")
 
-                # Wait for graceful shutdown
-                try:
-                    self.process.wait(timeout=30)
-                    logger.info("Server shut down gracefully")
-                except subprocess.TimeoutExpired:
-                    logger.warning("Server did not shut down gracefully, force killing")
+                if force:
                     self.process.kill()
+                    logger.info("Force killed server process")
+                else:
+                    self.process.terminate()
+                    logger.info("Sent termination signal to server")
 
-            # Ensure process is reaped, ignore errors
-            try:
-                self.process.wait(timeout=5)
-            except Exception as e:
-                logger.warning(f"Error waiting for process to exit: {e}")
+                    # Wait for graceful shutdown
+                    try:
+                        self.process.wait(timeout=30)
+                        logger.info("Server shut down gracefully")
+                    except subprocess.TimeoutExpired:
+                        logger.warning("Server did not shut down gracefully, force killing")
+                        self.process.kill()
 
-            # Release allocated resources if any
-            if self._allocated_job_id is not None:
-                logger.info(
-                    f"Releasing allocated resources for job {self._allocated_job_id}"
-                )
-                self.resource_manager.release_resources(self._allocated_job_id)
-                self._allocated_job_id = None
-
-            return True
+                # Ensure process is reaped, ignore errors
+                try:
+                    self.process.wait(timeout=5)
+                except Exception as e:
+                    logger.warning(f"Error waiting for process to exit: {e}")
 
         except Exception as e:
             logger.error(f"Error during shutdown: {e}")
-            return False
+            success = False
         finally:
-            # Always reset state, even if exceptions occur
+            # Always reset state and clean up resources, even if exceptions occur
             self._is_running = False
+
+            # Release allocated resources if any
+            if self._allocated_job_id is not None:
+                try:
+                    logger.info(
+                        f"Releasing allocated resources for job {self._allocated_job_id}"
+                    )
+                    self.resource_manager.release_resources(self._allocated_job_id)
+                except Exception as e:
+                    logger.error(f"Error releasing resources: {e}")
+                finally:
+                    self._allocated_job_id = None
 
             # Clean up log file
             if self._log_file:
@@ -320,6 +321,8 @@ class BaseServerManager(abc.ABC):
                     logger.debug(f"Removed log file: {self._log_file.name}")
                 except Exception as e:
                     logger.warning(f"Failed to clean up log file: {e}")
+
+        return success
 
     def get_server_logs(self, lines: int = 50) -> tuple[str, str]:
         """Get recent server logs.
