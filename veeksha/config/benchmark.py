@@ -162,9 +162,14 @@ class BenchmarkConfig:
                 logger.info("Auto-populated api_key from server_config")
 
             # Sync model from client_config to server_config to avoid user having to specify twice
-            if self.server_config.model != self.client_config.model:
+            # Only auto-populate if the server_config.model is still the default value
+            default_server_model = ServerConfig().model
+            if (
+                self.server_config.model == default_server_model
+                and self.server_config.model != self.client_config.model
+            ):
                 logger.info(
-                    f"Auto-populating server_config.model from client_config.model: {self.client_config.model}"
+                    f"Auto-populated server_config.model from client_config.model: {self.client_config.model}"
                 )
                 object.__setattr__(
                     self.server_config, "model", self.client_config.model
