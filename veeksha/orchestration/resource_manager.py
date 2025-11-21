@@ -127,6 +127,7 @@ class ResourceManager:
             Dictionary mapping GPU ID to memory info (total, free, used in MB)
         """
         initialized = False
+        pynvml = None
         try:
             import pynvml
 
@@ -150,7 +151,7 @@ class ResourceManager:
             logger.warning(f"Failed to get GPU memory info: {e}")
             return {}
         finally:
-            if initialized:
+            if initialized and pynvml:
                 pynvml.nvmlShutdown()
 
     def add_node(
