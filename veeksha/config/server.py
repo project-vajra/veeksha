@@ -107,22 +107,6 @@ class ServerConfig:
         },
     )
 
-    priority: int = field(
-        default=0,
-        metadata={
-            "help": "Job priority for scheduling (higher = more important). "
-            "Used by resource manager when multiple jobs are queued."
-        },
-    )
-
-    estimated_memory_per_gpu_gb: Optional[float] = field(
-        default=None,
-        metadata={
-            "help": "Estimated GPU memory requirement per GPU in GB. "
-            "Used for resource planning and validation."
-        },
-    )
-
     def get_api_base_url(self) -> str:
         """Get the full API base URL."""
         return f"http://{self.host}:{self.port}/v1"
@@ -183,6 +167,4 @@ class ServerConfig:
             "health_check_interval": self.health_check_interval,
             "auto_shutdown": self.auto_shutdown,
             "require_contiguous_gpus": self.require_contiguous_gpus,
-            "priority": self.priority,
-            "estimated_memory_per_gpu_gb": self.estimated_memory_per_gpu_gb,
         }
