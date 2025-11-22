@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import signal
 import sys
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -82,11 +81,11 @@ def main() -> None:
     server = ThreadingHTTPServer((host, port), _RequestHandler)
     server.model_name = model  # type: ignore[attr-defined]
 
-    def _graceful_shutdown(signum, frame):  # noqa: ARG001
-        server.shutdown()
-
-    signal.signal(signal.SIGTERM, _graceful_shutdown)
-    signal.signal(signal.SIGINT, _graceful_shutdown)
+    # NOTE: We intentionally do not register SIGTERM/SIGINT handlers. Calling
+    # server.shutdown() from a signal handler can deadlock if shutdown waits
+    # for serve_forever() to exit on the same thread. We rely on the
+    # parent/test harness to terminate this process and the existing
+    # KeyboardInterrupt handling below to close the server gracefully.
 
     try:
         server.serve_forever()
