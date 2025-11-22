@@ -426,6 +426,7 @@ class ResourceManager:
         timeout: Optional[float] = None,
         poll_interval: float = 3.0,
         job_id: Optional[str] = None,
+        contiguous: bool = True,
     ) -> Optional[ResourceMapping]:
         """Wait for resources to become available.
 
@@ -434,6 +435,7 @@ class ResourceManager:
             timeout: Maximum time to wait in seconds (None = wait indefinitely)
             poll_interval: Time between checks in seconds
             job_id: Job identifier for allocation
+            contiguous: Whether the job requires contiguous GPU IDs on a single node
 
         Returns:
             ResourceMapping if successful, None if timeout
@@ -447,7 +449,11 @@ class ResourceManager:
                 return None
 
             # Try to allocate
-            resource_mapping = self.allocate_resources(num_gpus, job_id=job_id)
+            resource_mapping = self.allocate_resources(
+                num_gpus,
+                job_id=job_id,
+                contiguous=contiguous,
+            )
             if resource_mapping:
                 return resource_mapping
 

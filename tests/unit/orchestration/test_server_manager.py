@@ -219,7 +219,7 @@ class TestBaseServerManager:
             
             # Check that GPUs were allocated
             manager.resource_manager.wait_for_resources.assert_called_with(
-                num_gpus=2, timeout=300, job_id=ANY
+                num_gpus=2, timeout=300, job_id=ANY, contiguous=True
             )
             
             # Check that config was updated
@@ -229,6 +229,35 @@ class TestBaseServerManager:
             call_args = mock_popen.call_args
             env = call_args[1]['env']
             assert env['CUDA_VISIBLE_DEVICES'] == "0,1"
+
+    def test_auto_allocation_non_contiguous(self):
+        """Ensure we can request non-contiguous GPUs when flag is disabled."""
+        config = ServerConfig(
+            gpu_ids=None,
+            tensor_parallel_size=2,
+            require_contiguous_gpus=False,
+        )
+        manager = TestServerManager(config)
+
+        manager.resource_manager = MagicMock()
+        manager.resource_manager.wait_for_resources.return_value = [
+            ("node1", 0),
+            ("node2", 1),
+        ]
+
+        with patch("subprocess.Popen") as mock_popen:
+            mock_process = MagicMock()
+            mock_process.poll.return_value = None
+            mock_popen.return_value = mock_process
+
+            assert manager.launch()
+
+            manager.resource_manager.wait_for_resources.assert_called_with(
+                num_gpus=2,
+                timeout=300,
+                job_id=ANY,
+                contiguous=False,
+            )
 
     def test_get_server_logs_reads_last_n_lines(self, tmp_path, manager):
         """Test that get_server_logs returns the last N lines from the log file."""

@@ -81,6 +81,7 @@ class BaseServerManager(abc.ABC):
                     num_gpus=num_gpus,
                     timeout=300,  # 5 minute timeout
                     job_id=job_id,
+                    contiguous=self.config.require_contiguous_gpus,
                 )
 
                 if resource_mapping is None:

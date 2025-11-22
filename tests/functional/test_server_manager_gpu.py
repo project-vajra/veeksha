@@ -92,12 +92,20 @@ class TrackingResourceManager(ResourceManager):
         self.hostname = socket.gethostname()
         self.add_node(self.hostname, num_gpus=1, gpu_memory_mb=80_000)
 
-    def wait_for_resources(self, num_gpus, timeout=None, poll_interval=3.0, job_id=None):  # type: ignore[override]
+    def wait_for_resources(
+        self,
+        num_gpus,
+        timeout=None,
+        poll_interval=3.0,
+        job_id=None,
+        contiguous: bool = True,
+    ):  # type: ignore[override]
         mapping = super().wait_for_resources(
             num_gpus=num_gpus,
             timeout=timeout,
             poll_interval=poll_interval,
             job_id=job_id,
+            contiguous=contiguous,
         )
         if mapping and job_id:
             self.allocations.append((job_id, list(mapping)))
