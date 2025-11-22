@@ -123,7 +123,6 @@ def example_multiple_tasks(env_path=None):
         max_completed_requests=10000,  # Process all requests for lm_eval
         client_config=ClientConfig(
             model="Qwen/Qwen3-1.7B",
-            num_clients=1,
         ),
         request_generator_config=LmevalRequestGeneratorConfig(
             tasks=["hellaswag", "winogrande", "arc_easy"],
@@ -206,7 +205,6 @@ def example_model_comparison(env_path=None):
             max_completed_requests=10000,  # Process all requests for lm_eval
             client_config=ClientConfig(
                 model=model,
-                num_clients=1,
             ),
             request_generator_config=LmevalRequestGeneratorConfig(
                 tasks=["hellaswag"],
