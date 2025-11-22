@@ -1,564 +1,187 @@
-Server Orchestration for Benchmarks
-===================================
+Server Management (ResourceManager & Server Manager)
+=================================================
 
-This module provides comprehensive server orchestration and resource management capabilities for running LLM inference workloads. It allows you to automatically launch, manage, and shut down inference servers (like vLLM) with intelligent GPU allocation across multiple experiments.
+This guide documents Veeksha's resource manager and server manager helper classes
+that are used to launch and manage LLM inference servers (for example, `vLLM`) while
+coordinating GPU resources across experiments.
 
-Features
+Overview
 --------
 
-Core Orchestration
-^^^^^^^^^^^^^^^^^^
-
-- **Automatic Server Lifecycle Management**: Launch, health check, and shutdown servers automatically
-- **Multiple Workload Types**: Support for standard benchmarks, microbenchmarks, and lm_eval tasks
-- **Multiple Server Support**: Extensible architecture supports vLLM, Vajra, and can be extended to other systems
-- **Context Manager Support**: Clean resource management with Python context managers
-
-Resource Management
-^^^^^^^^^^^^^^^^^^^
-
-- **Automatic GPU Detection**: Detect available GPUs using nvidia-smi
-- **Intelligent GPU Allocation**: Allocate GPUs efficiently across experiments
-- **Contiguous GPU Allocation**: Ensure contiguous GPU IDs for better performance
-- **Resource Tracking**: Monitor GPU utilization and active jobs
-- **Wait for Resources**: Queue jobs until resources become available
-- **Multi-Node Support**: Allocate resources across multiple compute nodes
-
-Architecture
-------------
-
-.. code-block:: text
-
-   ┌─────────────────────────────────────────────────────────────────────────┐
-   │                         VEEKSHA RESOURCE MANAGEMENT                      │
-   └─────────────────────────────────────────────────────────────────────────┘
-
-   ┌─────────────────────────────────────────────────────────────────────────┐
-   │                          MID-LEVEL RUNNERS                               │
-   ├─────────────────────────────────────────────────────────────────────────┤
-   │                                                                          │
-   │  ParallelBenchmarkRunner            SequentialJobQueue                 │
-   │  ┌─────────────────────┐            ┌──────────────────┐              │
-   │  │ • Thread Pool       │            │ • FIFO Queue     │              │
-   │  │ • Concurrent Exec   │            │ • Sequential Exec│              │
-   │  │ • Max Workers       │            │ • Reproducible   │              │
-   │  └─────────────────────┘            └──────────────────┘              │
-   │           │                                  │                          │
-   │           └──────────────┬───────────────────┘                          │
-   │                          │                                              │
-   └──────────────────────────┼──────────────────────────────────────────────┘
-                              │
-                              ▼
-   ┌─────────────────────────────────────────────────────────────────────────┐
-   │                       RESOURCE MANAGER (CORE)                            │
-   ├─────────────────────────────────────────────────────────────────────────┤
-   │                                                                          │
-   │  ResourceManager                                                        │
-   │  ┌─────────────────────────────────────────────────────────────┐       │
-   │  │                                                              │       │
-   │  │  GPU Detection              GPU Allocation                  │       │
-   │  │  ┌──────────────┐           ┌──────────────┐               │       │
-   │  │  │ nvidia-smi   │──────────▶│ Contiguous   │               │       │
-   │  │  │ Auto-detect  │           │ Multi-node   │               │       │
-   │  │  └──────────────┘           └──────────────┘               │       │
-   │  │                                     │                       │       │
-   │  │                                     ▼                       │       │
-   │  │  Resource Tracking         Wait for Resources              │       │
-   │  │  ┌──────────────┐          ┌──────────────┐               │       │
-   │  │  │ Free GPUs    │          │ Timeout      │               │       │
-   │  │  │ Allocated    │          │ Polling      │               │       │
-   │  │  │ Active Jobs  │          │ Queue Jobs   │               │       │
-   │  │  └──────────────┘          └──────────────┘               │       │
-   │  │                                                             │       │
-   │  └─────────────────────────────────────────────────────────────┘       │
-   │                                                                          │
-   └──────────────────────────┬───────────────────────────────────────────────┘
-                              │
-                              ▼
-   ┌─────────────────────────────────────────────────────────────────────────┐
-   │                      SERVER MANAGEMENT LAYER                             │
-   ├─────────────────────────────────────────────────────────────────────────┤
-   │                                                                          │
-   │  Enhanced ServerConfig              BaseServerManager                   │
-   │  ┌─────────────────────┐            ┌──────────────────┐              │
-   │  │ • gpu_ids           │            │ • launch()       │              │
-   │  │ • priority          │            │ • wait_ready()   │              │
-   │  │ • contiguous_gpus   │───────────▶│ • shutdown()     │              │
-   │  │ • memory_estimate   │            │ • health_check() │              │
-   │  └─────────────────────┘            └──────────────────┘              │
-   │                                              │                          │
-   │                                              ▼                          │
-   │                          ┌────────────────────────────┐                │
-   │                          │  VLLMServerManager         │                │
-   │                          │  VajraServerManager        │                │
-   │                          └────────────────────────────┘                │
-   │                                                                          │
-   └──────────────────────────┬───────────────────────────────────────────────┘
-                              │
-                              ▼
-   ┌─────────────────────────────────────────────────────────────────────────┐
-   │                         BENCHMARK EXECUTION                              │
-   ├─────────────────────────────────────────────────────────────────────────┤
-   │                                                                          │
-   │  run_benchmark()           run_capacity_search()      lm_eval           │
-   │  ┌──────────────┐          ┌──────────────┐          ┌──────────────┐ │
-   │  │ Standard     │          │ SLO-based    │          │ Task Eval    │ │
-   │  │ Benchmarks   │          │ Search       │          │ HellaSwag    │ │
-   │  └──────────────┘          └──────────────┘          └──────────────┘ │
-   │                                                                          │
-   └─────────────────────────────────────────────────────────────────────────┘
-
-Components
-^^^^^^^^^^
-
-1. **ServerConfig** (:code:`veeksha/config/server.py`): Configuration for server launch parameters
-2. **BaseServerManager** (:code:`veeksha/orchestration/server_manager.py`): Abstract base class for server management
-3. **VLLMServerManager** (:code:`veeksha/orchestration/vllm_server.py`): vLLM-specific implementation
-4. **benchmark_orchestrator** (:code:`veeksha/orchestration/benchmark_orchestrator.py`): High-level orchestration logic
-
-Server Lifecycle
-^^^^^^^^^^^^^^^^
-
-.. code-block:: text
-
-   ┌─────────────────────────────────────────────────────┐
-   │  1. Configure Server                                 │
-   │     - Model, GPUs, ports, etc.                      │
-   └────────────────┬────────────────────────────────────┘
-                    │
-                    ▼
-   ┌─────────────────────────────────────────────────────┐
-   │  2. Launch Server                                    │
-   │     - Start process with configured parameters      │
-   │     - Set environment variables                     │
-   └────────────────┬────────────────────────────────────┘
-                    │
-                    ▼
-   ┌─────────────────────────────────────────────────────┐
-   │  3. Health Check & Wait for Ready                   │
-   │     - Poll /health endpoint                         │
-   │     - Wait until server responds                    │
-   └────────────────┬────────────────────────────────────┘
-                    │
-                    ▼
-   ┌─────────────────────────────────────────────────────┐
-   │  4. Run Benchmark                                    │
-   │     - Execute benchmark against server              │
-   │     - Collect metrics                               │
-   └────────────────┬────────────────────────────────────┘
-                    │
-                    ▼
-   ┌─────────────────────────────────────────────────────┐
-   │  5. Shutdown Server                                  │
-   │     - Graceful termination                          │
-   │     - Resource cleanup                              │
-   └─────────────────────────────────────────────────────┘
-
-Workflow Example
-^^^^^^^^^^^^^^^^
-
-1. User creates configs manually or programmatically
-
-2. For each config combination:
-   - Allocate resources with ResourceManager
-   - Launch server with managed_server()
-   - Run benchmark
-   - Auto cleanup
-
-3. ParallelBenchmarkRunner:
-   - Sorts by GPU requirement
-   - Submits to thread pool
-
-4. For each job:
-
-   .. code-block:: text
-
-      ┌─────────────────────────────────────────────┐
-      │ ResourceManager.wait_for_resources(2)       │
-      │   ↓                                         │
-      │ Allocates GPUs: [0, 1]                      │
-      │   ↓                                         │
-      │ ServerConfig.gpu_ids = [0, 1]              │
-      │   ↓                                         │
-      │ ServerManager.launch()                      │
-      │   ↓                                         │
-      │ run_benchmark(config)                       │
-      │   ↓                                         │
-      │ ServerManager.shutdown()                    │
-      │   ↓                                         │
-      │ ResourceManager.release_resources()         │
-      └─────────────────────────────────────────────┘
-
-5. Next job uses freed GPUs
-
-6. All results collected and returned
-
-Design Patterns
-^^^^^^^^^^^^^^^
-
-1. **LAYERED ARCHITECTURE**: High-level → Mid-level → Low-level. Simple APIs built on flexible primitives
-
-2. **RESOURCE ACQUISITION IS INITIALIZATION (RAII)**: Automatic cleanup on context exit
-
-3. **CONTEXT MANAGERS**: :code:`with managed_server(config):` provides automatic lifecycle management
-
-4. **FACTORY PATTERN**: :code:`create_server_manager(config)` → specific implementation
-
-5. **STRATEGY PATTERN**: Different allocation strategies (contiguous, fragmented, etc.)
-
-Quick Start
------------
-
-Installation
-^^^^^^^^^^^^
-
-No additional dependencies needed - resource management is built into Veeksha.
-
-Check GPU Availability
-^^^^^^^^^^^^^^^^^^^^^^
-
-.. code-block:: python
-
-   from veeksha.orchestration import ResourceManager
-
-   rm = ResourceManager(detect_gpus=True)
-   status = rm.get_resource_status()
-
-   print(f"Total GPUs: {status['total_gpus']}")
-   print(f"Free GPUs: {status['free_gpus']}")
-   print(f"Active jobs: {status['active_jobs']}")
-
-Comprehensive Examples
-----------------------
-
-Example 1: Manual Resource Control with Parallel Execution
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-For custom scheduling logic with multiple experiments:
-
-.. code-block:: python
-
-   from veeksha.orchestration import ResourceManager, ParallelBenchmarkRunner
-   from veeksha.orchestration.benchmark_orchestrator import managed_server
-   from veeksha.config.server import ServerConfig
-   from veeksha.config.benchmark import BenchmarkConfig
-   from veeksha.benchmark import run_benchmark
-
-   # Initialize resource manager
-   rm = ResourceManager(detect_gpus=True)
-
-   # Create experiment configurations
-   experiments = [
-       {
-           "model": "meta-llama/Meta-Llama-3-8B-Instruct",
-           "tensor_parallel_size": 1,
-           "port": 8000,
-           "job_id": "exp1"
-       },
-       {
-           "model": "Qwen/Qwen2.5-0.5B-Instruct", 
-           "tensor_parallel_size": 2,
-           "port": 8001,
-           "job_id": "exp2"
-       }
-   ]
-
-   # Prepare configs for parallel execution
-   server_configs = []
-   benchmark_configs = []
-
-   for exp in experiments:
-       # Create server config
-       server_config = ServerConfig(
-           model=exp["model"],
-           tensor_parallel_size=exp["tensor_parallel_size"],
-           port=exp["port"],
-           auto_shutdown=True,
-       )
-       
-       # Create benchmark config (customize as needed)
-       benchmark_config = BenchmarkConfig(
-           max_completed_requests=50,
-           timeout=600,
-           client_config={"model": exp["model"]},
-           request_generator_config={
-               "type": "synthetic",
-               "length_generator_config": {
-                   "type": "fixed",
-                   "prefill_tokens": 512,
-                   "decode_tokens": 128,
-               },
-               "interval_generator_config": {
-                   "type": "poisson",
-                   "qps": 2.0,
-               },
-           },
-           metrics_config={
-               "output_dir": f"./results/{exp['model'].split('/')[-1]}"
-           },
-       )
-       
-       server_configs.append(server_config)
-       benchmark_configs.append(benchmark_config)
-
-   # Run experiments in parallel
-   runner = ParallelBenchmarkRunner(max_workers=2)
-   results = runner.run(
-       list(zip(server_configs, benchmark_configs)), 
-       benchmark_func=run_benchmark
-   )
-
-   print(f"Completed {len(results)} experiments")
-
-Example 2: Sequential Execution with Resource Management
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-For reproducible experiments or limited GPU resources:
-
-.. code-block:: python
-
-   from veeksha.orchestration import SequentialJobQueue
-   from veeksha.orchestration.benchmark_orchestrator import managed_server
-   from veeksha.config.server import ServerConfig
-   from veeksha.config.benchmark import BenchmarkConfig
-   from veeksha.benchmark import run_benchmark
-
-   # Create job queue
-   queue = SequentialJobQueue()
-
-   # Define experiments (run sequentially to avoid resource conflicts)
-   experiments = [
-       ("meta-llama/Meta-Llama-3-8B-Instruct", 1, 8000),
-       ("meta-llama/Meta-Llama-3-8B-Instruct", 2, 8001), 
-       ("Qwen/Qwen2.5-0.5B-Instruct", 1, 8002),
-   ]
-
-   for model, tp_size, port in experiments:
-       # Create server config
-       server_config = ServerConfig(
-           model=model,
-           tensor_parallel_size=tp_size,
-           port=port,
-           auto_shutdown=True,
-       )
-       
-       # Create benchmark config
-       benchmark_config = BenchmarkConfig(
-           max_completed_requests=100,
-           timeout=600,
-           client_config={"model": model},
-           request_generator_config={
-               "type": "synthetic",
-               "length_generator_config": {
-                   "type": "fixed",
-                   "prefill_tokens": 512,
-                   "decode_tokens": 128,
-               },
-               "interval_generator_config": {
-                   "type": "poisson",
-                   "qps": 1.0,
-               },
-           },
-           metrics_config={
-               "output_dir": f"./results/{model.split('/')[-1]}_tp{tp_size}"
-           },
-       )
-       
-       # Add to queue
-       queue.add_job(server_config, benchmark_config, run_benchmark)
-
-   # Execute all jobs sequentially
-   results = queue.execute_all()
-
-   print(f"Completed {len(results)} sequential experiments")
-   for i, result in enumerate(results):
-       if result:
-           print(f"Experiment {i+1}: Success")
-       else:
-           print(f"Experiment {i+1}: Failed")
-
-ServerConfig Options
---------------------
-
-Basic Options
-^^^^^^^^^^^^^
-
-- :code:`engine`: Inference engine (:code:`"vllm"`, :code:`"vajra"`, etc.)
-- :code:`model`: Model name or path
-- :code:`host`: Server host address (default: :code:`"localhost"`)
-- :code:`port`: Server port (default: :code:`8000`)
-- :code:`api_key`: API authentication key
-
-Resource Options
-^^^^^^^^^^^^^^^^
-
-- :code:`tensor_parallel_size`: Number of GPUs for tensor parallelism
-- :code:`gpu_ids`: Specific GPU IDs to use (e.g., :code:`[0, 1, 3]`)
-- :code:`dtype`: Model data type (:code:`"auto"`, :code:`"float16"`, :code:`"bfloat16"`)
-- :code:`max_model_len`: Maximum context length
-
-Lifecycle Options
-^^^^^^^^^^^^^^^^^
-
-- :code:`startup_timeout`: Seconds to wait for server startup (default: 300)
-- :code:`health_check_interval`: Seconds between health checks (default: 2.0)
-- :code:`auto_shutdown`: Automatically shutdown after benchmark (default: :code:`True`)
-
-Additional Arguments
-^^^^^^^^^^^^^^^^^^^^
-
-Use :code:`additional_args` dict for engine-specific options:
-
-.. code-block:: python
-
-   server_config = ServerConfig(
-       engine="vllm",
-       model="meta-llama/Meta-Llama-3-8B-Instruct",
-       additional_args={
-           "rope_scaling": {"type": "dynamic", "factor": 2.0},
-           "max_num_seqs": 256,
-       }
-   )
-
-Use Cases
----------
-
-Resource-Constrained Environments
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-When you have limited GPUs and need to run many experiments:
-
-.. code-block:: python
-
-   # Run experiments sequentially, reusing GPUs
-   configs = [
-       ("model-A", 1), ("model-A", 2), ("model-A", 4),
-       ("model-B", 1), ("model-B", 2), ("model-B", 4),
-   ]
-
-   for model, tp_size in configs:
-       server_config = ServerConfig(
-           model=model,
-           tensor_parallel_size=tp_size,
-           gpu_ids=list(range(tp_size)),  # Use first N GPUs
-           auto_shutdown=True,
-       )
-       
-       # Server launches, runs benchmark, shuts down
-       # GPUs freed for next configuration
-       with managed_server(server_config) as info:
-           run_benchmark(benchmark_config)
-
-Manual Server Management
-^^^^^^^^^^^^^^^^^^^^^^^^
-
-If you need more control:
-
-.. code-block:: python
-
-   from veeksha.orchestration.vllm_server import VLLMServerManager
-
-   # Create and manage server manually
-   server_manager = VLLMServerManager(server_config)
-
-   try:
-       server_manager.launch()
-       server_manager.wait_for_ready()
-       
-       # Run multiple benchmarks against same server
-       for config in benchmark_configs:
-           run_benchmark(config)
-           
-   finally:
-       server_manager.shutdown()
-
-Context Manager Pattern
-^^^^^^^^^^^^^^^^^^^^^^^
-
-.. code-block:: python
-
-   from veeksha.orchestration.vllm_server import VLLMServerManager
-
-   with VLLMServerManager(server_config) as server:
-       # Server is launched and ready
-       run_benchmark(benchmark_config)
-       # Server automatically shut down on exit
-
-Extending to Other Inference Systems
-------------------------------------
-
-To add support for a new inference system:
-
-1. Create a new manager class inheriting from :code:`BaseServerManager`
-2. Implement :code:`_build_launch_command()` method
-3. Optionally override :code:`health_check()` if needed
-
-Example for a hypothetical system:
-
-.. code-block:: python
-
-   from veeksha.orchestration.server_manager import BaseServerManager
-
-   class TGIServerManager(BaseServerManager):
-       def _build_launch_command(self) -> List[str]:
-           return [
-               "text-generation-launcher",
-               "--model-id", self.config.model,
-               "--port", str(self.config.port),
-               "--num-shard", str(self.config.tensor_parallel_size),
-               # ... other TGI-specific args
-           ]
-
-Examples
---------
-
-See :code:`veeksha/orchestration/examples/` for complete working examples:
-
-- :code:`simple_example.py`: Basic single benchmark with server orchestration
-- :code:`microbenchmark_orchestration.py`: Run prefill/decode probes with orchestration
-- :code:`lmeval_orchestration.py`: Run lm_eval tasks with orchestration
-
-Each example demonstrates:
-- How to configure servers and workloads
-- Error handling and best practices
-
-Troubleshooting
+- ResourceManager is responsible for detecting, tracking, and allocating GPU
+  resources on one or more nodes in a cluster. It supports automatic GPU
+  detection via pynvml and manual node registration.
+
+- BaseServerManager provides a simple, reusable base class for launching,
+  monitoring, and shutting down LLM inference servers. It integrates with
+  ResourceManager to optionally auto-allocate GPUs when a server's config
+  does not specify explicit GPU IDs.
+
+ResourceManager
 ---------------
 
-Server fails to start
-^^^^^^^^^^^^^^^^^^^^^
+Key features:
 
-- Check GPU availability: :code:`nvidia-smi`
-- Verify model access (HuggingFace login if needed)
-- Increase :code:`startup_timeout` for large models
-- Check server logs via :code:`server_manager.get_server_logs()`
+- Auto-detect GPUs using `pynvml` (if installed).
+- Manual node registration via `add_node()` for testing or custom clusters.
+- Allocate contiguous GPUs on a single node (preferred) or multi-node
+  allocations when requested.
+- Wait for resources with `wait_for_resources()` with a timeout.
+- Release resources by job id.
 
-Port conflicts
-^^^^^^^^^^^^^^
+Important methods:
 
-- Use different ports for concurrent servers
-- Check for existing processes: :code:`lsof -i :8000`
+- `add_node(hostname: str, num_gpus: int, gpu_memory_mb: Optional[int] = None)`
+- `allocate_resources(num_gpus: int, job_id: Optional[str] = None, contiguous: bool = True) -> Optional[ResourceMapping]`
+- `wait_for_resources(num_gpus: int, timeout: Optional[float], job_id: Optional[str]) -> Optional[ResourceMapping]`
+- `release_resources(job_id: str) -> bool`
+- `get_resource_status()` returns a dict describing cluster usage.
 
-Resource issues
-^^^^^^^^^^^^^^^
+Simple example — manual node and allocation
 
-- Verify GPU memory with :code:`nvidia-smi`
-- Adjust :code:`tensor_parallel_size` based on available GPUs
-- Use :code:`gpu_ids` to explicitly assign GPUs
+.. code-block:: python
 
-Future Enhancements
--------------------
+    from veeksha.orchestration.resource_manager import ResourceManager
 
-Planned improvements (not yet implemented):
+    rm = ResourceManager(detect_gpus=False)  # disable auto-detection for tests
 
-- [ ] Support for TGI, SGLang, and other inference systems
-- [ ] Advanced resource scheduling for parallel experiments
-- [ ] Persistent server pools
-- [ ] Remote server management
-- [ ] Integration with job schedulers (Slurm, etc.)
+    # Add a single node with 2 GPUs for testing/demo
+    rm.add_node("node1", num_gpus=2, gpu_memory_mb=80_000)
 
-Related
--------
+    print(rm.get_resource_status())
 
-- Main benchmark documentation: :doc:`../../README`
-- Capacity search: :doc:`../capacity_search/index`
+    # Allocate 1 GPU
+    mapping = rm.allocate_resources(1, job_id="job-test-1")
+    assert mapping is not None, "Allocation failed"
+
+    # mapping is a list of (hostname, gpu_id) pairs
+    print("Allocated:", mapping)
+
+    # Release
+    success = rm.release_resources("job-test-1")
+    assert success
+
+
+Advanced: Wait for resources
+
+.. code-block:: python
+
+    mapping = rm.wait_for_resources(num_gpus=2, timeout=30, job_id="server_12345")
+    if mapping is None:
+        raise RuntimeError("Could not allocate GPUs in time")
+
+    # Use mapping; when done call release_resources(job_id)
+
+
+Server Manager (BaseServerManager)
+----------------------------------
+
+The `BaseServerManager` class encapsulates process lifecycle management for an
+LLM inference server. Subclasses implement `_build_launch_command()` to return the
+CLI necessary to start a server with the configuration defined in `ServerConfig`.
+
+Base properties and behaviors:
+
+- Uses `ServerConfig` for all server launch settings, including connection details,
+  engine type, GPU selection behavior, and lifecycle options.
+- If `ServerConfig.gpu_ids` is None, the manager attempts automatic allocation via
+  `ResourceManager.wait_for_resources()` (auto-allocation happens during `launch()`).
+- Launch uses subprocess, captures logs, and exposes them via `get_server_logs()`.
+- Provides `health_check()` and `wait_for_ready()` to determine server readiness.
+- On shutdown, the manager attempts graceful termination and releases any allocated
+  GPU resources if present.
+
+Example: Using `managed_server` for automatic lifecycle management
+
+.. code-block:: python
+
+  from veeksha.orchestration import managed_server
+  from veeksha.config.server import ServerConfig
+
+  # Configure server
+  config = ServerConfig(
+    engine="vllm",
+    host="127.0.0.1",
+    port=8000,
+    api_key="test-key",
+    gpu_ids=[0],  # or None to auto-allocate using ResourceManager
+    tensor_parallel_size=1,
+    startup_timeout=60,
+    health_check_interval=1.0,
+  )
+
+  # Launch and manage server in a context
+  with managed_server(config) as info:
+    # Server is launched and ready inside the context
+    print(f"Server ready at {info['api_base']}")
+    # `info['server_manager']` exposes the underlying manager instance
+    # and you can use the returned api_base/api_key to run workloads.
+
+Context manager usage
+
+.. code-block:: python
+
+  # `managed_server` provides a convenient context manager: enter -> launch + wait
+  from veeksha.orchestration import managed_server
+
+  with managed_server(config) as info:
+    # Server is launched and ready inside the context
+    print(f"Server ready: {info['api_base']}")
+    # Exiting context triggers shutdown if auto_shutdown is True
+
+Auto GPU allocation and integration with ResourceManager
+-------------------------------------------------------
+
+When `ServerConfig.gpu_ids` is None, the server manager auto-allocates GPUs. Internally,
+BaseServerManager will:
+
+- Determine the number of GPUs required with `config.get_num_gpus()` (based on
+  tensor_parallel_size or explicit gpu_ids).
+- Call `ResourceManager.wait_for_resources()` with a job id that tracks the server
+  allocation (for later release).
+- Update the `ServerConfig` with the allocated `gpu_ids` so subsequent operations
+  (e.g., environment variables) reflect the allocated GPUs.
+
+For advanced customization you can replace the default `ResourceManager`
+with your own implementation and register nodes via `add_node()` or use the
+integration examples (`docs/examples/orchestration_example.py` and
+`docs/examples/lmeval_orchestration.py`) for real-world patterns.
+
+Practical tips and debugging
+---------------------------
+
+- View server logs with `BaseServerManager.get_server_logs()` to diagnose startup
+  issues such as GPU memory errors or missing binaries.
+
+- For GPU memory errors, BaseServerManager examines the server start log and logs
+  helpful messages indicating free memory and suggestions to address insufficient
+  GPU memory.
+
+- The `ResourceManager` is thread-safe and uses an internal RLock for allocations,
+  so it can be used across multiple manager instances in a single Python process for
+  basic scheduling use-cases.
+
+- For distributed multi-node pools, register each node via `add_node()` (or rely on
+  detection if running on each host) and call `allocate_resources()` with
+  contiguous=False if you permit non-contiguous multi-node allocations.
+
+Examples & Further Reading
+--------------------------
+
+Two example scripts demonstrate practical usage of `managed_server` and
+`ResourceManager` in realistic workflows (benchmarks and lm_eval):
+
+- `docs/examples/orchestration_example.py` – shows automatic GPU allocation, launching
+  servers using `managed_server`, and running benchmarks with `BenchmarkConfig`.
+- `docs/examples/lmeval_orchestration.py` – demonstrates running `lm_eval` style tasks
+  with automatic server management and multi-model comparisons.
+
+See those scripts for runnable examples and a more complete end-to-end setup.
+
+Conclusion
+----------
+
+Using `ResourceManager` together with `BaseServerManager` provides a stable and
+flexible way to orchestrate GPU-backed inference servers across experiments.
+The patterns above are used in the test suite to validate end-to-end behavior and
+to support GPU-backed integration tests.
