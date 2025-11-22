@@ -1,7 +1,7 @@
 output_dir: capsearch_results
 max_iterations: 5
 # Create a new server for each QPS run instead of reusing one server for all runs
-server_per_qps_run: true
+restart_server_per_iteration: true
 slos:
   - type: constant
     metric: ttft

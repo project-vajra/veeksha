@@ -236,7 +236,7 @@ class CapacitySearch:
 
         # Use managed server if configured to create a new server for each QPS run
         if (
-            self.capacity_search_config.server_per_qps_run
+            self.capacity_search_config.restart_server_per_iteration
             and hasattr(benchmark_config, "server_config")
             and benchmark_config.server_config is not None
         ):

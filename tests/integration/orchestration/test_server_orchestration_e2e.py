@@ -208,7 +208,7 @@ def test_capacity_search_server_per_run_restarts_servers(
         enable_experiment_cache=False,
         benchmark_config=benchmark_config,
         slos=[ConstantSloConfig(metric="ttft", value=0.5, percentile=0.5)],
-        server_per_qps_run=True,
+        restart_server_per_iteration=True,
     )
 
     result = CapacitySearch(capacity_config).search()

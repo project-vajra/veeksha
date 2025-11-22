@@ -87,7 +87,7 @@ class CapacitySearchConfig:
         default=None,
         metadata={"help": "Wandb sweep id for capacity search"},
     )
-    server_per_qps_run: bool = field(
+    restart_server_per_iteration: bool = field(
         default=False,
         metadata={
             "help": "Create a new server for each QPS run instead of reusing one server for all runs. "
