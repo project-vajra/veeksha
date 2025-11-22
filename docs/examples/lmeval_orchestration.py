@@ -42,8 +42,6 @@ def example_hellaswag(env_path=None):
     # Configure server
     server_config = ServerConfig(
         engine="vllm",
-        model="Qwen/Qwen3-1.7B",
-        host="localhost",
         port=8000,
         tensor_parallel_size=1,
         auto_shutdown=True,
@@ -53,7 +51,6 @@ def example_hellaswag(env_path=None):
 
     # Configure lm_eval benchmark
     benchmark_config = BenchmarkConfig(
-        api_url=f"http://localhost:{server_config.port}/v1",
         seed=42,
         timeout=1800,  # 30 minutes
         max_completed_requests=10000,  # Process all requests for lm_eval
@@ -106,7 +103,6 @@ def example_multiple_tasks(env_path=None):
     # Configure server
     server_config = ServerConfig(
         engine="vllm",
-        model="Qwen/Qwen3-1.7B",
         host="localhost",
         port=8001,
         tensor_parallel_size=1,
@@ -117,7 +113,6 @@ def example_multiple_tasks(env_path=None):
 
     # Configure lm_eval benchmark with multiple tasks
     benchmark_config = BenchmarkConfig(
-        api_url=f"http://localhost:{server_config.port}/v1",
         seed=42,
         timeout=3600,  # 1 hour
         max_completed_requests=10000,  # Process all requests for lm_eval
@@ -188,7 +183,6 @@ def example_model_comparison(env_path=None):
         # Create server config for this model
         server_config = ServerConfig(
             engine="vllm",
-            model=model,
             host="localhost",
             port=8000 + i,  # Different port for each
             tensor_parallel_size=1,
@@ -199,7 +193,6 @@ def example_model_comparison(env_path=None):
 
         # Create benchmark config
         benchmark_config = BenchmarkConfig(
-            api_url=f"http://localhost:{server_config.port}/v1",
             seed=42,
             timeout=1800,
             max_completed_requests=10000,  # Process all requests for lm_eval
