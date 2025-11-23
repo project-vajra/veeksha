@@ -608,6 +608,11 @@ if __name__ == "__main__":
                     logger.info("Server configuration detected - using managed server")
                     from veeksha.orchestration import managed_server
 
+                    prepare_benchmark_output_dir(benchmark_config)
+                    os.environ["VEEKSHA_OUTPUT_DIR"] = (
+                        benchmark_config.metrics_config.output_dir
+                    )
+
                     logger.info(
                         f"Launching {benchmark_config.server_config.engine} server..."
                     )

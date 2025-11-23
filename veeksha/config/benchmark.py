@@ -26,30 +26,7 @@ logger = init_logger(__name__)
 
 @frozen_dataclass(allow_from_file=True)
 class BenchmarkConfig:
-    """Configuration for LLM benchmarking.
-
-    This configuration supports two modes of operation:
-
-    1. **Managed Server Mode**: Provide `server_config` to automatically launch and
-       manage an inference server (e.g., vLLM) before running the benchmark.
-
-    2. **External Server Mode**: Leave `server_config` as None and specify `api_url`
-       to connect to an already-running server.
-
-    **Handling Field Redundancy**:
-
-    When `server_config` is provided, the following fields are auto-populated:
-
-    - `api_url`: Auto-populated from `server_config.get_api_base_url()` if not explicitly set
-    - `api_key`: Auto-populated from `server_config.api_key` if not explicitly set
-    - `server_config.model`: Auto-populated from `client_config.model` to avoid duplication
-
-    This means you only need to specify the model once in `client_config.model`, and it will
-    automatically be used for both the server launch and client requests.
-
-    This design allows flexibility while preventing configuration mismatches between
-    the server being launched and the client making requests.
-    """
+    """Root configuration for a Veeksha benchmark."""
 
     seed: int = field(
         default=DEFAULT_SEED,
@@ -68,11 +45,15 @@ class BenchmarkConfig:
     )
     api_url: Optional[str] = field(
         default="http://localhost:8000/v1",
-        metadata={"help": "The API URL for the benchmark."},
+        metadata={
+            "help": "The API URL for the benchmark. Inferred from server_config if provided."
+        },
     )
     api_key: Optional[str] = field(
         default="token-abc123",
-        metadata={"help": "The API key for the benchmark."},
+        metadata={
+            "help": "The API key for the benchmark. Inferred from server_config if provided."
+        },
     )
     client_config: ClientConfig = field(
         default_factory=ClientConfig,
@@ -92,9 +73,9 @@ class BenchmarkConfig:
     server_config: Optional[ServerConfig] = field(
         default=None,
         metadata={
-            "help": "Optional server configuration for automatic server management. "
+            "help": "Server configuration for automatic server management. "
             "If provided, the server will be launched before the benchmark and "
-            "api_url and api_key will be auto-populated if not explicitly set."
+            "target api_url and api_key will be auto-populated."
         },
     )
     runtime_telemetry_enabled: bool = field(
@@ -137,43 +118,16 @@ class BenchmarkConfig:
         if self.num_request_runner_threads < 1:
             raise ValueError("num_request_runner_threads must be greater than 0")
 
-        # Handle server_config if provided
         if self.server_config is not None:
-            # Get the default values from the field definitions
-            api_url_field = next(
-                f for f in self.__dataclass_fields__.values() if f.name == "api_url"
+            object.__setattr__(self, "api_url", self.server_config.get_api_base_url())
+            object.__setattr__(self, "api_key", self.server_config.api_key)
+            object.__setattr__(self.client_config, "model", self.server_config.model)
+            logger.info(
+                f"Auto-populated api_url, api_key and server_config.model from server_config:\n"
+                f"api_url: {self.api_url}\n"
+                f"api_key: {self.api_key}\n"
+                f"client_config.model: {self.client_config.model}"
             )
-            api_key_field = next(
-                f for f in self.__dataclass_fields__.values() if f.name == "api_key"
-            )
-
-            # Auto-populate api_url if not explicitly set (checking against default)
-            if self.api_url == api_url_field.default:
-                object.__setattr__(
-                    self, "api_url", self.server_config.get_api_base_url()
-                )
-                logger.info(
-                    f"Auto-populated api_url from server_config: {self.api_url}"
-                )
-
-            # Auto-populate api_key if not explicitly set (checking against default)
-            if self.api_key == api_key_field.default:
-                object.__setattr__(self, "api_key", self.server_config.api_key)
-                logger.info("Auto-populated api_key from server_config")
-
-            # Sync model from client_config to server_config to avoid user having to specify twice
-            # Only auto-populate if the server_config.model is still the default value
-            default_server_model = ServerConfig().model
-            if (
-                self.server_config.model == default_server_model
-                and self.server_config.model != self.client_config.model
-            ):
-                logger.info(
-                    f"Auto-populated server_config.model from client_config.model: {self.client_config.model}"
-                )
-                object.__setattr__(
-                    self.server_config, "model", self.client_config.model
-                )
 
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
             logger.warning("Removing timeout for LMEval.")

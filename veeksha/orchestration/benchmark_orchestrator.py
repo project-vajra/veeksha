@@ -84,8 +84,9 @@ def managed_server(
 
     try:
         # Launch server
-        if not server_manager.launch():
-            raise RuntimeError("Failed to launch server")
+        success, error = server_manager.launch()
+        if not success:
+            raise RuntimeError(f"Failed to launch server: {error}")
 
         # Wait for ready
         if not server_manager.wait_for_ready():

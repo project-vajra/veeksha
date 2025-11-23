@@ -44,6 +44,10 @@ def _require_gpu():
 
 
 def _require_vllm():
+    # If VLLM_PYTHON is set, we assume the environment has vllm installed
+    if os.environ.get("VLLM_PYTHON"):
+        return
+
     if importlib.util.find_spec("vllm") is None:
         pytest.skip("vLLM not installed")
 
@@ -57,6 +61,12 @@ def _get_free_port() -> int:
 
 
 def _env_path() -> str:
+    # If VLLM_PYTHON is set, use that environment
+    vllm_python = os.environ.get("VLLM_PYTHON")
+    if vllm_python:
+        # vllm_python is .../env/bin/python; we want the parent env path
+        return os.path.dirname(os.path.dirname(vllm_python))
+    
     # sys.executable is .../env/bin/python; we want the parent env path
     return os.path.dirname(os.path.dirname(sys.executable))
 

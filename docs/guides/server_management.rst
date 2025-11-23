@@ -22,7 +22,7 @@ ResourceManager
 
 Key features:
 
-- Auto-detect GPUs using `pynvml` (if installed).
+- Auto-detect GPUs using `pynvml`.
 - Manual node registration via `add_node()` for testing or custom clusters.
 - Allocate contiguous GPUs on a single node (preferred) or multi-node
   allocations when requested.

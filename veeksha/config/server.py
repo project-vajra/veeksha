@@ -24,7 +24,7 @@ class ServerConfig:
     engine: str = field(
         default="vllm",
         metadata={
-            "help": "The inference engine to use (e.g., 'vajra', 'vllm','tgi', 'sglang')"
+            "help": "The inference engine to use (e.g., 'vajra', 'vllm', 'tgi', 'sglang')"
         },
     )
 
@@ -38,7 +38,7 @@ class ServerConfig:
     )
 
     # Model configuration
-    # Note: When used with BenchmarkConfig, this will be auto-populated from ClientConfig
+    # When used with BenchmarkConfig, this will be auto-populated from ClientConfig
     model: str = field(
         default="meta-llama/Meta-Llama-3-8B-Instruct",
         metadata={"help": "Model name or path"},

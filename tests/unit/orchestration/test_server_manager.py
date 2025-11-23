@@ -1,8 +1,10 @@
 
-import pytest  # type: ignore[import]
 import os
 import time
 import tempfile
+from pathlib import Path
+
+import pytest  # type: ignore[import]
 from unittest.mock import MagicMock, patch, ANY
 from veeksha.orchestration.server_manager import BaseServerManager
 from veeksha.config.server import ServerConfig
@@ -39,7 +41,9 @@ class TestBaseServerManager:
         mock_process.pid = 12345
         mock_popen.return_value = mock_process
         
-        assert manager.launch()
+        success, error = manager.launch()
+        assert success
+        assert error is None
         
         assert manager.is_running
         assert manager.process == mock_process
@@ -57,7 +61,9 @@ class TestBaseServerManager:
         manager.process = MagicMock()
         manager.process.poll.return_value = None
         
-        assert manager.launch()
+        success, error = manager.launch()
+        assert success
+        assert error is None
         mock_popen.assert_not_called()
 
     @patch("subprocess.Popen")
@@ -65,7 +71,9 @@ class TestBaseServerManager:
         """Test launch failure."""
         mock_popen.side_effect = Exception("Launch failed")
         
-        assert not manager.launch()
+        success, error = manager.launch()
+        assert not success
+        assert error == "Launch failed"
         assert not manager.is_running
 
     @patch("requests.get")
@@ -215,7 +223,9 @@ class TestBaseServerManager:
             mock_process.poll.return_value = None
             mock_popen.return_value = mock_process
             
-            assert manager.launch()
+            success, error = manager.launch()
+            assert success
+            assert error is None
             
             # Check that GPUs were allocated
             manager.resource_manager.wait_for_resources.assert_called_with(
@@ -250,7 +260,9 @@ class TestBaseServerManager:
             mock_process.poll.return_value = None
             mock_popen.return_value = mock_process
 
-            assert manager.launch()
+            success, error = manager.launch()
+            assert success
+            assert error is None
 
             manager.resource_manager.wait_for_resources.assert_called_with(
                 num_gpus=2,
@@ -285,4 +297,37 @@ class TestBaseServerManager:
         stdout, stderr = manager.get_server_logs(lines=10)
         assert stdout == ""
         assert stderr == ""
+
+    @patch("subprocess.Popen")
+    def test_logs_written_to_metrics_output_dir(
+        self, mock_popen, tmp_path, monkeypatch
+    ):
+        """Server logs should live inside the benchmark output directory."""
+        config = ServerConfig(
+            engine="test",
+            host="localhost",
+            port=8123,
+            gpu_ids=[0],
+            startup_timeout=1,
+            health_check_interval=0.1,
+        )
+        manager = TestServerManager(config)
+        monkeypatch.setenv("VEEKSHA_OUTPUT_DIR", str(tmp_path))
+
+        mock_process = MagicMock()
+        mock_process.poll.return_value = None
+        mock_process.pid = 42
+        mock_popen.return_value = mock_process
+
+        success, _ = manager.launch()
+        assert success
+
+        log_path = Path(manager._log_file.name)
+        assert log_path.parent == tmp_path
+        assert log_path.exists()
+
+        manager.shutdown()
+        assert log_path.exists()
+
+        monkeypatch.delenv("VEEKSHA_OUTPUT_DIR", raising=False)
 

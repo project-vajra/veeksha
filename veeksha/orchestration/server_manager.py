@@ -6,9 +6,12 @@ of LLM inference servers (launch, health check, shutdown).
 """
 
 import abc
+import os
 import subprocess
+import tempfile
 import time
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import IO, Any, Dict, Optional
 
 import requests
 
@@ -36,6 +39,8 @@ class BaseServerManager(abc.ABC):
         self.process: Optional[subprocess.Popen] = None
         self._is_running = False
         self._log_file = None  # Store log file for cleanup
+        self._log_file_path: Optional[Path] = None
+        self._delete_log_file_on_cleanup = True
         self.resource_manager = ResourceManager()
         self._allocated_job_id: Optional[str] = None  # Track allocated resources
 
@@ -56,17 +61,48 @@ class BaseServerManager(abc.ABC):
             List of command arguments
         """
 
-    def launch(self) -> bool:
+    def _create_log_file(self) -> IO[str]:
+        """Create a log file for the server process."""
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        log_filename = (
+            f"server_logs_{self.config.engine.lower()}_{self.config.host}_"
+            f"{self.config.port}_{timestamp}.log"
+        )
+
+        output_dir = os.environ.get("VEEKSHA_OUTPUT_DIR")
+        if output_dir:
+            log_dir = Path(output_dir)
+            try:
+                log_dir.mkdir(parents=True, exist_ok=True)
+                log_path = log_dir / log_filename
+                log_file = open(log_path, "w+", encoding="utf-8")
+                self._log_file_path = log_path
+                self._delete_log_file_on_cleanup = False
+                return log_file
+            except Exception as exc:  # pragma: no cover - fallback path
+                logger.warning(
+                    "Unable to create server log file in benchmark output directory "
+                    f"'{output_dir}': {exc}. Falling back to a temporary file."
+                )
+
+        temp_file = tempfile.NamedTemporaryFile(
+            mode="w+", delete=False, suffix=".log", prefix="llm_server_"
+        )
+        self._log_file_path = Path(temp_file.name)
+        self._delete_log_file_on_cleanup = True
+        return temp_file
+
+    def launch(self) -> tuple[bool, Optional[str]]:
         """Launch the inference server.
 
         Returns:
-            True if launch was successful, False otherwise
+            Tuple of (True if launch was successful, False otherwise, error message if any)
         """
         if self.is_running:
             logger.warning(
                 f"Server already running on {self.config.host}:{self.config.port}"
             )
-            return True
+            return True, None
 
         try:
             # Auto-allocate GPUs if not specified
@@ -86,7 +122,7 @@ class BaseServerManager(abc.ABC):
 
                 if resource_mapping is None:
                     logger.error(f"Failed to allocate {num_gpus} GPUs for server")
-                    return False
+                    return False, f"Failed to allocate {num_gpus} GPUs for server"
 
                 # Track allocated job id for later release / Vajra mapping
                 self._allocated_job_id = job_id
@@ -106,8 +142,6 @@ class BaseServerManager(abc.ABC):
             logger.info(f"Launching server with command: {' '.join(command)}")
 
             # Set up environment variables
-            import os
-
             env = os.environ.copy()
 
             # If an environment path is provided in the config, prepend its
@@ -123,7 +157,7 @@ class BaseServerManager(abc.ABC):
                     env["PATH"] = f"{bin_dir}{os.pathsep}{old_path}"
                     logger.info(f"Prepended {bin_dir} to PATH for subprocess")
                 else:
-                    logger.warning(
+                    raise ValueError(
                         f"Configured environment_path '{env_path}' does not contain {scripts_dir} at {bin_dir}"
                     )
 
@@ -134,13 +168,8 @@ class BaseServerManager(abc.ABC):
                 logger.info(f"Setting CUDA_VISIBLE_DEVICES={gpu_env}")
 
             # Launch server process
-            # Redirect output to a temporary file so we can check for errors
-            import tempfile
-
-            self._log_file = tempfile.NamedTemporaryFile(
-                mode="w+", delete=False, suffix=".log", prefix="llm_server_"
-            )
-            logger.info(f"Server logs: {self._log_file.name}")
+            # Redirect output to a log file inside the benchmark output directory
+            self._log_file = self._create_log_file()
 
             self.process = subprocess.Popen(
                 command,
@@ -152,10 +181,9 @@ class BaseServerManager(abc.ABC):
 
             logger.info(f"Server process started with PID: {self.process.pid}")
             self._is_running = True
-            return True
+            return True, None
 
         except Exception as e:
-            logger.error(f"Failed to launch server: {e}")
             # If we allocated GPUs earlier, make sure to release them
             if self._allocated_job_id is not None:
                 logger.info(
@@ -163,7 +191,7 @@ class BaseServerManager(abc.ABC):
                 )
                 self.resource_manager.release_resources(self._allocated_job_id)
                 self._allocated_job_id = None
-            return False
+            return False, str(e)
 
     def health_check(self) -> bool:
         """Check if server is healthy and ready to accept requests.
@@ -253,8 +281,6 @@ class BaseServerManager(abc.ABC):
 
             # Check health
             if self.health_check():
-                elapsed = time.time() - start_time
-                logger.info(f"Server is ready! (took {elapsed:.1f}s)")
                 return True
 
             # Wait before next check
@@ -328,12 +354,24 @@ class BaseServerManager(abc.ABC):
             if self._log_file:
                 try:
                     self._log_file.close()
-                    import os
+                except Exception as e:
+                    logger.warning(f"Failed to close log file: {e}")
+                finally:
+                    self._log_file = None
 
-                    os.unlink(self._log_file.name)
-                    logger.debug(f"Removed log file: {self._log_file.name}")
+            if (
+                self._delete_log_file_on_cleanup
+                and self._log_file_path is not None
+                and self._log_file_path.exists()
+            ):
+                try:
+                    os.unlink(self._log_file_path)
+                    logger.debug(f"Removed log file: {self._log_file_path}")
                 except Exception as e:
                     logger.warning(f"Failed to clean up log file: {e}")
+
+            self._log_file_path = None
+            self._delete_log_file_on_cleanup = True
 
         return success
 
@@ -349,7 +387,12 @@ class BaseServerManager(abc.ABC):
             be an empty string and stdout will contain both streams.
         """
         # If we never set up a log file we can't return anything useful
-        if self._log_file is None:
+        log_path: Optional[Path] = None
+        if self._log_file_path is not None:
+            log_path = self._log_file_path
+        elif self._log_file is not None:
+            log_path = Path(self._log_file.name)
+        else:
             return "", ""
 
         # Note: This is a simple implementation that reads available output
@@ -359,19 +402,21 @@ class BaseServerManager(abc.ABC):
         # that combined stream as stdout and leave stderr empty.
         try:
             # Ensure any buffered output is flushed before we read the file
-            try:
-                self._log_file.flush()
-            except Exception:
-                # Ignore any flush errors; we'll still attempt to read the file
-                pass
+            if self._log_file is not None:
+                try:
+                    self._log_file.flush()
+                except Exception:
+                    # Ignore any flush errors; we'll still attempt to read the file
+                    pass
+
+            if not log_path.exists():
+                return "", ""
 
             # Read the log file content from disk rather than relying on the
             # file object's current pointer. This avoids disturbing the file
             # pointer used by the subprocess and reads bytes safely even while
             # the subprocess is still running.
-            with open(
-                self._log_file.name, "r", encoding="utf-8", errors="replace"
-            ) as f:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                 all_lines = f.read().splitlines()
 
             if lines <= 0:

@@ -5,6 +5,7 @@ import wandb
 
 from veeksha.capacity_search.capacity_search import CapacitySearch, SearchResult
 from veeksha.config.capacity_search import CapacitySearchConfig
+from veeksha.config.utils import prepare_benchmark_output_dir
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
@@ -83,9 +84,12 @@ def run_search(
             logger.info(
                 "Server config detected, launching managed server for capacity search"
             )
-            with managed_server(
-                capacity_search_config.benchmark_config.server_config
-            ) as server_info:
+            benchmark_config = capacity_search_config.benchmark_config
+            prepare_benchmark_output_dir(benchmark_config)
+            os.environ["VEEKSHA_OUTPUT_DIR"] = (
+                benchmark_config.metrics_config.output_dir
+            )
+            with managed_server(benchmark_config.server_config) as server_info:
                 logger.info(f"Server ready at {server_info['api_base']}")
                 capacity_search = CapacitySearch(capacity_search_config)
                 return capacity_search.search()

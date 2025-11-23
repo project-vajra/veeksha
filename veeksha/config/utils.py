@@ -535,6 +535,15 @@ def prepare_benchmark_output_dir(benchmark_config) -> None:
       named with model and config-hash plus a high-entropy timestamp.
     - Save both `config.json` and `config.yml` in the final output directory.
     """
+    current_output_dir = benchmark_config.metrics_config.output_dir
+    existing_config_path = os.path.join(current_output_dir, "config.json")
+    if os.path.isfile(existing_config_path):
+        logger.debug(
+            "Benchmark output directory already prepared at %s; skipping regeneration",
+            current_output_dir,
+        )
+        return
+
     from veeksha.config.utils import (  # local to avoid cycles
         dataclass_to_dict,
         get_config_hash,

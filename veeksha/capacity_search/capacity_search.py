@@ -27,7 +27,11 @@ from veeksha.config.generators.request_generator.synthetic_generator import (
 from veeksha.config.generators.request_generator.trace_generator import (
     TraceRequestGeneratorConfig,
 )
-from veeksha.config.utils import dataclass_to_dict, get_config_hash
+from veeksha.config.utils import (
+    dataclass_to_dict,
+    get_config_hash,
+    prepare_benchmark_output_dir,
+)
 from veeksha.constants.capacity_search_constants import (
     QPS_INCREASE_SCALE,
     VICINITY_THRESHOLD,
@@ -241,6 +245,10 @@ class CapacitySearch:
             and benchmark_config.server_config is not None
         ):
             logger.info(f"Launching new server for QPS {qps}")
+            prepare_benchmark_output_dir(benchmark_config)
+            os.environ["VEEKSHA_OUTPUT_DIR"] = (
+                benchmark_config.metrics_config.output_dir
+            )
             with managed_server(benchmark_config.server_config) as server_info:
                 logger.info(f"Server ready at {server_info['api_base']}")
                 service_metrics = run_benchmark_wrapped(benchmark_config)
