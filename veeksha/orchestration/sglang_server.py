@@ -70,16 +70,15 @@ class SGLangServerManager(BaseServerManager):
         # Process additional arguments (parsed from JSON string in __post_init__)
         additional_args_dict = self.get_additional_args_dict()
         for key, value in additional_args_dict.items():
-            if value is True:
-                # Boolean flags
+            if isinstance(value, bool) and value:
                 command.append(f"--{key}")
-            elif value is False or value is None:
+            elif value is None:
                 # Skip false/none values
                 continue
             elif isinstance(value, (list, tuple)):
                 # List values
                 command.append(f"--{key}")
-                command.extend([str(v) for v in value])
+                command.append(f"[{', '.join([str(v) for v in value])}]")
             else:
                 # Regular key-value pairs
                 command.extend([f"--{key}", str(value)])

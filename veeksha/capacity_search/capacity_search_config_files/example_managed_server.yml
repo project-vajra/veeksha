@@ -1,5 +1,8 @@
 output_dir: capsearch_results
 max_iterations: 5
+
+# restart the server at the start of each iteration
+restart_server_per_iteration: true
 seed: 42
 
 slos:
@@ -18,10 +21,22 @@ benchmark_config:
   timeout: 10000
   max_completed_requests: 5
 
+  # optional
+  server_config:
+    engine: sglang
+    model: meta-llama/Meta-Llama-3-8B-Instruct
+    environment_path: sglang_env
+    port: 30000
+    host: localhost
+    api_key: token-abc123
+    additional_args: >-
+      {"chunked-prefill-size": 256,
+      "piecewise-cuda-graph-tokens": [2, 4, 8, 16],
+      "skip-server-warmup": true,
+      "device": "cuda"}
+
   client_config:
     llm_api: openai_chat
-    api_url: http://localhost:30000/v1
-    api_key: token-abc123
 
   request_generator_config:
     type: trace

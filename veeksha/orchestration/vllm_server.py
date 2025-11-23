@@ -79,7 +79,7 @@ class VLLMServerManager(BaseServerManager):
             if value is True:
                 # Boolean flags
                 command.append(f"--{key}")
-            elif value is False or value is None:
+            elif value is None:
                 # Skip false/none values
                 continue
             elif isinstance(value, (list, tuple)):
