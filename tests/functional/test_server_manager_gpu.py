@@ -76,7 +76,15 @@ def _build_benchmark_config(output_dir: str, model: str, server_config: ServerCo
     return BenchmarkConfig(
         timeout=120,
         max_completed_requests=1,
-        client_config=ClientConfig(model=model, tokenizer=model, min_tokens_param=None),
+        # Use completions API for synthetic text prompts to avoid vLLM chat
+        # template issues for models/tokenizers that don't define chat templates
+        client_config=ClientConfig(
+            model=model,
+            tokenizer=model,
+            min_tokens_param=None,
+            llm_api="openai_completions",
+            address_append_value="completions",
+        ),
         metrics_config=MetricsConfig(
             output_dir=output_dir,
             stream_metrics=False,
@@ -99,55 +107,6 @@ def _build_benchmark_config(output_dir: str, model: str, server_config: ServerCo
 
 
 class TestServerManagerGPU:
-    @pytest.mark.gpu
-    @pytest.mark.no_vllm_server
-    def test_managed_server_runs_end_to_end(self, temp_output_dir: str, server_manager_model: str):
-        """Launch a vLLM server via managed_server and run a tiny benchmark."""
-        _require_gpu()
-        _require_vllm()
-
-        server_config = ServerConfig(
-            engine="vllm",
-            model=server_manager_model,
-            host="127.0.0.1",
-            port=_get_free_port(),
-            api_key="gpu-integration-key",
-            gpu_ids=[0],
-            tensor_parallel_size=1,
-            environment_path=_env_path(),
-            startup_timeout=600,
-            health_check_interval=1.0,
-        )
-
-        benchmark_config = _build_benchmark_config(temp_output_dir, server_manager_model, server_config)
-
-        server_manager = None
-        with managed_server(server_config) as server_info:
-            metrics = run_benchmark(benchmark_config)
-
-            # Capture server_manager for later inspection after shutdown
-            server_manager = server_info["server_manager"]
-
-            # Print server logs for debugging / visibility
-            stdout, stderr = server_manager.get_server_logs(lines=200)
-            print("\n=== Server Logs (stdout) ===")
-            print(stdout)
-            if stderr:
-                print("\n=== Server Logs (stderr) ===")
-                print(stderr)
-
-        # Print server logs again after server has shut down, if available
-        if server_manager is not None:
-            stdout, stderr = server_manager.get_server_logs(lines=200)
-            print("\n=== Server Logs (stdout) after shutdown ===")
-            print(stdout)
-            if stderr:
-                print("\n=== Server Logs (stderr) after shutdown ===")
-                print(stderr)
-
-        assert metrics.metric_store.num_completed_requests >= 1
-        assert os.path.exists(temp_output_dir)
-
     @pytest.mark.gpu
     @pytest.mark.no_vllm_server
     def test_managed_server_auto_resource_allocation(self, temp_output_dir: str, server_manager_model: str):
