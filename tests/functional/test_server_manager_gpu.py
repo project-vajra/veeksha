@@ -22,6 +22,7 @@ from veeksha.config.generators.request_generator.synthetic_generator import (
 )
 from veeksha.config.metrics import MetricsConfig
 from veeksha.config.server import ServerConfig
+from veeksha.orchestration import managed_server
 from veeksha.orchestration.resource_manager import ResourceManager
 
 
@@ -150,7 +151,9 @@ class TestServerManagerGPU:
         )
 
         benchmark_config = _build_benchmark_config(temp_output_dir, server_manager_model, server_config)
-        metrics = run_benchmark(benchmark_config)
+
+        with managed_server(server_config):
+            metrics = run_benchmark(benchmark_config)
 
         assert metrics.metric_store.num_completed_requests >= 1
         assert os.path.exists(temp_output_dir)
@@ -182,7 +185,9 @@ class TestServerManagerGPU:
         )
 
         benchmark_config = _build_benchmark_config(temp_output_dir, server_manager_model, server_config)
-        metrics = run_benchmark(benchmark_config)
+
+        with managed_server(server_config):
+            metrics = run_benchmark(benchmark_config)
 
         assert metrics.metric_store.num_completed_requests >= 1
         assert tracker.allocations, "Resource manager should allocate at least once"
