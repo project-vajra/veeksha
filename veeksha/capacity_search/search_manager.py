@@ -89,6 +89,7 @@ def run_search(
             os.environ["VEEKSHA_OUTPUT_DIR"] = (
                 benchmark_config.metrics_config.output_dir
             )
+            assert benchmark_config.server_config is not None
             with managed_server(benchmark_config.server_config) as server_info:
                 logger.info(f"Server ready at {server_info['api_base']}")
                 capacity_search = CapacitySearch(capacity_search_config)
