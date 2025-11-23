@@ -287,6 +287,7 @@ def main():
         else:
             logger.error(f"Unknown example: {example}")
             logger.info("Available examples: hellaswag, multiple, comparison")
+            sys.exit(1)
     else:
         logger.info("Running all examples...")
         logger.info(

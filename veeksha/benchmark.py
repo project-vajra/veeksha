@@ -296,10 +296,13 @@ def run_benchmark(
     os.environ["VEEKSHA_OUTPUT_DIR"] = benchmark_config.metrics_config.output_dir
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-    setup_api_environment(
-        api_key=benchmark_config.api_key,
-        api_url=benchmark_config.api_url,
-    )
+    if benchmark_config.server_config is None:
+        setup_api_environment(
+            api_key=benchmark_config.api_key,
+            api_url=benchmark_config.api_url,
+        )
+    else:
+        logger.info("Using API environment from managed server configuration")
 
     _initialize_min_tokens_support(benchmark_config)
 
