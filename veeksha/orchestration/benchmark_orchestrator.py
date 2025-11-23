@@ -83,8 +83,12 @@ def managed_server(
     server_manager = create_server_manager(config)
 
     try:
-        # Launch server
-        success, error = server_manager.launch()
+        # Launch server (backwards compatible with bool or tuple responses)
+        launch_result = server_manager.launch()
+        if isinstance(launch_result, tuple):
+            success, error = launch_result
+        else:
+            success, error = bool(launch_result), None
         if not success:
             raise RuntimeError(f"Failed to launch server: {error}")
 

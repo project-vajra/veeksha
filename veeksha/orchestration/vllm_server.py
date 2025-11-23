@@ -76,11 +76,12 @@ class VLLMServerManager(BaseServerManager):
         for key, value in additional_args_dict.items():
             if key in special_keys:
                 continue
-            if value is True:
-                # Boolean flags
-                command.append(f"--{key}")
-            elif value is None:
-                # Skip false/none values
+            if isinstance(value, bool):
+                if value:
+                    command.append(f"--{key}")
+                continue
+            if value is None:
+                # Skip unset values
                 continue
             elif isinstance(value, (list, tuple)):
                 # List values
