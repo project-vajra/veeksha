@@ -247,7 +247,7 @@ class CapacitySearch:
         ):
             logger.info(f"Launching new server for QPS {qps}")
             if iteration != 0:
-                logger.info(f"Waiting for 5 seconds for resource freshness")
+                logger.info("Waiting for 5 seconds for resource freshness")
                 time.sleep(5)
             prepare_benchmark_output_dir(benchmark_config)
             os.environ["VEEKSHA_OUTPUT_DIR"] = (

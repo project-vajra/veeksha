@@ -29,7 +29,9 @@ def server_config():
 
 @pytest.fixture
 def manager(server_config):
-    return TestServerManager(server_config)
+    mgr = TestServerManager(server_config)
+    mgr._is_port_in_use = MagicMock(return_value=False)
+    return mgr
 
 class TestBaseServerManager:
     
@@ -75,6 +77,17 @@ class TestBaseServerManager:
         assert not success
         assert error == "Launch failed"
         assert not manager.is_running
+
+    @patch("subprocess.Popen")
+    def test_launch_fails_when_port_in_use(self, mock_popen, manager):
+        """Ensure launch aborts when another process already uses the port."""
+        manager._is_port_in_use.return_value = True
+
+        success, error = manager.launch()
+
+        assert not success
+        assert "already in use" in error
+        mock_popen.assert_not_called()
 
     @patch("requests.get")
     def test_health_check_success(self, mock_get, manager):

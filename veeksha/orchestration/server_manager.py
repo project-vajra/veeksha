@@ -7,6 +7,7 @@ of LLM inference servers (launch, health check, shutdown).
 
 import abc
 import os
+import socket
 import subprocess
 import tempfile
 import time
@@ -104,6 +105,14 @@ class BaseServerManager(abc.ABC):
             )
             return True, None
 
+        if self._is_port_in_use():
+            error_msg = (
+                f"Port {self.config.port} on host '{self.config.host}' is already in use. "
+                "Stop the existing process or update server_config.port to a free port."
+            )
+            logger.error(error_msg)
+            return False, error_msg
+
         try:
             # Auto-allocate GPUs if not specified
             if self.config.gpu_ids is None:
@@ -192,6 +201,43 @@ class BaseServerManager(abc.ABC):
                 self.resource_manager.release_resources(self._allocated_job_id)
                 self._allocated_job_id = None
             return False, str(e)
+
+    def _is_port_in_use(self) -> bool:
+        """Return True if the configured host:port already has an active listener."""
+        host = self.config.host
+        port = self.config.port
+
+        try:
+            addr_info = socket.getaddrinfo(
+                host,
+                port,
+                family=socket.AF_UNSPEC,
+                type=socket.SOCK_STREAM,
+            )
+        except socket.gaierror as exc:
+            logger.debug(
+                "Skipping port availability check because host '%s' cannot be resolved: %s",
+                host,
+                exc,
+            )
+            return False
+
+        for family, socktype, proto, _, sockaddr in addr_info:
+            try:
+                with socket.socket(family, socktype, proto) as sock:
+                    sock.settimeout(1.0)
+                    if sock.connect_ex(sockaddr) == 0:
+                        return True
+            except OSError as exc:
+                logger.debug(
+                    "Port availability probe failed for %s:%s with %s",
+                    host,
+                    port,
+                    exc,
+                )
+                continue
+
+        return False
 
     def health_check(self) -> bool:
         """Check if server is healthy and ready to accept requests.
