@@ -16,12 +16,12 @@ slos:
 
 benchmark_config:
   timeout: 10000
-  max_completed_requests: 5
+  max_completed_requests: 25
+  api_url: http://localhost:30000/v1
+  api_key: token-abc123
 
   client_config:
     llm_api: openai_chat
-    api_url: http://localhost:30000/v1
-    api_key: token-abc123
 
   request_generator_config:
     type: trace

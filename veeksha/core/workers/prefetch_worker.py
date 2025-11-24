@@ -14,6 +14,8 @@ logger = init_logger(__name__)
 class PrefetchWorker:
     """Worker that generates requests and pushes them to the ready queue."""
 
+    _GENERATION_BUDGET_POLL_INTERVAL_S = 0.05
+
     def __init__(
         self,
         ready_queue: Queue,
@@ -27,6 +29,14 @@ class PrefetchWorker:
         self.request_generator = request_generator
         self.generator_lock = generator_lock
         self.worker_context = worker_context
+
+    def _has_generation_budget(self) -> bool:
+        """Return True if we can generate more requests right now."""
+        return self.service_metrics.num_generated_requests < (
+            self.service_metrics.max_requests
+            + self.service_metrics.num_errored_requests
+            + self.service_metrics.num_cancelled_requests
+        )
 
     def run(self) -> None:
         """Main worker loop."""
@@ -49,43 +59,47 @@ class PrefetchWorker:
 
     def _generate_request(self):
         """Generate next request in a thread-safe manner. Returns None if should stop."""
-        with self.generator_lock:
-            # enough requests generated?
-            if (
-                self.service_metrics.num_generated_requests
-                >= self.service_metrics.max_requests
-            ):
-                logger.debug(
-                    "Prefetch worker %s: max requests reached",
-                    self.worker_context.worker_id,
-                )
-                return None
+        while not self.worker_context.stop_event.is_set():
+            wait_for_budget = False
+            with self.generator_lock:
+                if not self._has_generation_budget():
+                    wait_for_budget = True
+                else:
+                    try:
+                        request_config = self.request_generator.get_request()
+                    # error exhaustion policy is active
+                    except StopIteration:
+                        self.service_metrics.notify_error(
+                            RuntimeError(
+                                "Request generator exhausted with 'error' policy. Aborting benchmark."
+                            )
+                        )
+                        self.worker_context.stop_event.set()
+                        return None
 
-            try:
-                request_config = self.request_generator.get_request()
-            # error exhaustion policy is active
-            except StopIteration:
-                self.service_metrics.notify_error(
-                    RuntimeError(
-                        "Request generator exhausted with 'error' policy. Aborting benchmark."
-                    )
-                )
-                self.worker_context.stop_event.set()
-                return None
+                    # stop exhaustion policy is active
+                    if request_config.dispatch_delay == -1:
+                        logger.debug(
+                            "Prefetch worker %s: stop policy triggered",
+                            self.worker_context.worker_id,
+                        )
+                        self.service_metrics.request_stop()
+                        self.worker_context.stop_event.set()
+                        return None
+                    elif request_config.dispatch_delay < 0:
+                        raise ValueError(
+                            f"Invalid dispatch_delay '{request_config.dispatch_delay}' from generator"
+                        )
 
-            # stop exhaustion policy is active
-            if request_config.dispatch_delay == -1:
-                logger.debug(
-                    "Prefetch worker %s: stop policy triggered",
-                    self.worker_context.worker_id,
-                )
-                self.service_metrics.request_stop()
-                self.worker_context.stop_event.set()
-                return None
-            elif request_config.dispatch_delay < 0:
-                raise ValueError(
-                    f"Invalid dispatch_delay '{request_config.dispatch_delay}' from generator"
-                )
+                    self.service_metrics.num_generated_requests += 1
+                    return request_config
 
-            self.service_metrics.num_generated_requests += 1
-            return request_config
+            if wait_for_budget:
+                triggered = self.worker_context.stop_event.wait(
+                    self._GENERATION_BUDGET_POLL_INTERVAL_S
+                )
+                if triggered:
+                    break
+                continue
+
+        return None
