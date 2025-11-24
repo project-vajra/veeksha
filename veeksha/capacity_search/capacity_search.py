@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 from dataclasses import replace
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple, TypedDict, cast
@@ -27,12 +28,17 @@ from veeksha.config.generators.request_generator.synthetic_generator import (
 from veeksha.config.generators.request_generator.trace_generator import (
     TraceRequestGeneratorConfig,
 )
-from veeksha.config.utils import dataclass_to_dict, get_config_hash
+from veeksha.config.utils import (
+    dataclass_to_dict,
+    get_config_hash,
+    prepare_benchmark_output_dir,
+)
 from veeksha.constants.capacity_search_constants import (
     QPS_INCREASE_SCALE,
     VICINITY_THRESHOLD,
 )
 from veeksha.logger import init_logger
+from veeksha.orchestration.benchmark_orchestrator import managed_server
 
 logger = init_logger(__name__)
 
@@ -210,7 +216,7 @@ class CapacitySearch:
                 json.dump(self.full_config, f, indent=4)
 
     def _run_capacity_search_benchmark(
-        self, qps: float
+        self, qps: float, iteration: int
     ) -> Tuple[bool, Optional[Dict[str, float]], str, bool]:
         qps_key = str(qps)
 
@@ -233,7 +239,26 @@ class CapacitySearch:
         # isolated benchmark config for this QPS
         benchmark_config = self._build_benchmark_config_for_qps(qps, qps_run_dir)
 
-        service_metrics = run_benchmark_wrapped(benchmark_config)
+        # Use managed server if configured to create a new server for each QPS run
+        if (
+            self.capacity_search_config.restart_server_per_iteration
+            and hasattr(benchmark_config, "server_config")
+            and benchmark_config.server_config is not None
+        ):
+            logger.info(f"Launching new server for QPS {qps}")
+            if iteration != 0:
+                logger.info("Waiting for 5 seconds for resource freshness")
+                time.sleep(5)
+            prepare_benchmark_output_dir(benchmark_config)
+            os.environ["VEEKSHA_OUTPUT_DIR"] = (
+                benchmark_config.metrics_config.output_dir
+            )
+            with managed_server(benchmark_config.server_config) as server_info:
+                logger.info(f"Server ready at {server_info['api_base']}")
+                service_metrics = run_benchmark_wrapped(benchmark_config)
+        else:
+            # Use existing behavior (server managed externally or pre-launched)
+            service_metrics = run_benchmark_wrapped(benchmark_config)
 
         is_under_sla, slo_metrics_dict = self.slo_evaluator.evaluate_slo(
             service_metrics.metric_store
@@ -431,7 +456,7 @@ class CapacitySearch:
                 metrics_dict,
                 run_id,
                 from_cache,
-            ) = self._run_capacity_search_benchmark(qps)
+            ) = self._run_capacity_search_benchmark(qps, iteration)
 
             if not from_cache:
                 any_new_runs = True

@@ -296,10 +296,13 @@ def run_benchmark(
     os.environ["VEEKSHA_OUTPUT_DIR"] = benchmark_config.metrics_config.output_dir
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-    setup_api_environment(
-        api_key=benchmark_config.api_key,
-        api_url=benchmark_config.api_url,
-    )
+    if benchmark_config.server_config is None:
+        setup_api_environment(
+            api_key=benchmark_config.api_key,
+            api_url=benchmark_config.api_url,
+        )
+    else:
+        logger.info("Using API environment from managed server configuration")
 
     _initialize_min_tokens_support(benchmark_config)
 
@@ -602,9 +605,32 @@ if __name__ == "__main__":
                     logger.info(f"Starting benchmark {i+1}/{len(benchmark_configs)}")
 
                 is_last = i == len(benchmark_configs) - 1
-                run_benchmark_console_only(
-                    benchmark_config, stop_processor_after=is_last
-                )
+
+                # Check if server orchestration is needed
+                if benchmark_config.server_config is not None:
+                    logger.info("Server configuration detected - using managed server")
+                    from veeksha.orchestration import managed_server
+
+                    prepare_benchmark_output_dir(benchmark_config)
+                    os.environ["VEEKSHA_OUTPUT_DIR"] = (
+                        benchmark_config.metrics_config.output_dir
+                    )
+
+                    logger.info(
+                        f"Launching {benchmark_config.server_config.engine} server..."
+                    )
+                    with managed_server(benchmark_config.server_config) as info:
+                        logger.info(f"Server ready at {info['api_base']}")
+                        logger.info("Running benchmark...")
+                        run_benchmark_console_only(
+                            benchmark_config, stop_processor_after=is_last
+                        )
+                    logger.info("Server shut down")
+                else:
+                    # No server config - assume external server is running
+                    run_benchmark_console_only(
+                        benchmark_config, stop_processor_after=is_last
+                    )
 
                 if len(benchmark_configs) > 1:
                     logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")

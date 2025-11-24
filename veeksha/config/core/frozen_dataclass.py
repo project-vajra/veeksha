@@ -1,9 +1,24 @@
 import dataclasses
 import typing
+from typing import Any, Callable, TypeVar, overload
+
+_T = TypeVar("_T")
+
+
+@overload
+def frozen_dataclass(_cls: type[_T]) -> type[_T]: ...
+
+
+@overload
+def frozen_dataclass(
+    _cls: None = None, **kwargs: Any
+) -> Callable[[type[_T]], type[_T]]: ...
 
 
 @typing.dataclass_transform()
-def frozen_dataclass(_cls=None, **kwargs):
+def frozen_dataclass(
+    _cls: type[_T] | None = None, **kwargs: Any
+) -> type[_T] | Callable[[type[_T]], type[_T]]:
     """
     A decorator that creates a frozen dataclass, allowing attribute modifications
     only during the __post_init__ method.

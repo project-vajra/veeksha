@@ -202,7 +202,8 @@ def setup_test_env(request) -> Iterator[None]:
     new_env = {}
 
     # Only set vLLM env vars if the test needs it and server is available
-    if "gpu" in [mark.name for mark in request.node.iter_markers()]:
+    markers = {mark.name for mark in request.node.iter_markers()}
+    if "gpu" in markers and "no_vllm_server" not in markers:
         logger.info("Test has 'gpu' marker, setting up vLLM environment...")
         try:
             logger.info(f"🔍 Getting vllm_server fixture...")
