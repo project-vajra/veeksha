@@ -200,6 +200,14 @@ class BaseServerManager(abc.ABC):
                 )
                 self.resource_manager.release_resources(self._allocated_job_id)
                 self._allocated_job_id = None
+            if self._log_file is not None:
+                self._log_file.close()
+                self._log_file = None
+            if self._delete_log_file_on_cleanup and self._log_file_path is not None:
+                if self._log_file_path.exists():
+                    self._log_file_path.unlink()
+                self._log_file_path = None
+                self._delete_log_file_on_cleanup = True
             return False, str(e)
 
     def _is_port_in_use(self) -> bool:
