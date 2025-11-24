@@ -308,6 +308,7 @@ class MetricStore:
         self.store_throughput_metrics(output_dir)
         self.store_ttft_violin_plots(output_dir)
         self.store_generation_stalls(output_dir)
+        self.store_dispatch_intervals(output_dir)
 
     def _log_artifact_files(self, output_dir: str) -> None:
         if not (self.should_write_metrics_to_wandb and wandb.run):
@@ -483,3 +484,36 @@ class MetricStore:
                     )
                 }
             )
+
+    def store_dispatch_intervals(self, output_dir: str):
+        """Compute and store inter-request dispatch intervals."""
+        dispatch_times = self.request_level_metrics.request_dispatched_at
+
+        # Need at least 2 requests to compute intervals
+        if len(dispatch_times) < 2:
+            logger.warning("Not enough requests to compute dispatch intervals")
+            return
+
+        # Sort the dispatch times
+        sorted_times = sorted(dispatch_times)
+
+        # Compute intervals between consecutive dispatches
+        intervals = [sorted_times[i+1] - sorted_times[i] for i in range(len(sorted_times) - 1)]
+
+        # Create a CDFSketch for the intervals
+        interval_sketch = CDFSketch(
+            metric_name="Request Dispatch Interval",
+            should_write_to_wandb=self.should_write_metrics_to_wandb,
+            unit="s",
+        )
+
+        # Add all intervals to the sketch
+        for interval in intervals:
+            interval_sketch.put(interval)
+
+        # Generate CSV and PNG files
+        metric_name = "request_dispatch_interval"
+        interval_sketch._save_df(interval_sketch._to_df(), output_dir, metric_name)
+        interval_sketch.plot_cdf(output_dir, metric_name)
+
+        logger.info(f"Stored dispatch intervals: {len(intervals)} intervals computed")
