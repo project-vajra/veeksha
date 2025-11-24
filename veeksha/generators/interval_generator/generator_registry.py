@@ -1,6 +1,7 @@
 from veeksha.types.base_registry import BaseRegistry
 from veeksha.types.request_interval_generator_type import RequestIntervalGeneratorType
 
+from .constant_generator import ConstantRequestIntervalGenerator
 from .gamma_generator import GammaRequestIntervalGenerator
 from .poisson_generator import PoissonRequestIntervalGenerator
 from .static_generator import StaticRequestIntervalGenerator
@@ -13,6 +14,9 @@ class RequestIntervalGeneratorRegistry(BaseRegistry):
         return RequestIntervalGeneratorType.from_str(key_str)  # type: ignore
 
 
+RequestIntervalGeneratorRegistry.register(
+    RequestIntervalGeneratorType.CONSTANT, ConstantRequestIntervalGenerator
+)
 RequestIntervalGeneratorRegistry.register(
     RequestIntervalGeneratorType.GAMMA, GammaRequestIntervalGenerator
 )
