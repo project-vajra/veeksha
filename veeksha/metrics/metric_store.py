@@ -3,6 +3,7 @@ import os
 import threading
 from collections import defaultdict
 from itertools import accumulate
+from pathlib import Path
 from typing import Any, DefaultDict, Dict, List, Optional
 
 import numpy as np
@@ -487,6 +488,9 @@ class MetricStore:
             "summary_stats.json",
             f"p{int(QUANTILE_FOR_DEADLINE_MISS_RATE * 100)}_deadline_miss_rate_for_target_tbt_values.json",
         ]
+
+        for server_log_path in Path(output_dir).rglob("server_logs_*.log"):
+            files_to_log.append(server_log_path.name)
 
         has_entries = False
         for relative_path in files_to_log:

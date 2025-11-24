@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 from dataclasses import replace
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple, TypedDict, cast
@@ -215,7 +216,7 @@ class CapacitySearch:
                 json.dump(self.full_config, f, indent=4)
 
     def _run_capacity_search_benchmark(
-        self, qps: float
+        self, qps: float, iteration: int
     ) -> Tuple[bool, Optional[Dict[str, float]], str, bool]:
         qps_key = str(qps)
 
@@ -245,6 +246,9 @@ class CapacitySearch:
             and benchmark_config.server_config is not None
         ):
             logger.info(f"Launching new server for QPS {qps}")
+            if iteration != 0:
+                logger.info(f"Waiting for 5 seconds for resource freshness")
+                time.sleep(5)
             prepare_benchmark_output_dir(benchmark_config)
             os.environ["VEEKSHA_OUTPUT_DIR"] = (
                 benchmark_config.metrics_config.output_dir
@@ -452,7 +456,7 @@ class CapacitySearch:
                 metrics_dict,
                 run_id,
                 from_cache,
-            ) = self._run_capacity_search_benchmark(qps)
+            ) = self._run_capacity_search_benchmark(qps, iteration)
 
             if not from_cache:
                 any_new_runs = True
