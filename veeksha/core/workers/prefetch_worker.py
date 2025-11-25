@@ -77,20 +77,20 @@ class PrefetchWorker:
                         self.worker_context.stop_event.set()
                         return None
 
-            # stop exhaustion policy is active
-            stop_signal = request_config.wait_after_prev_response_s
-            if stop_signal == -1:
-                logger.debug(
-                    "Prefetch worker %s: stop policy triggered",
-                    self.worker_context.worker_id,
-                )
-                self.service_metrics.request_stop()
-                self.worker_context.stop_event.set()
-                return None
-            elif stop_signal is not None and stop_signal < 0:
-                raise ValueError(
-                    f"Invalid wait_after_prev_response_s '{stop_signal}' from generator"
-                )
+                    # stop exhaustion policy is active
+                    stop_signal = request_config.wait_after_prev_response_s
+                    if stop_signal == -1:
+                        logger.debug(
+                            "Prefetch worker %s: stop policy triggered",
+                            self.worker_context.worker_id,
+                        )
+                        self.service_metrics.request_stop()
+                        self.worker_context.stop_event.set()
+                        return None
+                    elif stop_signal is not None and stop_signal < 0:
+                        raise ValueError(
+                            f"Invalid wait_after_prev_response_s '{stop_signal}' from generator"
+                        )
 
                     self.service_metrics.num_generated_requests += 1
                     return request_config
