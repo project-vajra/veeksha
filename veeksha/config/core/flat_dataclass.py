@@ -1037,6 +1037,10 @@ def _process_single_dataclass(state, input_dataclass, prefix=""):
         prefixed_name = f"{prefix}{field.name}"
         field_type, _ = _get_field_type_info(field)
 
+        # Skip fields that are not part of __init__ (e.g., init=False fields)
+        if not field.init:
+            continue
+
         if field.default is None:
             state["args_with_default_none"].add(prefixed_name)
 

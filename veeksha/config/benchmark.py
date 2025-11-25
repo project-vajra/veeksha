@@ -15,6 +15,7 @@ from veeksha.config.generators.request_generator.synthetic_generator import (
     SyntheticRequestGeneratorConfig,
 )
 from veeksha.config.metrics import MetricsConfig
+from veeksha.config.server import ServerConfig
 from veeksha.config.utils import dataclass_to_dict
 from veeksha.constants.configuration_constants import DEFAULT_SEED
 from veeksha.logger import init_logger
@@ -25,6 +26,8 @@ logger = init_logger(__name__)
 
 @frozen_dataclass(allow_from_file=True)
 class BenchmarkConfig:
+    """Root configuration for a Veeksha benchmark."""
+
     seed: int = field(
         default=DEFAULT_SEED,
         metadata={"help": "Seed for the random number generator."},
@@ -42,11 +45,15 @@ class BenchmarkConfig:
     )
     api_url: Optional[str] = field(
         default="http://localhost:8000/v1",
-        metadata={"help": "The API URL for the benchmark."},
+        metadata={
+            "help": "The API URL for the benchmark. Inferred from server_config if provided."
+        },
     )
     api_key: Optional[str] = field(
         default="token-abc123",
-        metadata={"help": "The API key for the benchmark."},
+        metadata={
+            "help": "The API key for the benchmark. Inferred from server_config if provided."
+        },
     )
     client_config: ClientConfig = field(
         default_factory=ClientConfig,
@@ -62,6 +69,14 @@ class BenchmarkConfig:
     )
     dashboard_config: DashboardConfig = field(
         default_factory=DashboardConfig, metadata={"help": "Dashboard configuration"}
+    )
+    server_config: Optional[ServerConfig] = field(
+        default=None,
+        metadata={
+            "help": "Server configuration for automatic server management. "
+            "If provided, the server will be launched before the benchmark and "
+            "target api_url and api_key will be auto-populated."
+        },
     )
     runtime_telemetry_enabled: bool = field(
         default=False,
@@ -102,6 +117,17 @@ class BenchmarkConfig:
     def __post_init__(self):
         if self.num_request_runner_threads < 1:
             raise ValueError("num_request_runner_threads must be greater than 0")
+
+        if self.server_config is not None:
+            object.__setattr__(self, "api_url", self.server_config.get_api_base_url())
+            object.__setattr__(self, "api_key", self.server_config.api_key)
+            object.__setattr__(self.client_config, "model", self.server_config.model)
+            logger.info(
+                f"Auto-populated api_url, api_key and server_config.model from server_config:\n"
+                f"api_url: {self.api_url}\n"
+                f"api_key: {self.api_key}\n"
+                f"client_config.model: {self.client_config.model}"
+            )
 
         if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
             logger.warning("Removing timeout for LMEval.")
