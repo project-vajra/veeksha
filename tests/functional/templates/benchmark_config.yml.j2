@@ -76,9 +76,6 @@ request_generator_config:
   {% if trace_remap_hash_ids is not none %}
   remap_hash_ids: {{ trace_remap_hash_ids }}
   {% endif %}
-  {% if trace_use_sessions is not none %}
-  use_trace_sessions: {{ trace_use_sessions }}
-  {% endif %}
   {% if session_generator_config %}
   session_generator_config:
     {% if session_generator_config.seed is defined %}seed: {{ session_generator_config.seed }}{% endif %}

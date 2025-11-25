@@ -10,6 +10,7 @@ import uvloop
 from veeksha.config.client import ClientConfig
 from veeksha.core.context import WorkerContext
 from veeksha.core.llm_clients import construct_client
+from veeksha.core.request_config import RequestConfig
 from veeksha.logger import init_logger
 from veeksha.metrics.request_metrics import RequestMetrics
 
@@ -98,13 +99,12 @@ class RequestRunnerWorker:
     async def _emit_error_result(
         self,
         exception: Optional[BaseException],
-        request_config: Optional[Any],
+        request_config: RequestConfig,
         cancelled: bool = False,
     ) -> None:
         """Emit an error RequestMetrics tuple to the output queue."""
         try:
-            prompt_len = request_config.prompt[1] if request_config else 0
-            request_id = request_config.id if request_config else None
+            prompt_len = request_config.prompt[1]
             error_code = None
             error_msg = None
             completed_at = time.monotonic()
@@ -121,12 +121,14 @@ class RequestRunnerWorker:
                 inter_token_times=[],
                 num_prompt_tokens=prompt_len,
                 num_output_tokens=0,
+                session_id=request_config.session_id,
+                session_sequence_index=request_config.session_sequence_index,
+                session_total_requests=request_config.session_total_requests,
+                cancel_session_on_failure=request_config.cancel_session_on_failure,
                 error_msg=error_msg,
                 error_code=error_code,
-                request_id=request_id,
-                benchmark_id=(
-                    request_config.benchmark_id if request_config else "default"
-                ),
+                request_id=request_config.id,
+                benchmark_id=request_config.benchmark_id,
                 cancelled=cancelled,
             )
             result = (metrics, None, completed_at)

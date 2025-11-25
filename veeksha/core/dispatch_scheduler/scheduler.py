@@ -37,7 +37,6 @@ class DispatchScheduler:
         # Reverse mapping from request_id to (session_id, sequence_index)
         self._id_to_session_seq: Dict[int, Tuple[Optional[int], Optional[int]]] = {}
         self._start_monotonic = time.monotonic()
-        self._non_session_ready_cursor: float = 0.0
 
     def _now(self) -> float:
         return time.monotonic() - self._start_monotonic
@@ -52,42 +51,53 @@ class DispatchScheduler:
 
     def add_request(self, request: RequestConfig) -> None:
         with self._lock:
-            if (request.session_id is not None) and (
-                request.session_sequence_index is not None
-            ):
-                # req id is monotonic increasing
-                self._id_to_session_seq[request.id] = (
-                    request.session_id,
-                    request.session_sequence_index,
-                )
-                # Get or create session state
-                session = self._sessions.setdefault(request.session_id, SessionState())
-
-                # Drop requests for canceled sessions
-                if session.is_canceled:
+            existing = self._id_to_session_seq.get(request.id)
+            if existing is not None:
+                existing_session_id, existing_seq_idx = existing
+                if (
+                    existing_session_id == request.session_id
+                    and existing_seq_idx == request.session_sequence_index
+                ):
+                    logger.debug(
+                        "Ignoring duplicate add of request_id=%s for session=%s seq=%s",
+                        request.id,
+                        request.session_id,
+                        request.session_sequence_index,
+                    )
                     return
+            session_id = request.session_id
+            seq_idx = request.session_sequence_index
 
-                # Remember cancel policy from any request in the session
-                if request.cancel_session_on_failure is not None:
-                    session.cancel_on_failure = bool(request.cancel_session_on_failure)
+            session = self._sessions.get(session_id)
+            if session is None:
+                session = SessionState()
+                self._sessions[session_id] = session
 
-                if request.session_sequence_index == 0:
-                    # First-in-session: anchor by absolute if provided; else treat as normal delay
-                    if request.anchor_at_s is not None:
-                        ready_at = float(request.anchor_at_s)
-                    else:
-                        ready_at = self._now() + float(request.dispatch_delay)
-                    self._add_to_ready_queue(ready_at, request)
+            # Drop requests for canceled sessions
+            if session.is_canceled:
+                return
+
+            # Remember cancel policy from any request in the session
+            if request.cancel_session_on_failure is not None:
+                session.cancel_on_failure = bool(request.cancel_session_on_failure)
+
+            # Track mapping for completion callbacks
+            self._id_to_session_seq[request.id] = (session_id, seq_idx)
+            session.open_requests += 1
+
+            if seq_idx == 0:
+                # must be anchored by absolute timestamp
+                if request.session_start_time is not None:
+                    ready_at = float(request.session_start_time)
                 else:
-                    # Queue until prior is completed; then we can compute ready time
-                    session.pending_requests[request.session_sequence_index] = request
-                    self._maybe_release_next_locked(request.session_id)
-            else:
-                # Non-session request: schedule by dispatch_delay
-                anchor_base = max(self._non_session_ready_cursor, self._now())
-                ready_at = anchor_base + float(request.dispatch_delay)
-                self._non_session_ready_cursor = ready_at
+                    raise ValueError(
+                        "session_start_time is required for first-in-session requests"
+                    )
                 self._add_to_ready_queue(ready_at, request)
+            else:
+                # Queue until prior is completed; then we can compute ready time
+                session.pending_requests[seq_idx] = request
+                self._maybe_release_next_locked(session_id)
 
     def _maybe_release_next_locked(self, session_id: int) -> None:
         # Release next-in-order pending request if its predecessor is completed
@@ -98,7 +108,7 @@ class DispatchScheduler:
         next_seq = session.completed_sequence + 1
         if next_seq in session.pending_requests:
             req = session.pending_requests.pop(next_seq)
-            # compute ready_at using last completion time + wait_after_prev_response_s
+            # compute ready_at using last completion time + delay
             wait = float(req.wait_after_prev_response_s or 0.0)
             if session.last_completion_time is None:
                 # If predecessor completion is unknown, keep it pending
@@ -124,7 +134,7 @@ class DispatchScheduler:
         if request_id is None:
             return
         with self._lock:
-            session_id, seq_idx = self._id_to_session_seq.get(request_id, (None, None))
+            session_id, seq_idx = self._id_to_session_seq.pop(request_id, (None, None))
             if session_id is None or seq_idx is None:
                 return
 
@@ -139,10 +149,34 @@ class DispatchScheduler:
                 if session.cancel_on_failure:
                     # Cancel remaining requests in this session
                     session.is_canceled = True
-                    session.pending_requests.clear()
+                    self._cancel_pending_requests_locked(session_id, session)
             # Mark completion
             if seq_idx > session.completed_sequence:
                 session.completed_sequence = seq_idx
             session.last_completion_time = completed_at
+            session.open_requests = max(0, session.open_requests - 1)
             # Try releasing next pending
             self._maybe_release_next_locked(session_id)
+            self._maybe_garbage_collect_session_locked(session_id)
+
+    def _cancel_pending_requests_locked(
+        self, session_id: int, session: SessionState
+    ) -> None:
+        if not session.pending_requests:
+            return
+        for pending in session.pending_requests.values():
+            self._id_to_session_seq.pop(pending.id, None)
+        dropped = len(session.pending_requests)
+        session.pending_requests.clear()
+        session.open_requests = max(0, session.open_requests - dropped)
+        self._maybe_garbage_collect_session_locked(session_id)
+
+    def _maybe_garbage_collect_session_locked(self, session_id: int) -> None:
+        session = self._sessions.get(session_id)
+        if not session:
+            return
+        if session.open_requests > 0:
+            return
+        if session.pending_requests:
+            return
+        self._sessions.pop(session_id, None)

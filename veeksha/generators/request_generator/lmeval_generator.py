@@ -122,6 +122,7 @@ class LMEvalRequestGenerator:
         self.generate_requests()
 
         self._global_request_id = 0
+        self._session_arrival_cursor_s: float = 0.0
 
         self.responses = []
 
@@ -204,6 +205,23 @@ class LMEvalRequestGenerator:
             raise StopIteration
         req: Instance = self.cloned_requests[self._global_request_id]
         dispatch_delay = self.requests_interval_generator.get_next_inter_request_time()
+        if dispatch_delay < 0:
+            return RequestConfig(
+                model=self.client_config.model,
+                prompt=("", 0),
+                session_start_time=None,
+                wait_after_prev_response_s=-1.0,
+                llm_api=self.client_config.llm_api,
+                address_append_value=self.client_config.address_append_value,
+                id=self._global_request_id,
+                session_id=self._global_request_id,
+                session_sequence_index=0,
+                session_total_requests=1,
+                cancel_session_on_failure=True,
+            )
+
+        session_start_time = self._session_arrival_cursor_s + float(dispatch_delay)
+        self._session_arrival_cursor_s = session_start_time
 
         # just need context to send to the model
         if req.request_type == str(LMEvalOutputType.GENERATE_UNTIL):
@@ -223,7 +241,11 @@ class LMEvalRequestGenerator:
             request_config = RequestConfig(
                 model=self.client_config.model,
                 prompt=(context, context_length),
-                dispatch_delay=dispatch_delay,
+                session_start_time=session_start_time,
+                wait_after_prev_response_s=None,
+                session_id=self._global_request_id,
+                session_sequence_index=0,
+                session_total_requests=1,
                 sampling_params=all_gen_kwargs,
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
@@ -235,7 +257,11 @@ class LMEvalRequestGenerator:
             request_config = RequestConfig(
                 model=self.client_config.model,
                 prompt=(context, len(self.tokenizer.encode(context))),
-                dispatch_delay=dispatch_delay,
+                session_start_time=session_start_time,
+                wait_after_prev_response_s=None,
+                session_id=self._global_request_id,
+                session_sequence_index=0,
+                session_total_requests=1,
                 sampling_params={
                     "stream": False,
                     "logprobs": True,

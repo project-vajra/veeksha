@@ -20,3 +20,10 @@ metrics_config:
     ttft_deadline: 0.6
     tbt_deadline: 0.04
     target_deadline_miss_rate: 0.1
+
+server_config:
+  engine: sglang
+  model: meta-llama/Meta-Llama-3-8B-Instruct
+  environment_path: sglang_env
+  port: 30000
+  host: localhost

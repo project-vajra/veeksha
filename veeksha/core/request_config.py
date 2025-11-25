@@ -4,33 +4,46 @@ from pydantic import BaseModel
 
 
 class RequestConfig(BaseModel):
-    """The configuration for a request to the LLM API.
+    """Configuration for a request to the LLM API.
 
     Args:
         model: The model to use.
-        id: The id of the request. Should be unique within a scheduler instance.
-        prompt: The prompt to provide to the LLM API.
-        dispatch_delay: The delay in seconds before dispatching the request to the LLM API.
-        sampling_params: Additional sampling parameters to send with the request.
-            For more information see the Router app's documentation for the completions endpoint.
-        llm_api: The name of the LLM API to send the request to.
+        id: Unique request ID.
+        prompt: Tuple of (prompt_text, token_count).
+        session_id: Session identifier.
+        session_sequence_index: Order within the session (0-based).
+        session_total_requests: Total number of requests planned for the session.
+        session_start_time: Absolute timestamp for first-in-session dispatch.
+        wait_after_prev_response_s: Think time after previous response in session.
+        sampling_params: LLM sampling parameters.
+        llm_api: Target LLM API name.
     """
+
+    # -- request metadata
 
     model: str
     id: int
     prompt: Tuple[str, int]
-    dispatch_delay: float = 0.0
     sampling_params: Optional[Dict[str, Any]] = None
     llm_api: Optional[str] = None
     address_append_value: Optional[str] = None
     benchmark_id: str = "default"
 
-    # session/scheduling metadata
-    session_id: Optional[int] = None
-    session_sequence_index: Optional[int] = None
-    anchor_at_s: Optional[float] = None  # absolute anchor for first-in-session requests
+    # -- session metadata
+    session_id: int
+    session_sequence_index: int
+    session_total_requests: int
+    cancel_session_on_failure: bool = True
+
+    # -- scheduling
+
+    # absolute scheduling for first-in-session requests
+    # None for all other requests
+    session_start_time: Optional[float] = None
+
+    # None for first-in-session requests
+    # delay since prev response of same session for all other requests
     wait_after_prev_response_s: Optional[float] = None
-    cancel_session_on_failure: Optional[bool] = None
 
     def __str__(self) -> str:
         return f"RequestConfig(id={self.id})"

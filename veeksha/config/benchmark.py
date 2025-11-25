@@ -123,7 +123,7 @@ class BenchmarkConfig:
             object.__setattr__(self, "api_key", self.server_config.api_key)
             object.__setattr__(self.client_config, "model", self.server_config.model)
             logger.info(
-                f"Auto-populated api_url, api_key and server_config.model from server_config:\n"
+                f"Auto-populated api_url, api_key and client_config.model from server_config:\n"
                 f"api_url: {self.api_url}\n"
                 f"api_key: {self.api_key}\n"
                 f"client_config.model: {self.client_config.model}"

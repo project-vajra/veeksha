@@ -46,7 +46,6 @@ def create_benchmark_config(
     trace_time_scale_factor: float = 1.0,
     trace_use_prefix_hash_ids: bool = False,
     trace_remap_hash_ids: bool = False,
-    trace_use_sessions: bool = False,
     session_generator_config: Optional[Dict[str, Any]] = None,
     # lmeval-specific
     lmeval_tasks: Optional[List[str]] = None,
@@ -86,7 +85,6 @@ def create_benchmark_config(
         trace_time_scale_factor=trace_time_scale_factor if trace_time_scale_factor is not None else None,
         trace_use_prefix_hash_ids=trace_use_prefix_hash_ids,
         trace_remap_hash_ids=trace_remap_hash_ids,
-        trace_use_sessions=trace_use_sessions,
         session_generator_config=session_generator_config,
         lmeval_tasks=lmeval_tasks or ["hellaswag"],
         lmeval_num_fewshot=lmeval_num_fewshot,

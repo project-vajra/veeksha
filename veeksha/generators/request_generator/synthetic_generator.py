@@ -71,6 +71,7 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             )
 
         self._global_request_id = 0
+        self._session_arrival_cursor_s: float = 0.0
 
     def _get_instruction_ids(
         self, num_output_tokens: int, use_server_min_tokens: bool
@@ -121,10 +122,15 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             return RequestConfig(
                 model=self.client_config.model,
                 prompt=("", 0),
-                dispatch_delay=-1,
+                session_start_time=None,
+                wait_after_prev_response_s=-1.0,
                 llm_api=self.client_config.llm_api,
                 address_append_value=self.client_config.address_append_value,
                 id=self._global_request_id,
+                session_id=self._global_request_id,
+                session_sequence_index=0,
+                session_total_requests=1,
+                cancel_session_on_failure=True,
             )
         num_prompt_tokens = int(num_prompt_tokens)
         num_output_tokens = int(num_output_tokens)
@@ -148,14 +154,23 @@ class SyntheticRequestGenerator(BaseRequestGenerator):
             self.client_config.additional_sampling_params_dict
         )
 
+        # all sessions are of size 1 for now
+        session_start_time = self._session_arrival_cursor_s + float(dispatch_delay)
+        self._session_arrival_cursor_s = session_start_time
+
         request_config = RequestConfig(
             model=self.client_config.model,
             prompt=(prompt, prompt_token_count),
-            dispatch_delay=dispatch_delay,
+            session_start_time=session_start_time,
+            wait_after_prev_response_s=None,
             sampling_params=default_sampling_params,
             llm_api=self.client_config.llm_api,
             address_append_value=self.client_config.address_append_value,
             id=self._global_request_id,
+            session_id=self._global_request_id,
+            session_sequence_index=0,
+            session_total_requests=1,
+            cancel_session_on_failure=True,
         )
 
         self._global_request_id += 1

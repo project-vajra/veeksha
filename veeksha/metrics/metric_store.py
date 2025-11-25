@@ -1,7 +1,9 @@
 import json
 import os
 import threading
+import time
 from collections import defaultdict
+from dataclasses import dataclass
 from itertools import accumulate
 from pathlib import Path
 from typing import Any, DefaultDict, Dict, List, Optional
@@ -33,6 +35,21 @@ logger = init_logger(__name__)
 
 TARGET_TBT_RANGE = [i * 0.001 for i in range(1, 101)]
 QUANTILE_FOR_DEADLINE_MISS_RATE = 0.99
+
+
+@dataclass
+class SessionAggregate:
+    session_id: int
+    benchmark_id: str
+    session_total_requests: int
+    cancel_on_failure: bool
+    requests_observed: int = 0
+    completed_requests: int = 0
+    errored_requests: int = 0
+    cancelled_requests: int = 0
+    first_dispatch_at: Optional[float] = None
+    last_completion_at: Optional[float] = None
+    last_completion_time: Optional[float] = None
 
 
 class MetricStore:
@@ -76,6 +93,7 @@ class MetricStore:
         self._stream_thread: Optional[threading.Thread] = None
         self._request_rows_streamed: int = 0
         self._request_level_stream_path: Optional[str] = None
+        self._request_time_reference: float = time.monotonic()
 
         self.request_level_metrics = RequestLevelMetrics(
             deadline_config=metrics_config.deadline_report,
@@ -129,11 +147,177 @@ class MetricStore:
                 f"Min Deadline to Meet Target Deadline Miss Rate of {self.target_deadline_miss_rate * 100}%",
                 self.should_write_metrics_to_wandb,
             ),
+            "session_size": CDFSketch(
+                metric_name="Requests per Session",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
+            ),
+            "session_duration": CDFSketch(
+                metric_name="Session Duration",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
+                unit="s",
+            ),
+            "session_dispatch_gap": CDFSketch(
+                metric_name="Gap Between Session Starts",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
+                unit="s",
+            ),
+            "session_think_time": CDFSketch(
+                metric_name="Intra-session Think Time",
+                should_write_to_wandb=self.should_write_metrics_to_wandb,
+                unit="s",
+            ),
         }
+
+        self._request_level_summary_keys = {
+            "num_prompt_tokens",
+            "num_output_tokens",
+            "num_total_tokens",
+            "tpot",
+            "ttft",
+            "tbt",
+            "end_to_end_latency",
+            "normalized_end_to_end_latency",
+            "output_throughput",
+            "deadline_miss_rate",
+            "min_tbt_deadline_to_meet",
+        }
+
+        self.session_stats: Dict[int, SessionAggregate] = {}
+        self.num_sessions_seen: int = 0
+        self.num_sessions_successful: int = 0
+        self.num_sessions_cancelled: int = 0
+        self.num_sessions_errored: int = 0
+        self.num_sessions_incomplete: int = 0
+        self._first_session_start_time: Optional[float] = None
+        self._last_session_start_time: Optional[float] = None
 
         self._init_wandb()
         if self.stream_metrics_enabled:
             self._start_metric_streamer()
+
+    def _record_session_start(
+        self, state: SessionAggregate, dispatch_time: float
+    ) -> None:
+        state.first_dispatch_at = dispatch_time
+        if self._first_session_start_time is None:
+            self._first_session_start_time = dispatch_time
+        if self._last_session_start_time is not None:
+            gap = max(0.0, dispatch_time - self._last_session_start_time)
+            self.summaries["session_dispatch_gap"].put(gap)
+        self._last_session_start_time = dispatch_time
+        self.num_sessions_seen += 1
+
+    def _session_dispatch_rate(self) -> float:
+        if (
+            self.num_sessions_seen <= 1
+            or self._first_session_start_time is None
+            or self._last_session_start_time is None
+        ):
+            return 0.0
+        span = max(0.0, self._last_session_start_time - self._first_session_start_time)
+        if span == 0:
+            return 0.0
+        return (self.num_sessions_seen - 1) / span
+
+    def _normalize_request_time(self, dispatched_at: float) -> float:
+        if dispatched_at >= self._request_time_reference:
+            return max(0.0, dispatched_at - self._request_time_reference)
+        return dispatched_at
+
+    def _finalize_session(self, session_id: int, termination: str) -> None:
+        state = self.session_stats.pop(session_id, None)
+        if state is None:
+            return
+
+        session_length = max(0, state.requests_observed)
+        self.summaries["session_size"].put(session_length)
+
+        if state.first_dispatch_at is not None and state.last_completion_at is not None:
+            duration = max(0.0, state.last_completion_at - state.first_dispatch_at)
+            self.summaries["session_duration"].put(duration)
+
+        if termination == "success":
+            self.num_sessions_successful += 1
+        elif termination == "errored":
+            self.num_sessions_errored += 1
+        elif termination == "cancelled":
+            self.num_sessions_cancelled += 1
+        elif termination == "incomplete":
+            self.num_sessions_incomplete += 1
+
+    def _finalize_remaining_sessions(self) -> None:
+        for session_id in list(self.session_stats.keys()):
+            state = self.session_stats.get(session_id)
+            if state is None:
+                continue
+            if state.cancelled_requests:
+                termination = "cancelled"
+            elif state.errored_requests:
+                termination = "errored"
+            elif state.requests_observed >= state.session_total_requests:
+                termination = "success"
+            else:
+                termination = "incomplete"
+            self._finalize_session(session_id, termination)
+
+    def _update_session_metrics(self, request_metrics: RequestMetrics) -> None:
+        session_id = request_metrics.session_id
+        if session_id is None:
+            return
+
+        total_requests = request_metrics.session_total_requests or 1
+        state = self.session_stats.get(session_id)
+        if state is None:
+            state = SessionAggregate(
+                session_id=session_id,
+                benchmark_id=request_metrics.benchmark_id,
+                session_total_requests=total_requests,
+                cancel_on_failure=request_metrics.cancel_session_on_failure,
+            )
+            self.session_stats[session_id] = state
+            self._record_session_start(state, request_metrics.request_dispatched_at)
+        else:
+            state.session_total_requests = max(
+                total_requests, state.session_total_requests
+            )
+            state.cancel_on_failure = request_metrics.cancel_session_on_failure
+
+        prev_completion_time = state.last_completion_time
+        state.requests_observed += 1
+
+        completion_time = request_metrics.completed_at
+        if (
+            request_metrics.session_sequence_index is not None
+            and request_metrics.session_sequence_index > 0
+            and prev_completion_time is not None
+        ):
+            think_time = request_metrics.request_dispatched_at - prev_completion_time
+            if think_time >= 0:
+                self.summaries["session_think_time"].put(think_time)
+        state.last_completion_time = completion_time
+        state.last_completion_at = completion_time
+
+        if request_metrics.cancelled:
+            state.cancelled_requests += 1
+            self._finalize_session(session_id, "cancelled")
+            return
+
+        if request_metrics.error_code is not None or request_metrics.error_msg:
+            state.errored_requests += 1
+            if state.cancel_on_failure:
+                self._finalize_session(session_id, "errored")
+                return
+        else:
+            state.completed_requests += 1
+
+        if state.requests_observed >= state.session_total_requests:
+            if state.cancelled_requests:
+                termination = "cancelled"
+            elif state.errored_requests:
+                termination = "errored"
+            else:
+                termination = "success"
+            self._finalize_session(session_id, termination)
 
     def _init_wandb(self):
         if not self.should_write_metrics_to_wandb:
@@ -227,6 +411,11 @@ class MetricStore:
                 "service_level_missed_deadlines": self.service_level_missed_deadlines,
                 "service_level_total_deadlines": self.service_level_total_deadlines,
                 "service_level_deadline_miss_rate": service_level_deadline_miss_rate,
+                "successful_sessions": self.num_sessions_successful,
+                "errored_sessions": self.num_sessions_errored,
+                "cancelled_sessions": self.num_sessions_cancelled,
+                "incomplete_sessions": self.num_sessions_incomplete,
+                "session_dispatch_rate": self._session_dispatch_rate(),
             }
 
             cdf_frames = {
@@ -327,6 +516,7 @@ class MetricStore:
 
     def add_request_metrics(self, request_metrics: RequestMetrics):
         with self.lock:
+            self._update_session_metrics(request_metrics)
             if request_metrics.cancelled:
                 self.num_cancelled_requests += 1
                 return
@@ -339,6 +529,8 @@ class MetricStore:
             self.num_completed_requests += 1
 
             for metric_name, cdf_sketch in self.summaries.items():
+                if metric_name not in self._request_level_summary_keys:
+                    continue
                 if metric_name == "tbt":
                     cdf_sketch.extend(request_metrics.inter_token_times[1:])
                 elif metric_name == "deadline_miss_rate":
@@ -366,7 +558,13 @@ class MetricStore:
                     cdf_sketch.put(getattr(request_metrics, metric_name))
 
             # Record full request-level metrics for successful requests
-            self.request_level_metrics.put(request_metrics)
+            normalized_dispatched_at = self._normalize_request_time(
+                request_metrics.request_dispatched_at
+            )
+            self.request_level_metrics.put(
+                request_metrics,
+                request_dispatched_at=normalized_dispatched_at,
+            )
 
         if self.stream_metrics_enabled and self._stream_thread:
             self._stream_has_updates.set()
@@ -388,6 +586,12 @@ class MetricStore:
                 if self.service_level_total_deadlines > 0
                 else 0.0
             ),
+            "Number of Sessions Seen": float(self.num_sessions_seen),
+            "Successful Sessions": float(self.num_sessions_successful),
+            "Errored Sessions": float(self.num_sessions_errored),
+            "Cancelled Sessions": float(self.num_sessions_cancelled),
+            "Incomplete Sessions": float(self.num_sessions_incomplete),
+            "Observed Session Dispatch Rate": self._session_dispatch_rate(),
         }
 
     def get_summary(self) -> Dict[str, float]:
@@ -404,6 +608,7 @@ class MetricStore:
     def store_output(self, output_dir: str):
         if self.stream_metrics_enabled:
             self._shutdown_metric_streamer()
+        self._finalize_remaining_sessions()
 
         perf_csv_path = os.path.join(output_dir, "perf_metrics.csv")
         summary_stats_path = os.path.join(output_dir, "summary_stats.json")
@@ -429,6 +634,11 @@ class MetricStore:
                         if self.service_level_total_deadlines > 0
                         else 0.0
                     ),
+                    "successful_sessions": self.num_sessions_successful,
+                    "errored_sessions": self.num_sessions_errored,
+                    "cancelled_sessions": self.num_sessions_cancelled,
+                    "incomplete_sessions": self.num_sessions_incomplete,
+                    "session_dispatch_rate": self._session_dispatch_rate(),
                 },
                 f,
             )

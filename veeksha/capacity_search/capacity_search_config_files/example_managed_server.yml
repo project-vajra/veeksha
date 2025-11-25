@@ -3,7 +3,6 @@ max_iterations: 5
 
 # restart the server at the start of each iteration
 restart_server_per_iteration: true
-seed: 42
 
 slos:
   - type: constant
@@ -20,6 +19,7 @@ slos:
 benchmark_config:
   timeout: 10000
   max_completed_requests: 5
+  seed: 42
 
   # optional
   server_config:

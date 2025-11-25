@@ -74,7 +74,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         previous_token_count = 0
 
         most_recent_received_token_time = time.monotonic()
-        request_dispatched_at = time.monotonic() - self.start_time
+        request_dispatched_at = time.monotonic()
         # Respect a local cap on tokens to avoid mismatches with server/tokenizer
         max_tokens_limit = None
         if isinstance(request_config.sampling_params, dict):
@@ -225,6 +225,10 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             inter_token_times=inter_token_times,
             num_prompt_tokens=prompt_len,
             num_output_tokens=tokens_received,
+            session_id=request_config.session_id,
+            session_sequence_index=request_config.session_sequence_index,
+            session_total_requests=request_config.session_total_requests,
+            cancel_session_on_failure=request_config.cancel_session_on_failure,
             error_code=error_response_code,
             error_msg=error_msg,
             benchmark_id=request_config.benchmark_id,
