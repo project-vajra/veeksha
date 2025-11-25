@@ -152,17 +152,17 @@ class MetricStore:
                 should_write_to_wandb=self.should_write_metrics_to_wandb,
             ),
             "session_duration": CDFSketch(
-                metric_name="Session Duration (s)",
+                metric_name="Session Duration",
                 should_write_to_wandb=self.should_write_metrics_to_wandb,
                 unit="s",
             ),
             "session_dispatch_gap": CDFSketch(
-                metric_name="Gap Between Session Starts (s)",
+                metric_name="Gap Between Session Starts",
                 should_write_to_wandb=self.should_write_metrics_to_wandb,
                 unit="s",
             ),
             "session_think_time": CDFSketch(
-                metric_name="Intra-session Think Time (s)",
+                metric_name="Intra-session Think Time",
                 should_write_to_wandb=self.should_write_metrics_to_wandb,
                 unit="s",
             ),

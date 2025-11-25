@@ -1,6 +1,5 @@
 output_dir: capsearch_results
 max_iterations: 5
-seed: 42
 
 slos:
   - type: constant
@@ -19,6 +18,7 @@ benchmark_config:
   max_completed_requests: 25
   api_url: http://localhost:30000/v1
   api_key: token-abc123
+  seed: 42
 
   client_config:
     model: meta-llama/Meta-Llama-3-8B-Instruct
