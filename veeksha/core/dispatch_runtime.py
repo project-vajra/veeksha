@@ -247,6 +247,14 @@ def process_results(
 
         request_metrics, generated_response = result
         service_metrics.add_request_metrics(request_metrics)
+
+        # Fail fast on errors to avoid stuck experiments
+        if request_metrics.error_code or request_metrics.error_msg:
+            error = RuntimeError(
+                f"Request failed: {request_metrics.error_msg} (code: {request_metrics.error_code})"
+            )
+            service_metrics.notify_error(error)
+
         # notify scheduler about completion for session-aware sequencing
         success = (
             getattr(request_metrics, "error_code", None) is None
