@@ -53,8 +53,15 @@ async def _run_async_worker(
         llm_api=client_config.llm_api,
     )
 
+    # Configure connector with keep-alive settings to prevent stale connections
+    connector = aiohttp.TCPConnector(
+        force_close=False,  # Enable connection pooling
+        enable_cleanup_closed=True,  # Clean up closed connections
+        keepalive_timeout=30,  # Send keep-alive every 30 seconds
+    )
     async with aiohttp.ClientSession(
-        timeout=aiohttp.ClientTimeout(total=client_config.request_timeout)
+        timeout=aiohttp.ClientTimeout(total=client_config.request_timeout),
+        connector=connector,
     ) as session:
         tasks = [
             asyncio.create_task(
@@ -69,7 +76,15 @@ async def _run_async_worker(
             )
             for i in range(client_config.num_concurrent_requests_per_client)
         ]
-        await asyncio.gather(*tasks)
+        try:
+            await asyncio.gather(*tasks)
+        except Exception:
+            # Cancel all other tasks if one fails to avoid hanging
+            for task in tasks:
+                task.cancel()
+            # Wait for cancellations to complete
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
 
     logger.debug("Async worker %s finished", client_id)
 
