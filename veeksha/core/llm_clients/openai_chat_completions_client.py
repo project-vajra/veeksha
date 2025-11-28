@@ -152,6 +152,10 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                     if "token_ids" not in data["choices"][0]:
                         continue
 
+                    # Skip 1st [chunk with role] and last [finish_reason : length] chunks with no tokens
+                    if not data["choices"][0].get("token_ids"):
+                        continue
+
                     chunk_arrival_monotonic = (
                         get_virtual_time()
                     )
