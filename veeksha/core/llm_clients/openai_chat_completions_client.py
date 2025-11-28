@@ -121,8 +121,9 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         generated_text = ""
         previous_responses = []
 
-        most_recent_received_token_time = get_virtual_time()
-        request_dispatched_at = get_virtual_time() - self.start_time
+        # In case of mismatched sleep-jump distributions, change this to time.time() to eliminate input distribution considerations
+        request_dispatched_at = get_virtual_time()
+
         # Respect a local cap on tokens to avoid mismatches with server/tokenizer
         max_tokens_limit = None
         if isinstance(request_config.sampling_params, dict):
@@ -134,6 +135,10 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         try:
             async with session.post(address, json=body, headers=headers) as response:
                 response.raise_for_status()
+
+                # Initialize the most recent received token time to the time the request was dispatched
+                # This is done to remove the request dispatch and accept time from ttft calculation
+                most_recent_received_token_time = get_virtual_time()
 
                 async for data in self._process_stream(response):
                     tokens_received_chunk = 0  # Track tokens received in this chunk
