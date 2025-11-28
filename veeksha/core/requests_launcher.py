@@ -69,7 +69,15 @@ async def _run_async_worker(
             )
             for i in range(client_config.num_concurrent_requests_per_client)
         ]
-        await asyncio.gather(*tasks)
+        try:
+            await asyncio.gather(*tasks)
+        except Exception:
+            # Cancel all other tasks if one fails to avoid hanging
+            for task in tasks:
+                task.cancel()
+            # Wait for cancellations to complete
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
 
     logger.debug("Async worker %s finished", client_id)
 
