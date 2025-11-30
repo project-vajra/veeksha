@@ -53,11 +53,11 @@ async def _run_async_worker(
         llm_api=client_config.llm_api,
     )
 
-    # Configure connector with keep-alive settings to prevent stale connections
+    # Configure connector to disable connection pooling to prevent stale connections
+    # This opens a new TCP connection for every request, avoiding race conditions
+    # where pooled connections become stale between low QPS requests
     connector = aiohttp.TCPConnector(
-        force_close=False,  # Enable connection pooling
-        enable_cleanup_closed=True,  # Clean up closed connections
-        keepalive_timeout=30,  # Send keep-alive every 30 seconds
+        force_close=True,  # Disable connection pooling - new connection per request
     )
     async with aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(total=client_config.request_timeout),
