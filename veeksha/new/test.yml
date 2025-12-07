@@ -1,0 +1,8 @@
+seed: 42
+content:
+  type: synthetic
+  channels:
+    - type: text
+      length_generator:
+        type: zipf
+        max_tokens: 1000

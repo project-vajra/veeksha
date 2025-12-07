@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple, get_args
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.utils import (
+    create_class_from_dict,
     get_all_subclasses,
     get_inner_type,
     has_allow_from_file_attribute,
@@ -534,7 +535,9 @@ def init_iterable_args(loaded_configs, cli_provided_args, list_fields):
                                 subclass_kwargs = {
                                     k: v for k, v in raw_value.items() if k != "type"
                                 }
-                                return_iterable.append(subclass(**subclass_kwargs))
+                                return_iterable.append(
+                                    create_class_from_dict(subclass, subclass_kwargs)
+                                )
                                 is_match = True
                                 break
                         assert (
@@ -542,7 +545,9 @@ def init_iterable_args(loaded_configs, cli_provided_args, list_fields):
                         ), f"No class found for type '{raw_value['type']}' in children of {target_type}"
                 elif hasattr(target_type, "__dataclass_fields__"):
                     for raw_value in arg_value:
-                        return_iterable.append(target_type(**raw_value))
+                        return_iterable.append(
+                            create_class_from_dict(target_type, raw_value)
+                        )
                 elif isinstance(target_type, type):
                     for raw_value in arg_value:
                         return_iterable.append(target_type(raw_value))
