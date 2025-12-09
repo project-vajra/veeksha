@@ -35,10 +35,22 @@ def _setup_logger():
 
     suppress_console = os.environ.get("VEEKSHA_SUPPRESS_CONSOLE_LOGS", "0") == "1"
 
+    # Get log level from environment variable (defaults to INFO)
+    log_level_str = os.environ.get("VEEKSHA_LOGGING_LEVEL", "INFO").upper()
+    level_map = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "WARN": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
+    }
+    log_level = level_map.get(log_level_str, logging.INFO)
+
     if _default_handler is None and not suppress_console:
         _default_handler = logging.StreamHandler(sys.stdout)
         _default_handler.flush = sys.stdout.flush  # type: ignore
-        _default_handler.setLevel(logging.INFO)
+        _default_handler.setLevel(log_level)
         _root_logger.addHandler(_default_handler)
 
     if _default_handler is not None:

@@ -8,7 +8,7 @@ from veeksha.core.response import Response
 
 def store_generated_texts(output_dir: str, generated_responses: List[Response]) -> None:
     """Store generated responses in a text file."""
-    with open(os.path.join(output_dir, "generated_texts.txt"), "w") as f:
+    with open(os.path.join(output_dir, "generated_texts.txt"), "w", encoding="utf-8") as f:
         f.write(("\n" + "-" * 30 + "\n").join([i.text for i in generated_responses]))
 
 
