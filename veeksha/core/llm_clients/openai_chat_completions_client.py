@@ -5,6 +5,7 @@ import uuid
 from typing import Dict, Optional, Tuple
 
 import aiohttp  # type: ignore
+import numpy as np
 
 from revati.client import ClientType  # type: ignore
 from revati.client.helper import create_thread_local_revati_client, get_virtual_time, is_revati_enabled
@@ -95,6 +96,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         body = {
             "model": model,
             "messages": message,
+            "prompt_token_ids": np.random.randint(0, 32000, size=prompt_len).tolist(),
             "stream": True,
             "return_token_ids": True,
         }
@@ -157,6 +159,13 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                     if "token_ids" not in data["choices"][0]:
                         continue
 
+                    # Verify that text content is empty when detokenization is disabled
+                    if delta.get("content") and delta["content"].strip():
+                        error_msg = f"ERROR: Text content present when detokenization should be disabled. Content: '{delta['content']}'"
+                        error_response_code = 500
+                        logger.error(error_msg)
+                        break
+
                     chunk_arrival_monotonic = (
                         get_virtual_time()
                     )
@@ -176,13 +185,13 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
 
                         generated_text += delta["content"]
 
-                        # Truncate generated_text to exactly tokens_received tokens
-                        if isinstance(max_tokens_limit, int):
-                            output_token_ids = self.tokenizer.encode(generated_text)
-                            if len(output_token_ids) > tokens_received:
-                                generated_text = self.tokenizer.decode(
-                                    output_token_ids[:tokens_received]
-                                )
+                        # # Truncate generated_text to exactly tokens_received tokens
+                        # if isinstance(max_tokens_limit, int):
+                        #     output_token_ids = self.tokenizer.encode(generated_text)
+                        #     if len(output_token_ids) > tokens_received:
+                        #         generated_text = self.tokenizer.decode(
+                        #             output_token_ids[:tokens_received]
+                        #         )
 
                     # If we've reached or exceeded the cap, throw an error
                     if (
