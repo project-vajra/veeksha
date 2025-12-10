@@ -2,7 +2,10 @@ from dataclasses import field
 
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
-from veeksha.new.config.content import ContentConfig, SyntheticContentConfig
+from veeksha.new.config.generator.session import (
+    BaseSessionGeneratorConfig,
+    SyntheticSessionGeneratorConfig,
+)
 
 # from veeksha.new.config.server import ServerConfig
 # from veeksha.new.config.client import ClientConfig
@@ -14,9 +17,9 @@ class BenchmarkConfig:
         default=42, metadata={"help": "Seed for the random number generator."}
     )
     # runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
-    content: ContentConfig = field(
-        default_factory=SyntheticContentConfig,
-        metadata={"help": "The content configuration for the benchmark."},
+    session_generator: BaseSessionGeneratorConfig = field(
+        default_factory=SyntheticSessionGeneratorConfig,
+        metadata={"help": "The session generator configuration for the benchmark."},
     )
     # client: ClientConfig = field(default_factory=ClientConfig)
     # server: ServerConfig = field(default_factory=ServerConfig)

@@ -12,6 +12,7 @@ class ClientConfig:
         default="meta-llama/Meta-Llama-3-8B-Instruct",
         metadata={"help": "The model to use for this load test."},
     )
+    # TODO: only when text channel is present
     tokenizer: Optional[str] = field(
         default=None,
         metadata={
@@ -39,6 +40,7 @@ class ClientConfig:
         default=60,
         metadata={"help": "The timeout for each request to the LLM API (in seconds)."},
     )
+    # TODO: only when text channel is present
     min_tokens_param: Optional[str] = field(
         default="min_tokens",
         metadata={

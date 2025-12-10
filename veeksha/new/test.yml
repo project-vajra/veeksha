@@ -1,5 +1,5 @@
 seed: 42
-content:
+session_generator:
   type: synthetic
   channels:
     - type: text

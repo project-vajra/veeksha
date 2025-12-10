@@ -8,24 +8,17 @@ from veeksha.config.generators.length_generator import (
 from veeksha.config.generators.length_generator.base_generator import (
     BaseRequestLengthGeneratorConfig,
 )
-from veeksha.types.base_int_enum import BaseIntEnum
+from veeksha.new.types import ChannelModality
 from veeksha.types.base_registry import BaseRegistry
 
 
-class ContentModality(BaseIntEnum):
-    TEXT = 1
-    IMAGE = 2
-    AUDIO = 3
-    VIDEO = 4
-
-
 @frozen_dataclass
-class BaseChannelConfig(BasePolyConfig):
+class BaseChannelGeneratorConfig(BasePolyConfig):
     pass
 
 
 @frozen_dataclass
-class TextChannelConfig(BaseChannelConfig):
+class TextChannelGeneratorConfig(BaseChannelGeneratorConfig):
 
     length_generator: BaseRequestLengthGeneratorConfig = field(
         default_factory=UniformRequestLengthGeneratorConfig
@@ -33,49 +26,49 @@ class TextChannelConfig(BaseChannelConfig):
 
     @classmethod
     def get_type(cls):
-        return ContentModality.TEXT
+        return ChannelModality.TEXT
 
 
 @frozen_dataclass
-class ImageChannelConfig(BaseChannelConfig):
+class ImageChannelGeneratorConfig(BaseChannelGeneratorConfig):
 
     def __post_init__(self):
         raise NotImplementedError("ImageChannelConfig is not implemented")
 
     @classmethod
     def get_type(cls):
-        return ContentModality.IMAGE
+        return ChannelModality.IMAGE
 
 
 @frozen_dataclass
-class AudioChannelConfig(BaseChannelConfig):
+class AudioChannelGeneratorConfig(BaseChannelGeneratorConfig):
     def __post_init__(self):
         raise NotImplementedError("AudioChannelConfig is not implemented")
 
     @classmethod
     def get_type(cls):
-        return ContentModality.AUDIO
+        return ChannelModality.AUDIO
 
 
 @frozen_dataclass
-class VideoChannelConfig(BaseChannelConfig):
+class VideoChannelGeneratorConfig(BaseChannelGeneratorConfig):
 
     def __post_init__(self):
         raise NotImplementedError("VideoChannelConfig is not implemented")
 
     @classmethod
     def get_type(cls):
-        return ContentModality.VIDEO
+        return ChannelModality.VIDEO
 
 
 # channel registry
-class ChannelRegistry(BaseRegistry):
+class ChannelGeneratorRegistry(BaseRegistry):
     @classmethod
-    def get_key_from_str(cls, key_str: str) -> ContentModality:
-        return ContentModality.from_str(key_str)  # type: ignore
+    def get_key_from_str(cls, key_str: str) -> ChannelModality:
+        return ChannelModality.from_str(key_str)  # type: ignore
 
 
-ChannelRegistry.register(ContentModality.TEXT, TextChannelConfig)
-ChannelRegistry.register(ContentModality.IMAGE, ImageChannelConfig)
-ChannelRegistry.register(ContentModality.AUDIO, AudioChannelConfig)
-ChannelRegistry.register(ContentModality.VIDEO, VideoChannelConfig)
+ChannelGeneratorRegistry.register(ChannelModality.TEXT, TextChannelGeneratorConfig)
+ChannelGeneratorRegistry.register(ChannelModality.IMAGE, ImageChannelGeneratorConfig)
+ChannelGeneratorRegistry.register(ChannelModality.AUDIO, AudioChannelGeneratorConfig)
+ChannelGeneratorRegistry.register(ChannelModality.VIDEO, VideoChannelGeneratorConfig)

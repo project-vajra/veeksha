@@ -6,8 +6,6 @@ from typing import List, Optional
 
 from tqdm import tqdm  # type: ignore
 
-from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.config.client import ClientConfig
 from veeksha.config.utils import prepare_benchmark_output_dir
 from veeksha.core.context import BenchmarkContext
 from veeksha.core.dispatch_scheduler import DispatchScheduler
@@ -18,6 +16,9 @@ from veeksha.core.workers.request_runner_manager import RequestRunnerManager
 from veeksha.generators.request_generator.base_generator import BaseRequestGenerator
 from veeksha.logger import init_logger
 from veeksha.metrics.service_metrics import ServiceMetrics
+from veeksha.new.config.benchmark import BenchmarkConfig
+from veeksha.new.config.client import ClientConfig
+from veeksha.new.generator.session.registry import SessionGeneratorRegistry
 
 logger = init_logger(__name__)
 
@@ -260,11 +261,31 @@ def run_benchmark(
 
     logger.info(f"Running benchmark with config: {benchmark_config}")
 
+    # 0. Prepare benchmark
+    #   - Prepare output directory
+    #   - Set seed
+    #   - Set environment variables
+    #   - WandB
+    # seed_manager = SeedManager(benchmark_config.seed)
+    # 1. Get content generator
+    logger.info(
+        f"Session generator type: {benchmark_config.session_generator.get_type()}"
+    )
+    session_generator = SessionGeneratorRegistry.get(
+        benchmark_config.session_generator.get_type(),
+        config=benchmark_config.session_generator,
+    )
+    logger.info(f"Session generator: {session_generator}")
+    # 2. Create dispatchers and request runners
+    # 3. Get evaluator (metrics collector)
+    # 4. Run the benchmark
+    # 5. Flush final metrics
+
     # prepare_benchmark_output_dir(benchmark_config)
 
     # random.seed(benchmark_config.seed)
 
-    # # Generate unique benchmark ID from output directory
+    # Generate unique benchmark ID from output directory
     # benchmark_id = os.path.basename(benchmark_config.metrics_config.output_dir)
     # logger.info(
     #     f"Benchmark ID: {benchmark_id}, Output directory: {benchmark_config.metrics_config.output_dir}"
@@ -281,21 +302,13 @@ def run_benchmark(
     # else:
     #     logger.info("Using API environment from managed server configuration")
 
-    # _initialize_min_tokens_support(benchmark_config)
-
-    # # Dashboard initialization is now handled by the caller
-    # # (either run_benchmark_with_dashboard or run_benchmark_console_only)
-
-    # generated_responses: List[Response] = []
-
-    # assert (
-    #     benchmark_config.client_config.tokenizer is not None
-    # ), "Tokenizer is required."
-
+    # TODO: valid only for if text channel is present
+    # _initialize_min_tokens_support(benchmark_config) # TODO: Uncomment this when we have a server that supports it
     # tokenizer = get_tokenizer(
-    #     tokenizer_name=benchmark_config.client_config.tokenizer,
+    #     tokenizer_name=benchmark_config.client_config.tokenizer, # type: ignore
     #     trust_remote_code=True,
     # )
+    # generated_responses: List[Response] = []
 
     # request_generator_params = {}
     # request_generator_config_type = benchmark_config.request_generator_config.get_type()
@@ -307,8 +320,6 @@ def run_benchmark(
     #     request_generator_params = {
     #         "corpus_lines": load_corpus(),
     #     }
-
-    # seed_manager = SeedManager(benchmark_config.seed)
 
     # request_generator = RequestGeneratorRegistry.get(
     #     benchmark_config.request_generator_config.get_type(),
@@ -411,6 +422,4 @@ def run_benchmarks(benchmark_configs: List[BenchmarkConfig]) -> List[ServiceMetr
 
 
 if __name__ == "__main__":
-    benchmark_configs = BenchmarkConfig.create_from_cli_args()
-
-    service_metrics_list = run_benchmarks(benchmark_configs)
+    pass
