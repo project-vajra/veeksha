@@ -8,7 +8,16 @@ import aiohttp  # type: ignore
 import numpy as np
 
 from revati.client import ClientType  # type: ignore
-from revati.client.helper import create_thread_local_revati_client, get_virtual_time, is_revati_enabled
+from revati.client.helper import (
+    create_thread_local_revati_client,
+    get_send_request_cool_down_time_ms,
+    get_virtual_time,
+    is_revati_enabled,
+    rejoin_barrier,
+    spin_sleep,
+    yield_barrier,
+    disable_time_jump,
+)
 
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
 from veeksha.core.llm_clients.streaming_mixin import StreamingMixin
@@ -140,6 +149,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
 
                 # Initialize the most recent received token time to the time the request was dispatched
                 # This is done to remove the request dispatch and accept time from ttft calculation
+                disable_time_jump(get_send_request_cool_down_time_ms() * 1e-3)
                 most_recent_received_token_time = get_virtual_time()
 
                 async for data in self._process_stream(response):
@@ -159,6 +169,10 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                     if "token_ids" not in data["choices"][0]:
                         continue
 
+                    chunk_arrival_monotonic = (
+                        get_virtual_time()
+                    )
+
                     # Verify that text content is empty when detokenization is disabled
                     if delta.get("content") and delta["content"].strip():
                         error_msg = f"ERROR: Text content present when detokenization should be disabled. Content: '{delta['content']}'"
@@ -166,9 +180,6 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
                         logger.error(error_msg)
                         break
 
-                    chunk_arrival_monotonic = (
-                        get_virtual_time()
-                    )
                     current_tokens_received = len(data["choices"][0]["token_ids"])
 
                     allowable_to_add = current_tokens_received
