@@ -17,6 +17,7 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
         )
 
     def generate_session(self) -> Session:
+        # TODO
         return Session(
             session_id=0,
             session_total_requests=1,

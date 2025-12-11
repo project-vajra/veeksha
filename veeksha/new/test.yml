@@ -1,6 +1,8 @@
 seed: 42
 session_generator:
   type: synthetic
+  session_graph:
+    type: linear
   channels:
     - type: text
       length_generator:

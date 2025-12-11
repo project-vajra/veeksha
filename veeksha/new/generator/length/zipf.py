@@ -1,14 +1,15 @@
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 
-from veeksha.config.generators.length_generator.zipf_generator import (
-    ZipfRequestLengthGeneratorConfig,
+from veeksha.new.config.generator.length import (
+    ZipfLengthGeneratorConfig,
 )
-from veeksha.constants.configuration_constants import ZIPF_REQUEST_GENERATOR_EPS
-from veeksha.generators.length_generator.base_generator import (
-    BaseRequestLengthGenerator,
+from veeksha.new.generator.length.base import (
+    BaseLengthGenerator,
 )
+
+ZIPF_LENGTH_GENERATOR_EPS = 1e-8
 
 
 class ZipfGenerator:
@@ -26,10 +27,10 @@ class ZipfGenerator:
         self.items = max - min + 1
         self.theta = theta
         self.zeta_2 = self._zeta(2, self.theta)
-        self.alpha = 1.0 / (1.0 - self.theta + ZIPF_REQUEST_GENERATOR_EPS)
+        self.alpha = 1.0 / (1.0 - self.theta + ZIPF_LENGTH_GENERATOR_EPS)
         self.zetan = self._zeta(self.items, self.theta)
         self.eta = (1 - np.power(2.0 / self.items, 1 - self.theta)) / (
-            1 - self.zeta_2 / (self.zetan + ZIPF_REQUEST_GENERATOR_EPS)
+            1 - self.zeta_2 / (self.zetan + ZIPF_LENGTH_GENERATOR_EPS)
         )
         self.scramble = scramble
         self.rng = rng
@@ -60,10 +61,10 @@ class ZipfGenerator:
         return retval
 
 
-class ZipfRequestLengthGenerator(BaseRequestLengthGenerator):
+class ZipfLengthGenerator(BaseLengthGenerator):
     def __init__(
         self,
-        config: ZipfRequestLengthGeneratorConfig,
+        config: ZipfLengthGeneratorConfig,
         rng: np.random.RandomState,
     ):
         self.config = config
@@ -74,18 +75,13 @@ class ZipfRequestLengthGenerator(BaseRequestLengthGenerator):
             scramble_seed = int(rng.randint(0, 2**32 - 1))
 
         self._zipf_generator = ZipfGenerator(
-            self.config.min_tokens,
-            self.config.max_tokens,
+            self.config.min_length,
+            self.config.max_length,
             self.config.theta,
             self.config.scramble,
             rng,
             scramble_seed,
         )
 
-    def get_next_num_tokens(self) -> Tuple[float, float]:
-        total_tokens = self._zipf_generator.next()
-
-        decode_tokens = total_tokens / (1 + self.config.prefill_to_decode_ratio)
-        prefill_tokens = total_tokens - decode_tokens
-
-        return prefill_tokens, decode_tokens
+    def get_next_length(self) -> int:
+        return self._zipf_generator.next()

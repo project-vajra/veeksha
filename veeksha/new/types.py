@@ -1,6 +1,18 @@
 from veeksha.types.base_int_enum import BaseIntEnum
 
 
+class IntervalGeneratorType(BaseIntEnum):
+    POISSON = 1
+    GAMMA = 2
+    FIXED = 3
+
+
+class LengthGeneratorType(BaseIntEnum):
+    ZIPF = 1
+    UNIFORM = 2
+    FIXED = 3
+
+
 # ----- Content -----
 class SessionGeneratorType(BaseIntEnum):
     SYNTHETIC = 1
