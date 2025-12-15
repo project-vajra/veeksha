@@ -5,7 +5,6 @@ from typing import Dict, List, Optional
 @dataclass
 class SessionNode:
     id: int
-    request_id: int
     wait_after_ready: float
 
 
@@ -96,9 +95,7 @@ def format_session_graph(graph: SessionGraph) -> str:
     lines = []
     lines.append("  Nodes:")
     for node_id, node in sorted(graph.nodes.items()):
-        lines.append(
-            f"    {node_id} -> request={node.request_id}, wait_after_ready={node.wait_after_ready}"
-        )
+        lines.append(f"    {node_id} -> wait_after_ready={node.wait_after_ready}")
     lines.append("  Edges:")
     seen_edges = []
     for edges in graph.outgoing.values():
@@ -114,10 +111,9 @@ def print_session_graph(graph: SessionGraph) -> None:
 
 if __name__ == "__main__":
     graph = SessionGraph()
-    add_node(graph, SessionNode(1, 1, 0))
-    add_node(graph, SessionNode(2, 2, 0))
-    add_edge(graph, SessionEdge(1, 2))
-    add_edge(graph, SessionEdge(2, 1))
+    add_node(graph, SessionNode(id=1, wait_after_ready=0))
+    add_node(graph, SessionNode(id=2, wait_after_ready=0))
+    add_edge(graph, SessionEdge(src=1, dst=2))
     print(f"parents of 2: {parents(graph, 2)}")
     print(f"children of 1: {children(graph, 1)}")
     print(f"ready_at of 2: {ready_at(graph, 2, {})}")

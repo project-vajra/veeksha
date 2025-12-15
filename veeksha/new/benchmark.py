@@ -1,6 +1,8 @@
 import os
 import threading
 import time
+from dataclasses import asdict
+from pprint import pformat
 from queue import Queue
 from typing import List, Optional
 
@@ -18,9 +20,15 @@ from veeksha.logger import init_logger
 from veeksha.metrics.service_metrics import ServiceMetrics
 from veeksha.new.config.benchmark import BenchmarkConfig
 from veeksha.new.config.client import ClientConfig
+from veeksha.new.core.seeding import SeedManager
 from veeksha.new.generator.session.registry import SessionGeneratorRegistry
 
 logger = init_logger(__name__)
+
+
+def _format_benchmark_config(config: BenchmarkConfig) -> str:
+    """Return a readable, multi-line representation of the benchmark config."""
+    return pformat(asdict(config), indent=2, width=88, sort_dicts=False)
 
 
 def setup_api_environment(
@@ -259,14 +267,17 @@ def run_benchmark(
         ServiceMetrics containing the collected metrics (including the `MetricStore`).
     """
 
-    logger.info(f"Running benchmark with config: {benchmark_config}")
+    logger.info(
+        "Running benchmark with config:\n%s",
+        _format_benchmark_config(benchmark_config),
+    )
 
     # 0. Prepare benchmark
     #   - Prepare output directory
     #   - Set seed
     #   - Set environment variables
     #   - WandB
-    # seed_manager = SeedManager(benchmark_config.seed)
+    seed_manager = SeedManager(benchmark_config.seed)
     # 1. Get content generator
     logger.info(
         f"Session generator type: {benchmark_config.session_generator.get_type()}"
@@ -274,8 +285,10 @@ def run_benchmark(
     session_generator = SessionGeneratorRegistry.get(
         benchmark_config.session_generator.get_type(),
         config=benchmark_config.session_generator,
+        seed_manager=seed_manager,
     )
     logger.info(f"Session generator: {session_generator}")
+    session_generator.generate_session()
     # 2. Create dispatchers and request runners
     # 3. Get evaluator (metrics collector)
     # 4. Run the benchmark

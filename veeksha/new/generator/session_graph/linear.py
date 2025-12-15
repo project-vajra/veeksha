@@ -1,14 +1,52 @@
 from veeksha.new.config.generator.session_graph import LinearSessionGraphGeneratorConfig
-from veeksha.new.core.session_graph import SessionGraph
+from veeksha.new.core.seeding import SeedManager
+from veeksha.new.core.session_graph import (
+    SessionEdge,
+    SessionGraph,
+    SessionNode,
+    add_edge,
+    add_node,
+)
+from veeksha.new.generator.interval.registry import IntervalGeneratorRegistry
+from veeksha.new.generator.length.registry import LengthGeneratorRegistry
 from veeksha.new.generator.session_graph.base import BaseSessionGraphGenerator
 
 
+# TODO seeds
 class LinearSessionGraphGenerator(BaseSessionGraphGenerator):
-    def __init__(self, config: LinearSessionGraphGeneratorConfig):
+    def __init__(
+        self, config: LinearSessionGraphGeneratorConfig, seed_manager: SeedManager
+    ):
         self.config = config
-        self.request_wait_generator = config.request_wait_generator
-        self.num_request_generator = config.num_request_generator
+        self.seed_manager = seed_manager
+        self.length_rng_factory = seed_manager.numpy_factory("num_request")
+        self.interval_rng_factory = seed_manager.numpy_factory("request_wait")
+        self.request_wait_generator = IntervalGeneratorRegistry.get(
+            config.request_wait_generator.get_type(),
+            config.request_wait_generator,
+            rng=self.interval_rng_factory(),
+        )
+        self.num_request_generator = LengthGeneratorRegistry.get(
+            config.num_request_generator.get_type(),
+            config.num_request_generator,
+            rng=self.length_rng_factory(),
+        )
+        self.current_node_id = 0  # incremental global node id
 
-    # TODO: P0 implement
     def generate_session_graph(self) -> SessionGraph:
-        return SessionGraph()
+        session_graph = SessionGraph()
+        num_requests = self.num_request_generator.get_next_length()
+        for i in range(num_requests):
+            if i == 0:
+                wait_time = 0
+            else:
+                wait_time = self.request_wait_generator.get_next_interval()
+            node = SessionNode(id=self.current_node_id, wait_after_ready=wait_time)
+            add_node(session_graph, node)
+            if i > 0:
+                edge = SessionEdge(
+                    src=self.current_node_id - 1, dst=self.current_node_id
+                )
+                add_edge(session_graph, edge)
+            self.current_node_id += 1
+        return session_graph

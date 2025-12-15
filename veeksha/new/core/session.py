@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Dict
 
 from veeksha.new.core.request import Request
-from veeksha.new.core.session_graph import SessionGraph
+from veeksha.new.core.session_graph import SessionGraph, format_session_graph
 
 
 @dataclass
@@ -20,3 +20,30 @@ class Session:
     session_graph: SessionGraph
     requests: Dict[int, Request]
     cancel_session_on_failure: bool = True
+
+
+def format_session(session: Session) -> str:
+    """Return a human-readable representation of a session."""
+
+    lines = [
+        f"Session {session.id}:",
+        f"  cancel_session_on_failure={session.cancel_session_on_failure}",
+        "  Graph:",
+    ]
+    graph_lines = format_session_graph(session.session_graph).split("\n")
+    lines.extend(f"  {line}" for line in graph_lines)
+    lines.append("  Requests:")
+    for request_id, request in sorted(session.requests.items()):
+        channel_names = ", ".join(str(modality) for modality in request.channels)
+        lines.append(
+            "    "
+            f"{request_id} -> model={request.model}, "
+            f"llm_api={request.llm_api}, channels=[{channel_names}]"
+        )
+    return "\n".join(lines)
+
+
+def print_session(session: Session) -> None:
+    """Print a human-readable representation of a session."""
+
+    print(format_session(session))

@@ -3,6 +3,13 @@ session_generator:
   type: synthetic
   session_graph:
     type: linear
+    num_request_generator:
+      type: uniform
+      min_length: 2
+      max_length: 4
+    request_wait_generator:
+      type: poisson
+      arrival_rate: 0.5
   channels:
     - type: text
       length_generator:
