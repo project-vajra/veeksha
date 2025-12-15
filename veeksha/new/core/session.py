@@ -1,26 +1,22 @@
-from typing import List
-
-from pydantic import BaseModel
+from dataclasses import dataclass
+from typing import Dict
 
 from veeksha.new.core.request import Request
+from veeksha.new.core.session_graph import SessionGraph
 
 
-# TODO: generalize to session graph (a DAG of requests)
-class Session(BaseModel):
+@dataclass
+class Session:
     """A single Veeksha session.
 
     Args:
-        session_id: Unique session ID.
-        session_total_requests: Total number of requests planned for the session.
-        cancel_session_on_failure: Whether to cancel the session on failure.
-        request_graph: List of requests in the session.
-        session_start_time: Absolute timestamp for first-in-session dispatch (seconds)
+        id: Unique session ID
+        session_graph: Session graph of the session (just structure, no content)
+        requests: Requests in the session (actual content)
+        cancel_session_on_failure: Whether to cancel the session on failure of any request
     """
 
-    session_id: int
-    session_total_requests: int
+    id: int
+    session_graph: SessionGraph
+    requests: Dict[int, Request]
     cancel_session_on_failure: bool = True
-
-    request_graph: List[Request]
-
-    session_start_time: float

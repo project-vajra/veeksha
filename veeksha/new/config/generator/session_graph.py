@@ -24,7 +24,6 @@ class LinearSessionGraphGeneratorConfig(BaseSessionGraphGeneratorConfig):
     Generator of linear request graphs (a sequence of requests).
     """
 
-    # TODO: add generator for the number of requests
     num_request_generator: BaseLengthGeneratorConfig = field(
         default_factory=UniformLengthGeneratorConfig,
         metadata={

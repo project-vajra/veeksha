@@ -1,8 +1,7 @@
 from abc import abstractmethod
 
 from veeksha.new.config.generator.session_graph import BaseSessionGraphGeneratorConfig
-
-# from veeksha.new.core.session_graph import SessionGraph # TODO: implement
+from veeksha.new.core.session_graph import SessionGraph
 
 
 class BaseSessionGraphGenerator:
@@ -10,5 +9,5 @@ class BaseSessionGraphGenerator:
         self.config = config
 
     @abstractmethod
-    def generate_session_graph(self):
+    def generate_session_graph(self) -> SessionGraph:
         pass
