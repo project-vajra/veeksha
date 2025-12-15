@@ -12,12 +12,12 @@ from veeksha.new.types import SessionGeneratorType
 
 @frozen_dataclass
 class BaseSessionGeneratorConfig(BasePolyConfig):
+    # TODO: how to think about system prompts?
     pass
 
 
 @frozen_dataclass
 class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
-    # TODO: tree, DAG
     session_graph: BaseSessionGraphGeneratorConfig = field(
         default_factory=LinearSessionGraphGeneratorConfig,
         metadata={"help": "The generator for the session graphs. Available: linear"},

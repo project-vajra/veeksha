@@ -16,6 +16,11 @@ class BenchmarkConfig:
     seed: int = field(
         default=42, metadata={"help": "Seed for the random number generator."}
     )
+    # TODO does this go here?
+    model: str = field(
+        default="meta-llama/Meta-Llama-3-8B-Instruct",
+        metadata={"help": "The model to use for the benchmark."},
+    )
     # runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     session_generator: BaseSessionGeneratorConfig = field(
         default_factory=SyntheticSessionGeneratorConfig,

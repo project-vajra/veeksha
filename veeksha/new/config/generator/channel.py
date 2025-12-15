@@ -2,11 +2,9 @@ from dataclasses import field
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
-from veeksha.config.generators.length_generator import (
-    UniformRequestLengthGeneratorConfig,
-)
-from veeksha.config.generators.length_generator.base_generator import (
-    BaseRequestLengthGeneratorConfig,
+from veeksha.new.config.generator.length import (
+    BaseLengthGeneratorConfig,
+    UniformLengthGeneratorConfig,
 )
 from veeksha.new.types import ChannelModality
 from veeksha.types.base_registry import BaseRegistry
@@ -20,8 +18,8 @@ class BaseChannelGeneratorConfig(BasePolyConfig):
 @frozen_dataclass
 class TextChannelGeneratorConfig(BaseChannelGeneratorConfig):
 
-    length_generator: BaseRequestLengthGeneratorConfig = field(
-        default_factory=UniformRequestLengthGeneratorConfig
+    length_generator: BaseLengthGeneratorConfig = field(
+        default_factory=UniformLengthGeneratorConfig
     )
 
     @classmethod

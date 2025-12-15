@@ -61,3 +61,11 @@ class ZipfLengthGeneratorConfig(BaseLengthGeneratorConfig):
     @classmethod
     def get_type(cls) -> LengthGeneratorType:
         return LengthGeneratorType.ZIPF
+
+    def __post_init__(self):
+        if self.min_length <= 0:
+            raise ValueError("min_length must be > 0")
+        if self.max_length <= 0:
+            raise ValueError("max_length must be > 0")
+        if self.min_length > self.max_length:
+            raise ValueError("min_length must be <= max_length")

@@ -31,22 +31,20 @@ class LinearSessionGraphGenerator(BaseSessionGraphGenerator):
             config.num_request_generator,
             rng=self.length_rng_factory(),
         )
-        self.current_node_id = 0  # incremental global node id
 
     def generate_session_graph(self) -> SessionGraph:
         session_graph = SessionGraph()
+        node_id = 0
         num_requests = self.num_request_generator.get_next_length()
         for i in range(num_requests):
             if i == 0:
                 wait_time = 0
             else:
                 wait_time = self.request_wait_generator.get_next_interval()
-            node = SessionNode(id=self.current_node_id, wait_after_ready=wait_time)
+            node = SessionNode(id=node_id, wait_after_ready=wait_time)
             add_node(session_graph, node)
             if i > 0:
-                edge = SessionEdge(
-                    src=self.current_node_id - 1, dst=self.current_node_id
-                )
+                edge = SessionEdge(src=node_id - 1, dst=node_id)
                 add_edge(session_graph, edge)
-            self.current_node_id += 1
+            node_id += 1
         return session_graph

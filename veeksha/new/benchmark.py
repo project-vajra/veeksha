@@ -1,8 +1,6 @@
 import os
 import threading
 import time
-from dataclasses import asdict
-from pprint import pformat
 from queue import Queue
 from typing import List, Optional
 
@@ -21,14 +19,15 @@ from veeksha.metrics.service_metrics import ServiceMetrics
 from veeksha.new.config.benchmark import BenchmarkConfig
 from veeksha.new.config.client import ClientConfig
 from veeksha.new.core.seeding import SeedManager
+from veeksha.new.core.session import print_session
+from veeksha.new.core.tokenizer import (
+    TokenizerProvider,
+    build_hf_tokenizer_handle_from_model,
+)
 from veeksha.new.generator.session.registry import SessionGeneratorRegistry
+from veeksha.new.types import ChannelModality
 
 logger = init_logger(__name__)
-
-
-def _format_benchmark_config(config: BenchmarkConfig) -> str:
-    """Return a readable, multi-line representation of the benchmark config."""
-    return pformat(asdict(config), indent=2, width=88, sort_dicts=False)
 
 
 def setup_api_environment(
@@ -269,7 +268,7 @@ def run_benchmark(
 
     logger.info(
         "Running benchmark with config:\n%s",
-        _format_benchmark_config(benchmark_config),
+        benchmark_config,
     )
 
     # 0. Prepare benchmark
@@ -282,13 +281,24 @@ def run_benchmark(
     logger.info(
         f"Session generator type: {benchmark_config.session_generator.get_type()}"
     )
+    tokenizer_provider = TokenizerProvider(
+        {
+            ChannelModality.TEXT: build_hf_tokenizer_handle_from_model(
+                benchmark_config.model
+            )
+        }
+    )
     session_generator = SessionGeneratorRegistry.get(
         benchmark_config.session_generator.get_type(),
         config=benchmark_config.session_generator,
         seed_manager=seed_manager,
+        tokenizer_provider=tokenizer_provider,
     )
     logger.info(f"Session generator: {session_generator}")
-    session_generator.generate_session()
+    session = session_generator.generate_session()
+    print_session(session)
+    print(session.requests[0].channels[ChannelModality.TEXT])
+    print(session.requests[1].channels[ChannelModality.TEXT])
     # 2. Create dispatchers and request runners
     # 3. Get evaluator (metrics collector)
     # 4. Run the benchmark

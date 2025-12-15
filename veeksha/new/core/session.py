@@ -12,7 +12,7 @@ class Session:
     Args:
         id: Unique session ID
         session_graph: Session graph of the session (just structure, no content)
-        requests: Requests in the session (actual content)
+        requests: Requests in the session (actual content) indexed by node id of the session graph
         cancel_session_on_failure: Whether to cancel the session on failure of any request
     """
 

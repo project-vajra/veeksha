@@ -14,4 +14,5 @@ session_generator:
     - type: text
       length_generator:
         type: zipf
-        max_tokens: 1000
+        max_length: 20
+        min_length: 1

@@ -46,6 +46,10 @@ def children(graph: SessionGraph, node_id: int) -> List[SessionEdge]:
     return graph.outgoing.get(node_id, [])
 
 
+def get_node_ids(graph: SessionGraph) -> List[int]:
+    return list(graph.nodes.keys())
+
+
 def ready_at(
     graph: SessionGraph, node_id: int, completions: Dict[int, float]
 ) -> Optional[float]:
