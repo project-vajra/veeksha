@@ -25,6 +25,7 @@ from veeksha.new.core.tokenizer import (
     build_hf_tokenizer_handle_from_model,
 )
 from veeksha.new.generator.session.registry import SessionGeneratorRegistry
+from veeksha.new.traffic.registry import TrafficSchedulerRegistry
 from veeksha.new.types import ChannelModality
 
 logger = init_logger(__name__)
@@ -299,6 +300,15 @@ def run_benchmark(
     print_session(session)
     print(session.requests[0].channels[ChannelModality.TEXT])
     print(session.requests[1].channels[ChannelModality.TEXT])
+
+    traffic_scheduler = TrafficSchedulerRegistry.get(
+        benchmark_config.traffic_scheduler.get_type(),
+        config=benchmark_config.traffic_scheduler,
+        seed_manager=seed_manager,
+    )
+    logger.info(f"Traffic scheduler: {traffic_scheduler}")
+
+    # TODO: get dispatcher (concurrent, rate)
     # 2. Create dispatchers and request runners
     # 3. Get evaluator (metrics collector)
     # 4. Run the benchmark

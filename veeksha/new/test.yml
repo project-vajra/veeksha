@@ -1,4 +1,8 @@
 seed: 42
+
+traffic_scheduler:
+  type: concurrent
+
 session_generator:
   type: synthetic
   session_graph:

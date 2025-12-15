@@ -12,7 +12,6 @@ from veeksha.new.generator.length.registry import LengthGeneratorRegistry
 from veeksha.new.generator.session_graph.base import BaseSessionGraphGenerator
 
 
-# TODO seeds
 class LinearSessionGraphGenerator(BaseSessionGraphGenerator):
     def __init__(
         self, config: LinearSessionGraphGeneratorConfig, seed_manager: SeedManager

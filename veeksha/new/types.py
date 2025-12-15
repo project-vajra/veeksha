@@ -1,6 +1,13 @@
 from veeksha.types.base_int_enum import BaseIntEnum
 
 
+# ----- Traffic -----
+class TrafficType(BaseIntEnum):
+    RATE = 1
+    CONCURRENT = 2
+
+
+# ----- Interval / length generators -----
 class IntervalGeneratorType(BaseIntEnum):
     POISSON = 1
     GAMMA = 2

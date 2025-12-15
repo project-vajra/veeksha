@@ -6,6 +6,7 @@ from veeksha.new.config.generator.session import (
     BaseSessionGeneratorConfig,
     SyntheticSessionGeneratorConfig,
 )
+from veeksha.new.config.traffic import BaseTrafficConfig, RateTrafficConfig
 
 # from veeksha.new.config.server import ServerConfig
 # from veeksha.new.config.client import ClientConfig
@@ -26,9 +27,14 @@ class BenchmarkConfig:
         default_factory=SyntheticSessionGeneratorConfig,
         metadata={"help": "The session generator configuration for the benchmark."},
     )
+    traffic_scheduler: BaseTrafficConfig = field(
+        default_factory=RateTrafficConfig,
+        metadata={
+            "help": "The traffic scheduler configuration for the benchmark. Available: rate, concurrent"
+        },
+    )
     # client: ClientConfig = field(default_factory=ClientConfig)
     # server: ServerConfig = field(default_factory=ServerConfig)
-    # traffic: TrafficConfig = field(default_factory=RateTrafficConfig)
     # metrics: MetricsConfig = field(default_factory=MetricsConfig)
     # runtime: RuntimeConfig = field(default_factory=RuntimeConfig)  # threads, timeouts, telemetry
 
