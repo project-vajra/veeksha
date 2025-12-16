@@ -1,0 +1,42 @@
+"""State management for scheduled sessions."""
+
+from dataclasses import dataclass, field
+from typing import Dict, Set
+
+from veeksha.new.core.request import Request
+from veeksha.new.core.session import Session
+
+
+@dataclass
+class ScheduledSessionState:
+    """State for a single scheduled session.
+
+    Args:
+        session: The session object being tracked
+        session_start_time: When the session should start (relative to scheduler epoch)
+        completions: Mapping of node_id to completion_time for completed nodes
+        pending_nodes: Set of node IDs that haven't been queued to the ready queue yet
+        queued_nodes: Set of node IDs that have been queued but not yet completed
+        is_canceled: Whether this session has been canceled
+        cancel_on_failure: Whether to cancel remaining nodes on any failure
+    """
+
+    session: Session
+    session_start_time: float
+    completions: Dict[int, float] = field(default_factory=dict)
+    pending_nodes: Set[int] = field(default_factory=set)
+    queued_nodes: Set[int] = field(default_factory=set)
+    is_canceled: bool = False
+    cancel_on_failure: bool = True
+
+
+@dataclass(order=True)
+class ScheduledItem:
+    """A request scheduled for dispatch at a specific time."""
+
+    # ordered by ready at
+    ready_at: float
+
+    # not ordered
+    request_id: int = field(compare=False)
+    request: Request = field(compare=False)
