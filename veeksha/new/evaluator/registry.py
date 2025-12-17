@@ -1,0 +1,72 @@
+"""Evaluator registry for the new veeksha framework."""
+
+from veeksha.core.lazy_loader import _LazyLoader
+from veeksha.new.types import ChannelModality, EvaluationType
+from veeksha.types.base_registry import BaseRegistry
+
+
+class EvaluatorRegistry(BaseRegistry):
+    """Registry for evaluator implementations."""
+
+    @classmethod
+    def get_key_from_str(cls, key_str: str) -> EvaluationType:
+        return EvaluationType.from_str(key_str)  # type: ignore
+
+
+EvaluatorRegistry.register(
+    EvaluationType.PERFORMANCE,
+    _LazyLoader(
+        "veeksha.new.evaluator.performance.base",
+        "PerformanceEvaluator",
+    ),
+)
+
+# Accuracy evaluator registration (skeleton for now)
+# EvaluatorRegistry.register(
+#     EvaluationType.ACCURACY,
+#     _LazyLoader(
+#         "veeksha.new.evaluator.accuracy.base",
+#         "AccuracyEvaluator",
+#     ),
+# )
+
+
+class ChannelPerformanceEvaluatorRegistry(BaseRegistry):
+    """Registry for channel-specific performance evaluators."""
+
+    @classmethod
+    def get_key_from_str(cls, key_str: str) -> ChannelModality:
+        return ChannelModality.from_str(key_str)  # type: ignore
+
+
+ChannelPerformanceEvaluatorRegistry.register(
+    ChannelModality.TEXT,
+    _LazyLoader(
+        "veeksha.new.evaluator.performance.text",
+        "TextPerformanceEvaluator",
+    ),
+)
+
+ChannelPerformanceEvaluatorRegistry.register(
+    ChannelModality.IMAGE,
+    _LazyLoader(
+        "veeksha.new.evaluator.performance.image",
+        "ImagePerformanceEvaluator",
+    ),
+)
+
+ChannelPerformanceEvaluatorRegistry.register(
+    ChannelModality.AUDIO,
+    _LazyLoader(
+        "veeksha.new.evaluator.performance.audio",
+        "AudioPerformanceEvaluator",
+    ),
+)
+
+ChannelPerformanceEvaluatorRegistry.register(
+    ChannelModality.VIDEO,
+    _LazyLoader(
+        "veeksha.new.evaluator.performance.video",
+        "VideoPerformanceEvaluator",
+    ),
+)

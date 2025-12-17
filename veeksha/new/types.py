@@ -36,3 +36,9 @@ class ChannelModality(BaseIntEnum):
 
 class SessionGraphType(BaseIntEnum):
     LINEAR = 1
+
+
+# ----- Evaluation -----
+class EvaluationType(BaseIntEnum):
+    PERFORMANCE = 1
+    ACCURACY = 2

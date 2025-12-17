@@ -272,11 +272,6 @@ def run_benchmark(
         benchmark_config,
     )
 
-    # 0. Prepare benchmark
-    #   - Prepare output directory
-    #   - Set seed
-    #   - Set environment variables
-    #   - WandB
     seed_manager = SeedManager(benchmark_config.seed)
     # 1. Get content generator
     logger.info(
@@ -301,6 +296,7 @@ def run_benchmark(
     print(session.requests[0].channels[ChannelModality.TEXT])
     print(session.requests[1].channels[ChannelModality.TEXT])
 
+    # 2. Get traffic scheduler
     traffic_scheduler = TrafficSchedulerRegistry.get(
         benchmark_config.traffic_scheduler.get_type(),
         config=benchmark_config.traffic_scheduler,
@@ -308,11 +304,20 @@ def run_benchmark(
     )
     logger.info(f"Traffic scheduler: {traffic_scheduler}")
 
-    # TODO: get dispatcher (concurrent, rate)
-    # 2. Create dispatchers and request runners
+    # TODO: how we deal with evaluators: how to declare, how to collect results, store and pass them to evaluator
+    #   how exactly can we define a microbenchmark with our current setup?
+    #   how exactly do we define a capsearch run with our current setup?
+    #   integrate elton's work on sanity checking
     # 3. Get evaluator (metrics collector)
-    # 4. Run the benchmark
-    # 5. Flush final metrics
+
+    # 4. Prepare benchmark
+    #   - Prepare output directory
+    #   - Set seed
+    #   - Set environment variables
+    #   - WandB
+
+    # 5. Run the benchmark
+    # 6. Flush final metrics
 
     # prepare_benchmark_output_dir(benchmark_config)
 
