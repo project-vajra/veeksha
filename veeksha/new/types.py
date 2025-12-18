@@ -42,3 +42,8 @@ class SessionGraphType(BaseIntEnum):
 class EvaluationType(BaseIntEnum):
     PERFORMANCE = 1
     ACCURACY = 2
+
+
+# ----- Client -----
+class ClientType(BaseIntEnum):
+    OPENAI_CHAT = 1

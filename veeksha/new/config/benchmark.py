@@ -2,6 +2,9 @@ from dataclasses import field
 
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
+
+# from veeksha.new.config.server import ServerConfig
+from veeksha.new.config.client import BaseClientConfig, OpenAIChatClientConfig
 from veeksha.new.config.evaluator import (
     BaseEvaluatorConfig,
     PerformanceEvaluatorConfig,
@@ -13,21 +16,12 @@ from veeksha.new.config.generator.session import (
 from veeksha.new.config.runtime import RuntimeConfig
 from veeksha.new.config.traffic import BaseTrafficConfig, RateTrafficConfig
 
-# from veeksha.new.config.server import ServerConfig
-# from veeksha.new.config.client import ClientConfig
-
 
 @frozen_dataclass(allow_from_file=True)
 class BenchmarkConfig:
     seed: int = field(
         default=42, metadata={"help": "Seed for the random number generator."}
     )
-    # TODO does this go here?
-    model: str = field(
-        default="meta-llama/Meta-Llama-3-8B-Instruct",
-        metadata={"help": "The model to use for the benchmark."},
-    )
-    # runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     session_generator: BaseSessionGeneratorConfig = field(
         default_factory=SyntheticSessionGeneratorConfig,
         metadata={"help": "The session generator configuration for the benchmark."},
@@ -44,9 +38,8 @@ class BenchmarkConfig:
             "help": "The evaluator configuration for the benchmark. Available: performance, accuracy"
         },
     )
-    # client: ClientConfig = field(default_factory=ClientConfig)
+    client: BaseClientConfig = field(default_factory=OpenAIChatClientConfig)
     # server: ServerConfig = field(default_factory=ServerConfig)
-    # metrics: MetricsConfig = field(default_factory=MetricsConfig)
     runtime: RuntimeConfig = field(
         default_factory=RuntimeConfig,
         metadata={"help": "The runtime configuration for the benchmark."},

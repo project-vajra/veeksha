@@ -50,10 +50,6 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
             request = Request(
                 id=self.current_request_id,
                 channels=channels,
-                # TODO: decouple
-                model="meta-llama/Meta-Llama-3-8B-Instruct",
-                llm_api="openai_chat",
-                address_append_value="chat/completions",
             )
             requests[node_id] = request
             self.current_request_id += 1

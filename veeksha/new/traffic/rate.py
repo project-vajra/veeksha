@@ -116,3 +116,9 @@ class RateTrafficScheduler(BaseTrafficScheduler):
             # session is complete
             if not state.pending_nodes and not state.queued_nodes:
                 del self._sessions[session_id]
+
+    def get_session_id(self, request_id: int) -> int:
+        """Get the session ID for a given request ID."""
+        with self._lock:
+            session_id, _ = self._request_to_session.get(request_id, (-1, -1))
+        return session_id

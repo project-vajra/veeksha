@@ -28,3 +28,11 @@ class BaseTrafficScheduler:
     ) -> None:
         """Notify the scheduler that a request has completed."""
         raise NotImplementedError
+
+    @abstractmethod
+    def get_session_id(self, request_id: int) -> int:
+        """Get the session ID for a given request ID.
+
+        Returns -1 if the request is not found.
+        """
+        raise NotImplementedError

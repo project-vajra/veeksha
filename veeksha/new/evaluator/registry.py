@@ -21,6 +21,7 @@ EvaluatorRegistry.register(
     ),
 )
 
+# TODO
 # Accuracy evaluator registration (skeleton for now)
 # EvaluatorRegistry.register(
 #     EvaluationType.ACCURACY,

@@ -20,3 +20,6 @@ session_generator:
         type: zipf
         max_length: 20
         min_length: 1
+
+client:
+  type: openai_chat
