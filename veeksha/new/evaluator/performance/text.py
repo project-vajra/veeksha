@@ -39,7 +39,6 @@ class TextRequestMetrics:
     num_prompt_tokens: int
     num_output_tokens: int
     inter_token_times: List[float]
-    session_sequence_index: Optional[int] = None
     session_total_requests: Optional[int] = None
 
     @property
@@ -215,7 +214,6 @@ class TextPerformanceEvaluator:
         self.deadline_miss_rate: List[float] = []
         self.min_tbt_deadline_to_meet: List[float] = []
         self.session_ids: List[Optional[int]] = []
-        self.session_sequence_indices: List[Optional[int]] = []
         self.session_total_requests: List[Optional[int]] = []
         self.request_ids: List[int] = []
 
@@ -260,11 +258,19 @@ class TextPerformanceEvaluator:
 
             dispatched_at = dispatch_info["dispatched_at"]
 
-            # extract metrics from response
-            num_prompt_tokens = getattr(response, "num_prompt_tokens", 0)
-            num_output_tokens = getattr(response, "num_output_tokens", 0)
-            inter_token_times = getattr(response, "inter_token_times", [])
-            session_sequence_index = getattr(response, "session_sequence_index", None)
+            # Extract metrics from the text channel response
+            channel_response = response.channels.get(ChannelModality.TEXT)
+
+            if channel_response is not None:
+                channel_metrics = channel_response.metrics or {}
+                num_prompt_tokens = channel_metrics.get("num_prompt_tokens", 0)
+                num_output_tokens = channel_metrics.get("num_output_tokens", 0)
+                inter_token_times = channel_metrics.get("inter_token_times", [])
+            else:
+                num_prompt_tokens = 0
+                num_output_tokens = 0
+                inter_token_times = []
+
             session_total_requests = getattr(response, "session_total_requests", None)
 
             # Create metrics object
@@ -275,17 +281,14 @@ class TextPerformanceEvaluator:
                 num_prompt_tokens=num_prompt_tokens,
                 num_output_tokens=num_output_tokens,
                 inter_token_times=inter_token_times,
-                session_sequence_index=session_sequence_index,
                 session_total_requests=session_total_requests,
             )
 
-            # Record think time (time between completion and next dispatch in same session)
-            if session_sequence_index is not None and session_sequence_index > 0:
-                prev_completion = self._session_last_completion.get(session_id)
-                if prev_completion is not None:
-                    think_time = dispatched_at - prev_completion
-                    if think_time >= 0:
-                        self.summaries["session_think_time"].put(think_time)
+            prev_completion = self._session_last_completion.get(session_id)
+            if prev_completion is not None:
+                think_time = dispatched_at - prev_completion
+                if think_time >= 0:
+                    self.summaries["session_think_time"].put(think_time)
             self._session_last_completion[session_id] = completed_at
 
             # Update CDF sketches
@@ -360,7 +363,6 @@ class TextPerformanceEvaluator:
         self.deadline_miss_rate.append(dmr)
         self.min_tbt_deadline_to_meet.append(min_tbt)
         self.session_ids.append(metrics.session_id)
-        self.session_sequence_indices.append(metrics.session_sequence_index)
         self.session_total_requests.append(metrics.session_total_requests)
         self.request_ids.append(metrics.request_id)
 
@@ -476,7 +478,6 @@ class TextPerformanceEvaluator:
                     "request_id": self.request_ids[idx],
                     "request_dispatched_at": self.request_dispatched_at[idx],
                     "session_id": self.session_ids[idx],
-                    "session_sequence_index": self.session_sequence_indices[idx],
                     "session_total_requests": self.session_total_requests[idx],
                     "num_prompt_tokens": self.num_prompt_tokens[idx],
                     "num_output_tokens": self.num_output_tokens[idx],

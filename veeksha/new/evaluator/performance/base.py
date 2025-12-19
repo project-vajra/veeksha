@@ -85,19 +85,21 @@ class PerformanceEvaluator(BaseEvaluator):
         if config.stream_metrics and config.output_dir:
             self._start_metric_streamer()
 
-    def _get_or_create_channel_evaluator(self, channel: ChannelModality) -> Any:
-        """Get or create a channel-specific evaluator."""
-        if channel not in self._channel_evaluators:
-            from veeksha.new.evaluator.registry import (
-                ChannelPerformanceEvaluatorRegistry,
-            )
+        from veeksha.new.evaluator.registry import ChannelPerformanceEvaluatorRegistry
 
+        for channel in self.config.target_channels:
             channel_config = self.config.get_channel_config(channel)
-            self._channel_evaluators[channel] = ChannelPerformanceEvaluatorRegistry.get(
-                channel,
-                config=self.config,
-                channel_config=channel_config,
-            )
+            if channel_config:
+                self._channel_evaluators[channel] = (
+                    ChannelPerformanceEvaluatorRegistry.get(
+                        channel,
+                        config=self.config,
+                        channel_config=channel_config,
+                    )
+                )
+
+    def _get_channel_evaluator(self, channel: ChannelModality) -> Any:
+        """Get a channel-specific evaluator."""
         return self._channel_evaluators[channel]
 
     @property
@@ -145,7 +147,7 @@ class PerformanceEvaluator(BaseEvaluator):
             # register with channel evaluators
             for channel, content in channels.items():
                 if self.should_evaluate_channel(channel):
-                    evaluator = self._get_or_create_channel_evaluator(channel)
+                    evaluator = self._get_channel_evaluator(channel)
                     evaluator.register_request(
                         request_id=request_id,
                         session_id=session_id,

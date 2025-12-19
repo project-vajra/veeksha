@@ -86,6 +86,7 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
         with self._lock:
             if not self._ready_queue:
                 return None
+
             if self._ready_queue[0].ready_at <= self._now():
                 return heapq.heappop(self._ready_queue).request
             return None

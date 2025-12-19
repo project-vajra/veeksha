@@ -1,6 +1,8 @@
 """Prefetch worker for session generation and scheduling."""
 
+import math
 import threading
+import time
 from typing import Optional
 
 from veeksha.logger import init_logger
@@ -40,8 +42,10 @@ class PrefetchWorker:
     traffic scheduler, which then manages the dispatch timing of individual requests.
     """
 
-    # TODO this would probably throttle high frequency bursts of sessions, add an increasing function
-    _POLL_INTERVAL_S = 0.05
+    # starts fast and decays to max over time
+    _MIN_POLL_INTERVAL_S = 0.001
+    _MAX_POLL_INTERVAL_S = 0.05
+    _DECAY_RATE = 0.1  # higher = faster decay
 
     def __init__(
         self,
@@ -65,6 +69,24 @@ class PrefetchWorker:
         self.generator_lock = generator_lock
         self.worker_context = worker_context
         self.session_counter = session_counter
+        self._sessions_generated = 0
+
+    def _get_poll_interval(self) -> float:
+        """Calculate poll interval with exponential decay.
+
+        Starts at _MIN_POLL_INTERVAL_S and exponentially decays toward
+        _MAX_POLL_INTERVAL_S as more sessions are generated. This allows
+        fast bursting at startup while settling into a steady-state rate.
+
+        Returns:
+            Poll interval in seconds.
+        """
+        decay = math.exp(-self._DECAY_RATE * self._sessions_generated)
+        interval = (
+            self._MAX_POLL_INTERVAL_S
+            - (self._MAX_POLL_INTERVAL_S - self._MIN_POLL_INTERVAL_S) * decay
+        )
+        return interval
 
     def _generate_session(self) -> Optional[Session]:
         """Generate next session in a thread-safe manner."""
@@ -106,6 +128,7 @@ class PrefetchWorker:
 
             # Schedule the session with traffic scheduler
             self.traffic_scheduler.schedule_session(session)
+            self._sessions_generated += 1
             logger.info("Scheduled session %s", session.id)
 
             if self.session_counter.count % 100 == 0:
@@ -113,5 +136,8 @@ class PrefetchWorker:
                     "Prefetch progress: %d sessions generated",
                     self.session_counter.count,
                 )
+
+            # Throttle with decaying poll interval (fast start, slow steady-state)
+            time.sleep(self._get_poll_interval())
 
         logger.debug("Prefetch worker %s exiting", self.worker_context.worker_id)

@@ -13,10 +13,6 @@ class RuntimeConfig:
         default=300,
         metadata={"help": "Benchmark timeout in seconds."},
     )
-    num_prefetch_threads: int = field(
-        default=2,
-        metadata={"help": "Number of threads for prefetching/generating sessions."},
-    )
     num_dispatcher_threads: int = field(
         default=2,
         metadata={"help": "Number of threads for dispatching requests to workers."},

@@ -201,7 +201,7 @@ def run_main_loop(
             "generator_lock": generator_lock,
             "session_counter": session_counter,
         },
-        pool_size=runtime_config.num_prefetch_threads,
+        pool_size=1,  # generation is sequential because from trace needs ordering
     )
 
     pool_manager.create_pool(

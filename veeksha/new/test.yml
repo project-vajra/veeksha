@@ -2,6 +2,7 @@ seed: 42
 
 traffic_scheduler:
   type: concurrent
+  target_concurrent_sessions: 3
   cancel_session_on_failure: False
 
 session_generator:
