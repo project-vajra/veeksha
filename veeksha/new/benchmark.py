@@ -118,6 +118,7 @@ def run_main_loop(
     from veeksha.new.core.thread_pool import ThreadPoolManager
     from veeksha.new.workers import CompletionWorker, DispatchWorker, PrefetchWorker
     from veeksha.new.workers.client_runner import ClientRunnerManager
+    from veeksha.new.workers.prefetch import SharedSessionCounter
 
     logger.info("Starting main loop")
 
@@ -126,6 +127,8 @@ def run_main_loop(
     output_queue = Queue()
     stop_event = threading.Event()
     generator_lock = threading.Lock()
+
+    session_counter = SharedSessionCounter(max_sessions=runtime_config.max_sessions)
 
     client_runner = ClientRunnerManager(
         client=client,
@@ -145,7 +148,7 @@ def run_main_loop(
             "traffic_scheduler": traffic_scheduler,
             "session_generator": session_generator,
             "generator_lock": generator_lock,
-            "max_sessions": runtime_config.max_sessions,
+            "session_counter": session_counter,
         },
         pool_size=runtime_config.num_prefetch_threads,
     )

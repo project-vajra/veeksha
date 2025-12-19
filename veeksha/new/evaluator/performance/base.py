@@ -23,7 +23,6 @@ class SessionAggregate:
 
     session_id: int
     session_total_requests: int
-    cancel_on_failure: bool
     requests_observed: int = 0
     completed_requests: int = 0
     errored_requests: int = 0
@@ -171,7 +170,6 @@ class PerformanceEvaluator(BaseEvaluator):
                 completed_at=completed_at,
                 error=error,
                 cancelled=getattr(response, "cancelled", False),
-                cancel_on_failure=getattr(response, "cancel_session_on_failure", True),
                 session_total_requests=getattr(response, "session_total_requests", 1),
             )
 
@@ -208,16 +206,19 @@ class PerformanceEvaluator(BaseEvaluator):
         completed_at: float,
         error: Optional[Exception],
         cancelled: bool,
-        cancel_on_failure: bool,
         session_total_requests: int,
     ) -> None:
-        """Update session-level metrics for a request."""
+        """Update session-level metrics for a request.
+
+        The evaluator observes request outcomes but does not decide when to cancel
+        sessions - that is the traffic scheduler's responsibility. Sessions are
+        finalized when all expected requests have been observed.
+        """
         state = self.session_stats.get(session_id)
         if state is None:
             state = SessionAggregate(
                 session_id=session_id,
                 session_total_requests=session_total_requests,
-                cancel_on_failure=cancel_on_failure,
             )
             self.session_stats[session_id] = state
             self._record_session_start(state, dispatched_at)
@@ -225,23 +226,15 @@ class PerformanceEvaluator(BaseEvaluator):
             state.session_total_requests = max(
                 session_total_requests, state.session_total_requests
             )
-            state.cancel_on_failure = cancel_on_failure
 
-        prev_completion_time = state.last_completion_time
         state.requests_observed += 1
         state.last_completion_time = completed_at
         state.last_completion_at = completed_at
 
         if cancelled:
             state.cancelled_requests += 1
-            self._finalize_session(session_id, "cancelled")
-            return
-
-        if error is not None:
+        elif error is not None:
             state.errored_requests += 1
-            if state.cancel_on_failure:
-                self._finalize_session(session_id, "errored")
-                return
         else:
             state.completed_requests += 1
 

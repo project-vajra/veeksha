@@ -6,7 +6,7 @@ from veeksha.new.config.core.frozen_dataclass import frozen_dataclass
 @frozen_dataclass(allow_from_file=True)
 class RuntimeConfig:
     max_sessions: int = field(
-        default=-1,
+        default=25,
         metadata={"help": "Maximum number of sessions to generate. -1 for unlimited."},
     )
     num_prefetch_threads: int = field(

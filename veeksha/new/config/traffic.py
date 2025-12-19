@@ -11,7 +11,10 @@ from veeksha.new.types import TrafficType
 
 @frozen_dataclass
 class BaseTrafficConfig(BasePolyConfig):
-    pass
+    cancel_session_on_failure: bool = field(
+        default=True,
+        metadata={"help": "Whether to cancel the session on failure of any request."},
+    )
 
 
 @frozen_dataclass

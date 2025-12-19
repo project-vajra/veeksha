@@ -36,6 +36,7 @@ class RequestResult:
         session_id: Session this request belongs to
         dispatched_at: Monotonic timestamp when request was dispatched
         completed_at: Monotonic timestamp when response was received
+        session_total_requests: Total number of requests in the session
         channels: Per-channel response data
         success: True if request completed without error
         error_code: HTTP error code if request failed
@@ -44,9 +45,10 @@ class RequestResult:
 
     request_id: int
     session_id: int
-
     dispatched_at: float
     completed_at: float
+
+    session_total_requests: int = 1
 
     # per-channel responses
     channels: Dict[ChannelModality, ChannelResponse] = field(default_factory=dict)

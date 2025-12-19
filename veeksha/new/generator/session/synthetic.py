@@ -57,7 +57,6 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
             id=self.current_session_id,
             session_graph=session_graph,
             requests=requests,
-            cancel_session_on_failure=True,
         )
         self.current_session_id += 1
         return session

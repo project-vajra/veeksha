@@ -11,6 +11,27 @@ from veeksha.new.traffic.base import BaseTrafficScheduler
 logger = init_logger(__name__)
 
 
+class SharedSessionCounter:
+    """Thread-safe shared counter for tracking sessions across workers."""
+
+    def __init__(self, max_sessions: int = -1):
+        self.max_sessions = max_sessions
+        self._count = 0
+
+    def try_increment(self) -> bool:
+        if self.max_sessions < 0:
+            self._count += 1
+            return True
+        if self._count < self.max_sessions:
+            self._count += 1
+            return True
+        return False
+
+    @property
+    def count(self) -> int:
+        return self._count
+
+
 class PrefetchWorker:
     """Worker that generates sessions and schedules them with the traffic scheduler.
 
@@ -27,7 +48,7 @@ class PrefetchWorker:
         session_generator: BaseSessionGenerator,
         generator_lock: threading.Lock,
         worker_context: WorkerContext,
-        max_sessions: int = -1,
+        session_counter: SharedSessionCounter,
     ):
         """Initialize the prefetch worker.
 
@@ -36,35 +57,23 @@ class PrefetchWorker:
             session_generator: Generator to get sessions from
             generator_lock: Lock protecting the session generator
             worker_context: Worker context with stop event
-            max_sessions: Maximum sessions to generate (-1 for unlimited)
+            session_counter: Shared counter for tracking sessions across workers
         """
         self.traffic_scheduler = traffic_scheduler
         self.session_generator = session_generator
         self.generator_lock = generator_lock
         self.worker_context = worker_context
-        self.max_sessions = max_sessions
-        self.sessions_generated = 0
-
-    def _has_capacity(self) -> bool:
-        """Check if we can generate more sessions."""
-        if self.max_sessions < 0:
-            # Check generator capacity
-            capacity = self.session_generator.capacity()
-            if capacity < 0:
-                return True  # Unlimited
-            return self.sessions_generated < capacity
-        return self.sessions_generated < self.max_sessions
+        self.session_counter = session_counter
 
     def _generate_session(self) -> Optional[object]:
         """Generate next session in a thread-safe manner."""
         while not self.worker_context.stop_event.is_set():
             with self.generator_lock:
-                if not self._has_capacity():
-                    return None  # Exhausted
+                if not self.session_counter.try_increment():
+                    return None  # exhausted
 
                 try:
                     session = self.session_generator.generate_session()
-                    self.sessions_generated += 1
                     return session
                 except StopIteration:
                     logger.debug(
@@ -87,10 +96,10 @@ class PrefetchWorker:
             # Schedule the session with traffic scheduler
             self.traffic_scheduler.schedule_session(session)
 
-            if self.sessions_generated % 100 == 0:
+            if self.session_counter.count % 100 == 0:
                 logger.debug(
                     "Prefetch progress: %d sessions generated",
-                    self.sessions_generated,
+                    self.session_counter.count,
                 )
 
         logger.debug("Prefetch worker %s exiting", self.worker_context.worker_id)

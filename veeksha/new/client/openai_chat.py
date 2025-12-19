@@ -388,6 +388,7 @@ class OpenAIChatClient(BaseLLMClient):
         self,
         request: Request,
         session_id: int,
+        session_total_requests: int = 1,
     ) -> RequestResult:
         """Send a request to the OpenAI Chat Completions API."""
         timeout = self.config.request_timeout
@@ -407,7 +408,7 @@ class OpenAIChatClient(BaseLLMClient):
         #     body[self.config.min_tokens_param] = min_tokens_target
 
         headers = {
-            "Authorization": f"Bearer {self.key}",
+            "Authorization": f"Bearer {self.config.api_key}",
             "Content-Type": "application/json",
             "Accept": "text/event-stream",
         }
@@ -519,6 +520,7 @@ class OpenAIChatClient(BaseLLMClient):
             session_id=session_id,
             dispatched_at=dispatched_at,
             completed_at=completed_at,
+            session_total_requests=session_total_requests,
             channels=channels,
             success=success,
             error_code=error_code,

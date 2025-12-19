@@ -72,9 +72,9 @@ class DispatchWorker:
 
             dispatched_at = time.monotonic()
 
-            # Get session ID from scheduler's internal tracking
-            # The scheduler tracks request -> session mapping internally
+            # Get session info from scheduler's internal tracking
             session_id = self._get_session_id(request)
+            session_size = self._get_session_size(request)
 
             # Register with evaluator
             self.evaluator.register_request(
@@ -84,9 +84,9 @@ class DispatchWorker:
                 channels=request.channels,
             )
 
-            # Dispatch to client queue
+            # Dispatch to client queue (request, session_id, session_size, dispatched_at)
             queue = self._select_queue()
-            queue.put((request, session_id, dispatched_at))
+            queue.put((request, session_id, session_size, dispatched_at))
 
         # Drain remaining ready requests
         self._drain()
@@ -96,6 +96,10 @@ class DispatchWorker:
     def _get_session_id(self, request) -> int:
         """Get session ID for a request."""
         return self.traffic_scheduler.get_session_id(request.id)
+
+    def _get_session_size(self, request) -> int:
+        """Get total number of requests in the session."""
+        return self.traffic_scheduler.get_session_size(request.id)
 
     def _drain(self) -> None:
         """Drain any remaining ready requests."""
@@ -109,6 +113,7 @@ class DispatchWorker:
 
             dispatched_at = time.monotonic()
             session_id = self._get_session_id(request)
+            session_size = self._get_session_size(request)
 
             self.evaluator.register_request(
                 request_id=request.id,
@@ -118,4 +123,4 @@ class DispatchWorker:
             )
 
             queue = self._select_queue()
-            queue.put((request, session_id, dispatched_at))
+            queue.put((request, session_id, session_size, dispatched_at))

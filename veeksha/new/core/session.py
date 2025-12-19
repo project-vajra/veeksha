@@ -13,13 +13,11 @@ class Session:
         id: Unique session ID
         session_graph: Session graph of the session (just structure, no content)
         requests: Requests in the session (actual content) indexed by node id of the session graph
-        cancel_session_on_failure: Whether to cancel the session on failure of any request
     """
 
     id: int
     session_graph: SessionGraph
     requests: Dict[int, Request]
-    cancel_session_on_failure: bool = True
 
 
 def format_session(session: Session) -> str:
@@ -27,7 +25,6 @@ def format_session(session: Session) -> str:
 
     lines = [
         f"Session {session.id}:",
-        f"  cancel_session_on_failure={session.cancel_session_on_failure}",
         "  Graph:",
     ]
     graph_lines = format_session_graph(session.session_graph).split("\n")
@@ -36,9 +33,7 @@ def format_session(session: Session) -> str:
     for request_id, request in sorted(session.requests.items()):
         channel_names = ", ".join(str(modality) for modality in request.channels)
         lines.append(
-            "    "
-            f"{request_id} -> model={request.model}, "
-            f"llm_api={request.llm_api}, channels=[{channel_names}]"
+            "    " f"{request_id} -> id={request.id}, channels=[{channel_names}]"
         )
     return "\n".join(lines)
 

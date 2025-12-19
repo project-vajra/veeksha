@@ -57,7 +57,7 @@ class RateTrafficScheduler(BaseTrafficScheduler):
                 completions={},
                 pending_nodes=set(session.session_graph.nodes.keys()),
                 queued_nodes=set(),
-                cancel_on_failure=session.cancel_session_on_failure,
+                cancel_on_failure=self.config.cancel_session_on_failure,
             )
             self._sessions[session.id] = state
 
@@ -122,3 +122,14 @@ class RateTrafficScheduler(BaseTrafficScheduler):
         with self._lock:
             session_id, _ = self._request_to_session.get(request_id, (-1, -1))
         return session_id
+
+    def get_session_size(self, request_id: int) -> int:
+        """Get the total number of requests in the session for a given request ID."""
+        with self._lock:
+            session_id, _ = self._request_to_session.get(request_id, (-1, -1))
+            if session_id == -1:
+                return 1
+            state = self._sessions.get(session_id)
+            if state is None:
+                return 1
+            return len(state.session.requests)

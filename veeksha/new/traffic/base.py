@@ -36,3 +36,11 @@ class BaseTrafficScheduler:
         Returns -1 if the request is not found.
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def get_session_size(self, request_id: int) -> int:
+        """Get the total number of requests in the session for a given request ID.
+
+        Returns 1 if the request is not found.
+        """
+        raise NotImplementedError

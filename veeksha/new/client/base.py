@@ -1,5 +1,7 @@
 """Base LLM client abstract class for the new Veeksha framework."""
 
+from __future__ import annotations
+
 import os
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
@@ -52,12 +54,14 @@ class BaseLLMClient(ABC):
         self,
         request: Request,
         session_id: int,
+        session_total_requests: int = 1,
     ) -> RequestResult:
         """Send a request to the LLM API.
 
         Args:
             request: The request to send (with channels)
             session_id: Session this request belongs to
+            session_total_requests: Total number of requests in this session
 
         Returns:
             RequestResult containing response data and timing

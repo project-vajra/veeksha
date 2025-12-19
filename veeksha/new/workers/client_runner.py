@@ -48,11 +48,12 @@ class ClientWorker:
             if item is None:  # Sentinel
                 break
 
-            request, session_id, dispatched_at = item
+            request, session_id, session_size, dispatched_at = item
 
             result = await self.client.send_request(
                 request=request,
                 session_id=session_id,
+                session_total_requests=session_size,
             )
 
             # Update dispatched_at from caller (more accurate)
