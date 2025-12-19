@@ -392,27 +392,8 @@ class OpenAIChatClient(BaseLLMClient):
     ) -> RequestResult:
         """Send a request to the OpenAI Chat Completions API."""
         timeout = self.config.request_timeout
-        content_blocks, prompt_len = self._build_message_content(request)
-        dispatched_at = time.monotonic()
-
-        message = [{"role": "user", "content": content_blocks}]
-        body = {
-            "model": self.config.model,
-            "messages": message,
-            "stream": True,
-        }
-
-        # TODO check that min tokens is functional
-        # min_tokens_target = None
-        # if min_tokens_target is not None and self.config.min_tokens_param:
-        #     body[self.config.min_tokens_param] = min_tokens_target
-
-        headers = {
-            "Authorization": f"Bearer {self.config.api_key}",
-            "Content-Type": "application/json",
-            "Accept": "text/event-stream",
-        }
-
+        # TODO make per-request
+        max_tokens_limit = None
         # Metrics tracking for text
         inter_token_times: List[float] = []
         error_msg: Optional[str] = None
@@ -428,14 +409,30 @@ class OpenAIChatClient(BaseLLMClient):
         audio_data: Optional[Any] = None
         video_data: Optional[Any] = None
 
-        # TODO make per-request
-        max_tokens_limit = None
-        if self.config.additional_sampling_params_dict:
-            max_tokens_limit = self.config.additional_sampling_params_dict.get(
-                "max_completion_tokens"
-            )
+        prompt_len = 0
+        dispatched_at = time.monotonic()
 
         try:
+            content_blocks, prompt_len = self._build_message_content(request)
+            dispatched_at = time.monotonic()  # Update to actual dispatch time
+
+            message = [{"role": "user", "content": content_blocks}]
+            body = {
+                "model": self.config.model,
+                "messages": message,
+                "stream": True,
+            }
+
+            # TODO check that min tokens is functional
+            # min_tokens_target = None
+            # if min_tokens_target is not None and self.config.min_tokens_param:
+            #     body[self.config.min_tokens_param] = min_tokens_target
+
+            headers = {
+                "Authorization": f"Bearer {self.config.api_key}",
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream",
+            }
             async with httpx.AsyncClient(timeout=timeout) as client:
                 async with client.stream(
                     "POST", self.address, json=body, headers=headers

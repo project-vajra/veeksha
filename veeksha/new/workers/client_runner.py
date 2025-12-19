@@ -7,6 +7,7 @@ from typing import List
 
 from veeksha.logger import init_logger
 from veeksha.new.client.base import BaseLLMClient
+from veeksha.new.core.response import RequestResult
 
 logger = init_logger(__name__)
 
@@ -50,16 +51,33 @@ class ClientWorker:
 
             request, session_id, session_size, dispatched_at = item
 
-            result = await self.client.send_request(
-                request=request,
-                session_id=session_id,
-                session_total_requests=session_size,
-            )
+            try:
+                result = await self.client.send_request(
+                    request=request,
+                    session_id=session_id,
+                    session_total_requests=session_size,
+                )
+            except Exception as e:
+                logger.exception(
+                    f"Client worker {self.worker_id}: Client raised unhandled exception"
+                )
+                import time
 
-            # Update dispatched_at from caller (more accurate)
-            result.dispatched_at = dispatched_at
+                result = RequestResult(
+                    request_id=request.id,
+                    session_id=session_id,
+                    dispatched_at=dispatched_at,
+                    completed_at=time.monotonic(),
+                    session_total_requests=session_size,
+                    channels={},
+                    success=False,
+                    error_code=500,
+                    error_msg=f"Unhandled client exception: {str(e)}",
+                )
 
-            # Put result in output queue
+            if not result.dispatched_at:
+                result.dispatched_at = dispatched_at
+
             self.output_queue.put(result)
 
         logger.debug("Client worker %d exiting", self.worker_id)
