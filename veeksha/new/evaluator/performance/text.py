@@ -476,22 +476,24 @@ class TextPerformanceEvaluator:
             rows.append(
                 {
                     "request_id": self.request_ids[idx],
-                    "request_dispatched_at": self.request_dispatched_at[idx],
+                    "request_dispatched_at": round(self.request_dispatched_at[idx], 5),
                     "session_id": self.session_ids[idx],
                     "session_total_requests": self.session_total_requests[idx],
                     "num_prompt_tokens": self.num_prompt_tokens[idx],
                     "num_output_tokens": self.num_output_tokens[idx],
                     "num_total_tokens": self.num_total_tokens[idx],
-                    "tpot": self.tpot[idx],
-                    "ttft": self.ttft[idx],
-                    "end_to_end_latency": self.end_to_end_latency[idx],
-                    "normalized_end_to_end_latency": self.normalized_end_to_end_latency[
-                        idx
-                    ],
+                    "tpot": round(self.tpot[idx], 5),
+                    "ttft": round(self.ttft[idx], 5),
+                    "end_to_end_latency": round(self.end_to_end_latency[idx], 5),
+                    "normalized_end_to_end_latency": round(
+                        self.normalized_end_to_end_latency[idx], 5
+                    ),
                     "output_throughput": self.output_throughput[idx],
                     "deadline_miss_rate": self.deadline_miss_rate[idx],
-                    "min_tbt_deadline_to_meet": self.min_tbt_deadline_to_meet[idx],
-                    "tbt": self.tbt[idx],
+                    "min_tbt_deadline_to_meet": round(
+                        self.min_tbt_deadline_to_meet[idx], 5
+                    ),
+                    "tbt": [round(t, 5) for t in self.tbt[idx]],
                 }
             )
         return rows

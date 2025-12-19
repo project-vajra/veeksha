@@ -1,6 +1,5 @@
 """Prefetch worker for session generation and scheduling."""
 
-import math
 import threading
 import time
 from typing import Optional
@@ -42,10 +41,9 @@ class PrefetchWorker:
     traffic scheduler, which then manages the dispatch timing of individual requests.
     """
 
-    # starts fast and decays to max over time
-    _MIN_POLL_INTERVAL_S = 0.001
+    # unthrottled for first 3 seconds, then throttles
+    _BURST_DURATION_S = 3.0
     _MAX_POLL_INTERVAL_S = 0.05
-    _DECAY_RATE = 0.1  # higher = faster decay
 
     def __init__(
         self,
@@ -69,24 +67,19 @@ class PrefetchWorker:
         self.generator_lock = generator_lock
         self.worker_context = worker_context
         self.session_counter = session_counter
-        self._sessions_generated = 0
 
     def _get_poll_interval(self) -> float:
-        """Calculate poll interval with exponential decay.
+        """Calculate poll interval based on runtime duration.
 
-        Starts at _MIN_POLL_INTERVAL_S and exponentially decays toward
-        _MAX_POLL_INTERVAL_S as more sessions are generated. This allows
-        fast bursting at startup while settling into a steady-state rate.
+        Unthrottled for the first _BURST_DURATION_S seconds, then throttles
+        to _MAX_POLL_INTERVAL_S.
 
         Returns:
             Poll interval in seconds.
         """
-        decay = math.exp(-self._DECAY_RATE * self._sessions_generated)
-        interval = (
-            self._MAX_POLL_INTERVAL_S
-            - (self._MAX_POLL_INTERVAL_S - self._MIN_POLL_INTERVAL_S) * decay
-        )
-        return interval
+        if time.monotonic() - self._start_time < self._BURST_DURATION_S:
+            return 0.0
+        return self._MAX_POLL_INTERVAL_S
 
     def _generate_session(self) -> Optional[Session]:
         """Generate next session in a thread-safe manner."""
@@ -111,6 +104,8 @@ class PrefetchWorker:
         """Main worker loop."""
         logger.debug("Prefetch worker %s starting", self.worker_context.worker_id)
 
+        self._start_time = time.monotonic()
+
         while not self.worker_context.stop_event.is_set():
             session = self._generate_session()
             if session is None:
@@ -128,7 +123,6 @@ class PrefetchWorker:
 
             # Schedule the session with traffic scheduler
             self.traffic_scheduler.schedule_session(session)
-            self._sessions_generated += 1
             logger.info("Scheduled session %s", session.id)
 
             if self.session_counter.count % 100 == 0:
@@ -137,7 +131,7 @@ class PrefetchWorker:
                     self.session_counter.count,
                 )
 
-            # Throttle with decaying poll interval (fast start, slow steady-state)
+            # Throttle (burst at start, then steady-state)
             time.sleep(self._get_poll_interval())
 
         logger.debug("Prefetch worker %s exiting", self.worker_context.worker_id)

@@ -340,7 +340,6 @@ def run_benchmark(
 
     # 6. Finalize and save results
     result = evaluator.finalize()
-    # TODO shouldn't finalize save?
     evaluator.save(benchmark_config.evaluator.output_dir)
 
     logger.info("Benchmark completed")
