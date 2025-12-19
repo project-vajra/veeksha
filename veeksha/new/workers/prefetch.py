@@ -5,6 +5,7 @@ from typing import Optional
 
 from veeksha.logger import init_logger
 from veeksha.new.core.context import WorkerContext
+from veeksha.new.core.session import Session
 from veeksha.new.generator.session.base import BaseSessionGenerator
 from veeksha.new.traffic.base import BaseTrafficScheduler
 
@@ -65,7 +66,7 @@ class PrefetchWorker:
         self.worker_context = worker_context
         self.session_counter = session_counter
 
-    def _generate_session(self) -> Optional[object]:
+    def _generate_session(self) -> Optional[Session]:
         """Generate next session in a thread-safe manner."""
         while not self.worker_context.stop_event.is_set():
             with self.generator_lock:
@@ -91,10 +92,21 @@ class PrefetchWorker:
         while not self.worker_context.stop_event.is_set():
             session = self._generate_session()
             if session is None:
+                logger.info(
+                    "Prefetch worker %s: no more sessions to generate",
+                    self.worker_context.worker_id,
+                )
                 break
+
+            logger.info(
+                "Generated session %s with %d requests",
+                session.id,
+                len(session.session_graph.nodes),
+            )
 
             # Schedule the session with traffic scheduler
             self.traffic_scheduler.schedule_session(session)
+            logger.info("Scheduled session %s", session.id)
 
             if self.session_counter.count % 100 == 0:
                 logger.debug(

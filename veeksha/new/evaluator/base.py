@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 from veeksha.new.config.evaluator import BaseEvaluatorConfig
 from veeksha.new.core.seeding import SeedManager
@@ -152,3 +152,13 @@ class BaseEvaluator(ABC):
             Dictionary of current metrics, or None if streaming not supported
         """
         return None
+
+    def set_included_requests(self, request_ids: Set[int]) -> None:
+        """Set which requests to include in final metrics.
+
+        If not called, all requests are included. Subclasses can override
+        to filter metrics during finalization.
+
+        Args:
+            request_ids: Set of request IDs to include in metrics
+        """

@@ -3,7 +3,7 @@
 import heapq
 import threading
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from veeksha.new.config.traffic import RateTrafficConfig
 from veeksha.new.core.request import Request
@@ -133,3 +133,13 @@ class RateTrafficScheduler(BaseTrafficScheduler):
             if state is None:
                 return 1
             return len(state.session.requests)
+
+    def has_pending_work(self) -> bool:
+        """Check if there are pending sessions or in-flight requests."""
+        with self._lock:
+            return bool(self._sessions or self._ready_queue)
+
+    def get_in_flight_request_ids(self) -> Set[int]:
+        """Return the set of request IDs currently in-flight."""
+        with self._lock:
+            return set(self._request_to_session.keys())

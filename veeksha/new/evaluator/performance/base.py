@@ -62,6 +62,8 @@ class PerformanceEvaluator(BaseEvaluator):
         self.start_time: Optional[float] = None
         self.end_time: Optional[float] = None
         self.error_code_freq: DefaultDict[int, int] = defaultdict(int)
+        self._registered_request_ids: set = set()
+        self._included_request_ids: Optional[set] = None  # None means include all
 
         # session tracking
         self.session_stats: Dict[int, SessionAggregate] = {}
@@ -136,6 +138,7 @@ class PerformanceEvaluator(BaseEvaluator):
         """Register a request that was dispatched."""
         with self.lock:
             self.num_requests += 1
+            self._registered_request_ids.add(request_id)
             if self.start_time is None:
                 self.start_time = dispatched_at
 
@@ -149,6 +152,22 @@ class PerformanceEvaluator(BaseEvaluator):
                         dispatched_at=dispatched_at,
                         content=content,
                     )
+
+    def get_registered_request_ids(self) -> set:
+        """Return set of all request IDs that have been registered."""
+        with self.lock:
+            return self._registered_request_ids.copy()
+
+    def set_included_requests(self, request_ids: set) -> None:
+        """Set which requests to include in final metrics.
+
+        Args:
+            request_ids: Set of request IDs to include. Only these will be
+                        counted in the final summary metrics.
+        """
+        with self.lock:
+            self._included_request_ids = request_ids.copy()
+            logger.info(f"Set included requests filter: {len(request_ids)} requests")
 
     def record_request_completed(
         self,

@@ -1,3 +1,4 @@
+import time
 from typing import Any, List
 
 from veeksha.logger import init_logger
@@ -95,6 +96,56 @@ logger = init_logger(__name__)
 #             )
 
 
+def _monitor_for_completion(
+    traffic_scheduler,
+    evaluator,
+    pool_manager,
+    benchmark_start,
+    benchmark_timeout,
+    timeout_triggered,
+    pre_timeout_request_ids,
+):
+    while True:
+        time.sleep(0.1)
+
+        elapsed = time.monotonic() - benchmark_start
+
+        # check timeout if not already triggered
+        if (
+            not timeout_triggered
+            and benchmark_timeout > 0
+            and elapsed >= benchmark_timeout
+        ):
+            timeout_triggered = True
+            pre_timeout_request_ids = evaluator.get_registered_request_ids()
+            in_flight = traffic_scheduler.get_in_flight_request_ids()
+            # only care about pre-timeout requests that are still in-flight
+            pending = pre_timeout_request_ids & in_flight
+            logger.info(
+                f"Benchmark timeout after {elapsed:.1f}s. "
+                f"Captured {len(pre_timeout_request_ids)} registered requests, "
+                f"{len(pending)} still in-flight."
+            )
+
+        # check if all prefetch workers have finished
+        prefetch_threads = pool_manager.thread_pools.get("prefetch", [])
+        all_prefetch_done = all(not t.is_alive() for t in prefetch_threads)
+
+        if timeout_triggered:
+            # wait for pre-timeout requests to complete
+            current_in_flight = traffic_scheduler.get_in_flight_request_ids()
+            remaining = pre_timeout_request_ids & current_in_flight
+            if not remaining:
+                logger.info("All pre-timeout requests completed")
+                # notify evaluator to only include pre-timeout requests
+                evaluator.set_included_requests(pre_timeout_request_ids)
+                break
+        elif all_prefetch_done and not traffic_scheduler.has_pending_work():
+            # normal completion: all sessions generated and all work done
+            logger.info("All sessions completed")
+            break
+
+
 def run_main_loop(
     session_generator,
     traffic_scheduler,
@@ -184,18 +235,22 @@ def run_main_loop(
         f"and {client_runner.get_worker_count()} client workers"
     )
 
-    # Monitor for completion
-    # TODO: Add proper completion detection based on session count
+    benchmark_start = time.monotonic()
+    benchmark_timeout = runtime_config.benchmark_timeout
+    timeout_triggered = False
+    pre_timeout_request_ids: set = set()
+
     try:
-        while True:
-            time.sleep(0.5)
-            # Check if all prefetch workers have finished
-            prefetch_threads = pool_manager.thread_pools.get("prefetch", [])
-            all_prefetch_done = all(not t.is_alive() for t in prefetch_threads)
-            if all_prefetch_done:
-                logger.info("All prefetch workers finished, waiting for remaining work")
-                time.sleep(2.0)
-                break
+        _monitor_for_completion(
+            traffic_scheduler,
+            evaluator,
+            pool_manager,
+            benchmark_start,
+            benchmark_timeout,
+            timeout_triggered,
+            pre_timeout_request_ids,
+        )
+
     except KeyboardInterrupt:
         logger.info("Interrupted, stopping")
 

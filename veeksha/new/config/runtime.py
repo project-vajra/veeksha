@@ -9,6 +9,10 @@ class RuntimeConfig:
         default=25,
         metadata={"help": "Maximum number of sessions to generate. -1 for unlimited."},
     )
+    benchmark_timeout: int = field(
+        default=300,
+        metadata={"help": "Benchmark timeout in seconds."},
+    )
     num_prefetch_threads: int = field(
         default=2,
         metadata={"help": "Number of threads for prefetching/generating sessions."},
@@ -26,10 +30,6 @@ class RuntimeConfig:
         metadata={
             "help": "Number of async worker threads for making concurrent requests."
         },
-    )
-    timeout: int = field(
-        default=300,
-        metadata={"help": "Request timeout in seconds."},
     )
     # TODO rm
     telemetry_enabled: bool = field(

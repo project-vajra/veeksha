@@ -87,6 +87,13 @@ class DispatchWorker:
             # Dispatch to client queue (request, session_id, session_size, dispatched_at)
             queue = self._select_queue()
             queue.put((request, session_id, session_size, dispatched_at))
+            logger.info(
+                "Dispatched request %s (session %d, size %d) to queue (qsize=%d)",
+                request.id,
+                session_id,
+                session_size,
+                queue.qsize(),
+            )
 
         # Drain remaining ready requests
         self._drain()
@@ -124,3 +131,10 @@ class DispatchWorker:
 
             queue = self._select_queue()
             queue.put((request, session_id, session_size, dispatched_at))
+            logger.info(
+                "[drain] Dispatched request %s (session %d, size %d) to queue (qsize=%d)",
+                request.id,
+                session_id,
+                session_size,
+                queue.qsize(),
+            )

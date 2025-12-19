@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Optional
+from typing import Optional, Set
 
 from veeksha.new.config.traffic import BaseTrafficConfig
 from veeksha.new.core.request import Request
@@ -43,4 +43,14 @@ class BaseTrafficScheduler:
 
         Returns 1 if the request is not found.
         """
+        raise NotImplementedError
+
+    @abstractmethod
+    def has_pending_work(self) -> bool:
+        """Check if there are pending sessions or in-flight requests."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_in_flight_request_ids(self) -> Set[int]:
+        """Return the set of request IDs currently in-flight."""
         raise NotImplementedError
