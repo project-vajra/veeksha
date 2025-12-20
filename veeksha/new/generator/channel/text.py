@@ -1,5 +1,6 @@
 from veeksha.benchmark_data_utils import load_corpus
 from veeksha.new.config.generator.channel import TextChannelGeneratorConfig
+from veeksha.new.core.request_content import TextChannelRequestContent
 from veeksha.new.core.seeding import SeedManager
 from veeksha.new.core.tokenizer import TokenizerHandle, gen_prompt_from_corpus
 from veeksha.new.generator.channel.base import BaseChannelGenerator
@@ -15,10 +16,15 @@ class TextChannelGenerator(BaseChannelGenerator):
     ):
         self.config = config
         self.seed_manager = seed_manager
-        self.length_generator = LengthGeneratorRegistry.get(
-            self.config.length_generator.get_type(),
-            self.config.length_generator,
-            rng=self.seed_manager.numpy_factory("length")(),
+        self.body_length_generator = LengthGeneratorRegistry.get(
+            self.config.body_length_generator.get_type(),
+            self.config.body_length_generator,
+            rng=self.seed_manager.numpy_factory("body_length")(),
+        )
+        self.output_length_generator = LengthGeneratorRegistry.get(
+            self.config.output_length_generator.get_type(),
+            self.config.output_length_generator,
+            rng=self.seed_manager.numpy_factory("output_length")(),
         )
         self.tokenizer_handle = tokenizer_handle
         # TODO: load corpus function to .new
@@ -28,11 +34,16 @@ class TextChannelGenerator(BaseChannelGenerator):
         ]
         self._corpus_rng = self.seed_manager.random("text_corpus")
 
-    def generate_content(self) -> str:
-        text_token_length = self.length_generator.get_next_length()
-        return gen_prompt_from_corpus(
+    def generate_content(self) -> TextChannelRequestContent:
+        text_token_length = self.body_length_generator.get_next_length()
+        output_token_length = self.output_length_generator.get_next_length()
+        input_text = gen_prompt_from_corpus(
             num_tokens=text_token_length,
             pretokenized_lines=self._corpus_lines,
             tokenizer_handle=self.tokenizer_handle,
             rng=self._corpus_rng,
+        )
+        return TextChannelRequestContent(
+            input_text=input_text,
+            target_output_tokens=output_token_length,
         )

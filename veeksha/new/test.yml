@@ -18,10 +18,13 @@ session_generator:
       arrival_rate: 0.5
   channels:
     - type: text
-      length_generator:
+      body_length_generator:
         type: zipf
         max_length: 20
         min_length: 1
+      output_length_generator:
+        type: fixed
+        length: 2
 
 client:
   type: openai_chat

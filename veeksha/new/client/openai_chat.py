@@ -14,6 +14,12 @@ import httpx
 from veeksha.logger import init_logger
 from veeksha.new.client.base import BaseLLMClient
 from veeksha.new.core.request import Request
+from veeksha.new.core.request_content import (
+    AudioChannelRequestContent,
+    ImageChannelRequestContent,
+    TextChannelRequestContent,
+    VideoChannelRequestContent,
+)
 from veeksha.new.core.response import ChannelResponse, RequestResult
 from veeksha.new.core.tokenizer import TokenizerProvider
 from veeksha.new.types import ChannelModality
@@ -53,76 +59,39 @@ class OpenAIChatClient(BaseLLMClient):
             ChannelModality.TEXT
         )
 
-    def _build_text_content_block(self, text_content: Any) -> tuple[dict, int]:
+    def _build_text_content_block(
+        self, text_content: TextChannelRequestContent
+    ) -> tuple[dict, int]:
         """Build a text content block for multimodal messages.
 
         Args:
-            text_content: Text content from request channels (string or structured).
+            text_content: Text content from request channels.
 
         Returns:
             Tuple of (content_block_dict, token_count).
         """
-        if isinstance(text_content, str):
-            prompt_text = text_content
-            prompt_len = len(self.text_tokenizer_handle.encode(prompt_text))
-        else:
-            # Support for structured text content if needed later
-            prompt_text = getattr(text_content, "input_text", str(text_content))
-            prompt_len = getattr(
-                text_content,
-                "input_length",
-                len(self.text_tokenizer_handle.encode(prompt_text)),
-            )
+        prompt_text = text_content.input_text
+        prompt_len = len(self.text_tokenizer_handle.encode(prompt_text))
 
         return {"type": "text", "text": prompt_text}, prompt_len
 
-    def _build_image_content_block(self, image_content: Any) -> dict:
-        """Build an image content block for multimodal messages.
+    def _build_image_content_block(
+        self, image_content: ImageChannelRequestContent
+    ) -> dict:
+        """Build an image content block for multimodal messages."""
+        return {"type": "image_url", "image_url": {"url": image_content.input_image}}
 
-        Args:
-            image_content: Image content - expected to be a URL string or base64 data URI.
+    def _build_audio_content_block(
+        self, audio_content: AudioChannelRequestContent
+    ) -> dict:
+        """Build an audio content block for multimodal messages."""
+        return {"type": "audio_url", "audio_url": {"url": audio_content.input_audio}}
 
-        Returns:
-            Content block dict for the image.
-        """
-        if isinstance(image_content, str):
-            return {"type": "image_url", "image_url": {"url": image_content}}
-        else:
-            raise NotImplementedError(
-                f"Image content type {type(image_content)} not yet supported"
-            )
-
-    def _build_audio_content_block(self, audio_content: Any) -> dict:
-        """Build an audio content block for multimodal messages.
-
-        Args:
-            audio_content: Audio content - expected to be URL or base64 data.
-
-        Returns:
-            Content block dict for the audio.
-        """
-        if isinstance(audio_content, str):
-            return {"type": "audio_url", "audio_url": {"url": audio_content}}
-        else:
-            raise NotImplementedError(
-                f"Audio content type {type(audio_content)} not yet supported"
-            )
-
-    def _build_video_content_block(self, video_content: Any) -> dict:
-        """Build a video content block for multimodal messages.
-
-        Args:
-            video_content: Video content - expected to be URL or base64 data URI.
-
-        Returns:
-            Content block dict for the video.
-        """
-        if isinstance(video_content, str):
-            return {"type": "video_url", "video_url": {"url": video_content}}
-        else:
-            raise NotImplementedError(
-                f"Video content type {type(video_content)} not yet supported"
-            )
+    def _build_video_content_block(
+        self, video_content: VideoChannelRequestContent
+    ) -> dict:
+        """Build a video content block for multimodal messages."""
+        return {"type": "video_url", "video_url": {"url": video_content.input_video}}
 
     def _build_message_content(self, request: Request) -> tuple[list, int]:
         """Build multimodal message content from request channels.
@@ -137,28 +106,27 @@ class OpenAIChatClient(BaseLLMClient):
         """
         content_blocks: List[dict] = []
         text_token_count = 0
-
         if ChannelModality.TEXT in request.channels:
             text_block, text_token_count = self._build_text_content_block(
-                request.channels[ChannelModality.TEXT]
+                request.channels[ChannelModality.TEXT]  # type: ignore
             )
             content_blocks.append(text_block)
 
         if ChannelModality.IMAGE in request.channels:
             image_block = self._build_image_content_block(
-                request.channels[ChannelModality.IMAGE]
+                request.channels[ChannelModality.IMAGE]  # type: ignore
             )
             content_blocks.append(image_block)
 
         if ChannelModality.AUDIO in request.channels:
             audio_block = self._build_audio_content_block(
-                request.channels[ChannelModality.AUDIO]
+                request.channels[ChannelModality.AUDIO]  # type: ignore
             )
             content_blocks.append(audio_block)
 
         if ChannelModality.VIDEO in request.channels:
             video_block = self._build_video_content_block(
-                request.channels[ChannelModality.VIDEO]
+                request.channels[ChannelModality.VIDEO]  # type: ignore
             )
             content_blocks.append(video_block)
 
@@ -392,8 +360,11 @@ class OpenAIChatClient(BaseLLMClient):
     ) -> RequestResult:
         """Send a request to the OpenAI Chat Completions API."""
         timeout = self.config.request_timeout
-        # TODO make per-request
         max_tokens_limit = None
+        if ChannelModality.TEXT in request.channels:
+            text_content = request.channels[ChannelModality.TEXT]
+            max_tokens_limit = text_content.target_output_tokens  # type: ignore
+
         # Metrics tracking for text
         inter_token_times: List[float] = []
         error_msg: Optional[str] = None
@@ -423,10 +394,9 @@ class OpenAIChatClient(BaseLLMClient):
                 "stream": True,
             }
 
-            # TODO check that min tokens is functional
-            # min_tokens_target = None
-            # if min_tokens_target is not None and self.config.min_tokens_param:
-            #     body[self.config.min_tokens_param] = min_tokens_target
+            max_tokens_param = self.config.max_tokens_param  # type: ignore
+            if max_tokens_limit is not None and max_tokens_param:
+                body[max_tokens_param] = max_tokens_limit
 
             headers = {
                 "Authorization": f"Bearer {self.config.api_key}",

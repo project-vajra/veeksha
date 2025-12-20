@@ -18,7 +18,10 @@ class BaseChannelGeneratorConfig(BasePolyConfig):
 @frozen_dataclass
 class TextChannelGeneratorConfig(BaseChannelGeneratorConfig):
 
-    length_generator: BaseLengthGeneratorConfig = field(
+    body_length_generator: BaseLengthGeneratorConfig = field(
+        default_factory=UniformLengthGeneratorConfig
+    )
+    output_length_generator: BaseLengthGeneratorConfig = field(
         default_factory=UniformLengthGeneratorConfig
     )
 
