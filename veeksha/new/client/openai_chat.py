@@ -1,9 +1,3 @@
-"""OpenAI Chat Completions client for the new Veeksha framework.
-
-Ported and adapted from veeksha/core/llm_clients/openai_chat_completions_client.py
-to work with new Request objects and return RequestResult.
-"""
-
 from __future__ import annotations
 
 import time
