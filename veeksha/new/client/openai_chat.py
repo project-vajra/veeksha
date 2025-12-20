@@ -398,6 +398,10 @@ class OpenAIChatClient(BaseLLMClient):
             if max_tokens_limit is not None and max_tokens_param:
                 body[max_tokens_param] = max_tokens_limit
 
+            min_tokens_param = self.config.min_tokens_param  # type: ignore
+            if min_tokens_param and max_tokens_limit is not None:
+                body[min_tokens_param] = max_tokens_limit
+
             headers = {
                 "Authorization": f"Bearer {self.config.api_key}",
                 "Content-Type": "application/json",

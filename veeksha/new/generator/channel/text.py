@@ -13,9 +13,11 @@ class TextChannelGenerator(BaseChannelGenerator):
         config: TextChannelGeneratorConfig,
         seed_manager: SeedManager,
         tokenizer_handle: TokenizerHandle,
+        append_min_tokens_instruction: bool = False,
     ):
         self.config = config
         self.seed_manager = seed_manager
+        self.append_min_tokens_instruction = append_min_tokens_instruction
         self.body_length_generator = LengthGeneratorRegistry.get(
             self.config.body_length_generator.get_type(),
             self.config.body_length_generator,
@@ -37,11 +39,33 @@ class TextChannelGenerator(BaseChannelGenerator):
     def generate_content(self) -> TextChannelRequestContent:
         text_token_length = self.body_length_generator.get_next_length()
         output_token_length = self.output_length_generator.get_next_length()
-        input_text = gen_prompt_from_corpus(
-            num_tokens=text_token_length,
-            pretokenized_lines=self._corpus_lines,
-            tokenizer_handle=self.tokenizer_handle,
-            rng=self._corpus_rng,
+
+        suffix = ""
+        if self.append_min_tokens_instruction:
+            suffix = f"\n\nGenerate at least {output_token_length} tokens."
+            suffix_tokens = len(self.tokenizer_handle.encode(suffix))
+            if text_token_length <= suffix_tokens:
+                from veeksha.logger import init_logger
+
+                logger = init_logger(__name__)
+
+                logger.warning(
+                    f"Requested body length ({text_token_length}) is too short to append "
+                    f"min tokens instruction ({suffix_tokens} tokens). "
+                    "Skipping instruction for this request."
+                )
+                suffix = ""
+            else:
+                text_token_length -= suffix_tokens
+
+        input_text = (
+            gen_prompt_from_corpus(
+                num_tokens=text_token_length,
+                pretokenized_lines=self._corpus_lines,
+                tokenizer_handle=self.tokenizer_handle,
+                rng=self._corpus_rng,
+            )
+            + suffix
         )
         return TextChannelRequestContent(
             input_text=input_text,

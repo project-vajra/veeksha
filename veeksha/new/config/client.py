@@ -4,7 +4,10 @@ from typing import Optional
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from veeksha.logger import init_logger
 from veeksha.new.types import ClientType
+
+logger = init_logger(__name__)
 
 
 @frozen_dataclass
@@ -48,17 +51,29 @@ class BaseClientConfig(BasePolyConfig):
 class OpenAIChatClientConfig(BaseClientConfig):
     """OpenAI Chat Completions client configuration."""
 
-    min_tokens_param: Optional[str] = field(
-        default="min_tokens",
-        metadata={
-            "help": "Server parameter name for minimum tokens. Set to None to use prompt-based control."
-        },
-    )
     max_tokens_param: Optional[str] = field(
         default="max_completion_tokens",
         metadata={"help": "Server parameter name for maximum tokens."},
+    )
+    min_tokens_param: Optional[str] = field(
+        default="min_tokens",
+        metadata={
+            "help": "Server parameter name for minimum tokens. If your server supports min tokens control via a parameter, specify its name here."
+        },
+    )
+    use_min_tokens_prompt_fallback: bool = field(
+        default=False,
+        metadata={
+            "help": "If True, appends instructions to the prompt to generate at least N tokens (e.g. 'Generate at least 20 tokens'). Useful if the server does not support a min tokens parameter."
+        },
     )
 
     @classmethod
     def get_type(cls) -> ClientType:
         return ClientType.OPENAI_CHAT
+
+    def __post_init__(self):
+        if self.use_min_tokens_prompt_fallback and self.min_tokens_param is None:
+            logger.warning(
+                "use_min_tokens_prompt_fallback is True but min_tokens_param is None. This will result in no min tokens control."
+            )

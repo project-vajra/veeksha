@@ -15,20 +15,32 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
         config: SyntheticSessionGeneratorConfig,
         seed_manager: SeedManager,
         tokenizer_provider: TokenizerProvider,
+        append_min_tokens_instruction: bool = False,
     ):
         self.config = config
         self.seed_manager = seed_manager
         self.tokenizer_provider = tokenizer_provider
+        self.append_min_tokens_instruction = append_min_tokens_instruction
 
         # get generators
         self.channels = {}
         for channel in self.config.channels:
             tokenizer_handle = self.tokenizer_provider.for_modality(channel.get_type())
+            channel_kwargs = {
+                "seed_manager": self.seed_manager.child(
+                    f"channel_{channel.get_type()}"
+                ),
+                "tokenizer_handle": tokenizer_handle,
+            }
+            if channel.get_type() == ChannelGeneratorRegistry.get_key_from_str("text"):
+                channel_kwargs["append_min_tokens_instruction"] = (
+                    self.append_min_tokens_instruction
+                )
+
             self.channels[channel.get_type()] = ChannelGeneratorRegistry.get(
                 channel.get_type(),
                 channel,
-                seed_manager=self.seed_manager.child(f"channel_{channel.get_type()}"),
-                tokenizer_handle=tokenizer_handle,
+                **channel_kwargs,
             )
         self.session_graph_generator = SessionGraphGeneratorRegistry.get(
             self.config.session_graph.get_type(),

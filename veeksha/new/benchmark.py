@@ -17,85 +17,6 @@ from veeksha.new.types import ChannelModality
 logger = init_logger(__name__)
 
 
-# def _send_probe_request(
-#     url: str, headers: dict, body: dict, min_param: str, param_value
-# ) -> bool:
-#     """Send a probe request to test if server accepts a parameter."""
-#     import requests  # type: ignore
-
-#     test_body = body.copy()
-#     test_body[min_param] = param_value
-#     try:
-#         resp = requests.post(url, headers=headers, json=test_body, timeout=10)
-#         return 200 <= resp.status_code < 300
-#     except Exception:
-#         return False
-
-
-# def _probe_min_tokens_param_support(client_config: ClientConfig) -> bool:
-#     """Probe if server accepts the configured min token parameter."""
-#     import os
-
-#     min_param: Optional[str] = client_config.min_tokens_param
-#     if not min_param:
-#         return False
-
-#     base_url = os.environ.get("OPENAI_API_BASE")
-#     if not base_url:
-#         logger.warning("OPENAI_API_BASE not set; cannot probe min token parameter.")
-#         return False
-#     if not base_url.endswith("/"):
-#         base_url = base_url + "/"
-
-#     url = base_url + (client_config.address_append_value or "chat/completions")
-#     headers = {
-#         "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY', '')}",
-#         "Content-Type": "application/json",
-#     }
-
-#     body = {
-#         "model": client_config.model,
-#         "stream": False,
-#         "max_completion_tokens": 1,
-#     }
-#     if client_config.llm_api == "openai_completions":
-#         body["prompt"] = "Hello"
-#     else:
-#         body["messages"] = [{"role": "user", "content": "Hello"}]
-
-#     if not _send_probe_request(url, headers, body, min_param, 1):
-#         logger.warning(
-#             f"Server rejected parameter '{min_param}'; falling back to prompt control."
-#         )
-#         return False
-
-#     if not _send_probe_request(url, headers, body, min_param, {"invalid": "type"}):
-#         return True
-
-#     return False
-
-
-# def _initialize_min_tokens_support(benchmark_config: BenchmarkConfig) -> None:
-#     """Initialize min tokens parameter support by probing the server.
-
-#     This function probes the server to determine if it supports the configured
-#     min_tokens_param. If not supported, it disables the parameter and logs
-#     a warning about falling back to prompt-based control.
-#     """
-#     if benchmark_config.client_config.min_tokens_param:
-#         is_supported = _probe_min_tokens_param_support(benchmark_config.client_config)
-#         min_tokens_param = benchmark_config.client_config.min_tokens_param
-#         if not is_supported:
-#             object.__setattr__(benchmark_config.client_config, "min_tokens_param", None)
-#             logger.warning(
-#                 f"min_tokens_param '{min_tokens_param}' not supported by server; switching to prompt-based minimum token control. This will include, in each request, an instruction to generate at least the requested number of tokens. Might lead to inaccurate lengths being generated."
-#             )
-#         else:
-#             logger.info(
-#                 f"min_tokens_param '{min_tokens_param}' supported in request body."
-#             )
-
-
 def _monitor_for_completion(
     traffic_scheduler,
     evaluator,
@@ -297,11 +218,34 @@ def run_benchmark(
             )
         }
     )
+    append_min_tokens_instruction = False
+    if (
+        hasattr(benchmark_config.client, "use_min_tokens_prompt_fallback")
+        and benchmark_config.client.use_min_tokens_prompt_fallback  # type: ignore
+    ):
+        append_min_tokens_instruction = True
+        logger.info(
+            "Min tokens prompt fallback enabled in config. "
+            "Will append instructions to prompts for minimum token control."
+        )
+
+    session_generator_kwargs = {
+        "config": benchmark_config.session_generator,
+        "seed_manager": seed_manager,
+        "tokenizer_provider": tokenizer_provider,
+    }
+
+    if (
+        benchmark_config.session_generator.get_type()
+        == SessionGeneratorRegistry.get_key_from_str("synthetic")
+    ):
+        session_generator_kwargs["append_min_tokens_instruction"] = (
+            append_min_tokens_instruction
+        )
+
     session_generator = SessionGeneratorRegistry.get(
         benchmark_config.session_generator.get_type(),
-        config=benchmark_config.session_generator,
-        seed_manager=seed_manager,
-        tokenizer_provider=tokenizer_provider,
+        **session_generator_kwargs,
     )
     logger.info(f"Session generator: {session_generator}")
 
