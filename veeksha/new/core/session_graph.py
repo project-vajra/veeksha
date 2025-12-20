@@ -12,6 +12,7 @@ class SessionNode:
 class SessionEdge:
     src: int
     dst: int
+    is_history_parent: bool = True
 
 
 @dataclass

@@ -488,7 +488,7 @@ class TextPerformanceEvaluator:
                     "normalized_end_to_end_latency": round(
                         self.normalized_end_to_end_latency[idx], 5
                     ),
-                    "output_throughput": self.output_throughput[idx],
+                    "output_throughput": round(self.output_throughput[idx], 5),
                     "deadline_miss_rate": self.deadline_miss_rate[idx],
                     "min_tbt_deadline_to_meet": round(
                         self.min_tbt_deadline_to_meet[idx], 5

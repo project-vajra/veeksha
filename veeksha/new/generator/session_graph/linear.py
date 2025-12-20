@@ -43,7 +43,11 @@ class LinearSessionGraphGenerator(BaseSessionGraphGenerator):
             node = SessionNode(id=node_id, wait_after_ready=wait_time)
             add_node(session_graph, node)
             if i > 0:
-                edge = SessionEdge(src=node_id - 1, dst=node_id)
+                edge = SessionEdge(
+                    src=node_id - 1,
+                    dst=node_id,
+                    is_history_parent=self.config.inherit_history,  # all parents are history parents in a linear session
+                )
                 add_edge(session_graph, edge)
             node_id += 1
         return session_graph

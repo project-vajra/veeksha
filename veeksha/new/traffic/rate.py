@@ -3,16 +3,18 @@
 import heapq
 import threading
 import time
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Mapping, Optional, Set, Tuple
 
 from veeksha.new.config.traffic import RateTrafficConfig
 from veeksha.new.core.request import Request
+from veeksha.new.core.response import ChannelResponse
 from veeksha.new.core.seeding import SeedManager
 from veeksha.new.core.session import Session
 from veeksha.new.core.session_graph import children, parents, ready_at
 from veeksha.new.generator.interval.registry import IntervalGeneratorRegistry
 from veeksha.new.traffic.base import BaseTrafficScheduler
 from veeksha.new.traffic.session_state import ScheduledItem, ScheduledSessionState
+from veeksha.new.types import ChannelModality
 
 
 class RateTrafficScheduler(BaseTrafficScheduler):
@@ -77,11 +79,37 @@ class RateTrafficScheduler(BaseTrafficScheduler):
             if not self._ready_queue:
                 return None
             if self._ready_queue[0].ready_at <= self._now():
-                return heapq.heappop(self._ready_queue).request
+                request = heapq.heappop(self._ready_queue).request
+                session_id, node_id = self._request_to_session[request.id]
+                state = self._sessions[session_id]
+
+                self._populate_history(request, state, node_id)
+                return request
             return None
 
+    def _populate_history(
+        self, request: Request, state: ScheduledSessionState, node_id: int
+    ) -> None:
+        """Populate request history from session state based on parent edges."""
+        graph = state.session.session_graph
+        incoming_edges = parents(graph, node_id)
+        history_parents = [e for e in incoming_edges if e.is_history_parent]
+
+        if len(history_parents) > 1:
+            raise ValueError(f"Ambiguous history inheritance for node {node_id}")
+
+        if history_parents:
+            parent_id = history_parents[0].src
+            request.history = state.node_histories.get(parent_id, [])
+        else:
+            request.history = []
+
     def notify_completion(
-        self, request_id: int, completed_at_monotonic: float, success: bool
+        self,
+        request_id: int,
+        completed_at_monotonic: float,
+        success: bool,
+        channel_responses: Optional[Mapping[ChannelModality, ChannelResponse]] = None,
     ) -> None:
         with self._lock:
             session_id, node_id = self._request_to_session.pop(request_id)
@@ -90,6 +118,9 @@ class RateTrafficScheduler(BaseTrafficScheduler):
 
             state.completions[node_id] = completed_at
             state.queued_nodes.discard(node_id)
+
+            # record history (only if I am a history parent)
+            self._record_history(state, node_id, success, channel_responses)
 
             # cancel session on failure
             if not success and state.cancel_on_failure:
@@ -143,3 +174,70 @@ class RateTrafficScheduler(BaseTrafficScheduler):
         """Return the set of request IDs currently in-flight."""
         with self._lock:
             return set(self._request_to_session.keys())
+
+    def _record_history(
+        self,
+        state: ScheduledSessionState,
+        node_id: int,
+        success: bool,
+        channel_responses: Optional[Mapping[ChannelModality, ChannelResponse]],
+    ) -> None:
+        """Record history for a completed node if it's a history parent."""
+        graph = state.session.session_graph
+        outgoing = children(graph, node_id)
+        if any(edge.is_history_parent for edge in outgoing):
+            request = state.session.requests[node_id]
+
+            current_node_history = list(request.history)  # Copy previous
+
+            # user part
+            content_blocks = []
+            if ChannelModality.TEXT in request.channels:
+                text_content = request.channels[ChannelModality.TEXT]
+                content_blocks.append(
+                    {"type": "text", "text": text_content.input_text}  # type: ignore
+                )
+
+            if ChannelModality.IMAGE in request.channels:
+                image_content = request.channels[ChannelModality.IMAGE]
+                content_blocks.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": image_content.input_image},  # type: ignore
+                    }
+                )
+
+            if ChannelModality.AUDIO in request.channels:
+                audio_content = request.channels[ChannelModality.AUDIO]
+                content_blocks.append(
+                    {
+                        "type": "audio_url",
+                        "audio_url": {"url": audio_content.input_audio},  # type: ignore
+                    }
+                )
+
+            if ChannelModality.VIDEO in request.channels:
+                video_content = request.channels[ChannelModality.VIDEO]
+                content_blocks.append(
+                    {
+                        "type": "video_url",
+                        "video_url": {"url": video_content.input_video},  # type: ignore
+                    }
+                )
+
+            if len(content_blocks) == 1 and content_blocks[0]["type"] == "text":
+                current_node_history.append(
+                    {"role": "user", "content": content_blocks[0]["text"]}
+                )
+            elif content_blocks:
+                current_node_history.append({"role": "user", "content": content_blocks})
+
+            # assistant part
+            if success and channel_responses is not None:
+                if ChannelModality.TEXT in channel_responses:
+                    response_text = channel_responses[ChannelModality.TEXT].content
+                    current_node_history.append(
+                        {"role": "assistant", "content": response_text}
+                    )
+
+            state.node_histories[node_id] = current_node_history

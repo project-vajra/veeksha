@@ -15,7 +15,12 @@ from veeksha.new.types import SessionGraphType
 
 @frozen_dataclass
 class BaseSessionGraphGeneratorConfig(BasePolyConfig):
-    pass
+    inherit_history: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether subsequent requests can inherit history from previous ones."
+        },
+    )
 
 
 @frozen_dataclass

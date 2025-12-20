@@ -2,7 +2,7 @@ seed: 42
 
 traffic_scheduler:
   type: concurrent
-  target_concurrent_sessions: 3
+  target_concurrent_sessions: 2
   cancel_session_on_failure: False
 
 session_generator:
@@ -10,21 +10,20 @@ session_generator:
   session_graph:
     type: linear
     num_request_generator:
-      type: uniform
-      min_length: 2
-      max_length: 4
+      type: fixed
+      length: 3
     request_wait_generator:
-      type: poisson
-      arrival_rate: 0.5
+      type: fixed
+      interval: 0.5
   channels:
     - type: text
       body_length_generator:
-        type: zipf
-        max_length: 20
-        min_length: 1
-      output_length_generator:
         type: fixed
-        length: 2
+        length: 10
+      output_length_generator:
+        type: uniform
+        min_length: 10
+        max_length: 20
 
 client:
   type: openai_chat
@@ -36,5 +35,5 @@ client:
   use_min_tokens_prompt_fallback: False
 
 runtime:
-  max_sessions: 10
-  benchmark_timeout: 5
+  max_sessions: 3
+  benchmark_timeout: 120

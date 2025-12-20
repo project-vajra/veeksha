@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import Dict
+from dataclasses import dataclass, field
+from typing import Any, Dict, List
 
 from veeksha.new.core.request_content import BaseChannelRequestContent
 from veeksha.new.types import ChannelModality
@@ -15,6 +15,7 @@ class Request:
 
     id: int
     channels: Dict[ChannelModality, BaseChannelRequestContent]
+    history: List[Dict[str, Any]] = field(default_factory=list)
 
     def __str__(self) -> str:
         return f"RequestConfig(id={self.id})"

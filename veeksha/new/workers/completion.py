@@ -59,6 +59,7 @@ class CompletionWorker:
             request_id=result.request_id,
             completed_at_monotonic=result.completed_at,
             success=result.success,
+            channel_responses=result.channels if result.success else None,
         )
 
         error = Exception(result.error_msg) if result.error_msg else None

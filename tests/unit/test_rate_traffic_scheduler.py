@@ -8,6 +8,8 @@ import pytest
 from veeksha.new.config.generator.interval import FixedIntervalGeneratorConfig
 from veeksha.new.config.traffic import RateTrafficConfig
 from veeksha.new.core.request import Request
+from veeksha.new.core.request_content import TextChannelRequestContent
+from veeksha.new.core.response import ChannelResponse
 from veeksha.new.core.seeding import SeedManager
 from veeksha.new.core.session import Session
 from veeksha.new.core.session_graph import SessionEdge, SessionGraph, SessionNode, add_edge, add_node
@@ -25,12 +27,26 @@ def wait_until(predicate, timeout_s=0.5, interval_s=0.005):
     return False
 
 
+def pop_ready_with_timeout(scheduler, timeout_s=0.2) -> Optional[Request]:
+    """Helper to pop a ready request with a timeout."""
+    start = time.monotonic()
+    while time.monotonic() - start < timeout_s:
+        req = scheduler.pop_ready()
+        if req is not None:
+            return req
+        time.sleep(0.005)
+    return None
+
+
 def make_request(request_id: int, model: str = "dummy") -> Request:
     """Create a simple test request."""
     return Request(
         id=request_id,
-        channels={ChannelModality.TEXT: "test"},
-        model=model,
+        channels={
+            ChannelModality.TEXT: TextChannelRequestContent(
+                input_text=f"test_{request_id}", target_output_tokens=10
+            )
+        },
     )
 
 
@@ -184,8 +200,8 @@ def test_fan_in_session() -> None:
     add_node(graph, SessionNode(id=0, wait_after_ready=0.0))
     add_node(graph, SessionNode(id=1, wait_after_ready=0.0))
     add_node(graph, SessionNode(id=2, wait_after_ready=0.0))
-    add_edge(graph, SessionEdge(src=0, dst=2))
-    add_edge(graph, SessionEdge(src=1, dst=2))
+    add_edge(graph, SessionEdge(src=0, dst=2, is_history_parent=False))
+    add_edge(graph, SessionEdge(src=1, dst=2, is_history_parent=True))
     
     requests = {
         0: make_request(500),
@@ -234,3 +250,136 @@ def test_session_garbage_collected_when_complete() -> None:
     
     # Session should be garbage collected
     assert len(scheduler._sessions) == 0
+
+
+@pytest.mark.unit
+def test_history_inheritance() -> None:
+    """Requests inherit history from their history parent."""
+    scheduler = make_scheduler(interval=0.01)
+    
+    # Linear: 0 -> 1 -> 2
+    session = make_linear_session(session_id=1, num_requests=3)
+    scheduler.schedule_session(session)
+    
+    # 0 ready
+    req0 = pop_ready_with_timeout(scheduler)
+    assert req0 is not None
+    assert req0.history == []
+    
+    # Complete 0 with history
+    response_0 = ChannelResponse(
+        modality=ChannelModality.TEXT,
+        content="response_0"
+    )
+    scheduler.notify_completion(
+        request_id=req0.id, 
+        completed_at_monotonic=time.monotonic(), 
+        success=True, 
+        channel_responses={ChannelModality.TEXT: response_0}
+    )
+    
+    # 1 ready
+    req1 = pop_ready_with_timeout(scheduler)
+    assert req1 is not None
+    assert len(req1.history) == 2
+    assert req1.history[0] == {"role": "user", "content": "test_100"}
+    assert req1.history[1] == {"role": "assistant", "content": "response_0"}
+    
+    # Complete 1 with history
+    response_1 = ChannelResponse(
+        modality=ChannelModality.TEXT,
+        content="response_1"
+    )
+    scheduler.notify_completion(
+        request_id=req1.id, 
+        completed_at_monotonic=time.monotonic(), 
+        success=True, 
+        channel_responses={ChannelModality.TEXT: response_1}
+    )
+    
+    # 2 ready
+    req2 = pop_ready_with_timeout(scheduler)
+    assert req2 is not None
+    assert len(req2.history) == 4
+
+
+@pytest.mark.unit
+def test_ambiguous_history_inheritance() -> None:
+    """Raises ValueError if multiple history parents exist."""
+    scheduler = make_scheduler(interval=0.01)
+    
+    # Graph: 0 -> 2, 1 -> 2
+    graph = SessionGraph()
+    add_node(graph, SessionNode(id=0, wait_after_ready=0.0))
+    add_node(graph, SessionNode(id=1, wait_after_ready=0.0))
+    add_node(graph, SessionNode(id=2, wait_after_ready=0.0))
+    
+    # Both are history parents
+    add_edge(graph, SessionEdge(src=0, dst=2, is_history_parent=True))
+    add_edge(graph, SessionEdge(src=1, dst=2, is_history_parent=True))
+    
+    requests = {
+        0: make_request(200),
+        1: make_request(201),
+        2: make_request(202),
+    }
+    session = Session(id=2, session_graph=graph, requests=requests)
+    scheduler.schedule_session(session)
+    
+    # Complete parents (0 and 1)
+    # We expect exactly 2 requests to be processed successfully
+    for _ in range(2):
+        req = pop_ready_with_timeout(scheduler)
+        assert req is not None
+        scheduler.notify_completion(req.id, time.monotonic(), success=True)
+    
+    # 2 should be ready now, but pop_ready checks history ambiguity
+    # Wait for it to be in ready queue (internal) but popping fails
+    # Since pop_ready raises, we can just check:
+    def check_raises():
+        try:
+             req = scheduler.pop_ready()
+             return False # Should have raised or returned None if not ready yet
+        except ValueError:
+             return True
+    
+    assert wait_until(check_raises, timeout_s=1.0)
+
+
+@pytest.mark.unit
+def test_no_history_parent() -> None:
+    """Requests with no history parent start with empty history."""
+    scheduler = make_scheduler(interval=0.01)
+    
+    # Graph: 0 -> 1 (but is_history_parent=False)
+    graph = SessionGraph()
+    add_node(graph, SessionNode(id=0, wait_after_ready=0.0))
+    add_node(graph, SessionNode(id=1, wait_after_ready=0.0))
+    add_edge(graph, SessionEdge(src=0, dst=1, is_history_parent=False))
+    
+    requests = {
+        0: make_request(300),
+        1: make_request(301),
+    }
+    session = Session(id=3, session_graph=graph, requests=requests)
+    scheduler.schedule_session(session)
+    
+    # Complete 0
+    req0 = pop_ready_with_timeout(scheduler)
+    assert req0 is not None
+
+    response_0 = ChannelResponse(
+        modality=ChannelModality.TEXT,
+        content="response_0"
+    )
+    scheduler.notify_completion(
+        request_id=req0.id, 
+        completed_at_monotonic=time.monotonic(), 
+        success=True, 
+        channel_responses={ChannelModality.TEXT: response_0}
+    )
+    
+    # 1 ready, but no history inherited (empty list)
+    req1 = pop_ready_with_timeout(scheduler)
+    assert req1 is not None
+    assert req1.history == []

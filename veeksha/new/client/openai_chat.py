@@ -130,7 +130,17 @@ class OpenAIChatClient(BaseLLMClient):
             )
             content_blocks.append(video_block)
 
-        return content_blocks, text_token_count
+        messages = []
+        if request.history:
+            messages.extend(request.history)
+
+        # current request content
+        if len(content_blocks) == 1 and content_blocks[0].get("type") == "text":
+            messages.append({"role": "user", "content": content_blocks[0]["text"]})
+        else:
+            messages.append({"role": "user", "content": content_blocks})
+
+        return messages, text_token_count
 
     # ---------- response processing
 
@@ -365,7 +375,7 @@ class OpenAIChatClient(BaseLLMClient):
             text_content = request.channels[ChannelModality.TEXT]
             max_tokens_limit = text_content.target_output_tokens  # type: ignore
 
-        # Metrics tracking for text
+        # text metrics
         inter_token_times: List[float] = []
         error_msg: Optional[str] = None
         error_code: Optional[int] = None
@@ -375,7 +385,7 @@ class OpenAIChatClient(BaseLLMClient):
         previous_token_count = 0
         most_recent_token_time = time.monotonic()
 
-        # Multimodal response data (skeletons)
+        # multimodal response data
         image_data: Optional[Any] = None
         audio_data: Optional[Any] = None
         video_data: Optional[Any] = None
@@ -384,15 +394,18 @@ class OpenAIChatClient(BaseLLMClient):
         dispatched_at = time.monotonic()
 
         try:
-            content_blocks, prompt_len = self._build_message_content(request)
-            dispatched_at = time.monotonic()  # Update to actual dispatch time
+            messages, prompt_len = self._build_message_content(request)
+            dispatched_at = time.monotonic()  # update to actual dispatch time
 
-            message = [{"role": "user", "content": content_blocks}]
             body = {
                 "model": self.config.model,
-                "messages": message,
+                "messages": messages,
                 "stream": True,
             }
+
+            # logger.info(
+            #     f"Sending request {request.id} (sess={session_id}) messages: {messages}"
+            # )
 
             max_tokens_param = self.config.max_tokens_param  # type: ignore
             if max_tokens_limit is not None and max_tokens_param:

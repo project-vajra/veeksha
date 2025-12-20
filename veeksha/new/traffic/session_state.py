@@ -1,7 +1,7 @@
 """State management for scheduled sessions."""
 
 from dataclasses import dataclass, field
-from typing import Dict, Set
+from typing import Any, Dict, List, Set
 
 from veeksha.new.core.request import Request
 from veeksha.new.core.session import Session
@@ -17,6 +17,7 @@ class ScheduledSessionState:
         completions: Mapping of node_id to completion_time for completed nodes
         pending_nodes: Set of node IDs that haven't been queued to the ready queue yet
         queued_nodes: Set of node IDs that have been queued but not yet completed
+        node_histories: Mapping of node_id to list of node history entries
         is_canceled: Whether this session has been canceled
         cancel_on_failure: Whether to cancel remaining nodes on any failure
     """
@@ -26,6 +27,7 @@ class ScheduledSessionState:
     completions: Dict[int, float] = field(default_factory=dict)
     pending_nodes: Set[int] = field(default_factory=set)
     queued_nodes: Set[int] = field(default_factory=set)
+    node_histories: Dict[int, List[Dict[str, Any]]] = field(default_factory=dict)
     is_canceled: bool = False
     cancel_on_failure: bool = True
 

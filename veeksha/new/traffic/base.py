@@ -1,10 +1,12 @@
 from abc import abstractmethod
-from typing import Optional, Set
+from typing import Mapping, Optional, Set
 
 from veeksha.new.config.traffic import BaseTrafficConfig
 from veeksha.new.core.request import Request
+from veeksha.new.core.response import ChannelResponse
 from veeksha.new.core.seeding import SeedManager
 from veeksha.new.core.session import Session
+from veeksha.new.types import ChannelModality
 
 
 class BaseTrafficScheduler:
@@ -24,7 +26,11 @@ class BaseTrafficScheduler:
 
     @abstractmethod
     def notify_completion(
-        self, request_id: int, completed_at_monotonic: float, success: bool
+        self,
+        request_id: int,
+        completed_at_monotonic: float,
+        success: bool,
+        channel_responses: Optional[Mapping[ChannelModality, ChannelResponse]] = None,
     ) -> None:
         """Notify the scheduler that a request has completed."""
         raise NotImplementedError
