@@ -17,10 +17,6 @@ SessionGeneratorRegistry.register(
     ),
 )
 SessionGeneratorRegistry.register(
-    SessionGeneratorType.TRACE,
-    _LazyLoader("veeksha.new.generator.session.trace", "TraceSessionGenerator"),
-)
-SessionGeneratorRegistry.register(
     SessionGeneratorType.LMEVAL,
     _LazyLoader(
         "veeksha.new.generator.session.lmeval",

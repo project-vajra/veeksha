@@ -23,8 +23,7 @@ class LengthGeneratorType(BaseIntEnum):
 # ----- Content -----
 class SessionGeneratorType(BaseIntEnum):
     SYNTHETIC = 1
-    TRACE = 2
-    LMEVAL = 3
+    LMEVAL = 2
 
 
 class ChannelModality(BaseIntEnum):

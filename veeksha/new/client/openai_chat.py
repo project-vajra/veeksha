@@ -287,7 +287,6 @@ class OpenAIChatClient(BaseLLMClient):
         if not success:
             return channels
 
-        # Text channel (functional)
         if generated_text:
             channels[ChannelModality.TEXT] = ChannelResponse(
                 modality=ChannelModality.TEXT,

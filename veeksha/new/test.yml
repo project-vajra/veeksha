@@ -15,6 +15,7 @@ session_generator:
     request_wait_generator:
       type: fixed
       interval: 0.5
+    inherit_history: True
   channels:
     - type: text
       body_length_generator:

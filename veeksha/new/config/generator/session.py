@@ -40,15 +40,6 @@ class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
 
 
 @frozen_dataclass
-class TraceSessionGeneratorConfig(BaseSessionGeneratorConfig):
-    pass
-
-    @classmethod
-    def get_type(cls):
-        return SessionGeneratorType.TRACE
-
-
-@frozen_dataclass
 class LmevalSessionGeneratorConfig(BaseSessionGeneratorConfig):
     pass
 
