@@ -44,9 +44,13 @@ class PerformanceEvaluator(BaseEvaluator):
         self,
         config: PerformanceEvaluatorConfig,
         seed_manager: Optional[SeedManager] = None,
+        output_dir: Optional[str] = None,
+        benchmark_start_time: float = 0.0,
     ):
         super().__init__(config, seed_manager)
         self.config: PerformanceEvaluatorConfig = config
+        self.output_dir = output_dir
+        self.benchmark_start_time = benchmark_start_time
 
         self._channel_evaluators: Dict[ChannelModality, Any] = {}
 
@@ -82,7 +86,7 @@ class PerformanceEvaluator(BaseEvaluator):
         self._stream_thread: Optional[threading.Thread] = None
         self._request_time_reference: float = time.monotonic()
 
-        if config.stream_metrics and config.output_dir:
+        if config.stream_metrics and self.output_dir:
             self._start_metric_streamer()
 
         from veeksha.new.evaluator.registry import ChannelPerformanceEvaluatorRegistry
@@ -95,6 +99,7 @@ class PerformanceEvaluator(BaseEvaluator):
                         channel,
                         config=self.config,
                         channel_config=channel_config,
+                        benchmark_start_time=self.benchmark_start_time,
                     )
                 )
 
@@ -419,13 +424,13 @@ class PerformanceEvaluator(BaseEvaluator):
 
     def _start_metric_streamer(self) -> None:
         """Start background thread for metric streaming."""
-        if not self.config.output_dir:
+        if not self.output_dir:
             logger.warning(
                 "stream_metrics enabled but output_dir not set; disabling streaming."
             )
             return
 
-        os.makedirs(self.config.output_dir, exist_ok=True)
+        os.makedirs(self.output_dir, exist_ok=True)
 
         self._stream_thread = threading.Thread(
             target=self._stream_loop,
@@ -461,20 +466,20 @@ class PerformanceEvaluator(BaseEvaluator):
 
     def _flush_streaming_outputs(self) -> None:
         """Flush current metrics to output files."""
-        if not self.config.output_dir:
+        if not self.output_dir:
             return
 
         with self.lock:
             # Write current summary
             summary = self.get_aggregated_summary()
-            summary_path = os.path.join(self.config.output_dir, "summary_stats.json")
+            summary_path = os.path.join(self.output_dir, "summary_stats.json")
             with open(summary_path, "w") as f:
                 json.dump(summary, f, indent=2)
 
             # Delegate to channel evaluators
             for evaluator in self._channel_evaluators.values():
                 if hasattr(evaluator, "flush_streaming_outputs"):
-                    evaluator.flush_streaming_outputs(self.config.output_dir)
+                    evaluator.flush_streaming_outputs(self.output_dir)
 
     def _shutdown_metric_streamer(self) -> None:
         """Shutdown the metric streaming thread."""

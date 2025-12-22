@@ -3,12 +3,15 @@
 import random
 import time
 from queue import Queue
-from typing import List
+from typing import TYPE_CHECKING, List, Optional
 
 from veeksha.logger import init_logger
 from veeksha.new.core.context import WorkerContext
 from veeksha.new.evaluator.base import BaseEvaluator
 from veeksha.new.traffic.base import BaseTrafficScheduler
+
+if TYPE_CHECKING:
+    from veeksha.new.core.trace_recorder import TraceRecorder
 
 logger = init_logger(__name__)
 
@@ -22,7 +25,7 @@ class DispatchWorker:
     3. Dispatches requests to client worker queues
     """
 
-    _POLL_INTERVAL_S = 0.001  # Fast polling for responsiveness
+    _POLL_INTERVAL_S = 0.001
 
     def __init__(
         self,
@@ -30,6 +33,7 @@ class DispatchWorker:
         client_queues: List[Queue],
         evaluator: BaseEvaluator,
         worker_context: WorkerContext,
+        trace_recorder: Optional["TraceRecorder"] = None,
     ):
         """Initialize the dispatch worker.
 
@@ -38,11 +42,13 @@ class DispatchWorker:
             client_queues: Queues to dispatch requests to (one per client worker)
             evaluator: Evaluator for registering request dispatch
             worker_context: Worker context with stop event
+            trace_recorder: Optional recorder for dispatch traces
         """
         self.traffic_scheduler = traffic_scheduler
         self.client_queues = client_queues
         self.evaluator = evaluator
         self.worker_context = worker_context
+        self.trace_recorder = trace_recorder
 
     def _select_queue(self) -> Queue:
         """Select a client queue using power-of-two load balancing"""
@@ -72,11 +78,9 @@ class DispatchWorker:
 
             dispatched_at = time.monotonic()
 
-            # Get session info from scheduler's internal tracking
             session_id = self._get_session_id(request)
             session_size = self._get_session_size(request)
 
-            # Register with evaluator
             self.evaluator.register_request(
                 request_id=request.id,
                 session_id=session_id,
@@ -84,7 +88,14 @@ class DispatchWorker:
                 channels=request.channels,
             )
 
-            # Dispatch to client queue (request, session_id, session_size, dispatched_at)
+            if self.trace_recorder:
+                self.trace_recorder.record_dispatch(
+                    request=request,
+                    session_id=session_id,
+                    session_size=session_size,
+                    dispatched_at=dispatched_at,
+                )
+
             queue = self._select_queue()
             queue.put((request, session_id, session_size, dispatched_at))
             logger.info(
@@ -128,6 +139,14 @@ class DispatchWorker:
                 dispatched_at=dispatched_at,
                 channels=request.channels,
             )
+
+            if self.trace_recorder:
+                self.trace_recorder.record_dispatch(
+                    request=request,
+                    session_id=session_id,
+                    session_size=session_size,
+                    dispatched_at=dispatched_at,
+                )
 
             queue = self._select_queue()
             queue.put((request, session_id, session_size, dispatched_at))

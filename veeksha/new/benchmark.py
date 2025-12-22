@@ -1,18 +1,26 @@
+import os
+import threading
 import time
+from queue import Queue
 from typing import Any, List
 
 from veeksha.logger import init_logger
 from veeksha.new.client.registry import ClientRegistry
 from veeksha.new.config.benchmark import BenchmarkConfig
 from veeksha.new.core.seeding import SeedManager
+from veeksha.new.core.thread_pool import ThreadPoolManager
 from veeksha.new.core.tokenizer import (
     TokenizerProvider,
     build_hf_tokenizer_handle_from_model,
 )
+from veeksha.new.core.trace_recorder import TraceRecorder
 from veeksha.new.evaluator.registry import EvaluatorRegistry
 from veeksha.new.generator.session.registry import SessionGeneratorRegistry
 from veeksha.new.traffic.registry import TrafficSchedulerRegistry
 from veeksha.new.types import ChannelModality
+from veeksha.new.workers import CompletionWorker, DispatchWorker, PrefetchWorker
+from veeksha.new.workers.client_runner import ClientRunnerManager
+from veeksha.new.workers.prefetch import SharedSessionCounter
 
 logger = init_logger(__name__)
 
@@ -73,6 +81,8 @@ def run_main_loop(
     evaluator,
     client,
     runtime_config,
+    trace_recorder=None,
+    benchmark_start_time=None,
 ):
     """Run the main benchmark loop with all workers.
 
@@ -82,17 +92,12 @@ def run_main_loop(
         evaluator: Evaluator to collect metrics
         client: LLM client for request execution
         runtime_config: Runtime configuration with thread counts
+        trace_recorder: Optional trace recorder
+        benchmark_start_time: Start time of the benchmark
     """
-    import threading
-    import time
-    from queue import Queue
-
-    from veeksha.new.core.thread_pool import ThreadPoolManager
-    from veeksha.new.workers import CompletionWorker, DispatchWorker, PrefetchWorker
-    from veeksha.new.workers.client_runner import ClientRunnerManager
-    from veeksha.new.workers.prefetch import SharedSessionCounter
-
     logger.info("Starting main loop")
+    if benchmark_start_time is None:
+        benchmark_start_time = time.monotonic()
 
     # Create queues
     client_queues = [Queue() for _ in range(runtime_config.num_client_threads)]
@@ -132,6 +137,7 @@ def run_main_loop(
             "traffic_scheduler": traffic_scheduler,
             "client_queues": client_queues,
             "evaluator": evaluator,
+            "trace_recorder": trace_recorder,
         },
         pool_size=runtime_config.num_dispatcher_threads,
     )
@@ -156,7 +162,7 @@ def run_main_loop(
         f"and {client_runner.get_worker_count()} client workers"
     )
 
-    benchmark_start = time.monotonic()
+    benchmark_start = benchmark_start_time
     benchmark_timeout = runtime_config.benchmark_timeout
     timeout_triggered = False
     pre_timeout_request_ids: set = set()
@@ -257,11 +263,15 @@ def run_benchmark(
     )
     logger.info(f"Traffic scheduler: {traffic_scheduler}")
 
+    benchmark_start_time = time.monotonic()
+
     # 3. Get evaluator
     evaluator = EvaluatorRegistry.get(
         benchmark_config.evaluator.get_type(),
         config=benchmark_config.evaluator,
         seed_manager=seed_manager,
+        output_dir=f"{benchmark_config.output_dir}/metrics",
+        benchmark_start_time=benchmark_start_time,
     )
     logger.info(f"Evaluator: {evaluator}")
 
@@ -274,17 +284,33 @@ def run_benchmark(
     logger.info(f"Client: {client}")
 
     # 5. Run the benchmark
+
+    trace_recorder = None
+    if benchmark_config.trace_recorder.enabled:
+        # ensure output dirs exists for traces
+        os.makedirs(f"{benchmark_config.output_dir}/traces", exist_ok=True)
+        trace_recorder = TraceRecorder(
+            f"{benchmark_config.output_dir}/traces",
+            benchmark_start_time,
+            benchmark_config.trace_recorder,
+        )
+
+    os.makedirs(f"{benchmark_config.output_dir}/metrics", exist_ok=True)
+
     run_main_loop(
         session_generator=session_generator,
         traffic_scheduler=traffic_scheduler,
         evaluator=evaluator,
         client=client,
         runtime_config=benchmark_config.runtime,
+        trace_recorder=trace_recorder,
+        benchmark_start_time=benchmark_start_time,
     )
 
     # 6. Finalize and save results
     result = evaluator.finalize()
-    evaluator.save(benchmark_config.evaluator.output_dir)
+
+    evaluator.save(f"{benchmark_config.output_dir}/metrics")
 
     logger.info("Benchmark completed")
     return result

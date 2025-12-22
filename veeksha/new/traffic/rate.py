@@ -28,7 +28,7 @@ class RateTrafficScheduler(BaseTrafficScheduler):
         self._interval_gen = IntervalGeneratorRegistry.get(
             config.interval_generator.get_type(),
             config.interval_generator,
-            rng=seed_manager.numpy_factory("interval"),
+            rng=seed_manager.numpy_factory("interval")(),
         )
         self._lock = threading.Lock()
         self._next_start_time: float = 0.0

@@ -100,9 +100,6 @@ class BaseEvaluatorConfig(BasePolyConfig):
         metadata={"help": "List of ChannelModality values to evaluate."},
     )
 
-    output_dir: str = field(
-        default="benchmark_output", metadata={"help": "Directory for output artifacts"}
-    )
     stream_metrics: bool = field(
         default=True, metadata={"help": "Enable real-time metric streaming"}
     )

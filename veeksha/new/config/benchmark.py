@@ -1,10 +1,10 @@
 from dataclasses import field
 
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
 
 # from veeksha.new.config.server import ServerConfig
 from veeksha.new.config.client import BaseClientConfig, OpenAIChatClientConfig
+from veeksha.new.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.new.config.evaluator import (
     BaseEvaluatorConfig,
     PerformanceEvaluatorConfig,
@@ -14,11 +14,18 @@ from veeksha.new.config.generator.session import (
     SyntheticSessionGeneratorConfig,
 )
 from veeksha.new.config.runtime import RuntimeConfig
+from veeksha.new.config.trace_recorder import TraceRecorderConfig
 from veeksha.new.config.traffic import BaseTrafficConfig, RateTrafficConfig
 
 
 @frozen_dataclass(allow_from_file=True)
 class BenchmarkConfig:
+    output_dir: str = field(
+        default="benchmark_output",
+        metadata={
+            "help": "Base directory for all benchmark outputs (traces, metrics, logs)"
+        },
+    )
     seed: int = field(
         default=42, metadata={"help": "Seed for the random number generator."}
     )
@@ -39,14 +46,15 @@ class BenchmarkConfig:
         },
     )
     client: BaseClientConfig = field(default_factory=OpenAIChatClientConfig)
-    # server: ServerConfig = field(default_factory=ServerConfig)
     runtime: RuntimeConfig = field(
         default_factory=RuntimeConfig,
         metadata={"help": "The runtime configuration for the benchmark."},
     )
-
-    # TODO: enable dashboard
-    # dashboard: DashboardConfig = field(default_factory=DashboardConfig)
+    trace_recorder: TraceRecorderConfig = field(
+        default_factory=TraceRecorderConfig,
+        metadata={"help": "Trace recorder configuration."},
+    )
+    # server: ServerConfig = field(default_factory=ServerConfig)
 
     @classmethod
     def create_from_cli_args(cls):

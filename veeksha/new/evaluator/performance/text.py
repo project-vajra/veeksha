@@ -95,9 +95,11 @@ class TextPerformanceEvaluator:
         self,
         config: PerformanceEvaluatorConfig,
         channel_config: Optional[TextChannelPerformanceConfig] = None,
+        benchmark_start_time: float = 0.0,
     ):
         self.config = config
         self.channel_config = channel_config or TextChannelPerformanceConfig()
+        self.benchmark_start_time = benchmark_start_time
 
         self.lock = threading.Lock()
 
@@ -219,7 +221,7 @@ class TextPerformanceEvaluator:
 
         # streaming
         self._request_rows_streamed: int = 0
-        self._request_time_reference: float = 0.0
+        self._request_time_reference: float = self.benchmark_start_time
 
         # session tracking
         self._session_last_completion: Dict[int, float] = {}
@@ -477,8 +479,6 @@ class TextPerformanceEvaluator:
                 {
                     "request_id": self.request_ids[idx],
                     "request_dispatched_at": round(self.request_dispatched_at[idx], 5),
-                    "session_id": self.session_ids[idx],
-                    "session_total_requests": self.session_total_requests[idx],
                     "num_prompt_tokens": self.num_prompt_tokens[idx],
                     "num_output_tokens": self.num_output_tokens[idx],
                     "num_total_tokens": self.num_total_tokens[idx],
