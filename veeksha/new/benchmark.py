@@ -153,6 +153,9 @@ def run_main_loop(
         pool_size=runtime_config.num_completion_threads,
     )
 
+    if trace_recorder:
+        trace_recorder.start()
+
     # Start all threads
     client_runner.start()
     pool_manager.start_all()
@@ -185,6 +188,9 @@ def run_main_loop(
     stop_event.set()
     pool_manager.join_pool("prefetch", timeout=1.0)
     pool_manager.join_pool("dispatch", timeout=1.0)
+
+    if trace_recorder:
+        trace_recorder.stop()
 
     # Stop client runner
     client_runner.stop()
@@ -294,18 +300,23 @@ def run_benchmark(
             benchmark_start_time,
             benchmark_config.trace_recorder,
         )
+        trace_recorder.start()
 
     os.makedirs(f"{benchmark_config.output_dir}/metrics", exist_ok=True)
 
-    run_main_loop(
-        session_generator=session_generator,
-        traffic_scheduler=traffic_scheduler,
-        evaluator=evaluator,
-        client=client,
-        runtime_config=benchmark_config.runtime,
-        trace_recorder=trace_recorder,
-        benchmark_start_time=benchmark_start_time,
-    )
+    try:
+        run_main_loop(
+            session_generator=session_generator,
+            traffic_scheduler=traffic_scheduler,
+            evaluator=evaluator,
+            client=client,
+            runtime_config=benchmark_config.runtime,
+            trace_recorder=trace_recorder,
+            benchmark_start_time=benchmark_start_time,
+        )
+    finally:
+        if trace_recorder:
+            trace_recorder.stop()
 
     # 6. Finalize and save results
     result = evaluator.finalize()

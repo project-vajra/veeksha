@@ -11,6 +11,6 @@ class TraceRecorderConfig:
         default=True, metadata={"help": "Enable recording of dispatched requests"}
     )
     include_content: bool = field(
-        default=False,
+        default=False,  # TODO remove fields when False
         metadata={"help": "Include heavy content (channel blobs, history) in trace"},
     )

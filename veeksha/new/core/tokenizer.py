@@ -1,5 +1,15 @@
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Generic, Iterable, List, Sequence, TypeVar
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    TypeVar,
+)
 
 from transformers import AutoTokenizer
 
@@ -36,7 +46,7 @@ def build_hf_tokenizer_handle(tokenizer) -> TokenizerHandle[str]:
     """Wrap a Hugging Face tokenizer into a TokenizerHandle."""
 
     return TokenizerHandle(
-        count_tokens=lambda text: len(tokenizer.encode(text)),
+        count_tokens=lambda text: len(tokenizer.encode(text, add_special_tokens=False)),
         decode=lambda token_ids: tokenizer.decode(token_ids, skip_special_tokens=False),
         encode=lambda text: tokenizer.encode(text, add_special_tokens=False),
     )
@@ -54,25 +64,60 @@ def gen_prompt_from_corpus(
     pretokenized_lines: Iterable[Sequence[int]],
     tokenizer_handle: TokenizerHandle[RawContent],
     rng,
+    suffix: Optional[RawContent] = None,
 ) -> RawContent:
     """Assemble exactly num_tokens token IDs from a pre-tokenized corpus."""
+    empty_content = tokenizer_handle.decode([])
+    effective_suffix = suffix if suffix is not None else empty_content
 
-    token_lines: List[Sequence[int]] = [line for line in pretokenized_lines if line]
     if num_tokens <= 0:
-        return tokenizer_handle.decode([])
-    remaining = num_tokens
-    out: List[int] = []
-    indices = list(range(len(token_lines)))
-    rng.shuffle(indices)
-    idx_cursor = 0
-    while remaining > 0:
-        tokens = token_lines[indices[idx_cursor]]
-        take = min(remaining, len(tokens))
-        if take:
-            out.extend(tokens[:take])
-            remaining -= take
-        idx_cursor += 1
-        if idx_cursor == len(indices):
-            idx_cursor = 0
-            rng.shuffle(indices)
-    return tokenizer_handle.decode(out)
+        return empty_content
+
+    suffix_len = tokenizer_handle.count_tokens(effective_suffix)
+    target_body_len = max(0, num_tokens - suffix_len)
+
+    # 1. get candidate tokens
+    token_lines = [line for line in pretokenized_lines if line]
+    if not token_lines:
+        return effective_suffix
+
+    rng.shuffle(token_lines)
+    candidate_ids = [tok for line in token_lines for tok in line]
+    needed = int(target_body_len * 1.2) + 50
+    candidate_ids = candidate_ids[: needed + 100]
+
+    # 2. binary search for best token count
+    low, high, best_k = 0, len(candidate_ids), len(candidate_ids)
+    while low <= high:
+        mid = (low + high) // 2
+        count = tokenizer_handle.count_tokens(
+            tokenizer_handle.decode(candidate_ids[:mid]) + effective_suffix
+        )
+        if count == num_tokens:
+            return tokenizer_handle.decode(candidate_ids[:mid]) + effective_suffix
+        elif count < num_tokens:
+            low = mid + 1
+        else:
+            best_k = mid
+            high = mid - 1
+
+    # 3. trim or pad characters
+    def try_adjust(base_ids: List[int], trim: bool) -> Optional[RawContent]:
+        text = tokenizer_handle.decode(base_ids)
+        limit = 200 if trim else 50
+        for i in range(limit):
+            adjusted = text[:-i] if trim and i > 0 else text + (" " * i)
+            if trim and i >= len(text):
+                break
+            if tokenizer_handle.count_tokens(adjusted + effective_suffix) == num_tokens:
+                return adjusted + effective_suffix
+        return None
+
+    # overshoot
+    if result := try_adjust(candidate_ids[:best_k], trim=True):
+        return result
+    # undershoot
+    if best_k > 0 and (result := try_adjust(candidate_ids[: best_k - 1], trim=False)):
+        return result
+
+    return tokenizer_handle.decode(candidate_ids[:best_k]) + effective_suffix

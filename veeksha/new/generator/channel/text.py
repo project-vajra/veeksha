@@ -55,17 +55,13 @@ class TextChannelGenerator(BaseChannelGenerator):
                     "Skipping instruction for this request."
                 )
                 suffix = ""
-            else:
-                text_token_length -= suffix_tokens
 
-        input_text = (
-            gen_prompt_from_corpus(
-                num_tokens=text_token_length,
-                pretokenized_lines=self._corpus_lines,
-                tokenizer_handle=self.tokenizer_handle,
-                rng=self._corpus_rng,
-            )
-            + suffix
+        input_text = gen_prompt_from_corpus(
+            num_tokens=text_token_length,
+            pretokenized_lines=self._corpus_lines,
+            tokenizer_handle=self.tokenizer_handle,
+            rng=self._corpus_rng,
+            suffix=suffix,
         )
         return TextChannelRequestContent(
             input_text=input_text,

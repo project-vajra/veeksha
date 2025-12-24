@@ -39,6 +39,7 @@ class TextRequestMetrics:
     num_prompt_tokens: int
     num_output_tokens: int
     inter_token_times: List[float]
+    num_requested_output_tokens: Optional[int] = None
     session_total_requests: Optional[int] = None
 
     @property
@@ -206,6 +207,7 @@ class TextPerformanceEvaluator:
         self.request_dispatched_at: List[float] = []
         self.num_prompt_tokens: List[int] = []
         self.num_output_tokens: List[int] = []
+        self.num_requested_output_tokens: List[Optional[int]] = []
         self.num_total_tokens: List[int] = []
         self.tpot: List[float] = []
         self.ttft: List[float] = []
@@ -238,9 +240,12 @@ class TextPerformanceEvaluator:
             if self._request_time_reference == 0.0:
                 self._request_time_reference = dispatched_at
 
+            target_output_tokens = getattr(content, "target_output_tokens", None)
+
             self._pending_requests[request_id] = {
                 "session_id": session_id,
                 "dispatched_at": dispatched_at,
+                "target_output_tokens": target_output_tokens,
             }
 
     def record_request_completed(
@@ -259,6 +264,7 @@ class TextPerformanceEvaluator:
                 return
 
             dispatched_at = dispatch_info["dispatched_at"]
+            target_output_tokens = dispatch_info.get("target_output_tokens")
 
             # Extract metrics from the text channel response
             channel_response = response.channels.get(ChannelModality.TEXT)
@@ -283,6 +289,7 @@ class TextPerformanceEvaluator:
                 num_prompt_tokens=num_prompt_tokens,
                 num_output_tokens=num_output_tokens,
                 inter_token_times=inter_token_times,
+                num_requested_output_tokens=target_output_tokens,
                 session_total_requests=session_total_requests,
             )
 
@@ -355,6 +362,7 @@ class TextPerformanceEvaluator:
         self.request_dispatched_at.append(normalized_dispatched_at)
         self.num_prompt_tokens.append(metrics.num_prompt_tokens)
         self.num_output_tokens.append(metrics.num_output_tokens)
+        self.num_requested_output_tokens.append(metrics.num_requested_output_tokens)
         self.num_total_tokens.append(metrics.num_total_tokens)
         self.tpot.append(metrics.tpot)
         self.ttft.append(metrics.ttft)
@@ -478,9 +486,13 @@ class TextPerformanceEvaluator:
             rows.append(
                 {
                     "request_id": self.request_ids[idx],
-                    "request_dispatched_at": round(self.request_dispatched_at[idx], 5),
+                    "session_id": self.session_ids[idx],
+                    "dispatched_at": round(self.request_dispatched_at[idx], 5),
                     "num_prompt_tokens": self.num_prompt_tokens[idx],
                     "num_output_tokens": self.num_output_tokens[idx],
+                    "num_requested_output_tokens": self.num_requested_output_tokens[
+                        idx
+                    ],
                     "num_total_tokens": self.num_total_tokens[idx],
                     "tpot": round(self.tpot[idx], 5),
                     "ttft": round(self.ttft[idx], 5),
