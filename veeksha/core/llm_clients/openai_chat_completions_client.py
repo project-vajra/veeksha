@@ -143,13 +143,14 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         last_token_batch_emission = 0
         is_first_emission = True  # Track if this is the first dashboard event emission
 
+        # Initialize the most recent received token time to the time the request was dispatched
+        # This is done to remove the request dispatch and accept time from ttft calculation
+        disable_time_jump(get_send_request_cool_down_time_ms() * 1e-3)
+
         try:
             async with session.post(address, json=body, headers=headers) as response:
                 response.raise_for_status()
 
-                # Initialize the most recent received token time to the time the request was dispatched
-                # This is done to remove the request dispatch and accept time from ttft calculation
-                disable_time_jump(get_send_request_cool_down_time_ms() * 1e-3)
                 most_recent_received_token_time = get_virtual_time()
 
                 async for data in self._process_stream(response):
