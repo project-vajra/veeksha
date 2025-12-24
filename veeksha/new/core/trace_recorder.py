@@ -85,22 +85,21 @@ class TraceRecorder:
             channels_data = None
             history_data = None
 
-            if self.include_content:
-                channels_data = {
-                    str(modality.name).lower(): self._serialize_channel_content(content)
-                    for modality, content in request.channels.items()
-                }
-                history_data = request.history
-
             trace_entry = {
                 "request_id": request.id,
                 "session_id": session_id,
                 "session_size": session_size,
                 "dispatched_at": round(dispatched_at - self.benchmark_start_time, 5),
-                "channels": channels_data,
-                "history": history_data,
                 "session_context": request.session_context,
             }
+
+            if self.include_content:
+                channels_data = {
+                    str(modality.name).lower(): self._serialize_channel_content(content)
+                    for modality, content in request.channels.items()
+                }
+                trace_entry["channels"] = channels_data
+                trace_entry["history"] = request.history
 
             self._queue.put(trace_entry)
 
