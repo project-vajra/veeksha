@@ -1,11 +1,13 @@
 seed: 42
 
 traffic_scheduler:
-  type: rate
-  interval_generator:
-    type: fixed
-    interval: 1
-  cancel_session_on_failure: False
+  type: concurrent
+  target_concurrent_sessions: 10
+  rampup_seconds: 5 # reach 10 concurrent sessions in 5 seconds
+  # interval_generator:
+  #   type: fixed
+  #   interval: 1
+  # cancel_session_on_failure: False
 
 session_generator:
   type: synthetic
@@ -38,7 +40,7 @@ client:
   use_min_tokens_prompt_fallback: False
 
 runtime:
-  max_sessions: 3
+  max_sessions: 20
   benchmark_timeout: 120
 
 trace_recorder:

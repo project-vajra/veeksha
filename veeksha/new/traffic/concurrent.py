@@ -27,6 +27,8 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
     def __init__(self, config: ConcurrentTrafficConfig, seed_manager: SeedManager):
         super().__init__(config, seed_manager)
         self._target_concurrent = config.target_concurrent_sessions
+        self._rampup_seconds = config.rampup_seconds
+        self._rampup_complete = False
         self._lock = threading.Lock()
         self._start_monotonic = time.monotonic()
         self._ready_queue: List[ScheduledItem] = []
@@ -36,6 +38,14 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
 
     def _now(self) -> float:
         return time.monotonic() - self._start_monotonic
+
+    def _current_target_concurrency(self) -> int:
+        if self._rampup_complete:
+            return self._target_concurrent
+        if self._now() >= self._rampup_seconds:
+            self._rampup_complete = True
+            return self._target_concurrent
+        return int(self._target_concurrent * (self._now() / self._rampup_seconds))
 
     def _add_to_ready_queue(self, ready_at_time: float, request: Request) -> None:
         heapq.heappush(
@@ -74,7 +84,7 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
     def _try_activate_pending_locked(self) -> None:
         while (
             self._pending_sessions
-            and self._active_session_count() < self._target_concurrent
+            and self._active_session_count() < self._current_target_concurrency()
         ):
             session = self._pending_sessions.popleft()
             self._activate_session_locked(session)

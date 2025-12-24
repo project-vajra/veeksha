@@ -35,6 +35,12 @@ class ConcurrentTrafficConfig(BaseTrafficConfig):
         default=3,
         metadata={"help": "Target number of concurrent sessions to maintain."},
     )
+    rampup_seconds: int = field(
+        default=10,
+        metadata={
+            "help": "Number of seconds to ramp up the traffic. i.e. 'Take 10 seconds to ramp up to the target concurrent sessions.'"
+        },
+    )
 
     @classmethod
     def get_type(cls) -> TrafficType:
