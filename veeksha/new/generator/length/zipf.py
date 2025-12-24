@@ -75,13 +75,13 @@ class ZipfLengthGenerator(BaseLengthGenerator):
             scramble_seed = int(rng.randint(0, 2**32 - 1))
 
         self._zipf_generator = ZipfGenerator(
-            self.config.min_length,
-            self.config.max_length,
+            self.config.min,
+            self.config.max,
             self.config.theta,
             self.config.scramble,
-            rng,
+            self.rng,
             scramble_seed,
         )
 
-    def get_next_length(self) -> int:
+    def get_next_value(self) -> int:
         return self._zipf_generator.next()

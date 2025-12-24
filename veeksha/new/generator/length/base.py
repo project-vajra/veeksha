@@ -11,5 +11,5 @@ class BaseLengthGenerator(ABC):
         self.rng = rng
 
     @abstractmethod
-    def get_next_length(self) -> int:
+    def get_next_value(self) -> int:
         pass

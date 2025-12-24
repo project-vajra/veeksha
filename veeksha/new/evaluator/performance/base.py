@@ -165,6 +165,23 @@ class PerformanceEvaluator(BaseEvaluator):
         with self.lock:
             return self._registered_request_ids.copy()
 
+    def get_completed_request_count(self) -> int:
+        """Return count of completed requests for progress tracking."""
+        with self.lock:
+            return self.num_completed_requests
+
+    def get_session_counts(self) -> tuple[int, int, int]:
+        """Return session counts for progress tracking.
+
+        Returns:
+            Tuple of (completed_sessions, errored_sessions, in_progress_sessions)
+        """
+        with self.lock:
+            completed = self.num_sessions_successful
+            errored = self.num_sessions_errored + self.num_sessions_cancelled
+            in_progress = len(self.session_stats)
+            return completed, errored, in_progress
+
     def set_included_requests(self, request_ids: set) -> None:
         """Set which requests to include in final metrics.
 

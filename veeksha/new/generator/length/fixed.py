@@ -11,5 +11,5 @@ class FixedLengthGenerator(BaseLengthGenerator):
         self.config = config
         self.rng = rng
 
-    def get_next_length(self) -> int:
-        return self.config.length
+    def get_next_value(self) -> int:
+        return self.config.value

@@ -2,8 +2,8 @@ seed: 42
 
 traffic_scheduler:
   type: concurrent
-  target_concurrent_sessions: 10
-  rampup_seconds: 5 # reach 10 concurrent sessions in 5 seconds
+  target_concurrent_sessions: 100
+  rampup_seconds: 20 # reach 10 concurrent sessions in 5 seconds
   # interval_generator:
   #   type: fixed
   #   interval: 1
@@ -14,21 +14,23 @@ session_generator:
   session_graph:
     type: linear
     num_request_generator:
-      type: fixed
-      length: 3
+      type: uniform
+      min: 2
+      max: 10
     request_wait_generator:
-      type: fixed
-      interval: 0.5
+      type: poisson
+      arrival_rate: 1.5
     inherit_history: True
   channels:
     - type: text
       body_length_generator:
-        type: fixed
-        length: 10
+        type: uniform
+        min: 10
+        max: 200
       output_length_generator:
         type: uniform
-        min_length: 10
-        max_length: 20
+        min: 10
+        max: 200
 
 client:
   type: openai_chat
@@ -40,8 +42,11 @@ client:
   use_min_tokens_prompt_fallback: False
 
 runtime:
-  max_sessions: 20
-  benchmark_timeout: 120
+  max_sessions: -1
+  benchmark_timeout: 300
+  num_dispatcher_threads: 10
+  num_completion_threads: 10
+  num_client_threads: 300
 
 trace_recorder:
   enabled: True

@@ -15,5 +15,5 @@ class UniformLengthGenerator(BaseLengthGenerator):
         self.config = config
         self.rng = rng
 
-    def get_next_length(self) -> int:
-        return int(self.rng.uniform(self.config.min_length, self.config.max_length))
+    def get_next_value(self) -> int:
+        return int(self.rng.uniform(self.config.min, self.config.max))

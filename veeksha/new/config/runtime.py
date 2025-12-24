@@ -24,11 +24,6 @@ class RuntimeConfig:
     num_client_threads: int = field(
         default=4,
         metadata={
-            "help": "Number of async worker threads for making concurrent requests."
+            "help": "Number of async worker threads for making concurrent requests. A good rule of thumb is to make each thread handle 10 or less concurrent requests at any given time."
         },
-    )
-    # TODO rm
-    telemetry_enabled: bool = field(
-        default=False,
-        metadata={"help": "Enable verbose dispatch runtime telemetry logs."},
     )

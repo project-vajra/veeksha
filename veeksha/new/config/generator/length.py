@@ -12,7 +12,7 @@ class BaseLengthGeneratorConfig(BasePolyConfig):
 
 @frozen_dataclass
 class FixedLengthGeneratorConfig(BaseLengthGeneratorConfig):
-    length: int = field(default=4096, metadata={"help": "Length to generate."})
+    value: int = field(default=4096, metadata={"help": "Value to generate."})
 
     @classmethod
     def get_type(cls) -> LengthGeneratorType:
@@ -21,12 +21,10 @@ class FixedLengthGeneratorConfig(BaseLengthGeneratorConfig):
 
 @frozen_dataclass
 class UniformLengthGeneratorConfig(BaseLengthGeneratorConfig):
-    min_length: int = field(
-        default=1024, metadata={"help": "Minimum length to generate."}
-    )
-    max_length: int = field(
+    min: int = field(default=1024, metadata={"help": "Minimum value to generate."})
+    max: int = field(
         default=4096,
-        metadata={"help": "Maximum length to generate."},
+        metadata={"help": "Maximum value to generate."},
     )
 
     @classmethod
@@ -34,12 +32,12 @@ class UniformLengthGeneratorConfig(BaseLengthGeneratorConfig):
         return LengthGeneratorType.UNIFORM
 
     def __post_init__(self):
-        if self.min_length <= 0:
-            raise ValueError("min_length must be > 0")
-        if self.max_length <= 0:
-            raise ValueError("max_length must be > 0")
-        if self.min_length > self.max_length:
-            raise ValueError("min_length must be <= max_length")
+        if self.min <= 0:
+            raise ValueError("min must be > 0")
+        if self.max <= 0:
+            raise ValueError("max must be > 0")
+        if self.min > self.max:
+            raise ValueError("min must be <= max")
 
 
 @frozen_dataclass
@@ -50,12 +48,10 @@ class ZipfLengthGeneratorConfig(BaseLengthGeneratorConfig):
     scramble: bool = field(
         default=False, metadata={"help": "Whether to scramble the Zipf distribution."}
     )
-    min_length: int = field(
-        default=1024, metadata={"help": "Minimum length to generate."}
-    )
-    max_length: int = field(
+    min: int = field(default=1024, metadata={"help": "Minimum value to generate."})
+    max: int = field(
         default=4096,
-        metadata={"help": "Maximum length to generate."},
+        metadata={"help": "Maximum value to generate."},
     )
 
     @classmethod
@@ -63,9 +59,9 @@ class ZipfLengthGeneratorConfig(BaseLengthGeneratorConfig):
         return LengthGeneratorType.ZIPF
 
     def __post_init__(self):
-        if self.min_length <= 0:
-            raise ValueError("min_length must be > 0")
-        if self.max_length <= 0:
-            raise ValueError("max_length must be > 0")
-        if self.min_length > self.max_length:
-            raise ValueError("min_length must be <= max_length")
+        if self.min <= 0:
+            raise ValueError("min must be > 0")
+        if self.max <= 0:
+            raise ValueError("max must be > 0")
+        if self.min > self.max:
+            raise ValueError("min must be <= max")

@@ -37,8 +37,8 @@ class TextChannelGenerator(BaseChannelGenerator):
         self._corpus_rng = self.seed_manager.random("text_corpus")
 
     def generate_content(self) -> TextChannelRequestContent:
-        text_token_length = self.body_length_generator.get_next_length()
-        output_token_length = self.output_length_generator.get_next_length()
+        text_token_length = self.body_length_generator.get_next_value()
+        output_token_length = self.output_length_generator.get_next_value()
 
         suffix = ""
         if self.append_min_tokens_instruction:

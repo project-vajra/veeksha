@@ -153,6 +153,23 @@ class BaseEvaluator(ABC):
         """
         return None
 
+    def get_completed_request_count(self) -> int:
+        """Return count of completed requests for progress tracking.
+
+        Returns:
+            Number of completed requests. Subclasses should override.
+        """
+        return 0
+
+    def get_session_counts(self) -> tuple:
+        """Return session counts for progress tracking.
+
+        Returns:
+            Tuple of (completed_sessions, errored_sessions, in_progress_sessions).
+            Subclasses should override.
+        """
+        return (0, 0, 0)
+
     def set_included_requests(self, request_ids: Set[int]) -> None:
         """Set which requests to include in final metrics.
 

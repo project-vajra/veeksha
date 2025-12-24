@@ -34,7 +34,7 @@ class LinearSessionGraphGenerator(BaseSessionGraphGenerator):
     def generate_session_graph(self) -> SessionGraph:
         session_graph = SessionGraph()
         node_id = 0
-        num_requests = self.num_request_generator.get_next_length()
+        num_requests = self.num_request_generator.get_next_value()
         for i in range(num_requests):
             if i == 0:
                 wait_time = 0

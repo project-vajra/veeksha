@@ -115,15 +115,8 @@ class PrefetchWorker:
                 )
                 break
 
-            logger.info(
-                "Generated session %s with %d requests",
-                session.id,
-                len(session.session_graph.nodes),
-            )
-
             # Schedule the session with traffic scheduler
             self.traffic_scheduler.schedule_session(session)
-            logger.info("Scheduled session %s", session.id)
 
             if self.session_counter.count % 100 == 0:
                 logger.debug(

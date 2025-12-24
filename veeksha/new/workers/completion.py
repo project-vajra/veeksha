@@ -47,14 +47,6 @@ class CompletionWorker:
 
     def _process_result(self, result: RequestResult) -> None:
         """Process a single request result."""
-        logger.info(
-            "Received result for request %s (session %d): success=%s, error=%s",
-            result.request_id,
-            result.session_id,
-            result.success,
-            result.error_msg,
-        )
-
         self.traffic_scheduler.notify_completion(
             request_id=result.request_id,
             completed_at_monotonic=result.completed_at,
@@ -69,12 +61,6 @@ class CompletionWorker:
             completed_at=result.completed_at,
             response=result,
             error=error,
-        )
-
-        logger.info(
-            "Completed processing request %s (session %d)",
-            result.request_id,
-            result.session_id,
         )
 
     def run(self) -> None:

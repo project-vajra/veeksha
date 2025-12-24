@@ -4,6 +4,8 @@ import time
 from queue import Queue
 from typing import Any, List
 
+from tqdm import tqdm
+
 from veeksha.logger import init_logger
 from veeksha.new.client.registry import ClientRegistry
 from veeksha.new.config.benchmark import BenchmarkConfig
@@ -16,6 +18,7 @@ from veeksha.new.core.tokenizer import (
 from veeksha.new.core.trace_recorder import TraceRecorder
 from veeksha.new.evaluator.registry import EvaluatorRegistry
 from veeksha.new.generator.session.registry import SessionGeneratorRegistry
+from veeksha.new.health import HealthChecker
 from veeksha.new.traffic.registry import TrafficSchedulerRegistry
 from veeksha.new.types import ChannelModality
 from veeksha.new.workers import CompletionWorker, DispatchWorker, PrefetchWorker
@@ -23,6 +26,61 @@ from veeksha.new.workers.client_runner import ClientRunnerManager
 from veeksha.new.workers.prefetch import SharedSessionCounter
 
 logger = init_logger(__name__)
+
+
+def _init_pbar(max_sessions: int, benchmark_timeout: float):
+    """Initialize progress bar based on benchmark mode.
+
+    Returns:
+        Tuple of (pbar, time_based_progress)
+    """
+    if max_sessions > 0:
+        # Session-based progress
+        pbar = tqdm(
+            total=max_sessions,
+            desc="Sessions",
+            unit="sess",
+            dynamic_ncols=True,
+            bar_format="{desc}: {n}/{total} [{percentage:3.0f}%] | {rate_fmt} | Elapsed: {elapsed}",
+        )
+        return pbar, False
+    else:
+        # Time-based progress
+        pbar = tqdm(
+            total=int(benchmark_timeout),
+            desc="Benchmark",
+            unit="s",
+            dynamic_ncols=True,
+            bar_format="{desc}: {elapsed}/{total}s [{percentage:3.0f}%] | Sessions: {postfix}",
+        )
+        pbar.set_postfix_str("0")
+        return pbar, True
+
+
+def _update_pbar(
+    pbar, time_based_progress: bool, elapsed: float, total_done: int, state: dict
+):
+    """Update progress bar with current state.
+
+    Args:
+        pbar: tqdm progress bar instance
+        time_based_progress: True if using time-based mode
+        elapsed: Elapsed time in seconds
+        total_done: Total completed + errored sessions
+        state: Dict with 'last_completed' and 'last_time_update' keys (mutated in place)
+    """
+    if time_based_progress:
+        elapsed_int = int(elapsed)
+        if elapsed_int > state["last_time_update"]:
+            pbar.update(elapsed_int - state["last_time_update"])
+            state["last_time_update"] = elapsed_int
+        if total_done > state["last_completed"]:
+            pbar.set_postfix_str(str(total_done))
+            state["last_completed"] = total_done
+    else:
+        if total_done > state["last_completed"]:
+            pbar.update(total_done - state["last_completed"])
+            state["last_completed"] = total_done
 
 
 def _monitor_for_completion(
@@ -33,46 +91,55 @@ def _monitor_for_completion(
     benchmark_timeout,
     timeout_triggered,
     pre_timeout_request_ids,
+    max_sessions,
 ):
-    while True:
-        time.sleep(0.1)
+    pbar, time_based_progress = _init_pbar(max_sessions, benchmark_timeout)
+    pbar_state = {"last_completed": 0, "last_time_update": 0}
 
-        elapsed = time.monotonic() - benchmark_start
+    try:
+        while True:
+            time.sleep(0.1)
 
-        # check timeout if not already triggered
-        if (
-            not timeout_triggered
-            and benchmark_timeout > 0
-            and elapsed >= benchmark_timeout
-        ):
-            timeout_triggered = True
-            pre_timeout_request_ids = evaluator.get_registered_request_ids()
-            in_flight = traffic_scheduler.get_in_flight_request_ids()
-            # only care about pre-timeout requests that are still in-flight
-            pending = pre_timeout_request_ids & in_flight
-            logger.info(
-                f"Benchmark timeout after {elapsed:.1f}s. "
-                f"Captured {len(pre_timeout_request_ids)} registered requests, "
-                f"{len(pending)} still in-flight."
-            )
+            completed, errored, _ = evaluator.get_session_counts()
+            total_done = completed + errored
+            elapsed = time.monotonic() - benchmark_start
 
-        # check if all prefetch workers have finished
-        prefetch_threads = pool_manager.thread_pools.get("prefetch", [])
-        all_prefetch_done = all(not t.is_alive() for t in prefetch_threads)
+            _update_pbar(pbar, time_based_progress, elapsed, total_done, pbar_state)
 
-        if timeout_triggered:
-            # wait for pre-timeout requests to complete
-            current_in_flight = traffic_scheduler.get_in_flight_request_ids()
-            remaining = pre_timeout_request_ids & current_in_flight
-            if not remaining:
-                logger.info("All pre-timeout requests completed")
-                # notify evaluator to only include pre-timeout requests
-                evaluator.set_included_requests(pre_timeout_request_ids)
+            # check timeout if not already triggered
+            if (
+                not timeout_triggered
+                and benchmark_timeout > 0
+                and elapsed >= benchmark_timeout
+            ):
+                timeout_triggered = True
+                pre_timeout_request_ids = evaluator.get_registered_request_ids()
+                in_flight = traffic_scheduler.get_in_flight_request_ids()
+                # only care about pre-timeout requests that are still in-flight
+                pending = pre_timeout_request_ids & in_flight
+                logger.info(
+                    f"Benchmark timeout after {elapsed:.1f}s. "
+                    f"Captured {len(pre_timeout_request_ids)} registered requests, "
+                    f"{len(pending)} still in-flight."
+                )
+
+            # check if all prefetch workers have finished
+            prefetch_threads = pool_manager.thread_pools.get("prefetch", [])
+            all_prefetch_done = all(not t.is_alive() for t in prefetch_threads)
+
+            if timeout_triggered:
+                # wait for pre-timeout requests to complete
+                current_in_flight = traffic_scheduler.get_in_flight_request_ids()
+                remaining = pre_timeout_request_ids & current_in_flight
+                if not remaining:
+                    logger.info("All pre-timeout requests completed")
+                    evaluator.set_included_requests(pre_timeout_request_ids)
+                    break
+            elif all_prefetch_done and not traffic_scheduler.has_pending_work():
+                logger.info("All sessions completed")
                 break
-        elif all_prefetch_done and not traffic_scheduler.has_pending_work():
-            # normal completion: all sessions generated and all work done
-            logger.info("All sessions completed")
-            break
+    finally:
+        pbar.close()
 
 
 def run_main_loop(
@@ -179,6 +246,7 @@ def run_main_loop(
             benchmark_timeout,
             timeout_triggered,
             pre_timeout_request_ids,
+            max_sessions=runtime_config.max_sessions,
         )
 
     except KeyboardInterrupt:
@@ -322,6 +390,25 @@ def run_benchmark(
     result = evaluator.finalize()
 
     evaluator.save(f"{benchmark_config.output_dir}/metrics")
+
+    # 7. Benchmark health checks
+    if (
+        benchmark_config.trace_recorder.enabled
+        and benchmark_config.trace_recorder.include_content
+    ):
+        logger.info("Running health checks...")
+        health_checker = HealthChecker(
+            trace_file=f"{benchmark_config.output_dir}/traces/dispatch_trace.jsonl",
+            metrics_file=f"{benchmark_config.output_dir}/metrics/request_level_metrics.jsonl",
+            benchmark_config=benchmark_config,
+        )
+        health_checker.run_and_save(
+            f"{benchmark_config.output_dir}/health_check_results.txt"
+        )
+    else:
+        logger.info(
+            "Health checks not run: trace recorder is disabled or content is not included."
+        )
 
     logger.info("Benchmark completed")
     return result
