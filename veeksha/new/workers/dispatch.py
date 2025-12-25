@@ -20,12 +20,12 @@ class DispatchWorker:
     """Worker that polls ready requests from scheduler and dispatches to client queues.
 
     This worker:
-    1. Polls the traffic scheduler for ready requests (pop_ready)
+    1. Waits for ready requests from the traffic scheduler (wait_for_ready)
     2. Registers requests with the evaluator
     3. Dispatches requests to client worker queues
     """
 
-    _POLL_INTERVAL_S = 0.001
+    _WAIT_TIMEOUT_S = 0.01
 
     def __init__(
         self,
@@ -68,18 +68,13 @@ class DispatchWorker:
         logger.debug("Dispatch worker %s starting", self.worker_context.worker_id)
 
         while not self.worker_context.stop_event.is_set():
-            # Poll for ready request
-            request = self.traffic_scheduler.pop_ready()
+            result = self.traffic_scheduler.wait_for_ready(timeout=self._WAIT_TIMEOUT_S)
 
-            if request is None:
-                # No request ready, small sleep
-                time.sleep(self._POLL_INTERVAL_S)
+            if result is None:
                 continue
 
+            request, session_id, session_size = result
             dispatched_at = time.monotonic()
-
-            session_id = self._get_session_id(request)
-            session_size = self._get_session_size(request)
 
             self.evaluator.register_request(
                 request_id=request.id,
@@ -118,13 +113,12 @@ class DispatchWorker:
             "Dispatch worker %s: draining scheduler", self.worker_context.worker_id
         )
         while True:
-            request = self.traffic_scheduler.pop_ready()
-            if request is None:
+            result = self.traffic_scheduler.pop_ready()
+            if result is None:
                 break
 
+            request, session_id, session_size = result
             dispatched_at = time.monotonic()
-            session_id = self._get_session_id(request)
-            session_size = self._get_session_size(request)
 
             self.evaluator.register_request(
                 request_id=request.id,

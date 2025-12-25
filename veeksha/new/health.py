@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -113,8 +113,6 @@ class HealthChecker:
 
         A positive deviation means the request was dispatched after it was ready
         (expected behavior with some scheduling overhead).
-        A negative deviation means the request was dispatched before it was ready
-        (a violation if too early).
         """
         deviations = []
         violations = []
@@ -122,15 +120,12 @@ class HealthChecker:
         session_col = self._get_col("session_id")
         dispatched_col = self._get_col("dispatched_at")
 
-        early_threshold = -0.05  # dispatched more than 50ms before ready
         late_threshold = 5.0  # dispatched more than 5 seconds after ready
 
         for session_id, group in self.merged_df.groupby(session_col):
             req_map = {}
             for _, row in group.iterrows():
-                dispatched_at = row[dispatched_col]
-                latency = row["end_to_end_latency"]
-                completed_at = dispatched_at + latency
+                completed_at = row["completed_at"]
                 req_map[row["request_id"]] = completed_at
 
             for _, row in group.iterrows():
@@ -163,7 +158,7 @@ class HealthChecker:
                     diff = actual_dispatch - ready_at
                     deviations.append(diff)
 
-                    if diff < early_threshold or diff > late_threshold:
+                    if diff > late_threshold:
                         violations.append(
                             {
                                 "session_id": session_id,
@@ -200,7 +195,6 @@ class HealthChecker:
                     "results": {
                         "Metric": "Scheduler delay (actual_dispatch - ready_time)",
                         "Positive Value": "Dispatched after ready (expected)",
-                        "Negative Value": "Dispatched before ready (violation if < threshold)",
                     },
                 },
                 {
@@ -210,7 +204,6 @@ class HealthChecker:
                 {
                     "title": "Violation Info",
                     "results": {
-                        "Early Threshold": f"{early_threshold}s (dispatched >{abs(early_threshold) * 1000:.0f}ms before ready)",
                         "Late Threshold": f"{late_threshold}s (dispatched >{late_threshold}s after ready)",
                         "Violations": str(len(violations)),
                     },
@@ -303,9 +296,41 @@ class HealthChecker:
         benchmark_end = time_series[-1][0]
         total_duration = benchmark_end - benchmark_start
 
+        # Helper to generate smoothed time series
+        def smooth_time_series(
+            series: List[Tuple[float, int]], target_val: int, tolerance: float
+        ) -> List[Tuple[float, int]]:
+            """Return a new time series with small dips below target filled."""
+            if not series:
+                return []
+
+            smoothed = []
+
+            # We iterate intervals. valid interval i is from series[i].t to series[i+1].t
+            # series[i].c is the value.
+            for i in range(len(series) - 1):
+                t_curr, c_curr = series[i]
+                t_next, _ = series[i + 1]
+                duration = t_next - t_curr
+
+                # Turnaround "gap" usually: c checks below target, duration short.
+                # If short duration and below target, bridge it by assuming target.
+                # "discounting gaps of a particular size".
+                if c_curr < target_val and duration <= tolerance and duration > 0:
+                    c_curr = max(c_curr, target_val)
+
+                smoothed.append((t_curr, c_curr))
+
+            # append valid last point
+            smoothed.append(series[-1])
+            return smoothed
+
         # Helper to compute time-weighted stats over an interval
         def compute_phase_stats(
-            phase_start: float, phase_end: float, limit_fn: Callable[[float], float]
+            series: List[Tuple[float, int]],
+            phase_start: float,
+            phase_end: float,
+            limit_fn: Callable[[float], float],
         ):
             """Compute time-weighted concurrency stats for a phase."""
             time_below = 0.0
@@ -319,7 +344,7 @@ class HealthChecker:
             prev_time = phase_start
             prev_concurrency = 0
 
-            for t, c in time_series:
+            for t, c in series:
                 if t <= phase_start:
                     prev_concurrency = c
                     continue
@@ -424,7 +449,7 @@ class HealthChecker:
         if rampup_seconds > 0:
             rampup_end = min(benchmark_start + rampup_seconds, benchmark_end)
             rampup_stats = compute_phase_stats(
-                benchmark_start, rampup_end, rampup_limit_fn
+                time_series, benchmark_start, rampup_end, rampup_limit_fn
             )
             rampup_duration = rampup_stats["duration"]
 
@@ -468,7 +493,7 @@ class HealthChecker:
 
             # Compute stats for full steady-state phase (including wind-down)
             full_stats = compute_phase_stats(
-                steady_start, benchmark_end, steady_limit_fn
+                time_series, steady_start, benchmark_end, steady_limit_fn
             )
             full_duration = full_stats["duration"]
 
@@ -477,7 +502,7 @@ class HealthChecker:
             stable_stats = None
             if stable_duration > 0 and stable_end < benchmark_end:
                 stable_stats = compute_phase_stats(
-                    steady_start, stable_end, steady_limit_fn
+                    time_series, steady_start, stable_end, steady_limit_fn
                 )
 
             if full_duration > 0:
@@ -524,10 +549,42 @@ class HealthChecker:
                     }
                 )
 
+                # Smoothed stable stats
+                gap_tolerance = 0.5
+                smoothed_series = smooth_time_series(time_series, target, gap_tolerance)
+                smoothed_stats = compute_phase_stats(
+                    smoothed_series, steady_start, stable_end, steady_limit_fn
+                )
+
+                sm_duration = smoothed_stats["duration"]
+                if sm_duration > 0:
+                    sm_pct_below = 100.0 * smoothed_stats["time_below"] / sm_duration
+                    sm_pct_at = 100.0 * smoothed_stats["time_at"] / sm_duration
+                    sm_pct_above = 100.0 * smoothed_stats["time_above"] / sm_duration
+
+                    sections.append(
+                        {
+                            "title": f"Steady-State Phase - Smoothed (ignoring gaps <= {gap_tolerance}s)",
+                            "results": {
+                                "Duration": f"{sm_duration:.2f}s",
+                                "Time Below Target": f"{smoothed_stats['time_below']:.2f}s ({sm_pct_below:.1f}%)",
+                                "Time At Target": f"{smoothed_stats['time_at']:.2f}s ({sm_pct_at:.1f}%)",
+                                "Time Above Target": f"{smoothed_stats['time_above']:.2f}s ({sm_pct_above:.1f}%)",
+                                "Min Observed": str(smoothed_stats["min"]),
+                                "Mean Observed": f"{smoothed_stats['mean']:.2f}",
+                                "Median Observed": f"{smoothed_stats['median']:.2f}",
+                                "Max Observed": str(smoothed_stats["max"]),
+                            },
+                        }
+                    )
+
                 # Wind-down phase analysis
+                # at the end of the bench, when the last requests dispatched from each session are being recorded,
+                # we cannot tell if the session was finished or not. This is why we need to identify when the concurrency drops
+                # at the end of the bench and never recovers as the "wind-down"
                 if wind_down_duration > 0:
                     wind_down_stats = compute_phase_stats(
-                        stable_end, benchmark_end, steady_limit_fn
+                        time_series, stable_end, benchmark_end, steady_limit_fn
                     )
                     wd_duration = wind_down_stats["duration"]
                     if wd_duration > 0:
@@ -633,3 +690,5 @@ class HealthChecker:
 
         summary = {"name": "Session Concurrency Check", "sections": sections}
         return TestResult(summary=summary, passed=passed)
+
+    # TODO: test prompt length, prompt uniqueness

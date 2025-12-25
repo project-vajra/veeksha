@@ -1,10 +1,13 @@
 from veeksha.benchmark_data_utils import load_corpus
+from veeksha.logger import init_logger
 from veeksha.new.config.generator.channel import TextChannelGeneratorConfig
 from veeksha.new.core.request_content import TextChannelRequestContent
 from veeksha.new.core.seeding import SeedManager
 from veeksha.new.core.tokenizer import TokenizerHandle, gen_prompt_from_corpus
 from veeksha.new.generator.channel.base import BaseChannelGenerator
 from veeksha.new.generator.length.registry import LengthGeneratorRegistry
+
+logger = init_logger(__name__)
 
 
 class TextChannelGenerator(BaseChannelGenerator):
@@ -16,6 +19,7 @@ class TextChannelGenerator(BaseChannelGenerator):
         append_min_tokens_instruction: bool = False,
     ):
         self.config = config
+        self._logged_body_length_warning = False
         self.seed_manager = seed_manager
         self.append_min_tokens_instruction = append_min_tokens_instruction
         self.body_length_generator = LengthGeneratorRegistry.get(
@@ -45,15 +49,13 @@ class TextChannelGenerator(BaseChannelGenerator):
             suffix = f"\n\nGenerate at least {output_token_length} tokens."
             suffix_tokens = len(self.tokenizer_handle.encode(suffix))
             if text_token_length <= suffix_tokens:
-                from veeksha.logger import init_logger
-
-                logger = init_logger(__name__)
-
-                logger.warning(
-                    f"Requested body length ({text_token_length}) is too short to append "
-                    f"min tokens instruction ({suffix_tokens} tokens). "
-                    "Skipping instruction for this request."
-                )
+                if not self._logged_body_length_warning:
+                    logger.warning(
+                        f"Requested body length ({text_token_length}) is too short to append "
+                        f"min tokens instruction ({suffix_tokens} tokens). "
+                        "Skipping instruction for this request."
+                    )
+                    self._logged_body_length_warning = True
                 suffix = ""
 
         input_text = gen_prompt_from_corpus(

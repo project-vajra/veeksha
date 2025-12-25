@@ -6,6 +6,7 @@ import time
 from collections import deque
 from typing import Deque, Dict, List, Mapping, Optional, Set, Tuple
 
+from veeksha.logger import init_logger
 from veeksha.new.config.traffic import ConcurrentTrafficConfig
 from veeksha.new.core.request import Request
 from veeksha.new.core.response import ChannelResponse
@@ -15,6 +16,8 @@ from veeksha.new.core.session_graph import children, parents, ready_at
 from veeksha.new.traffic.base import BaseTrafficScheduler
 from veeksha.new.traffic.session_state import ScheduledItem, ScheduledSessionState
 from veeksha.new.types import ChannelModality
+
+logger = init_logger(__name__)
 
 
 class ConcurrentTrafficScheduler(BaseTrafficScheduler):
@@ -29,7 +32,7 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
         self._target_concurrent = config.target_concurrent_sessions
         self._rampup_seconds = config.rampup_seconds
         self._rampup_complete = False
-        self._lock = threading.Lock()
+        self._condition = threading.Condition()
         self._start_monotonic = time.monotonic()
         self._ready_queue: List[ScheduledItem] = []
         self._sessions: Dict[int, ScheduledSessionState] = {}
@@ -48,12 +51,14 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
         return int(self._target_concurrent * (self._now() / self._rampup_seconds))
 
     def _add_to_ready_queue(self, ready_at_time: float, request: Request) -> None:
+        """Add item to ready queue and signal waiting dispatchers."""
         heapq.heappush(
             self._ready_queue,
             ScheduledItem(
                 ready_at=ready_at_time, request_id=request.id, request=request
             ),
         )
+        self._condition.notify_all()
 
     def _active_session_count(self) -> int:
         return len(self._sessions)
@@ -90,24 +95,57 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
             self._activate_session_locked(session)
 
     def schedule_session(self, session: Session) -> None:
-        with self._lock:
+        with self._condition:
             self._pending_sessions.append(session)
             self._try_activate_pending_locked()
 
-    def pop_ready(self) -> Optional[Request]:
-        with self._lock:
-            if not self._ready_queue:
-                return None
+    def wait_for_ready(
+        self, timeout: float = 0.001
+    ) -> Optional[Tuple[Request, int, int]]:
+        """Wait for a ready request with timeout.
 
-            if self._ready_queue[0].ready_at <= self._now():
-                request = heapq.heappop(self._ready_queue).request
+        Args:
+            timeout: Maximum time to wait in seconds.
 
-                session_id, node_id = self._request_to_session[request.id]
-                state = self._sessions[session_id]
+        Returns:
+            Tuple of (request, session_id, session_size) if ready, None if timeout.
+        """
+        with self._condition:
+            result = self._try_pop_ready_locked()
+            if result is not None:
+                return result
 
-                self._populate_history(request, state, node_id)
-                return request
+            if self._ready_queue:
+                wait_time = min(timeout, self._ready_queue[0].ready_at - self._now())
+                wait_time = max(0.0001, wait_time)
+            else:
+                wait_time = timeout
+
+            self._condition.wait(timeout=wait_time)
+
+            # check again after waking
+            return self._try_pop_ready_locked()
+
+    def _try_pop_ready_locked(self) -> Optional[Tuple[Request, int, int]]:
+        """Try to pop a ready item, must be called with lock held."""
+        if not self._ready_queue:
             return None
+
+        if self._ready_queue[0].ready_at <= self._now():
+            item = heapq.heappop(self._ready_queue)
+            request = item.request
+
+            session_id, node_id = self._request_to_session[request.id]
+            state = self._sessions[session_id]
+            session_size = len(state.session.requests)
+
+            self._populate_history(request, state, node_id)
+            return (request, session_id, session_size)
+        return None
+
+    def pop_ready(self) -> Optional[Tuple[Request, int, int]]:
+        with self._condition:
+            return self._try_pop_ready_locked()
 
     def _populate_history(
         self, request: Request, state: ScheduledSessionState, node_id: int
@@ -134,7 +172,7 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
         success: bool,
         channel_responses: Optional[Mapping[ChannelModality, ChannelResponse]] = None,
     ) -> None:
-        with self._lock:
+        with self._condition:
             session_id, node_id = self._request_to_session.pop(request_id)
             state = self._sessions[session_id]
             completed_at = completed_at_monotonic - self._start_monotonic
@@ -168,20 +206,19 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
                     state.pending_nodes.discard(child_id)
                     state.queued_nodes.add(child_id)
 
-            # session is complete
             if not state.pending_nodes and not state.queued_nodes:
                 del self._sessions[session_id]
                 self._try_activate_pending_locked()
 
     def get_session_id(self, request_id: int) -> int:
         """Get the session ID for a given request ID."""
-        with self._lock:
+        with self._condition:
             session_id, _ = self._request_to_session.get(request_id, (-1, -1))
         return session_id
 
     def get_session_size(self, request_id: int) -> int:
         """Get the total number of requests in the session for a given request ID."""
-        with self._lock:
+        with self._condition:
             session_id, _ = self._request_to_session.get(request_id, (-1, -1))
             if session_id == -1:
                 return 1
@@ -192,12 +229,12 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
 
     def has_pending_work(self) -> bool:
         """Check if there are pending sessions or in-flight requests."""
-        with self._lock:
+        with self._condition:
             return bool(self._pending_sessions or self._sessions or self._ready_queue)
 
     def get_in_flight_request_ids(self) -> Set[int]:
         """Return the set of request IDs currently in-flight."""
-        with self._lock:
+        with self._condition:
             return set(self._request_to_session.keys())
 
     def _record_history(

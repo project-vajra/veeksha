@@ -36,6 +36,7 @@ class TextRequestMetrics:
     request_id: int
     session_id: int
     request_dispatched_at: float
+    completed_at: float  # Actual completion timestamp
     num_prompt_tokens: int
     num_output_tokens: int
     inter_token_times: List[float]
@@ -49,10 +50,6 @@ class TextRequestMetrics:
     @property
     def end_to_end_latency(self) -> float:
         return sum(self.inter_token_times)
-
-    @property
-    def completed_at(self) -> float:
-        return self.request_dispatched_at + self.end_to_end_latency
 
     @property
     def normalized_end_to_end_latency(self) -> float:
@@ -205,6 +202,7 @@ class TextPerformanceEvaluator:
         }
 
         self.request_dispatched_at: List[float] = []
+        self.completed_at: List[float] = []
         self.num_prompt_tokens: List[int] = []
         self.num_output_tokens: List[int] = []
         self.num_requested_output_tokens: List[Optional[int]] = []
@@ -282,10 +280,12 @@ class TextPerformanceEvaluator:
             session_total_requests = getattr(response, "session_total_requests", None)
 
             # Create metrics object
+            # Create metrics object
             metrics = TextRequestMetrics(
                 request_id=request_id,
                 session_id=session_id,
                 request_dispatched_at=dispatched_at,
+                completed_at=completed_at,
                 num_prompt_tokens=num_prompt_tokens,
                 num_output_tokens=num_output_tokens,
                 inter_token_times=inter_token_times,
@@ -360,6 +360,9 @@ class TextPerformanceEvaluator:
         )
 
         self.request_dispatched_at.append(normalized_dispatched_at)
+        self.completed_at.append(
+            max(0.0, metrics.completed_at - self._request_time_reference)
+        )
         self.num_prompt_tokens.append(metrics.num_prompt_tokens)
         self.num_output_tokens.append(metrics.num_output_tokens)
         self.num_requested_output_tokens.append(metrics.num_requested_output_tokens)
@@ -488,6 +491,7 @@ class TextPerformanceEvaluator:
                     "request_id": self.request_ids[idx],
                     "session_id": self.session_ids[idx],
                     "dispatched_at": round(self.request_dispatched_at[idx], 5),
+                    "completed_at": round(self.completed_at[idx], 5),
                     "num_prompt_tokens": self.num_prompt_tokens[idx],
                     "num_output_tokens": self.num_output_tokens[idx],
                     "num_requested_output_tokens": self.num_requested_output_tokens[

@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Mapping, Optional, Set
+from typing import Mapping, Optional, Set, Tuple
 
 from veeksha.new.config.traffic import BaseTrafficConfig
 from veeksha.new.core.request import Request
@@ -20,8 +20,27 @@ class BaseTrafficScheduler:
         raise NotImplementedError
 
     @abstractmethod
-    def pop_ready(self) -> Optional[Request]:
-        """Pop a ready request from the scheduler."""
+    def pop_ready(self) -> Optional[Tuple[Request, int, int]]:
+        """Pop a ready request from the scheduler.
+
+        Returns:
+            Tuple of (request, session_id, session_size) if a request is ready,
+            None otherwise.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def wait_for_ready(
+        self, timeout: float = 0.001
+    ) -> Optional[Tuple[Request, int, int]]:
+        """Wait for a ready request with timeout.
+
+        Args:
+            timeout: Maximum time to wait in seconds.
+
+        Returns:
+            Tuple of (request, session_id, session_size) if ready, None if timeout.
+        """
         raise NotImplementedError
 
     @abstractmethod

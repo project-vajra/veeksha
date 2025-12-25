@@ -165,7 +165,6 @@ class OpenAIChatClient(BaseLLMClient):
             Tuple of (generated_text, tokens_received, previous_token_count,
                      most_recent_token_time, inter_token_times, should_break).
         """
-        import time
 
         chunk_time = time.monotonic()
 
@@ -182,10 +181,10 @@ class OpenAIChatClient(BaseLLMClient):
                 min(tokens_this_chunk, max_tokens_limit - tokens_received),
             )
 
+        # "spread" the time per token over the allowable tokens
         if allowable > 0:
-            inter_token_times.append(chunk_time - most_recent_token_time)
-            if allowable > 1:
-                inter_token_times.extend([0] * (allowable - 1))
+            time_per_token = (chunk_time - most_recent_token_time) / allowable
+            inter_token_times.extend([time_per_token] * allowable)
             tokens_received += allowable
             most_recent_token_time = chunk_time
             generated_text += delta_content
@@ -327,11 +326,14 @@ class OpenAIChatClient(BaseLLMClient):
         current_response: str,
         previous_token_count: int,
     ) -> tuple[int, int]:
-        """Calculate tokens received in this chunk."""
+        """Calculate tokens received in this chunk (for example :), 💬, 💪 are 2 tokens in Llama 3 tokenizer and come as a single delta).
+
+        Encodes only the delta (current_response).
+        This approximates the token count (sum of parts vs whole) but avoids O(N^2) of retokenizing the entire response.
+        """
         previous_responses.append(current_response)
-        joined = "".join(previous_responses)
-        current_total = len(self.text_tokenizer_handle.encode(joined))
-        tokens_this_chunk = current_total - previous_token_count
+        tokens_this_chunk = len(self.text_tokenizer_handle.encode(current_response))
+        current_total = previous_token_count + tokens_this_chunk
         return tokens_this_chunk, current_total
 
     async def _process_stream(self, response: httpx.Response):

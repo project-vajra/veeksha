@@ -288,9 +288,6 @@ def run_benchmark(
     seed_manager = SeedManager(benchmark_config.seed)
 
     # 1. Get session generator
-    logger.info(
-        f"Session generator type: {benchmark_config.session_generator.get_type()}"
-    )
     tokenizer_provider = TokenizerProvider(
         {
             ChannelModality.TEXT: build_hf_tokenizer_handle_from_model(
@@ -327,7 +324,6 @@ def run_benchmark(
         benchmark_config.session_generator.get_type(),
         **session_generator_kwargs,
     )
-    logger.info(f"Session generator: {session_generator}")
 
     # 2. Get traffic scheduler
     traffic_scheduler = TrafficSchedulerRegistry.get(
@@ -335,7 +331,6 @@ def run_benchmark(
         config=benchmark_config.traffic_scheduler,
         seed_manager=seed_manager,
     )
-    logger.info(f"Traffic scheduler: {traffic_scheduler}")
 
     benchmark_start_time = time.monotonic()
 
@@ -347,7 +342,6 @@ def run_benchmark(
         output_dir=f"{benchmark_config.output_dir}/metrics",
         benchmark_start_time=benchmark_start_time,
     )
-    logger.info(f"Evaluator: {evaluator}")
 
     # 4. Get client
     client = ClientRegistry.get(
@@ -355,7 +349,6 @@ def run_benchmark(
         config=benchmark_config.client,
         tokenizer_provider=tokenizer_provider,
     )
-    logger.info(f"Client: {client}")
 
     # 5. Run the benchmark
 
@@ -392,10 +385,7 @@ def run_benchmark(
     evaluator.save(f"{benchmark_config.output_dir}/metrics")
 
     # 7. Benchmark health checks
-    if (
-        benchmark_config.trace_recorder.enabled
-        and benchmark_config.trace_recorder.include_content
-    ):
+    if benchmark_config.trace_recorder.enabled:
         logger.info("Running health checks...")
         health_checker = HealthChecker(
             trace_file=f"{benchmark_config.output_dir}/traces/dispatch_trace.jsonl",
