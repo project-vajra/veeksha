@@ -3,7 +3,7 @@ seed: 42
 traffic_scheduler:
   type: concurrent
   target_concurrent_sessions: 100
-  rampup_seconds: 10 # reach 10 concurrent sessions in 5 seconds
+  rampup_seconds: 10 # reach 100 concurrent sessions in 10 seconds
   # interval_generator:
   #   type: fixed
   #   interval: 1
@@ -50,4 +50,4 @@ runtime:
 
 trace_recorder:
   enabled: True
-  include_content: True
+  include_content: False

@@ -287,7 +287,7 @@ def run_benchmark(
 
     seed_manager = SeedManager(benchmark_config.seed)
 
-    # 1. Get session generator
+    # get session generator
     tokenizer_provider = TokenizerProvider(
         {
             ChannelModality.TEXT: build_hf_tokenizer_handle_from_model(
@@ -325,7 +325,7 @@ def run_benchmark(
         **session_generator_kwargs,
     )
 
-    # 2. Get traffic scheduler
+    # get traffic scheduler
     traffic_scheduler = TrafficSchedulerRegistry.get(
         benchmark_config.traffic_scheduler.get_type(),
         config=benchmark_config.traffic_scheduler,
@@ -334,7 +334,7 @@ def run_benchmark(
 
     benchmark_start_time = time.monotonic()
 
-    # 3. Get evaluator
+    # get evaluator
     evaluator = EvaluatorRegistry.get(
         benchmark_config.evaluator.get_type(),
         config=benchmark_config.evaluator,
@@ -343,15 +343,14 @@ def run_benchmark(
         benchmark_start_time=benchmark_start_time,
     )
 
-    # 4. Get client
+    # get client
     client = ClientRegistry.get(
         benchmark_config.client.get_type(),
         config=benchmark_config.client,
         tokenizer_provider=tokenizer_provider,
     )
 
-    # 5. Run the benchmark
-
+    # trace recorder
     trace_recorder = None
     if benchmark_config.trace_recorder.enabled:
         # ensure output dirs exists for traces
@@ -365,6 +364,7 @@ def run_benchmark(
 
     os.makedirs(f"{benchmark_config.output_dir}/metrics", exist_ok=True)
 
+    # run the benchmark
     try:
         run_main_loop(
             session_generator=session_generator,
@@ -379,26 +379,21 @@ def run_benchmark(
         if trace_recorder:
             trace_recorder.stop()
 
-    # 6. Finalize and save results
+    # finalize and save results
     result = evaluator.finalize()
 
     evaluator.save(f"{benchmark_config.output_dir}/metrics")
 
-    # 7. Benchmark health checks
-    if benchmark_config.trace_recorder.enabled:
-        logger.info("Running health checks...")
-        health_checker = HealthChecker(
-            trace_file=f"{benchmark_config.output_dir}/traces/dispatch_trace.jsonl",
-            metrics_file=f"{benchmark_config.output_dir}/metrics/request_level_metrics.jsonl",
-            benchmark_config=benchmark_config,
-        )
-        health_checker.run_and_save(
-            f"{benchmark_config.output_dir}/health_check_results.txt"
-        )
-    else:
-        logger.info(
-            "Health checks not run: trace recorder is disabled or content is not included."
-        )
+    # health checks
+    logger.info("Running health checks...")
+    health_checker = HealthChecker(
+        trace_file=f"{benchmark_config.output_dir}/traces/dispatch_trace.jsonl",
+        metrics_file=f"{benchmark_config.output_dir}/metrics/request_level_metrics.jsonl",
+        benchmark_config=benchmark_config,
+    )
+    health_checker.run_and_save(
+        f"{benchmark_config.output_dir}/health_check_results.txt"
+    )
 
     logger.info("Benchmark completed")
     return result

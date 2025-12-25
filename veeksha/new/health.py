@@ -1,4 +1,5 @@
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Tuple
 
@@ -19,7 +20,10 @@ class TestResult:
 
 class HealthChecker:
     def __init__(
-        self, trace_file: str, metrics_file: str, benchmark_config: BenchmarkConfig
+        self,
+        trace_file: str,
+        metrics_file: str,
+        benchmark_config: BenchmarkConfig,
     ):
         self.trace_file = trace_file
         self.metrics_file = metrics_file
@@ -41,19 +45,28 @@ class HealthChecker:
 
     def load_data(self) -> bool:
         try:
-            self.trace_df = pd.read_json(self.trace_file, lines=True)
             self.metrics_df = pd.read_json(self.metrics_file, lines=True)
-            if self.trace_df.empty or self.metrics_df.empty:
-                logger.warning("Trace or metrics file is empty.")
+            if self.metrics_df.empty:
+                logger.warning("Metrics file is empty.")
                 return False
 
-            self.merged_df = pd.merge(
-                self.trace_df,
-                self.metrics_df,
-                on="request_id",
-                how="inner",
-                suffixes=("_trace", "_metrics"),
-            )
+            try:
+                self.trace_df = pd.read_json(self.trace_file, lines=True)
+            except Exception as e:
+                logger.warning(f"Failed to load trace file; proceeding without it: {e}")
+                self.trace_df = pd.DataFrame()
+
+            if not self.trace_df.empty:
+                self.merged_df = pd.merge(
+                    self.trace_df,
+                    self.metrics_df,
+                    on="request_id",
+                    how="inner",
+                    suffixes=("_trace", "_metrics"),
+                )
+            else:
+                self.merged_df = self.metrics_df.copy()
+
             return True
         except Exception as e:
             logger.error(f"Failed to load health check data: {e}")
@@ -108,14 +121,38 @@ class HealthChecker:
         Verify that requests are dispatched only after their dependencies are met
         plus the specified wait_after_ready time.
 
-        Measures the "scheduler delay" = actual_dispatch_time - ready_time,
-        where ready_time = max(parent_completion_times) + wait_after_ready.
-
-        A positive deviation means the request was dispatched after it was ready
-        (expected behavior with some scheduling overhead).
+        Requires trace data for dependency graphs (session_context).
         """
-        deviations = []
-        violations = []
+        if self.trace_df.empty:
+            trace_exists = os.path.exists(self.trace_file)
+            reason = (
+                f"Trace file '{self.trace_file}' not found."
+                if not trace_exists
+                else f"Trace file '{self.trace_file}' is empty."
+            )
+            resolution = (
+                "Enable the trace recorder or provide a dispatch trace to capture "
+                "session dependency data required for this check."
+            )
+            return TestResult(
+                summary={
+                    "name": "Inter-Session Request Arrival Check",
+                    "sections": [
+                        {
+                            "title": "Trace Required",
+                            "results": {
+                                "Status": "Skipped",
+                                "Reason": reason,
+                                "Resolution": resolution,
+                            },
+                        }
+                    ],
+                },
+                passed=True,
+            )
+
+        deviations: List[float] = []
+        violations: List[Dict[str, Any]] = []
 
         session_col = self._get_col("session_id")
         dispatched_col = self._get_col("dispatched_at")
@@ -123,66 +160,65 @@ class HealthChecker:
         late_threshold = 5.0  # dispatched more than 5 seconds after ready
 
         for session_id, group in self.merged_df.groupby(session_col):
-            req_map = {}
+            req_completion_map = {
+                row["request_id"]: row[self._get_col("completed_at")]
+                for _, row in group.iterrows()
+            }
+
+            node_to_request: Dict[Any, int] = {}
             for _, row in group.iterrows():
-                completed_at = row["completed_at"]
-                req_map[row["request_id"]] = completed_at
+                ctx = row.get(self._get_col("session_context"), {})
+                if ctx and "node_id" in ctx:
+                    node_to_request[ctx["node_id"]] = row["request_id"]  # type: ignore
 
             for _, row in group.iterrows():
-                ctx = row.get("session_context", {})
+                ctx = row.get(self._get_col("session_context"), {})
                 if not ctx:
                     continue
 
-                wait_after_ready = ctx.get("wait_after_ready", 0.0)
-                parent_nodes = ctx.get("parent_nodes", [])
-
-                node_to_req = {}
-                for _, r in group.iterrows():
-                    c = r.get("session_context", {})
-                    if c and "node_id" in c:
-                        node_to_req[c["node_id"]] = r["request_id"]
+                wait_after_ready = ctx["wait_after_ready"]
+                parent_nodes = ctx["parent_nodes"]
+                session_size = row.get(self._get_col("session_total_requests"))
 
                 parent_finish_times = []
-                for p_node in parent_nodes:
-                    p_req_id = node_to_req.get(p_node)
-                    if p_req_id in req_map:
-                        parent_finish_times.append(req_map[p_req_id])
+                for node_id in parent_nodes:
+                    req_id = node_to_request.get(node_id)
+                    if req_id is not None and req_id in req_completion_map:
+                        parent_finish_times.append(req_completion_map[req_id])
 
                 if not parent_finish_times:
-                    if parent_nodes:
-                        continue
-                else:
-                    ready_at = max(parent_finish_times) + wait_after_ready
-                    actual_dispatch = row[dispatched_col]
+                    continue
 
-                    diff = actual_dispatch - ready_at
-                    deviations.append(diff)
+                ready_at = max(parent_finish_times) + wait_after_ready
+                actual_dispatch = row[dispatched_col]
+                diff = actual_dispatch - ready_at
+                deviations.append(diff)
 
-                    if diff > late_threshold:
-                        violations.append(
-                            {
-                                "session_id": session_id,
-                                "request_id": row["request_id"],
-                                "diff": diff,
-                                "ready_at": ready_at,
-                                "dispatched_at": actual_dispatch,
-                            }
-                        )
+                if diff > late_threshold:
+                    violations.append(
+                        {
+                            "session_id": session_id,
+                            "session_size": session_size,
+                            "request_id": row["request_id"],
+                            "diff": diff,
+                            "ready_at": ready_at,
+                            "dispatched_at": actual_dispatch,
+                        }
+                    )
 
-        deviations = np.array(deviations) if deviations else np.array([])
+        deviations_array = np.array(deviations) if deviations else np.array([])
         passed = len(violations) == 0
 
-        # Build statistics
-        if len(deviations) > 0:
+        if deviations_array.size > 0:
             stats = {
                 "Requests w/ Dependencies": str(len(deviations)),
-                "Min": f"{np.min(deviations):.4f}s",
-                "Mean": f"{np.mean(deviations):.4f}s",
-                "Median": f"{np.median(deviations):.4f}s",
-                "P95": f"{np.percentile(deviations, 95):.4f}s",
-                "P99": f"{np.percentile(deviations, 99):.4f}s",
-                "Max": f"{np.max(deviations):.4f}s",
-                "Std Dev": f"{np.std(deviations):.4f}s",
+                "Min": f"{np.min(deviations_array):.4f}s",
+                "Mean": f"{np.mean(deviations_array):.4f}s",
+                "Median": f"{np.median(deviations_array):.4f}s",
+                "P95": f"{np.percentile(deviations_array, 95):.4f}s",
+                "P99": f"{np.percentile(deviations_array, 99):.4f}s",
+                "Max": f"{np.max(deviations_array):.4f}s",
+                "Std Dev": f"{np.std(deviations_array):.4f}s",
             }
         else:
             stats = {"Requests w/ Dependencies": "0"}
@@ -194,7 +230,7 @@ class HealthChecker:
                     "title": "Description",
                     "results": {
                         "Metric": "Scheduler delay (actual_dispatch - ready_time)",
-                        "Positive Value": "Dispatched after ready (expected)",
+                        "Ready Time": "Parent requests completion + wait_after_ready (if available)",
                     },
                 },
                 {
@@ -216,7 +252,7 @@ class HealthChecker:
                 {
                     "title": "Violation Details (first 5)",
                     "results": {
-                        f"#{i+1}": f"session={v['session_id']}, diff={v['diff']:.4f}s"
+                        f"#{i+1}": f"session={v['session_id']} (size={v.get('session_size','?')}), diff={v['diff']:.4f}s"
                         for i, v in enumerate(violations[:5])
                     },
                 }
@@ -423,6 +459,22 @@ class HealthChecker:
             }
 
         max_observed = max(c for _, c in time_series)
+        runtime_timeout = 0.0
+        runtime_cfg = getattr(self.config, "runtime", None)
+        if runtime_cfg is not None:
+            runtime_timeout = float(
+                getattr(runtime_cfg, "benchmark_timeout", 0.0) or 0.0
+            )
+        timeout_cutoff = None
+        timeout_triggered = False
+        if runtime_timeout > 0:
+            timeout_cutoff = benchmark_start + runtime_timeout
+            timeout_triggered = benchmark_end >= timeout_cutoff
+        post_timeout_context = (
+            "After timeout we keep \ndispatching sessions until requests dispatched before \ntimeout finish, but the dispatch "
+            "trace stops \nrecording them. Concurrency can look artificially low, so the \n"
+            "post-timeout phase isolates this period."
+        )
 
         sections = [
             {
@@ -430,6 +482,9 @@ class HealthChecker:
                 "results": {
                     "Target Concurrency": str(target),
                     "Ramp-Up Period": f"{rampup_seconds:.1f}s",
+                    "Benchmark Timeout": (
+                        f"{runtime_timeout:.1f}s" if runtime_timeout > 0 else "Disabled"
+                    ),
                 },
             }
         ]
@@ -478,18 +533,29 @@ class HealthChecker:
             benchmark_start + rampup_seconds if rampup_seconds > 0 else benchmark_start
         )
         if steady_start < benchmark_end:
-            # Find end of stable period (before wind-down begins)
-            # Wind-down starts when concurrency drops below 90% of target and never recovers
             stable_end = benchmark_end
-            threshold = int(target * 0.9)
+            wind_down_reason = None
 
-            # Find the last time we were at or above threshold
-            for t, c in reversed(time_series):
-                if t <= steady_start:
-                    break
-                if c >= threshold:
-                    stable_end = t
-                    break
+            if timeout_triggered and timeout_cutoff is not None:
+                stable_end = min(stable_end, timeout_cutoff)
+                wind_down_reason = f"Benchmark timeout reached ({runtime_timeout:.2f}s)"
+            else:
+                threshold = int(target * 0.9)
+                # heuristic only used when the timeout-based cutoff is not applicable.
+                for t, c in reversed(time_series):
+                    if t <= steady_start:
+                        break
+                    if c >= threshold:
+                        stable_end = t
+                        break
+
+            if timeout_triggered:
+                sections.append(
+                    {
+                        "title": "Post-Timeout Context",
+                        "results": {"Explanation": post_timeout_context},
+                    }
+                )
 
             # Compute stats for full steady-state phase (including wind-down)
             full_stats = compute_phase_stats(
@@ -500,10 +566,13 @@ class HealthChecker:
             # Compute stats for stable period only (excluding wind-down)
             stable_duration = stable_end - steady_start
             stable_stats = None
+            wind_down_duration = max(benchmark_end - stable_end, 0.0)
             if stable_duration > 0 and stable_end < benchmark_end:
                 stable_stats = compute_phase_stats(
                     time_series, steady_start, stable_end, steady_limit_fn
                 )
+            else:
+                wind_down_duration = 0.0
 
             if full_duration > 0:
                 pct_below = 100.0 * full_stats["time_below"] / full_duration
@@ -531,21 +600,29 @@ class HealthChecker:
                 s_pct_below = 100.0 * stable_stats["time_below"] / s_duration
                 s_pct_at = 100.0 * stable_stats["time_at"] / s_duration
                 s_pct_above = 100.0 * stable_stats["time_above"] / s_duration
-                wind_down_duration = benchmark_end - stable_end
 
+                stable_results = {
+                    "Duration": f"{s_duration:.2f}s",
+                    "Time Below Target": f"{stable_stats['time_below']:.2f}s ({s_pct_below:.1f}%)",
+                    "Time At Target": f"{stable_stats['time_at']:.2f}s ({s_pct_at:.1f}%)",
+                    "Time Above Target": f"{stable_stats['time_above']:.2f}s ({s_pct_above:.1f}%)",
+                    "Min Observed": str(stable_stats["min"]),
+                    "Mean Observed": f"{stable_stats['mean']:.2f}",
+                    "Median Observed": f"{stable_stats['median']:.2f}",
+                    "Max Observed": str(stable_stats["max"]),
+                }
+                if wind_down_reason and timeout_triggered:
+                    stable_results["Post-Timeout Trigger"] = wind_down_reason
+
+                stable_title_suffix = (
+                    f"excludes {wind_down_duration:.1f}s post-timeout"
+                    if timeout_triggered
+                    else f"excludes {wind_down_duration:.1f}s tail"
+                )
                 sections.append(
                     {
-                        "title": f"Steady-State Phase - Stable (excludes {wind_down_duration:.1f}s wind-down)",
-                        "results": {
-                            "Duration": f"{s_duration:.2f}s",
-                            "Time Below Target": f"{stable_stats['time_below']:.2f}s ({s_pct_below:.1f}%)",
-                            "Time At Target": f"{stable_stats['time_at']:.2f}s ({s_pct_at:.1f}%)",
-                            "Time Above Target": f"{stable_stats['time_above']:.2f}s ({s_pct_above:.1f}%)",
-                            "Min Observed": str(stable_stats["min"]),
-                            "Mean Observed": f"{stable_stats['mean']:.2f}",
-                            "Median Observed": f"{stable_stats['median']:.2f}",
-                            "Max Observed": str(stable_stats["max"]),
-                        },
+                        "title": f"Steady-State Phase - Stable ({stable_title_suffix})",
+                        "results": stable_results,
                     }
                 )
 
@@ -562,27 +639,36 @@ class HealthChecker:
                     sm_pct_at = 100.0 * smoothed_stats["time_at"] / sm_duration
                     sm_pct_above = 100.0 * smoothed_stats["time_above"] / sm_duration
 
+                    smoothed_title = (
+                        f"Steady-State Phase - Stable Smoothed (pre-timeout, ignoring gaps <= {gap_tolerance}s)"
+                        if timeout_triggered
+                        else f"Steady-State Phase - Stable Smoothed (ignoring gaps <= {gap_tolerance}s)"
+                    )
+                    smoothed_results = {
+                        "Duration": f"{sm_duration:.2f}s",
+                        "Time Below Target": f"{smoothed_stats['time_below']:.2f}s ({sm_pct_below:.1f}%)",
+                        "Time At Target": f"{smoothed_stats['time_at']:.2f}s ({sm_pct_at:.1f}%)",
+                        "Time Above Target": f"{smoothed_stats['time_above']:.2f}s ({sm_pct_above:.1f}%)",
+                        "Min Observed": str(smoothed_stats["min"]),
+                        "Mean Observed": f"{smoothed_stats['mean']:.2f}",
+                        "Median Observed": f"{smoothed_stats['median']:.2f}",
+                        "Max Observed": str(smoothed_stats["max"]),
+                    }
+                    if timeout_triggered:
+                        smoothed_results["Post-Timeout Coverage"] = (
+                            f"Excluded (timeout at {runtime_timeout:.2f}s)"
+                        )
+                        if wind_down_reason:
+                            smoothed_results["Post-Timeout Trigger"] = wind_down_reason
+
                     sections.append(
                         {
-                            "title": f"Steady-State Phase - Smoothed (ignoring gaps <= {gap_tolerance}s)",
-                            "results": {
-                                "Duration": f"{sm_duration:.2f}s",
-                                "Time Below Target": f"{smoothed_stats['time_below']:.2f}s ({sm_pct_below:.1f}%)",
-                                "Time At Target": f"{smoothed_stats['time_at']:.2f}s ({sm_pct_at:.1f}%)",
-                                "Time Above Target": f"{smoothed_stats['time_above']:.2f}s ({sm_pct_above:.1f}%)",
-                                "Min Observed": str(smoothed_stats["min"]),
-                                "Mean Observed": f"{smoothed_stats['mean']:.2f}",
-                                "Median Observed": f"{smoothed_stats['median']:.2f}",
-                                "Max Observed": str(smoothed_stats["max"]),
-                            },
+                            "title": smoothed_title,
+                            "results": smoothed_results,
                         }
                     )
 
-                # Wind-down phase analysis
-                # at the end of the bench, when the last requests dispatched from each session are being recorded,
-                # we cannot tell if the session was finished or not. This is why we need to identify when the concurrency drops
-                # at the end of the bench and never recovers as the "wind-down"
-                if wind_down_duration > 0:
+                if timeout_triggered and wind_down_duration > 0:
                     wind_down_stats = compute_phase_stats(
                         time_series, stable_end, benchmark_end, steady_limit_fn
                     )
@@ -596,19 +682,24 @@ class HealthChecker:
                             100.0 * wind_down_stats["time_above"] / wd_duration
                         )
 
+                        wind_down_results = {
+                            "Duration": f"{wd_duration:.2f}s",
+                            "Time Below Target": f"{wind_down_stats['time_below']:.2f}s ({wd_pct_below:.1f}%)",
+                            "Time At Target": f"{wind_down_stats['time_at']:.2f}s ({wd_pct_at:.1f}%)",
+                            "Time Above Target": f"{wind_down_stats['time_above']:.2f}s ({wd_pct_above:.1f}%)",
+                            "Min Observed": str(wind_down_stats["min"]),
+                            "Mean Observed": f"{wind_down_stats['mean']:.2f}",
+                            "Median Observed": f"{wind_down_stats['median']:.2f}",
+                            "Max Observed": str(wind_down_stats["max"]),
+                            "Explanation": post_timeout_context,
+                        }
+                        if wind_down_reason:
+                            wind_down_results["Trigger"] = wind_down_reason
+
                         sections.append(
                             {
-                                "title": "Wind-Down Phase",
-                                "results": {
-                                    "Duration": f"{wd_duration:.2f}s",
-                                    "Time Below Target": f"{wind_down_stats['time_below']:.2f}s ({wd_pct_below:.1f}%)",
-                                    "Time At Target": f"{wind_down_stats['time_at']:.2f}s ({wd_pct_at:.1f}%)",
-                                    "Time Above Target": f"{wind_down_stats['time_above']:.2f}s ({wd_pct_above:.1f}%)",
-                                    "Min Observed": str(wind_down_stats["min"]),
-                                    "Mean Observed": f"{wind_down_stats['mean']:.2f}",
-                                    "Median Observed": f"{wind_down_stats['median']:.2f}",
-                                    "Max Observed": str(wind_down_stats["max"]),
-                                },
+                                "title": "Post-Timeout Phase",
+                                "results": wind_down_results,
                             }
                         )
 

@@ -52,7 +52,9 @@ class BenchmarkConfig:
     )
     trace_recorder: TraceRecorderConfig = field(
         default_factory=TraceRecorderConfig,
-        metadata={"help": "Trace recorder configuration."},
+        metadata={
+            "help": "Trace recorder configuration. Records dispatched requests (unlike the evaluator, which records them after completion)."
+        },
     )
     # server: ServerConfig = field(default_factory=ServerConfig)
 

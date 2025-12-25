@@ -11,7 +11,7 @@ class TraceRecorderConfig:
         default=True, metadata={"help": "Enable recording of dispatched requests"}
     )
     include_content: bool = field(
-        default=True,
+        default=False,
         metadata={
             "help": "Include content of the request (channel blobs, history) in trace"
         },

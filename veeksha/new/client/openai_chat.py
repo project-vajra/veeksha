@@ -141,64 +141,38 @@ class OpenAIChatClient(BaseLLMClient):
     def _process_text_delta(
         self,
         delta_content: str,
-        previous_responses: List[str],
-        previous_token_count: int,
+        receive_time: float,
         most_recent_token_time: float,
         inter_token_times: List[float],
         generated_text: str,
         tokens_received: int,
-        max_tokens_limit: Optional[int],
-    ) -> tuple[str, int, int, float, List[float], bool]:
+    ) -> tuple[str, int, float, List[float]]:
         """Process a text delta from the streaming response.
 
         Args:
             delta_content: Text content from the delta.
-            previous_responses: List of previous response chunks.
-            previous_token_count: Token count before this chunk.
+            receive_time: Time of chunk receipt.
             most_recent_token_time: Time of last token received.
             inter_token_times: List of inter-token times.
             generated_text: Accumulated generated text.
             tokens_received: Total tokens received so far.
-            max_tokens_limit: Maximum tokens limit (if any).
 
         Returns:
-            Tuple of (generated_text, tokens_received, previous_token_count,
-                     most_recent_token_time, inter_token_times, should_break).
+            Tuple of (generated_text, tokens_received,
+                     most_recent_token_time, inter_token_times).
         """
+        # treat each streaming delta as a single token
+        generated_text += delta_content
+        delta_duration = receive_time - most_recent_token_time
+        inter_token_times.append(delta_duration)
+        tokens_received += 1
+        most_recent_token_time = receive_time
 
-        chunk_time = time.monotonic()
-
-        tokens_this_chunk, previous_token_count = self._get_current_tokens_received(
-            previous_responses,
-            delta_content,
-            previous_token_count,
-        )
-
-        allowable = tokens_this_chunk
-        if isinstance(max_tokens_limit, int):
-            allowable = max(
-                0,
-                min(tokens_this_chunk, max_tokens_limit - tokens_received),
-            )
-
-        # "spread" the time per token over the allowable tokens
-        if allowable > 0:
-            time_per_token = (chunk_time - most_recent_token_time) / allowable
-            inter_token_times.extend([time_per_token] * allowable)
-            tokens_received += allowable
-            most_recent_token_time = chunk_time
-            generated_text += delta_content
-
-        should_break = (
-            isinstance(max_tokens_limit, int) and tokens_received >= max_tokens_limit
-        )
         return (
             generated_text,
             tokens_received,
-            previous_token_count,
             most_recent_token_time,
             inter_token_times,
-            should_break,
         )
 
     def _process_image_response(
@@ -260,7 +234,8 @@ class OpenAIChatClient(BaseLLMClient):
         success: bool,
         generated_text: str,
         inter_token_times: List[float],
-        prompt_len: int,
+        delta_prompt_len: int,
+        total_prompt_len: int,
         tokens_received: int,
         image_data: Optional[Any],
         audio_data: Optional[Any],
@@ -272,7 +247,8 @@ class OpenAIChatClient(BaseLLMClient):
             success: Whether the request was successful.
             generated_text: Generated text output.
             inter_token_times: List of inter-token times.
-            prompt_len: Number of prompt tokens.
+            delta_prompt_len: Number of prompt tokens in the delta.
+            total_prompt_len: Number of prompt tokens in the total prompt.
             tokens_received: Number of output tokens.
             image_data: Image response data (if any).
             audio_data: Audio response data (if any).
@@ -292,7 +268,8 @@ class OpenAIChatClient(BaseLLMClient):
                 content=generated_text,
                 metrics={
                     "inter_token_times": inter_token_times,
-                    "num_prompt_tokens": prompt_len,
+                    "num_delta_prompt_tokens": delta_prompt_len,
+                    "num_total_prompt_tokens": total_prompt_len,
                     "num_output_tokens": tokens_received,
                 },
             )
@@ -319,22 +296,6 @@ class OpenAIChatClient(BaseLLMClient):
             )
 
         return channels
-
-    def _get_current_tokens_received(
-        self,
-        previous_responses: List[str],
-        current_response: str,
-        previous_token_count: int,
-    ) -> tuple[int, int]:
-        """Calculate tokens received in this chunk (for example :), 💬, 💪 are 2 tokens in Llama 3 tokenizer and come as a single delta).
-
-        Encodes only the delta (current_response).
-        This approximates the token count (sum of parts vs whole) but avoids O(N^2) of retokenizing the entire response.
-        """
-        previous_responses.append(current_response)
-        tokens_this_chunk = len(self.text_tokenizer_handle.encode(current_response))
-        current_total = previous_token_count + tokens_this_chunk
-        return tokens_this_chunk, current_total
 
     async def _process_stream(self, response: httpx.Response):
         """Process SSE stream from server."""
@@ -376,31 +337,28 @@ class OpenAIChatClient(BaseLLMClient):
         error_code: Optional[int] = None
         tokens_received = 0
         generated_text = ""
-        previous_responses: List[str] = []
-        previous_token_count = 0
-        most_recent_token_time = time.monotonic()
 
         # multimodal response data
         image_data: Optional[Any] = None
         audio_data: Optional[Any] = None
         video_data: Optional[Any] = None
 
-        prompt_len = 0
-        dispatched_at = time.monotonic()
+        delta_prompt_len = 0
+        dispatched_at = -1
+
+        server_usage = None
 
         try:
-            messages, prompt_len = self._build_message_content(request)
-            dispatched_at = time.monotonic()  # update to actual dispatch time
+            messages, delta_prompt_len = self._build_message_content(request)
 
             body = {
                 "model": self.config.model,
                 "messages": messages,
                 "stream": True,
+                "stream_options": {
+                    "include_usage": True,
+                },
             }
-
-            # logger.info(
-            #     f"Sending request {request.id} (sess={session_id}) messages: {messages}"
-            # )
 
             max_tokens_param = self.config.max_tokens_param  # type: ignore
             if max_tokens_limit is not None and max_tokens_param:
@@ -416,12 +374,15 @@ class OpenAIChatClient(BaseLLMClient):
                 "Accept": "text/event-stream",
             }
             async with httpx.AsyncClient(timeout=timeout) as client:
+                dispatched_at = time.monotonic()
+                most_recent_token_time = dispatched_at
                 async with client.stream(
                     "POST", self.address, json=body, headers=headers
                 ) as response:
                     response.raise_for_status()
 
                     async for data in self._process_stream(response):
+                        receive_time = time.monotonic()
                         if "error" in data:
                             err = data.get("error") or {}
                             error_msg = err.get("message", "Unknown error")
@@ -431,28 +392,36 @@ class OpenAIChatClient(BaseLLMClient):
                             )
                             break
 
-                        delta = data["choices"][0]["delta"]
+                        usage = data.get("usage")
+                        if usage:
+                            server_usage = usage
+
+                        choices = data.get("choices")
+                        if not choices:
+                            continue
+
+                        first_choice = choices[0]
+                        delta = first_choice.get("delta")
+                        if not isinstance(delta, dict):
+                            logger.warning(
+                                "Streaming event missing delta: %s", first_choice
+                            )
+                            continue
 
                         if delta.get("content"):
                             (
                                 generated_text,
                                 tokens_received,
-                                previous_token_count,
                                 most_recent_token_time,
                                 inter_token_times,
-                                should_break,
                             ) = self._process_text_delta(
                                 delta["content"],
-                                previous_responses,
-                                previous_token_count,
+                                receive_time,
                                 most_recent_token_time,
                                 inter_token_times,
                                 generated_text,
                                 tokens_received,
-                                max_tokens_limit,
                             )
-                            if should_break:
-                                break
 
                         # TODO: image deltas
                         image_data = self._process_image_response(delta, image_data)
@@ -483,12 +452,30 @@ class OpenAIChatClient(BaseLLMClient):
         completed_at = time.monotonic()
         success = error_msg is None and error_code is None
 
+        reported_total_prompt_tokens = -1
+        reported_completion_tokens = -1
+
+        if server_usage:
+            reported_total_prompt_tokens = server_usage["prompt_tokens"]
+            reported_completion_tokens = server_usage["completion_tokens"]
+        else:
+            # TODO instead of marking request as failed, support fallback counting of completion tokens and history tokens
+            logger.warning(
+                "include_usage requested to server but usage block missing. Marking request as failed (request %s, model %s)",
+                request.id,
+                self.config.model,
+            )
+            success = False
+            error_code = 500
+            error_msg = "include_usage requested to server but usage block missing"
+
         channels = self._build_channel_responses(
             success=success,
             generated_text=generated_text,
             inter_token_times=inter_token_times,
-            prompt_len=prompt_len,
-            tokens_received=tokens_received,
+            delta_prompt_len=delta_prompt_len,
+            total_prompt_len=reported_total_prompt_tokens,
+            tokens_received=reported_completion_tokens,
             image_data=image_data,
             audio_data=audio_data,
             video_data=video_data,
