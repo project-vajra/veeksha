@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from typing import TYPE_CHECKING, Any, List, Optional
 
@@ -43,6 +44,7 @@ class OpenAIChatClient(BaseLLMClient):
         """
         super().__init__(config)
         self.tokenizer_provider = tokenizer_provider
+        self.client_storage = threading.local()
 
         # at this point either self.api_base and self.api_key are set or an error is raised
         if not self.api_base.endswith("/"):  # type: ignore
@@ -297,6 +299,16 @@ class OpenAIChatClient(BaseLLMClient):
 
         return channels
 
+        return channels
+
+    def _get_client(self) -> httpx.AsyncClient:
+        """Get or create a thread-local httpx client."""
+        if not hasattr(self.client_storage, "client"):
+            self.client_storage.client = httpx.AsyncClient(
+                timeout=self.config.request_timeout
+            )
+        return self.client_storage.client
+
     async def _process_stream(self, response: httpx.Response):
         """Process SSE stream from server."""
         import json
@@ -373,64 +385,63 @@ class OpenAIChatClient(BaseLLMClient):
                 "Content-Type": "application/json",
                 "Accept": "text/event-stream",
             }
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                dispatched_at = time.monotonic()
-                most_recent_token_time = dispatched_at
-                async with client.stream(
-                    "POST", self.address, json=body, headers=headers
-                ) as response:
-                    response.raise_for_status()
 
-                    async for data in self._process_stream(response):
-                        receive_time = time.monotonic()
-                        if "error" in data:
-                            err = data.get("error") or {}
-                            error_msg = err.get("message", "Unknown error")
-                            code_value = err.get("code")
-                            error_code = (
-                                code_value if isinstance(code_value, int) else 400
-                            )
-                            break
+            client = self._get_client()
+            dispatched_at = time.monotonic()
+            most_recent_token_time = dispatched_at
+            async with client.stream(
+                "POST", self.address, json=body, headers=headers, timeout=timeout
+            ) as response:
+                response.raise_for_status()
 
-                        usage = data.get("usage")
-                        if usage:
-                            server_usage = usage
+                async for data in self._process_stream(response):
+                    receive_time = time.monotonic()
+                    if "error" in data:
+                        err = data.get("error") or {}
+                        error_msg = err.get("message", "Unknown error")
+                        code_value = err.get("code")
+                        error_code = code_value if isinstance(code_value, int) else 400
+                        break
 
-                        choices = data.get("choices")
-                        if not choices:
-                            continue
+                    usage = data.get("usage")
+                    if usage:
+                        server_usage = usage
 
-                        first_choice = choices[0]
-                        delta = first_choice.get("delta")
-                        if not isinstance(delta, dict):
-                            logger.warning(
-                                "Streaming event missing delta: %s", first_choice
-                            )
-                            continue
+                    choices = data.get("choices")
+                    if not choices:
+                        continue
 
-                        if delta.get("content"):
-                            (
-                                generated_text,
-                                tokens_received,
-                                most_recent_token_time,
-                                inter_token_times,
-                            ) = self._process_text_delta(
-                                delta["content"],
-                                receive_time,
-                                most_recent_token_time,
-                                inter_token_times,
-                                generated_text,
-                                tokens_received,
-                            )
+                    first_choice = choices[0]
+                    delta = first_choice.get("delta")
+                    if not isinstance(delta, dict):
+                        logger.warning(
+                            "Streaming event missing delta: %s", first_choice
+                        )
+                        continue
 
-                        # TODO: image deltas
-                        image_data = self._process_image_response(delta, image_data)
+                    if delta.get("content"):
+                        (
+                            generated_text,
+                            tokens_received,
+                            most_recent_token_time,
+                            inter_token_times,
+                        ) = self._process_text_delta(
+                            delta["content"],
+                            receive_time,
+                            most_recent_token_time,
+                            inter_token_times,
+                            generated_text,
+                            tokens_received,
+                        )
 
-                        # TODO: audio deltas
-                        audio_data = self._process_audio_response(delta, audio_data)
+                    # TODO: image deltas
+                    image_data = self._process_image_response(delta, image_data)
 
-                        # TODO: video deltas
-                        video_data = self._process_video_response(delta, video_data)
+                    # TODO: audio deltas
+                    audio_data = self._process_audio_response(delta, audio_data)
+
+                    # TODO: video deltas
+                    video_data = self._process_video_response(delta, video_data)
 
         except httpx.HTTPStatusError as e:
             error_code = e.response.status_code if e.response else 500

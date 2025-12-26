@@ -38,49 +38,71 @@ class ClientWorker:
 
     async def _run_async(self) -> None:
         """Async main loop."""
-        logger.debug("Client worker %d starting", self.worker_id)
+        loop = asyncio.get_running_loop()
+        active_tasks = set()
 
         while not self.stop_event.is_set():
             try:
-                item = self.input_queue.get(timeout=QUEUE_GET_TIMEOUT_S)
+                # avoid blocking the event loop
+                item = await loop.run_in_executor(
+                    None, lambda: self.input_queue.get(timeout=QUEUE_GET_TIMEOUT_S)
+                )
             except Empty:
                 continue
+            except Exception:
+                if self.stop_event.is_set():
+                    break
+                continue
 
-            if item is None:  # Sentinel
+            if item is None:  # sentinel
                 break
 
-            request, session_id, session_size, dispatched_at = item
+            task = asyncio.create_task(self._process_request(item))
+            active_tasks.add(task)
+            task.add_done_callback(active_tasks.discard)
 
-            try:
-                result = await self.client.send_request(
-                    request=request,
-                    session_id=session_id,
-                    session_total_requests=session_size,
-                )
-            except Exception as e:
-                logger.exception(
-                    f"Client worker {self.worker_id}: Client raised unhandled exception"
-                )
-                import time
-
-                result = RequestResult(
-                    request_id=request.id,
-                    session_id=session_id,
-                    dispatched_at=dispatched_at,
-                    completed_at=time.monotonic(),
-                    session_total_requests=session_size,
-                    channels={},
-                    success=False,
-                    error_code=500,
-                    error_msg=f"Unhandled client exception: {str(e)}",
-                )
-
-            if not result.dispatched_at:
-                result.dispatched_at = dispatched_at
-
-            self.output_queue.put(result)
+        if active_tasks:
+            logger.debug(
+                "Client worker %d waiting for %d pending tasks",
+                self.worker_id,
+                len(active_tasks),
+            )
+            await asyncio.wait(active_tasks)
 
         logger.debug("Client worker %d exiting", self.worker_id)
+
+    async def _process_request(self, item) -> None:
+        """Process a single request item."""
+        request, session_id, session_size, dispatched_at = item
+
+        try:
+            result = await self.client.send_request(
+                request=request,
+                session_id=session_id,
+                session_total_requests=session_size,
+            )
+        except Exception as e:
+            logger.exception(
+                f"Client worker {self.worker_id}: Client raised unhandled exception"
+            )
+            import time
+
+            result = RequestResult(
+                request_id=request.id,
+                session_id=session_id,
+                dispatched_at=dispatched_at,
+                completed_at=time.monotonic(),
+                session_total_requests=session_size,
+                channels={},
+                success=False,
+                error_code=500,
+                error_msg=f"Unhandled client exception: {str(e)}",
+            )
+
+        if not result.dispatched_at:
+            result.dispatched_at = dispatched_at
+
+        self.output_queue.put(result)
 
 
 class ClientRunnerManager:
