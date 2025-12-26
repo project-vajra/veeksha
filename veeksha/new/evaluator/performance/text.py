@@ -11,8 +11,8 @@ import pandas as pd
 from veeksha.logger import init_logger
 from veeksha.metrics.cdf_sketch import CDFSketch
 from veeksha.metrics.metric_utils import (
-    find_min_tbt_deadline_to_meet,
-    get_deadline_miss_rate_for_target_tbt_values,
+    find_min_tbc_deadline_to_meet,
+    get_deadline_miss_rate_for_target_tbc_values,
     get_request_level_deadline_miss_rate,
     get_throughput_metrics,
 )
@@ -25,7 +25,7 @@ from veeksha.new.types import ChannelModality
 
 logger = init_logger(__name__)
 
-TARGET_TBT_RANGE = [i * 0.001 for i in range(1, 101)]
+TARGET_TBC_RANGE = [i * 0.001 for i in range(1, 101)]
 QUANTILE_FOR_DEADLINE_MISS_RATE = 0.99
 
 
@@ -39,7 +39,7 @@ class TextRequestMetrics:
     completed_at: float  # Actual completion timestamp
     num_prompt_tokens: int
     num_output_tokens: int
-    inter_token_times: List[float]
+    inter_chunk_times: List[float]
     num_requested_output_tokens: Optional[int] = None
     session_total_requests: Optional[int] = None
     num_delta_prompt_tokens: Optional[int] = None
@@ -47,11 +47,13 @@ class TextRequestMetrics:
 
     @property
     def num_total_tokens(self) -> int:
+        if self.num_total_prompt_tokens is not None:
+            return self.num_total_prompt_tokens + self.num_output_tokens
         return self.num_prompt_tokens + self.num_output_tokens
 
     @property
     def end_to_end_latency(self) -> float:
-        return sum(self.inter_token_times)
+        return sum(self.inter_chunk_times)
 
     @property
     def normalized_end_to_end_latency(self) -> float:
@@ -60,16 +62,23 @@ class TextRequestMetrics:
         return self.end_to_end_latency / self.num_output_tokens
 
     @property
-    def ttft(self) -> float:
-        if not self.inter_token_times:
+    def ttfc(self) -> float:
+        if not self.inter_chunk_times:
             return 0.0
-        return self.inter_token_times[0]
+        return self.inter_chunk_times[0]
 
     @property
     def tpot(self) -> float:
-        if len(self.inter_token_times) < 2:
+        if self.num_output_tokens <= 1:
             return 0.0
-        return sum(self.inter_token_times[1:]) / len(self.inter_token_times[1:])
+        # (E2E - TTFC) / (OutputTokens - 1)
+        return (self.end_to_end_latency - self.ttfc) / (self.num_output_tokens - 1)
+
+    @property
+    def tbc(self) -> float:
+        if len(self.inter_chunk_times) < 2:
+            return 0.0
+        return sum(self.inter_chunk_times[1:]) / len(self.inter_chunk_times[1:])
 
     @property
     def output_throughput(self) -> float:
@@ -104,8 +113,8 @@ class TextPerformanceEvaluator:
         self.lock = threading.Lock()
 
         # deadlines
-        self.ttft_deadline = self.channel_config.ttft_deadline
-        self.tbt_deadline = self.channel_config.tbt_deadline
+        self.ttfc_deadline = self.channel_config.ttfc_deadline
+        self.tbc_deadline = self.channel_config.tbc_deadline
         self.target_deadline_miss_rate = self.channel_config.target_deadline_miss_rate
 
         self.service_level_missed_deadlines: int = 0
@@ -135,13 +144,13 @@ class TextPerformanceEvaluator:
                 should_write_to_wandb=config.wandb_enabled,
                 unit="s",
             ),
-            "ttft": CDFSketch(
-                metric_name="Time to First Token",
+            "ttfc": CDFSketch(
+                metric_name="Time to First Chunk",
                 should_write_to_wandb=config.wandb_enabled,
                 unit="s",
             ),
-            "tbt": CDFSketch(
-                metric_name="Time Between Tokens",
+            "tbc": CDFSketch(
+                metric_name="Time Between Chunks",
                 should_write_to_wandb=config.wandb_enabled,
                 unit="s",
             ),
@@ -160,11 +169,11 @@ class TextPerformanceEvaluator:
                 should_write_to_wandb=config.wandb_enabled,
             ),
             "deadline_miss_rate": CDFSketch(
-                metric_name=f"Deadline Miss Rate ({self.tbt_deadline}s TBT, {self.ttft_deadline}s TTFT)",
+                metric_name=f"Deadline Miss Rate ({self.tbc_deadline}s TBC, {self.ttfc_deadline}s TTFC)",
                 should_write_to_wandb=config.wandb_enabled,
             ),
-            "min_tbt_deadline_to_meet": CDFSketch(
-                metric_name=f"Min TBT Deadline to Meet {self.target_deadline_miss_rate * 100}% Miss Rate",
+            "min_tbc_deadline_to_meet": CDFSketch(
+                metric_name=f"Min TBC Deadline to Meet {self.target_deadline_miss_rate * 100}% Miss Rate",
                 should_write_to_wandb=config.wandb_enabled,
             ),
             "session_size": CDFSketch(
@@ -194,13 +203,13 @@ class TextPerformanceEvaluator:
             "num_output_tokens",
             "num_total_tokens",
             "tpot",
-            "ttft",
-            "tbt",
+            "ttfc",
+            "tbc",
             "end_to_end_latency",
             "normalized_end_to_end_latency",
             "output_throughput",
             "deadline_miss_rate",
-            "min_tbt_deadline_to_meet",
+            "min_tbc_deadline_to_meet",
         }
 
         self.request_dispatched_at: List[float] = []
@@ -212,13 +221,13 @@ class TextPerformanceEvaluator:
         self.num_total_prompt_tokens: List[Optional[int]] = []
         self.num_total_tokens: List[int] = []
         self.tpot: List[float] = []
-        self.ttft: List[float] = []
-        self.tbt: List[List[float]] = []
+        self.ttfc: List[float] = []
+        self.tbc: List[List[float]] = []
         self.end_to_end_latency: List[float] = []
         self.normalized_end_to_end_latency: List[float] = []
         self.output_throughput: List[float] = []
         self.deadline_miss_rate: List[float] = []
-        self.min_tbt_deadline_to_meet: List[float] = []
+        self.min_tbc_deadline_to_meet: List[float] = []
         self.session_ids: List[Optional[int]] = []
         self.session_total_requests: List[Optional[int]] = []
         self.request_ids: List[int] = []
@@ -277,11 +286,11 @@ class TextPerformanceEvaluator:
                 num_delta_prompt_tokens = channel_metrics.get("num_delta_prompt_tokens")
                 num_prompt_tokens = num_delta_prompt_tokens or 0
                 num_output_tokens = channel_metrics.get("num_output_tokens", 0)
-                inter_token_times = channel_metrics.get("inter_token_times", [])
+                inter_chunk_times = channel_metrics.get("inter_chunk_times", [])
             else:
                 num_prompt_tokens = 0
                 num_output_tokens = 0
-                inter_token_times = []
+                inter_chunk_times = []
                 num_delta_prompt_tokens = None
                 num_total_prompt_tokens = None
 
@@ -295,7 +304,7 @@ class TextPerformanceEvaluator:
                 completed_at=completed_at,
                 num_prompt_tokens=num_prompt_tokens,
                 num_output_tokens=num_output_tokens,
-                inter_token_times=inter_token_times,
+                inter_chunk_times=inter_chunk_times,
                 num_requested_output_tokens=target_output_tokens,
                 session_total_requests=session_total_requests,
                 num_delta_prompt_tokens=num_delta_prompt_tokens,
@@ -321,27 +330,27 @@ class TextPerformanceEvaluator:
             if metric_name not in self._request_level_summary_keys:
                 continue
 
-            if metric_name == "tbt":
-                # TBT is the inter-token times excluding TTFT
-                cdf_sketch.extend(metrics.inter_token_times[1:])
+            if metric_name == "tbc":
+                # TBC is the inter-chunk times excluding TTFC
+                cdf_sketch.extend(metrics.inter_chunk_times[1:])
             elif metric_name == "deadline_miss_rate":
                 (
                     deadline_miss_rate,
                     missed_deadlines,
                     total_deadlines,
                 ) = get_request_level_deadline_miss_rate(
-                    inter_token_times=metrics.inter_token_times,
-                    ttft_deadline=self.ttft_deadline,
-                    tbt_deadline=self.tbt_deadline,
+                    inter_chunk_times=metrics.inter_chunk_times,
+                    ttfc_deadline=self.ttfc_deadline,
+                    tbc_deadline=self.tbc_deadline,
                 )
                 cdf_sketch.put(deadline_miss_rate)
                 self.service_level_missed_deadlines += missed_deadlines
                 self.service_level_total_deadlines += total_deadlines
-            elif metric_name == "min_tbt_deadline_to_meet":
+            elif metric_name == "min_tbc_deadline_to_meet":
                 cdf_sketch.put(
-                    find_min_tbt_deadline_to_meet(
-                        inter_token_times=metrics.inter_token_times,
-                        ttft_deadline=self.ttft_deadline,
+                    find_min_tbc_deadline_to_meet(
+                        inter_chunk_times=metrics.inter_chunk_times,
+                        ttfc_deadline=self.ttfc_deadline,
                         target_deadline_miss_rate=self.target_deadline_miss_rate,
                     )
                 )
@@ -358,13 +367,13 @@ class TextPerformanceEvaluator:
 
         # Calculate deadline miss rate for this request
         dmr, _, _ = get_request_level_deadline_miss_rate(
-            inter_token_times=metrics.inter_token_times,
-            ttft_deadline=self.ttft_deadline,
-            tbt_deadline=self.tbt_deadline,
+            inter_chunk_times=metrics.inter_chunk_times,
+            ttfc_deadline=self.ttfc_deadline,
+            tbc_deadline=self.tbc_deadline,
         )
-        min_tbt = find_min_tbt_deadline_to_meet(
-            inter_token_times=metrics.inter_token_times,
-            ttft_deadline=self.ttft_deadline,
+        min_tbc = find_min_tbc_deadline_to_meet(
+            inter_chunk_times=metrics.inter_chunk_times,
+            ttfc_deadline=self.ttfc_deadline,
             target_deadline_miss_rate=self.target_deadline_miss_rate,
         )
 
@@ -379,13 +388,13 @@ class TextPerformanceEvaluator:
         self.num_total_prompt_tokens.append(metrics.num_total_prompt_tokens)
         self.num_total_tokens.append(metrics.num_total_tokens)
         self.tpot.append(metrics.tpot)
-        self.ttft.append(metrics.ttft)
-        self.tbt.append(metrics.inter_token_times[1:])
+        self.ttfc.append(metrics.ttfc)
+        self.tbc.append(metrics.inter_chunk_times[1:])
         self.end_to_end_latency.append(metrics.end_to_end_latency)
         self.normalized_end_to_end_latency.append(metrics.normalized_end_to_end_latency)
         self.output_throughput.append(metrics.output_throughput)
         self.deadline_miss_rate.append(dmr)
-        self.min_tbt_deadline_to_meet.append(min_tbt)
+        self.min_tbc_deadline_to_meet.append(min_tbc)
         self.session_ids.append(metrics.session_id)
         self.session_total_requests.append(metrics.session_total_requests)
         self.request_ids.append(metrics.request_id)
@@ -460,9 +469,9 @@ class TextPerformanceEvaluator:
             self._save_cdf_csvs(output_dir)
             self._save_performance_csv(output_dir)
             self._save_throughput_metrics(output_dir)
-            self._save_deadline_miss_rate_for_target_tbt(output_dir)
+            self._save_deadline_miss_rate_for_target_tbc(output_dir)
             self._plot_cdfs(output_dir)
-            self._store_ttft_violin_plots(output_dir)
+            self._store_ttfc_violin_plots(output_dir)
             self._store_generation_stalls(output_dir)
 
             if self.config.wandb_enabled:
@@ -475,7 +484,7 @@ class TextPerformanceEvaluator:
             rows = self._export_request_rows(self._request_rows_streamed)
             if rows:
                 self._append_request_level_rows(output_dir, rows)
-                self._request_rows_streamed = len(self.ttft)
+                self._request_rows_streamed = len(self.ttfc)
 
             # Save current CDF summaries
             self._save_performance_csv(output_dir)
@@ -496,7 +505,7 @@ class TextPerformanceEvaluator:
     def _export_request_rows(self, start_index: int = 0) -> List[Dict[str, Any]]:
         """Export request-level metrics as list of dicts."""
         rows: List[Dict[str, Any]] = []
-        for idx in range(start_index, len(self.ttft)):
+        for idx in range(start_index, len(self.ttfc)):
             rows.append(
                 {
                     "request_id": self.request_ids[idx],
@@ -512,17 +521,17 @@ class TextPerformanceEvaluator:
                     ],
                     "num_total_tokens": self.num_total_tokens[idx],
                     "tpot": round(self.tpot[idx], 5),
-                    "ttft": round(self.ttft[idx], 5),
+                    "ttfc": round(self.ttfc[idx], 5),
                     "end_to_end_latency": round(self.end_to_end_latency[idx], 5),
                     "normalized_end_to_end_latency": round(
                         self.normalized_end_to_end_latency[idx], 5
                     ),
                     "output_throughput": round(self.output_throughput[idx], 5),
                     "deadline_miss_rate": self.deadline_miss_rate[idx],
-                    "min_tbt_deadline_to_meet": round(
-                        self.min_tbt_deadline_to_meet[idx], 5
+                    "min_tbc_deadline_to_meet": round(
+                        self.min_tbc_deadline_to_meet[idx], 5
                     ),
-                    "tbt": [round(t, 5) for t in self.tbt[idx]],
+                    "tbc": [round(t, 5) for t in self.tbc[idx]],
                 }
             )
         return rows
@@ -555,35 +564,35 @@ class TextPerformanceEvaluator:
 
     def _save_throughput_metrics(self, output_dir: str) -> None:
         """Save throughput metrics."""
-        tpot_based, tbt_based, deadline_based = get_throughput_metrics(
-            self.tpot, self.tbt
+        tpot_based, tbc_based, deadline_based = get_throughput_metrics(
+            self.tpot, self.tbc
         )
         metrics = {
             "tpot_based_throughput": tpot_based,
-            "tbt_based_throughput": tbt_based,
+            "tbc_based_throughput": tbc_based,
             "deadline_based_throughput": deadline_based,
         }
         path = os.path.join(output_dir, "throughput_metrics.json")
         with open(path, "w") as f:
             json.dump(metrics, f, indent=2)
 
-    def _save_deadline_miss_rate_for_target_tbt(self, output_dir: str) -> None:
-        """Save deadline miss rate for various TBT targets."""
-        deadline_miss_rates = get_deadline_miss_rate_for_target_tbt_values(
-            tbt_times=self.tbt,
-            target_tbt_deadline_array=TARGET_TBT_RANGE,
+    def _save_deadline_miss_rate_for_target_tbc(self, output_dir: str) -> None:
+        """Save deadline miss rate for various TBC targets."""
+        deadline_miss_rates = get_deadline_miss_rate_for_target_tbc_values(
+            tbc_times=self.tbc,
+            target_tbc_deadline_array=TARGET_TBC_RANGE,
             quantile=QUANTILE_FOR_DEADLINE_MISS_RATE,
         )
 
         percentile_value = int(QUANTILE_FOR_DEADLINE_MISS_RATE * 100)
         data = {
-            "Target TBT (ms)": [int(i * 1000) for i in TARGET_TBT_RANGE],
+            "Target TBC (ms)": [int(i * 1000) for i in TARGET_TBC_RANGE],
             f"Miss Rate P({percentile_value})": deadline_miss_rates,
         }
 
         path = os.path.join(
             output_dir,
-            f"p{percentile_value}_deadline_miss_rate_for_target_tbt_values.json",
+            f"p{percentile_value}_deadline_miss_rate_for_target_tbc_values.json",
         )
         with open(path, "w") as f:
             json.dump(data, f, indent=2)
@@ -593,9 +602,9 @@ class TextPerformanceEvaluator:
         for metric_name, cdf_sketch in self.summaries.items():
             cdf_sketch.plot_cdf(output_dir, metric_name)
 
-    def _store_ttft_violin_plots(self, output_dir: str) -> None:
-        """Save TTFT distribution vs prompt length plots."""
-        if not self.ttft:
+    def _store_ttfc_violin_plots(self, output_dir: str) -> None:
+        """Save TTFC distribution vs prompt length plots."""
+        if not self.ttfc:
             return
 
         try:
@@ -608,11 +617,11 @@ class TextPerformanceEvaluator:
             )
 
             prompt_lengths = [int(n) for n in self.num_prompt_tokens]
-            ttfts = list(self.ttft)
-            if len(prompt_lengths) != len(ttfts):
+            ttfcs = list(self.ttfc)
+            if len(prompt_lengths) != len(ttfcs):
                 return
 
-            base_df = pd.DataFrame({"prompt_length": prompt_lengths, "ttft": ttfts})
+            base_df = pd.DataFrame({"prompt_length": prompt_lengths, "ttfc": ttfcs})
 
             min_len = int(base_df["prompt_length"].min())
             max_len = int(base_df["prompt_length"].max())
@@ -643,45 +652,45 @@ class TextPerformanceEvaluator:
                         right=True,
                     )
 
-            df = base_df[["prompt_length_bin", "ttft"]].copy()
+            df = base_df[["prompt_length_bin", "ttfc"]].copy()
             df["prompt_length_bin"] = df["prompt_length_bin"].astype("category")
 
-            ttft_scale = recommend_axis_scale(df["ttft"], kind="numeric")
-            y_label = "TTFT (s)"
+            ttfc_scale = recommend_axis_scale(df["ttfc"], kind="numeric")
+            y_label = "TTFC (s)"
 
             fig = rk.box(
                 df,
                 x="prompt_length_bin",
-                y="ttft",
+                y="ttfc",
                 labels={
                     "prompt_length_bin": "Number of Prompt Tokens",
-                    "ttft": y_label,
+                    "ttfc": y_label,
                 },
             )
-            fig.save(os.path.join(output_dir, "ttft_violin_plot.png"))
+            fig.save(os.path.join(output_dir, "ttfc_violin_plot.png"))
 
-            if ttft_scale != "linear":
+            if ttfc_scale != "linear":
                 fig_scaled = rk.box(
                     df,
                     x="prompt_length_bin",
-                    y="ttft",
+                    y="ttfc",
                     labels={
                         "prompt_length_bin": "Number of Prompt Tokens",
-                        "ttft": format_axis_label("TTFT", "s", ttft_scale),
+                        "ttfc": format_axis_label("TTFC", "s", ttfc_scale),
                     },
                 )
-                apply_axis_scale(fig_scaled, axis="y", scale=ttft_scale)
-                suffix = "log" if ttft_scale == "log" else "symlog"
+                apply_axis_scale(fig_scaled, axis="y", scale=ttfc_scale)
+                suffix = "log" if ttfc_scale == "log" else "symlog"
                 fig_scaled.save(
-                    os.path.join(output_dir, f"ttft_violin_plot_{suffix}_y.png")
+                    os.path.join(output_dir, f"ttfc_violin_plot_{suffix}_y.png")
                 )
 
         except Exception as e:
-            logger.warning(f"Failed to generate TTFT violin plots: {e}")
+            logger.warning(f"Failed to generate TTFC violin plots: {e}")
 
     def _store_generation_stalls(self, output_dir: str, request_idx: int = 0) -> None:
         """Save tokens generated vs time plot for a sample request."""
-        if request_idx >= len(self.ttft):
+        if request_idx >= len(self.ttfc):
             return
 
         try:
@@ -693,7 +702,7 @@ class TextPerformanceEvaluator:
                 recommend_axis_scale,
             )
 
-            token_times = [self.ttft[request_idx]] + self.tbt[request_idx]
+            token_times = [self.ttfc[request_idx]] + self.tbc[request_idx]
             token_times_cumulative = list(accumulate(token_times))
             tokens_generated = list(range(1, len(token_times_cumulative) + 1))
 
@@ -766,10 +775,10 @@ class TextPerformanceEvaluator:
                 with open(throughput_path, "r") as f:
                     throughput = json.load(f)
                 data = {
-                    "Metric Type": ["TPOT Based", "TBT Based", "Deadline Based"],
+                    "Metric Type": ["TPOT Based", "TBC Based", "Deadline Based"],
                     "Throughput (tok/s)": [
                         throughput.get("tpot_based_throughput", 0),
-                        throughput.get("tbt_based_throughput", 0),
+                        throughput.get("tbc_based_throughput", 0),
                         throughput.get("deadline_based_throughput", 0),
                     ],
                 }
@@ -785,11 +794,11 @@ class TextPerformanceEvaluator:
                     }
                 )
 
-            # Log TTFT/TBT scalar charts
-            self._log_ttft_tbt_scalar_charts()
+            # Log TTFC/TBC scalar charts
+            self._log_ttfc_tbc_scalar_charts()
 
             # Log images
-            for plot_name in ["ttft_violin_plot.png", "tokens_generated_vs_time.png"]:
+            for plot_name in ["ttfc_violin_plot.png", "tokens_generated_vs_time.png"]:
                 plot_path = os.path.join(output_dir, plot_name)
                 if os.path.exists(plot_path):
                     wandb.log({plot_name.replace(".png", ""): wandb.Image(plot_path)})
@@ -797,8 +806,8 @@ class TextPerformanceEvaluator:
         except Exception as e:
             logger.warning(f"Failed to log WandB metrics: {e}")
 
-    def _log_ttft_tbt_scalar_charts(self) -> None:
-        """Log TTFT and TBT scalar charts to WandB."""
+    def _log_ttfc_tbc_scalar_charts(self) -> None:
+        """Log TTFC and TBC scalar charts to WandB."""
         try:
             import wandb
 
@@ -837,8 +846,8 @@ class TextPerformanceEvaluator:
                 except Exception as e:
                     logger.warning(f"Failed to compute stats for {short_name}: {e}")
 
-            log_for_sketch("ttft", "TTFT (s)")
-            log_for_sketch("tbt", "TBT (s)")
+            log_for_sketch("ttfc", "TTFC (s)")
+            log_for_sketch("tbc", "TBC (s)")
 
         except Exception as e:
             logger.warning(f"Failed to log scalar charts: {e}")

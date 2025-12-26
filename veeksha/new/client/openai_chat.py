@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import threading
 import time
 from typing import TYPE_CHECKING, Any, List, Optional
@@ -54,6 +55,11 @@ class OpenAIChatClient(BaseLLMClient):
         self.text_tokenizer_handle = self.tokenizer_provider.for_modality(
             ChannelModality.TEXT
         )
+
+    @functools.lru_cache(maxsize=10000)
+    def _get_cached_token_count(self, text: str) -> int:
+        """Get token count for text with caching."""
+        return len(self.text_tokenizer_handle.encode(text))
 
     def _build_text_content_block(
         self, text_content: TextChannelRequestContent
@@ -145,9 +151,9 @@ class OpenAIChatClient(BaseLLMClient):
         delta_content: str,
         receive_time: float,
         most_recent_token_time: float,
-        inter_token_times: List[float],
+        inter_chunk_times: List[float],
         generated_text: str,
-        tokens_received: int,
+        chunks_received: int,
     ) -> tuple[str, int, float, List[float]]:
         """Process a text delta from the streaming response.
 
@@ -155,26 +161,26 @@ class OpenAIChatClient(BaseLLMClient):
             delta_content: Text content from the delta.
             receive_time: Time of chunk receipt.
             most_recent_token_time: Time of last token received.
-            inter_token_times: List of inter-token times.
+            inter_chunk_times: List of inter-chunk times.
             generated_text: Accumulated generated text.
-            tokens_received: Total tokens received so far.
+            chunks_received: Total chunks received so far.
 
         Returns:
-            Tuple of (generated_text, tokens_received,
-                     most_recent_token_time, inter_token_times).
+            Tuple of (generated_text, chunks_received,
+                     most_recent_token_time, inter_chunk_times).
         """
         # treat each streaming delta as a single token
         generated_text += delta_content
         delta_duration = receive_time - most_recent_token_time
-        inter_token_times.append(delta_duration)
-        tokens_received += 1
+        inter_chunk_times.append(delta_duration)
+        chunks_received += 1
         most_recent_token_time = receive_time
 
         return (
             generated_text,
-            tokens_received,
+            chunks_received,
             most_recent_token_time,
-            inter_token_times,
+            inter_chunk_times,
         )
 
     def _process_image_response(
@@ -235,7 +241,7 @@ class OpenAIChatClient(BaseLLMClient):
         self,
         success: bool,
         generated_text: str,
-        inter_token_times: List[float],
+        inter_chunk_times: List[float],
         delta_prompt_len: int,
         total_prompt_len: int,
         tokens_received: int,
@@ -248,7 +254,7 @@ class OpenAIChatClient(BaseLLMClient):
         Args:
             success: Whether the request was successful.
             generated_text: Generated text output.
-            inter_token_times: List of inter-token times.
+            inter_chunk_times: List of inter-chunk times.
             delta_prompt_len: Number of prompt tokens in the delta.
             total_prompt_len: Number of prompt tokens in the total prompt.
             tokens_received: Number of output tokens.
@@ -269,7 +275,7 @@ class OpenAIChatClient(BaseLLMClient):
                 modality=ChannelModality.TEXT,
                 content=generated_text,
                 metrics={
-                    "inter_token_times": inter_token_times,
+                    "inter_chunk_times": inter_chunk_times,
                     "num_delta_prompt_tokens": delta_prompt_len,
                     "num_total_prompt_tokens": total_prompt_len,
                     "num_output_tokens": tokens_received,
@@ -296,8 +302,6 @@ class OpenAIChatClient(BaseLLMClient):
                 content=video_data,
                 metrics={},
             )
-
-        return channels
 
         return channels
 
@@ -344,10 +348,10 @@ class OpenAIChatClient(BaseLLMClient):
             max_tokens_limit = text_content.target_output_tokens  # type: ignore
 
         # text metrics
-        inter_token_times: List[float] = []
+        inter_chunk_times: List[float] = []
         error_msg: Optional[str] = None
         error_code: Optional[int] = None
-        tokens_received = 0
+        chunks_received = 0
         generated_text = ""
 
         # multimodal response data
@@ -357,8 +361,7 @@ class OpenAIChatClient(BaseLLMClient):
 
         delta_prompt_len = 0
         dispatched_at = -1
-
-        server_usage = None
+        messages = []
 
         try:
             messages, delta_prompt_len = self._build_message_content(request)
@@ -367,9 +370,6 @@ class OpenAIChatClient(BaseLLMClient):
                 "model": self.config.model,
                 "messages": messages,
                 "stream": True,
-                "stream_options": {
-                    "include_usage": True,
-                },
             }
 
             max_tokens_param = self.config.max_tokens_param  # type: ignore
@@ -403,10 +403,6 @@ class OpenAIChatClient(BaseLLMClient):
                         error_code = code_value if isinstance(code_value, int) else 400
                         break
 
-                    usage = data.get("usage")
-                    if usage:
-                        server_usage = usage
-
                     choices = data.get("choices")
                     if not choices:
                         continue
@@ -422,16 +418,16 @@ class OpenAIChatClient(BaseLLMClient):
                     if delta.get("content"):
                         (
                             generated_text,
-                            tokens_received,
+                            chunks_received,
                             most_recent_token_time,
-                            inter_token_times,
+                            inter_chunk_times,
                         ) = self._process_text_delta(
                             delta["content"],
                             receive_time,
                             most_recent_token_time,
-                            inter_token_times,
+                            inter_chunk_times,
                             generated_text,
-                            tokens_received,
+                            chunks_received,
                         )
 
                     # TODO: image deltas
@@ -463,30 +459,20 @@ class OpenAIChatClient(BaseLLMClient):
         completed_at = time.monotonic()
         success = error_msg is None and error_code is None
 
-        reported_total_prompt_tokens = -1
-        reported_completion_tokens = -1
+        num_total_prompt_tokens = 0
+        for msg in messages:
+            content = msg.get("content", "")
+            num_total_prompt_tokens += self._get_cached_token_count(content)
 
-        if server_usage:
-            reported_total_prompt_tokens = server_usage["prompt_tokens"]
-            reported_completion_tokens = server_usage["completion_tokens"]
-        else:
-            # TODO instead of marking request as failed, support fallback counting of completion tokens and history tokens
-            logger.warning(
-                "include_usage requested to server but usage block missing. Marking request as failed (request %s, model %s)",
-                request.id,
-                self.config.model,
-            )
-            success = False
-            error_code = 500
-            error_msg = "include_usage requested to server but usage block missing"
+        num_completion_tokens = len(self.text_tokenizer_handle.encode(generated_text))
 
         channels = self._build_channel_responses(
             success=success,
             generated_text=generated_text,
-            inter_token_times=inter_token_times,
+            inter_chunk_times=inter_chunk_times,
             delta_prompt_len=delta_prompt_len,
-            total_prompt_len=reported_total_prompt_tokens,
-            tokens_received=reported_completion_tokens,
+            total_prompt_len=num_total_prompt_tokens,
+            tokens_received=num_completion_tokens,
             image_data=image_data,
             audio_data=audio_data,
             video_data=video_data,

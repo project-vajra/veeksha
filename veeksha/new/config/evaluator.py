@@ -40,11 +40,11 @@ class BaseChannelPerformanceConfig(BasePolyConfig):
 class TextChannelPerformanceConfig(BaseChannelPerformanceConfig):
     """Text channel performance configuration"""
 
-    ttft_deadline: float = field(
-        default=0.5, metadata={"help": "TTFT deadline in seconds"}
+    ttfc_deadline: float = field(
+        default=0.5, metadata={"help": "TTFC deadline in seconds"}
     )
-    tbt_deadline: float = field(
-        default=0.1, metadata={"help": "TBT deadline in seconds"}
+    tbc_deadline: float = field(
+        default=0.1, metadata={"help": "TBC deadline in seconds"}
     )
     target_deadline_miss_rate: float = field(
         default=0.01, metadata={"help": "Target P99 deadline miss rate (0.0 to 1.0)"}
