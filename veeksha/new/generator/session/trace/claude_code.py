@@ -57,8 +57,6 @@ class ClaudeCodeTraceFlavorGenerator(TraceFlavorGeneratorBase):
         requests = {}
         wait_times: List[float] = []
 
-        wait_times: List[float] = []
-
         # unique seed for this session's prefix
         session_seed = self._session_seed_rng.getrandbits(32)
 
@@ -100,9 +98,5 @@ class ClaudeCodeTraceFlavorGenerator(TraceFlavorGeneratorBase):
     def wrap(self) -> pd.DataFrame:
         """Wrap trace for new epoch with new session seeds."""
         df = self.trace_df.copy()
-
-        # Increment session IDs
         df["session_id"] = df["session_id"] + df["session_id"].max() + 1
-
-        # Shuffle session order
         return self._shuffle_sessions(df)
