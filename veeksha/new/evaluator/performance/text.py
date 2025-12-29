@@ -497,6 +497,7 @@ class TextPerformanceEvaluator:
 
             # Save current CDF summaries
             self._save_performance_csv(output_dir)
+            self._save_cdf_csvs(output_dir)
 
     # -------------------------------------------------------------------------
     # Output methods
