@@ -49,7 +49,7 @@ class TraceFlavorGeneratorBase:
         self.trace_df = pd.read_json(config.trace_file, lines=True)
         self._validate_trace()
 
-        # Wrapping state
+        # wrapping state
         self._num_wraps = 0
         self._session_groups: Optional[Iterator] = None
         self._current_session_id = 0

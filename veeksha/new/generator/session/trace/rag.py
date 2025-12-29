@@ -1,6 +1,6 @@
 """RAG trace flavor generator with warmup support."""
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import pandas as pd
 
@@ -11,15 +11,13 @@ from veeksha.new.config.generator.session import (
 from veeksha.new.core.seeding import SeedManager
 from veeksha.new.core.session import Session
 from veeksha.new.core.tokenizer import TokenizerProvider
-from veeksha.new.generator.session.trace.base_flavor import TraceFlavorGeneratorBase
+from veeksha.new.generator.session.trace.base_flavor import (
+    TraceFlavorGeneratorBase,
+)
 
 
 class RAGTraceFlavorGenerator(TraceFlavorGeneratorBase):
-    """RAG trace flavor generator.
-
-    Supports document-based RAG traces with warmup capability.
-    Can filter to top N documents and generate warmup sessions.
-    """
+    """RAG trace flavor generator with warmup sessions per document."""
 
     def __init__(
         self,
@@ -30,124 +28,110 @@ class RAGTraceFlavorGenerator(TraceFlavorGeneratorBase):
     ):
         super().__init__(config, flavor_config, seed_manager, tokenizer_provider)
         self.flavor_config = flavor_config
-
-        # Filter to top N documents if specified
-        if flavor_config.num_documents > 0 and "title" in self.trace_df.columns:
-            top_docs = (
-                self.trace_df.groupby("title")
-                .size()
-                .nlargest(flavor_config.num_documents)
-                .index.tolist()
-            )
-            self.trace_df = self.trace_df[
-                self.trace_df["title"].isin(top_docs)
-            ].reset_index(drop=True)
-
-        self._wrap_rng = seed_manager.random("rag_wrapping")
         self._warmup_sessions: Optional[List[Session]] = None
+
+        doc_counts = self.trace_df["doc_id"].value_counts()
+
+        requested_docs = max(int(flavor_config.num_documents), 1)
+        self._top_doc_ids: List[Any] = doc_counts.nlargest(
+            requested_docs
+        ).index.tolist()
+        self._warmup_count = len(self._top_doc_ids)
+
+        filtered_df = (
+            self.trace_df[self.trace_df["doc_id"].isin(self._top_doc_ids)]
+            .reset_index(drop=True)
+            .copy()
+        )
+        if filtered_df.empty:
+            raise ValueError("No trace rows remain after filtering to top documents. ")
+
+        session_start = self._warmup_count
+        filtered_df["session_id"] = range(
+            session_start, session_start + len(filtered_df)
+        )
+
+        self._warmup_source_df = self._build_warmup_source(filtered_df)
+        # shuffle operational trace to emulate historical behavior
+        self.trace_df = self._shuffle_sessions(filtered_df)
+        # ensure generated sessions follow warmup id range
+        self._session_offset = session_start
+        self._current_session_id = self._session_offset
 
     @property
     def required_columns(self) -> List[str]:
         return [
-            "session_id",
+            "doc_id",
+            "prompt_text",
             "input_length",
             "output_length",
         ]
 
+    def _validate_trace(self):
+        """Ensure the trace contains required columns and session ids."""
+        super()._validate_trace()
+
+        if "session_id" not in self.trace_df.columns:
+            self.trace_df = self.trace_df.reset_index(drop=True)
+            self.trace_df["session_id"] = range(len(self.trace_df))
+
     def get_warmup_sessions(self) -> List[Session]:
-        """Generate warmup sessions - one per unique document."""
+        """Generate warmup sessions—one per selected document."""
         if self._warmup_sessions is not None:
             return self._warmup_sessions
 
-        self._warmup_sessions = []
+        sessions: List[Session] = []
+        for session_id, (_, row) in enumerate(self._warmup_source_df.iterrows()):
+            sessions.append(self._build_single_request_session(session_id, row))
 
-        if "title" not in self.trace_df.columns:
-            return self._warmup_sessions
-
-        # Create one session per unique document
-        for title in self.trace_df["title"].unique():
-            doc_rows = self.trace_df[self.trace_df["title"] == title]
-            if len(doc_rows) == 0:
-                continue
-
-            # Take the first request from this document as warmup
-            first_row = doc_rows.iloc[0]
-            session_id = self._next_session_id()
-
-            # Create a simple warmup request
-            input_length = int(first_row.get("input_length", 100))
-            prompt_text = f"Document warmup: {title[:100]}" + " padding" * (
-                input_length // 10
-            )
-
-            request = self._create_text_request(
-                node_id=0,
-                prompt_text=prompt_text,
-                target_output_tokens=10,  # Minimal output for warmup
-                wait_after_ready=0.0,
-                parent_node=None,
-                target_prompt_tokens=input_length,
-            )
-
-            session_graph = self._build_linear_session_graph(1, [0.0])
-
-            session = Session(
-                id=session_id,
-                session_graph=session_graph,
-                requests={0: request},
-            )
-            self._warmup_sessions.append(session)
-
+        self._warmup_sessions = sessions
+        # reshuffle main trace before benchmark sessions start
+        self.trace_df = self._shuffle_sessions(self.trace_df)
+        self._session_groups = None
         return self._warmup_sessions
 
     def prepare_session(self, group: pd.DataFrame) -> Session:
-        """Prepare session from RAG trace."""
+        """Prepare a single-request RAG session from the trace row."""
+        row = group.iloc[0]
         session_id = self._next_session_id()
-        requests = {}
-        wait_times: List[float] = []
+        return self._build_single_request_session(session_id, row)
 
-        for i, (_, row) in enumerate(group.iterrows()):
-            input_length = int(row["input_length"])
-            output_length = int(row["output_length"])
+    def wrap(self) -> pd.DataFrame:
+        """Wrap trace for new epoch with refreshed session order."""
+        df = self.trace_df.copy()
+        max_sid = int(df["session_id"].max()) if not df.empty else self._session_offset
+        df["session_id"] = df["session_id"] + max_sid + 1
+        return self._shuffle_sessions(df)
 
-            # Build prompt from trace data
-            title = row.get("title", "document")
-            prompt_text = f"Query for {title}: " + " padding" * (input_length // 10)
+    def _build_warmup_source(self, filtered_df: pd.DataFrame) -> pd.DataFrame:
+        """Capture a deterministic row per doc_id for warmup sessions."""
+        rows = []
+        for doc_id in self._top_doc_ids:
+            doc_rows = filtered_df[filtered_df["doc_id"] == doc_id]
+            if not doc_rows.empty:
+                rows.append(doc_rows.iloc[0])
+        if rows:
+            warmup_df = pd.DataFrame(rows).reset_index(drop=True)
+        else:
+            warmup_df = pd.DataFrame(columns=filtered_df.columns)
 
-            # Get wait time
-            wait_time_val = row.get("wait_after_previous_response_s")
-            if wait_time_val is None or pd.isna(wait_time_val):
-                wait_time = 0.0
-            else:
-                wait_time = float(wait_time_val)
-            wait_times.append(wait_time)
+        warmup_df["session_id"] = range(len(warmup_df))
+        return warmup_df
 
-            # Create request
-            request = self._create_text_request(
-                node_id=i,
-                prompt_text=prompt_text,
-                target_output_tokens=output_length,
-                wait_after_ready=wait_time,
-                parent_node=i - 1 if i > 0 else None,
-                target_prompt_tokens=input_length,
-            )
-            requests[i] = request
-
-        # Build session graph
-        session_graph = self._build_linear_session_graph(len(requests), wait_times)
-
+    def _build_single_request_session(self, session_id: int, row: pd.Series) -> Session:
+        """Convert a single trace row into a Veeksha Session."""
+        wait_time = 0.0
+        request = self._create_text_request(
+            node_id=0,
+            prompt_text=str(row["prompt_text"]),
+            target_output_tokens=int(row["output_length"]),
+            wait_after_ready=wait_time,
+            parent_node=None,
+            target_prompt_tokens=int(row["input_length"]),
+        )
+        session_graph = self._build_linear_session_graph(1, [wait_time])
         return Session(
             id=session_id,
             session_graph=session_graph,
-            requests=requests,
+            requests={0: request},
         )
-
-    def wrap(self) -> pd.DataFrame:
-        """Wrap trace for new epoch."""
-        df = self.trace_df.copy()
-
-        # Increment session IDs
-        df["session_id"] = df["session_id"] + df["session_id"].max() + 1
-
-        # Shuffle session order
-        return self._shuffle_sessions(df)

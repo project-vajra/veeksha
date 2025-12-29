@@ -30,6 +30,7 @@ class TokenizerHandle(Generic[RawContent]):
     count_tokens: TokenCounter
     decode: TokenDecoder
     encode: TokenEncoder
+    get_vocab: Optional[Callable[[], List[int]]] = None
 
 
 class TokenizerProvider:
@@ -55,10 +56,14 @@ class TokenizerProvider:
 def build_hf_tokenizer_handle(tokenizer) -> TokenizerHandle[str]:
     """Wrap a Hugging Face tokenizer into a TokenizerHandle."""
 
+    # cache vocab
+    vocab = sorted(tokenizer.vocab.values())[: tokenizer.vocab_size]
+
     return TokenizerHandle(
         count_tokens=lambda text: len(tokenizer.encode(text, add_special_tokens=False)),
         decode=lambda token_ids: tokenizer.decode(token_ids, skip_special_tokens=False),
         encode=lambda text: tokenizer.encode(text, add_special_tokens=False),
+        get_vocab=lambda: vocab,
     )
 
 

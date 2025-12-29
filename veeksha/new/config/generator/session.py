@@ -60,6 +60,7 @@ class BaseTraceFlavorConfig(BasePolyConfig):
 class ClaudeCodeTraceFlavorConfig(BaseTraceFlavorConfig):
     """Context-cached trace flavor configuration."""
 
+    # TODO global corpus file
     corpus_file: str = field(
         default="traces/corpus.txt",
         metadata={"help": "Path to corpus file for prompt padding"},

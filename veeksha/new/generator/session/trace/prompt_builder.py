@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from veeksha.new.core.seeding import SeedManager
-from veeksha.new.core.tokenizer import build_hf_tokenizer_handle, gen_prompt_from_corpus
+from veeksha.new.core.tokenizer import gen_prompt_from_corpus
 
 
 def base10_to_basen(x: int, n: int) -> List[int]:
@@ -42,15 +42,19 @@ class TracePromptBuilder:
         """Initialize the prompt builder.
 
         Args:
-            tokenizer: HuggingFace tokenizer for encoding/decoding.
+            tokenizer: TokenizerHandle for encoding/decoding.
             seed_manager: Seed manager for random state.
             corpus_file: Optional path to corpus file for sampling.
         """
         self.tokenizer = tokenizer
         self.rng = seed_manager.random("prompt_builder_sampler")
 
-        # Pre-cache sorted vocab for generate_unique_prompt
-        self._sorted_vocab = sorted(tokenizer.vocab.values())[: tokenizer.vocab_size]
+        # pre-cache sorted vocab for generate_unique_prompt
+        if tokenizer.get_vocab is None:
+            raise ValueError(
+                "Tokenizer handle must support get_vocab for TracePromptBuilder"
+            )
+        self._sorted_vocab = tokenizer.get_vocab()
 
         # Pre-tokenize corpus if provided
         self.pretokenized_lines: List[List[int]] = []
@@ -60,8 +64,7 @@ class TracePromptBuilder:
                 with open(corpus_path, "r", encoding="utf-8") as f:
                     corpus_lines = f.readlines()
                 self.pretokenized_lines = [
-                    self.tokenizer.encode(line, add_special_tokens=False)
-                    for line in corpus_lines
+                    self.tokenizer.encode(line) for line in corpus_lines
                 ]
 
                 total_tokens = sum(len(line) for line in self.pretokenized_lines)
@@ -91,8 +94,6 @@ class TracePromptBuilder:
         digits = base10_to_basen(seed, len(vocab))
         tokens = [vocab[i] for i in digits]
 
-        tokens = [vocab[i] for i in digits]
-
         # Fill remaining with random tokens - use local_rng for determinism
         # We start from len(tokens) so we only add what's needed for page_size
         while len(tokens) < page_size:
@@ -105,13 +106,10 @@ class TracePromptBuilder:
             i = local_rng.randint(0, len(vocab) - 1)
             tokens.append(vocab[i])
 
-        # Use gen_prompt_from_corpus logic for exact token count
-        handle = build_hf_tokenizer_handle(self.tokenizer)
-
         return gen_prompt_from_corpus(
             num_tokens=num_tokens,
             pretokenized_lines=[tokens],
-            tokenizer_handle=handle,
+            tokenizer_handle=self.tokenizer,
             rng=local_rng,  # for shuffle, no-op for 1 line
         )
 

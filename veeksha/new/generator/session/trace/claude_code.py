@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import List
 
 import pandas as pd
-from transformers import AutoTokenizer
 
 from veeksha.new.config.generator.session import (
     ClaudeCodeTraceFlavorConfig,
@@ -34,15 +33,8 @@ class ClaudeCodeTraceFlavorGenerator(TraceFlavorGeneratorBase):
         super().__init__(config, flavor_config, seed_manager, tokenizer_provider)
         self.flavor_config = flavor_config
 
-        # Load raw HF tokenizer for prompt builder
-        hf_tokenizer = AutoTokenizer.from_pretrained(
-            tokenizer_provider.model_name,
-            trust_remote_code=True,
-        )
-
-        # Initialize prompt builder with corpus
         self.prompt_builder = TracePromptBuilder(
-            tokenizer=hf_tokenizer,
+            tokenizer=self.tokenizer,
             seed_manager=seed_manager.child("prompt_builder"),
             corpus_file=(
                 Path(flavor_config.corpus_file) if flavor_config.corpus_file else None

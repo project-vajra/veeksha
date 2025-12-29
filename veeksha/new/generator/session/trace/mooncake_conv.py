@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 import pandas as pd
-from transformers import AutoTokenizer
 
 from veeksha.new.config.generator.session import (
     MooncakeConvTraceFlavorConfig,
@@ -16,7 +15,6 @@ from veeksha.new.core.session import Session
 from veeksha.new.core.tokenizer import TokenizerProvider, gen_prompt_from_corpus
 from veeksha.new.generator.session.trace.base_flavor import TraceFlavorGeneratorBase
 from veeksha.new.generator.session.trace.prompt_builder import TracePromptBuilder
-from veeksha.new.types import ChannelModality
 
 
 def _build_epoch_hash_id_map(
@@ -81,15 +79,9 @@ class MooncakeConvTraceFlavorGenerator(TraceFlavorGeneratorBase):
         self.flavor_config = flavor_config
         self.tokenizer_provider = tokenizer_provider
 
-        # Load raw HF tokenizer for prompt builder (needs vocab access)
-        hf_tokenizer = AutoTokenizer.from_pretrained(
-            tokenizer_provider.model_name,
-            trust_remote_code=True,
-        )
-
         # Initialize prompt builder with corpus
         self.prompt_builder = TracePromptBuilder(
-            tokenizer=hf_tokenizer,
+            tokenizer=self.tokenizer,
             seed_manager=seed_manager.child("prompt_builder"),
             corpus_file=(
                 Path(flavor_config.corpus_file) if flavor_config.corpus_file else None
@@ -140,9 +132,7 @@ class MooncakeConvTraceFlavorGenerator(TraceFlavorGeneratorBase):
                 prompt_text = gen_prompt_from_corpus(
                     num_tokens=length,
                     pretokenized_lines=self.prompt_builder.pretokenized_lines,
-                    tokenizer_handle=self.tokenizer_provider.for_modality(
-                        ChannelModality.TEXT
-                    ),
+                    tokenizer_handle=self.tokenizer,
                     rng=self._corpus_rng,
                 )
 
