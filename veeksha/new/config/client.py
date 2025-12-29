@@ -64,7 +64,7 @@ class OpenAIChatClientConfig(BaseClientConfig):
     use_min_tokens_prompt_fallback: bool = field(
         default=False,
         metadata={
-            "help": "If True, appends instructions to the prompt to generate at least N tokens (e.g. 'Generate at least 20 tokens'). Useful if the server does not support a min tokens parameter."
+            "help": "If True, appends instructions to the prompt to generate at least N tokens (e.g. 'Generate at least 20 tokens'). Useful if the server does not support a min tokens parameter. Only available on synthetic content generation."
         },
     )
 

@@ -28,6 +28,33 @@ from veeksha.new.workers.prefetch import SharedSessionCounter
 logger = init_logger(__name__)
 
 
+def maybe_run_warmup(session_generator, client):
+    """Maybe run warmup sessions synchronously before benchmark.
+
+    Args:
+        session_generator: SessionGenerator instance with or without get_warmup_sessions method.
+        client: Client instance with async send_request method.
+    """
+
+    import asyncio
+
+    async def warmup_one(session):
+        """Execute first request of a warmup session."""
+        first_request = list(session.requests.values())[0]
+        await client.send_request(first_request, session.id, 1)
+
+    async def run_all(warmup_sessions):
+        for session in tqdm(warmup_sessions, desc="Warmup", unit="sess"):
+            await warmup_one(session)
+
+    if hasattr(session_generator, "get_warmup_sessions"):
+        warmup_sessions = session_generator.get_warmup_sessions()
+        if warmup_sessions:
+            logger.info(f"Running warmup with {len(warmup_sessions)} sessions")
+            asyncio.run(run_all(warmup_sessions))
+            logger.info("Warmup completed")
+
+
 def _init_pbar(max_sessions: int, benchmark_timeout: float):
     """Initialize progress bar based on benchmark mode.
 
@@ -288,12 +315,10 @@ def run_benchmark(
     seed_manager = SeedManager(benchmark_config.seed)
 
     # get session generator
+    model_name = benchmark_config.client.model
     tokenizer_provider = TokenizerProvider(
-        {
-            ChannelModality.TEXT: build_hf_tokenizer_handle_from_model(
-                benchmark_config.client.model
-            )
-        }
+        {ChannelModality.TEXT: build_hf_tokenizer_handle_from_model(model_name)},
+        model_name=model_name,
     )
     append_min_tokens_instruction = False
     if (
@@ -325,12 +350,21 @@ def run_benchmark(
         **session_generator_kwargs,
     )
 
-    # get traffic scheduler
+    # get traffic scheduler, client
     traffic_scheduler = TrafficSchedulerRegistry.get(
         benchmark_config.traffic_scheduler.get_type(),
         config=benchmark_config.traffic_scheduler,
         seed_manager=seed_manager,
     )
+
+    client = ClientRegistry.get(
+        benchmark_config.client.get_type(),
+        config=benchmark_config.client,
+        tokenizer_provider=tokenizer_provider,
+    )
+
+    # some session generators might define a warmup phase
+    maybe_run_warmup(session_generator, client)
 
     benchmark_start_time = time.monotonic()
 
@@ -341,13 +375,6 @@ def run_benchmark(
         seed_manager=seed_manager,
         output_dir=f"{benchmark_config.output_dir}/metrics",
         benchmark_start_time=benchmark_start_time,
-    )
-
-    # get client
-    client = ClientRegistry.get(
-        benchmark_config.client.get_type(),
-        config=benchmark_config.client,
-        tokenizer_provider=tokenizer_provider,
     )
 
     # trace recorder

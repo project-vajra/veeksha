@@ -68,4 +68,5 @@ class TextChannelGenerator(BaseChannelGenerator):
         return TextChannelRequestContent(
             input_text=input_text,
             target_output_tokens=output_token_length,
+            target_prompt_tokens=text_token_length,
         )

@@ -44,6 +44,7 @@ class TextRequestMetrics:
     session_total_requests: Optional[int] = None
     num_delta_prompt_tokens: Optional[int] = None
     num_total_prompt_tokens: Optional[int] = None
+    target_num_delta_prompt_tokens: Optional[int] = None
 
     @property
     def num_total_tokens(self) -> int:
@@ -219,6 +220,7 @@ class TextPerformanceEvaluator:
         self.num_requested_output_tokens: List[Optional[int]] = []
         self.num_delta_prompt_tokens: List[Optional[int]] = []
         self.num_total_prompt_tokens: List[Optional[int]] = []
+        self.target_num_delta_prompt_tokens: List[Optional[int]] = []
         self.num_total_tokens: List[int] = []
         self.tpot: List[float] = []
         self.ttfc: List[float] = []
@@ -252,11 +254,13 @@ class TextPerformanceEvaluator:
                 self._request_time_reference = dispatched_at
 
             target_output_tokens = getattr(content, "target_output_tokens", None)
+            target_prompt_tokens = getattr(content, "target_prompt_tokens", None)
 
             self._pending_requests[request_id] = {
                 "session_id": session_id,
                 "dispatched_at": dispatched_at,
                 "target_output_tokens": target_output_tokens,
+                "target_prompt_tokens": target_prompt_tokens,
             }
 
     def record_request_completed(
@@ -276,6 +280,7 @@ class TextPerformanceEvaluator:
 
             dispatched_at = dispatch_info["dispatched_at"]
             target_output_tokens = dispatch_info.get("target_output_tokens")
+            target_prompt_tokens = dispatch_info.get("target_prompt_tokens")
 
             # Extract metrics from the text channel response
             channel_response = response.channels.get(ChannelModality.TEXT)
@@ -309,6 +314,7 @@ class TextPerformanceEvaluator:
                 session_total_requests=session_total_requests,
                 num_delta_prompt_tokens=num_delta_prompt_tokens,
                 num_total_prompt_tokens=num_total_prompt_tokens,
+                target_num_delta_prompt_tokens=target_prompt_tokens,
             )
 
             prev_completion = self._session_last_completion.get(session_id)
@@ -386,6 +392,9 @@ class TextPerformanceEvaluator:
         self.num_requested_output_tokens.append(metrics.num_requested_output_tokens)
         self.num_delta_prompt_tokens.append(metrics.num_delta_prompt_tokens)
         self.num_total_prompt_tokens.append(metrics.num_total_prompt_tokens)
+        self.target_num_delta_prompt_tokens.append(
+            metrics.target_num_delta_prompt_tokens
+        )
         self.num_total_tokens.append(metrics.num_total_tokens)
         self.tpot.append(metrics.tpot)
         self.ttfc.append(metrics.ttfc)
@@ -515,6 +524,9 @@ class TextPerformanceEvaluator:
                     "completed_at": round(self.completed_at[idx], 5),
                     "num_delta_prompt_tokens": self.num_delta_prompt_tokens[idx],
                     "num_total_prompt_tokens": self.num_total_prompt_tokens[idx],
+                    "target_num_delta_prompt_tokens": self.target_num_delta_prompt_tokens[
+                        idx
+                    ],
                     "num_output_tokens": self.num_output_tokens[idx],
                     "num_requested_output_tokens": self.num_requested_output_tokens[
                         idx

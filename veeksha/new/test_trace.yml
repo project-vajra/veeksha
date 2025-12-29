@@ -1,0 +1,39 @@
+seed: 42
+
+traffic_scheduler:
+  type: rate
+  interval_generator:
+    type: poisson
+    arrival_rate: 0.5
+  # type: concurrent
+  # target_concurrent_sessions: 100
+  # rampup_seconds: 10
+
+session_generator:
+  type: trace
+  trace_file: traces/mooncake/mooncake_conversation_trace-processed.jsonl
+  flavor:
+    type: claude_code
+
+
+client:
+  type: openai_chat
+  model: meta-llama/Meta-Llama-3-8B-Instruct
+  request_timeout: 120
+  api_base: http://localhost:30002/v1
+  max_tokens_param: max_completion_tokens
+  min_tokens_param: min_tokens
+  use_min_tokens_prompt_fallback: False
+
+runtime:
+  max_sessions: -1
+  benchmark_timeout: 60
+  num_dispatcher_threads: 5
+  num_completion_threads: 5
+  num_client_threads: 5
+
+trace_recorder:
+  enabled: True
+  include_content: True
+
+output_dir: benchmark_outputs/trace_test

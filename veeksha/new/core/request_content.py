@@ -1,5 +1,6 @@
 from abc import ABC
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -18,6 +19,7 @@ class TextChannelRequestContent(BaseChannelRequestContent):
 
     input_text: str
     target_output_tokens: int
+    target_prompt_tokens: Optional[int] = None
 
 
 @dataclass

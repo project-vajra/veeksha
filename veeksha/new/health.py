@@ -1,4 +1,3 @@
-import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Tuple
@@ -6,10 +5,11 @@ from typing import Any, Callable, Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
+from veeksha.logger import init_logger
 from veeksha.new.config.benchmark import BenchmarkConfig
-from veeksha.new.types import TrafficType
+from veeksha.new.types import IntervalGeneratorType, TrafficType
 
-logger = logging.getLogger(__name__)
+logger = init_logger(__name__)
 
 
 @dataclass
@@ -80,12 +80,20 @@ class HealthChecker:
         results = []
 
         # common checks
-        results.append(self.check_inter_session_request_arrival())
+        results.append(self.check_intra_session_request_arrival())
 
         # scheduler-specific checks
         traffic_type = self.config.traffic_scheduler.get_type()
         if traffic_type == TrafficType.CONCURRENT:
             results.append(self.check_session_concurrency())
+        elif traffic_type == TrafficType.RATE:
+            results.append(self.check_session_dispatch_rate())
+
+        # prompt length check
+        results.append(self.check_prompt_length())
+
+        # output length check
+        results.append(self.check_output_length())
 
         return results
 
@@ -116,7 +124,7 @@ class HealthChecker:
         logger.info(f"Health checks completed. Results saved to {output_path}")
         return results
 
-    def check_inter_session_request_arrival(self) -> TestResult:
+    def check_intra_session_request_arrival(self) -> TestResult:
         """
         Verify that requests are dispatched only after their dependencies are met
         plus the specified wait_after_ready time.
@@ -136,7 +144,7 @@ class HealthChecker:
             )
             return TestResult(
                 summary={
-                    "name": "Inter-Session Request Arrival Check",
+                    "name": "Intra-Session Request Arrival Check",
                     "sections": [
                         {
                             "title": "Trace Required",
@@ -224,7 +232,7 @@ class HealthChecker:
             stats = {"Requests w/ Dependencies": "0"}
 
         summary = {
-            "name": "Inter-Session Request Arrival Check",
+            "name": "Intra-Session Request Arrival Check",
             "sections": [
                 {
                     "title": "Description",
@@ -272,13 +280,35 @@ class HealthChecker:
         session_col = self._get_col("session_id")
         dispatched_col = self._get_col("dispatched_at")
 
+        # Get benchmark end time (last request completion)
+        all_ends = self.merged_df[dispatched_col] + self.merged_df["end_to_end_latency"]
+        benchmark_end_time = all_ends.max()
+
         intervals = []
         for session_id, group in self.merged_df.groupby(session_col):
             starts = group[dispatched_col]
             ends = group[dispatched_col] + group["end_to_end_latency"]
 
             s_start = starts.min()
-            s_end = ends.max()
+
+            # Check if all requests in session were dispatched
+            # session_size tells us expected total requests
+            session_size_col = self._get_col("session_size")
+            if session_size_col in group.columns:
+                expected_requests = group[session_size_col].iloc[0]
+                actual_requests = len(group)
+
+                if actual_requests < expected_requests:
+                    # Session is still active (waiting for more requests)
+                    # Consider it active until benchmark end
+                    s_end = benchmark_end_time
+                else:
+                    # All requests dispatched, use last completion time
+                    s_end = ends.max()
+            else:
+                # No session_size info, fall back to request-based measurement
+                s_end = ends.max()
+
             intervals.append((s_start, s_end))
 
         # Sweep line to track concurrency over time
@@ -782,4 +812,373 @@ class HealthChecker:
         summary = {"name": "Session Concurrency Check", "sections": sections}
         return TestResult(summary=summary, passed=passed)
 
-    # TODO: test prompt length, prompt uniqueness
+    def check_session_dispatch_rate(self) -> TestResult:
+        """
+        Verify that the actual session dispatch rate matches the expected arrival rate.
+
+        Calculated as: (N - 1) / (last_start_time - first_start_time)
+        Matches against the configured arrival_rate (for Poisson/Gamma) or 1/interval (for Fixed).
+        """
+        # Determine expected rate
+        scheduler_config = self.config.traffic_scheduler
+        interval_config = scheduler_config.interval_generator  # type: ignore
+        generator_type = interval_config.get_type()
+
+        expected_rate = 0.0
+        if generator_type in [
+            IntervalGeneratorType.POISSON,
+            IntervalGeneratorType.GAMMA,
+        ]:
+            expected_rate = float(interval_config.arrival_rate)
+        elif generator_type == IntervalGeneratorType.FIXED:
+            interval = float(interval_config.interval)
+            expected_rate = 1.0 / interval if interval > 0 else 0.0
+
+        if expected_rate <= 0:
+            return TestResult(
+                summary={
+                    "name": "Session Dispatch Rate Check",
+                    "sections": [
+                        {
+                            "title": "Invalid Configuration",
+                            "results": {
+                                "Status": "Skipped",
+                                "Reason": f"Expected rate <= 0 (type={generator_type.name})",
+                            },
+                        }
+                    ],
+                },
+                passed=True,
+            )
+
+        # Get session start times
+        session_col = self._get_col("session_id")
+        dispatched_col = self._get_col("dispatched_at")
+
+        if self.merged_df.empty:
+            return TestResult(
+                summary={
+                    "name": "Session Dispatch Rate Check",
+                    "sections": [
+                        {"title": "No Data", "results": {"Status": "No sessions found"}}
+                    ],
+                },
+                passed=True,
+            )
+
+        # first request dispatch time for each session (min for multi root sessions)
+        session_starts = self.merged_df.groupby(session_col)[dispatched_col].min()
+        start_times = np.sort(np.array(session_starts.values))
+
+        if len(start_times) < 2:
+            return TestResult(
+                summary={
+                    "name": "Session Dispatch Rate Check",
+                    "sections": [
+                        {
+                            "title": "Insufficient Data",
+                            "results": {
+                                "Status": "Skipped",
+                                "Reason": f"Only {len(start_times)} session(s) found, need at least 2",
+                            },
+                        }
+                    ],
+                },
+                passed=True,
+            )
+
+        duration = start_times[-1] - start_times[0]
+        count = len(start_times) - 1
+        actual_rate = count / duration if duration > 0 else 0.0
+
+        inter_arrival_times = np.diff(start_times)
+        if len(inter_arrival_times) == 0:
+            pass
+
+        error_pct = (
+            abs(actual_rate - expected_rate) / expected_rate * 100.0
+            if expected_rate > 0
+            else 0.0
+        )
+        threshold_pct = 15.0
+
+        passed = error_pct <= threshold_pct
+
+        stats = {
+            "Total Sessions": str(len(start_times)),
+            "Measurement Duration": f"{duration:.4f}s",
+            "Expected Rate": f"{expected_rate:.4f} sessions/sec",
+            "Actual Rate": f"{actual_rate:.4f} sessions/sec",
+            "Error": f"{error_pct:.2f}%",
+            "Threshold": f"{threshold_pct:.1f}%",
+        }
+
+        inter_arrival_stats = {
+            "Min": f"{np.min(inter_arrival_times):.4f}s",
+            "Mean": f"{np.mean(inter_arrival_times):.4f}s",
+            "Median": f"{np.median(inter_arrival_times):.4f}s",
+            "P95": f"{np.percentile(inter_arrival_times, 95):.4f}s",
+            "P99": f"{np.percentile(inter_arrival_times, 99):.4f}s",
+            "Max": f"{np.max(inter_arrival_times):.4f}s",
+            "Std Dev": f"{np.std(inter_arrival_times):.4f}s",
+        }
+
+        summary = {
+            "name": "Session Dispatch Rate Check",
+            "sections": [
+                {
+                    "title": "Rate Statistics",
+                    "results": stats,
+                },
+                {
+                    "title": "Inter-Arrival Time Statistics",
+                    "results": inter_arrival_stats,
+                },
+            ],
+        }
+
+        if not passed:
+            summary["sections"].append(
+                {
+                    "title": "Failure Reason",
+                    "results": {
+                        "Result": "FAILED",
+                        "Explanation": f"Actual rate deviates from expected by > {threshold_pct}%",
+                    },
+                }
+            )
+
+        return TestResult(summary=summary, passed=passed)
+
+    def check_prompt_length(self) -> TestResult:
+        """
+        Verify that the generated prompt length matches the target prompt length.
+        Checks deviation: num_delta_prompt_tokens - target_num_delta_prompt_tokens.
+        """
+        target_col = self._get_col("target_num_delta_prompt_tokens")
+        actual_col_delta = self._get_col("num_delta_prompt_tokens")
+
+        # Fallback to checking num_prompt_tokens if delta not available (legacy)
+        # But user specifically asked for delta. The generators populate "target_prompt_tokens".
+        # Evaluator maps this to "target_num_delta_prompt_tokens".
+        # "num_delta_prompt_tokens" is from channel metrics.
+
+        if (
+            target_col not in self.merged_df.columns
+            or actual_col_delta not in self.merged_df.columns
+        ):
+            return TestResult(
+                summary={
+                    "name": "Prompt Length Check",
+                    "sections": [
+                        {
+                            "title": "Missing Data",
+                            "results": {
+                                "Status": "Skipped",
+                                "Reason": f"Columns '{target_col}' or '{actual_col_delta}' missing.",
+                            },
+                        }
+                    ],
+                },
+                passed=True,
+            )
+
+        # Filter rows where target is present (non-null and > 0)
+        df = self.merged_df.dropna(subset=[target_col, actual_col_delta])
+        if df.empty:
+            return TestResult(
+                summary={
+                    "name": "Prompt Length Check",
+                    "sections": [
+                        {
+                            "title": "No Target Data",
+                            "results": {
+                                "Status": "Skipped",
+                                "Reason": "No requests found with target prompt tokens specified.",
+                            },
+                        }
+                    ],
+                },
+                passed=True,
+            )
+
+        df["prompt_len_diff"] = df[actual_col_delta] - df[target_col]
+        deviations = df["prompt_len_diff"].to_numpy()
+
+        # Relaxed check with threshold
+        threshold = 15.0
+        violations = df[df["prompt_len_diff"].abs() > threshold]
+        violation_count = len(violations)
+        total_count = len(df)
+
+        passed = violation_count == 0
+
+        stats = {
+            "Total Requests Checked": str(total_count),
+            "Exact Matches": f"{len(df[df['prompt_len_diff'] == 0])} ({100.0 * len(df[df['prompt_len_diff'] == 0]) / total_count:.1f}%)",
+            "Mismatches (All)": f"{len(df[df['prompt_len_diff'] != 0])} ({100.0 * len(df[df['prompt_len_diff'] != 0]) / total_count:.1f}%)",
+            "Violations (> +/-15)": f"{violation_count} ({100.0 * violation_count / total_count:.1f}%)",
+        }
+
+        if deviations.size > 0:
+            stats.update(
+                {
+                    "Min Deviation": f"{np.min(deviations):.1f}",
+                    "Mean Deviation": f"{np.mean(deviations):.2f}",
+                    "Median Deviation": f"{np.median(deviations):.1f}",
+                    "P95 Deviation": f"{np.percentile(deviations, 95):.1f}",
+                    "P99 Deviation": f"{np.percentile(deviations, 99):.1f}",
+                    "Max Deviation": f"{np.max(deviations):.1f}",
+                    "Std Dev": f"{np.std(deviations):.2f}",
+                }
+            )
+
+        summary = {
+            "name": "Prompt Length Check",
+            "sections": [
+                {
+                    "title": "Description",
+                    "results": {
+                        "Metric": "Prompt Length Deviation (Actual - Target)",
+                        "Target": "Specified target_prompt_tokens",
+                        "Threshold": f"<= +/- {threshold}",
+                    },
+                },
+                {
+                    "title": "Statistics",
+                    "results": stats,
+                },
+            ],
+        }
+
+        if violation_count > 0:
+            # Add top violations (largest absolute difference)
+            violations = violations.copy()
+            violations["abs_diff"] = violations["prompt_len_diff"].abs()
+            top_violations = violations.nlargest(5, columns=["abs_diff"])
+
+            summary["sections"].append(
+                {
+                    "title": "Top Violations (Largest Absolute Difference)",
+                    "results": {
+                        f"#{i+1}": f"req={row['request_id']}, target={row[target_col]}, actual={row[actual_col_delta]}, diff={row['prompt_len_diff']}"
+                        for i, (_, row) in enumerate(top_violations.iloc[:5].iterrows())
+                    },
+                }
+            )
+
+        return TestResult(summary=summary, passed=passed)
+
+    def check_output_length(self) -> TestResult:
+        """
+        Verify that the generated output length matches the requested output length.
+        Checks deviation: num_output_tokens - num_requested_output_tokens.
+        """
+        target_col = self._get_col("num_requested_output_tokens")
+        actual_col = self._get_col("num_output_tokens")
+
+        if (
+            target_col not in self.merged_df.columns
+            or actual_col not in self.merged_df.columns
+        ):
+            return TestResult(
+                summary={
+                    "name": "Output Length Check",
+                    "sections": [
+                        {
+                            "title": "Missing Data",
+                            "results": {
+                                "Status": "Skipped",
+                                "Reason": f"Columns '{target_col}' or '{actual_col}' missing.",
+                            },
+                        }
+                    ],
+                },
+                passed=True,
+            )
+
+        # Filter rows where target is present (non-null and > 0)
+        df = self.merged_df.dropna(subset=[target_col, actual_col])
+        if df.empty:
+            return TestResult(
+                summary={
+                    "name": "Output Length Check",
+                    "sections": [
+                        {
+                            "title": "No Data",
+                            "results": {
+                                "Status": "Skipped",
+                                "Reason": "No requests found with requested output tokens specified.",
+                            },
+                        }
+                    ],
+                },
+                passed=True,
+            )
+
+        df["output_len_diff"] = df[actual_col] - df[target_col]
+        deviations = df["output_len_diff"].to_numpy()
+
+        # Relaxed check with threshold
+        threshold = 15.0  # Allow some deviation
+        violations = df[df["output_len_diff"].abs() > threshold]
+        violation_count = len(violations)
+        total_count = len(df)
+
+        passed = violation_count == 0
+
+        stats = {
+            "Total Requests Checked": str(total_count),
+            "Exact Matches": f"{len(df[df['output_len_diff'] == 0])} ({100.0 * len(df[df['output_len_diff'] == 0]) / total_count:.1f}%)",
+            "Mismatches (All)": f"{len(df[df['output_len_diff'] != 0])} ({100.0 * len(df[df['output_len_diff'] != 0]) / total_count:.1f}%)",
+            "Violations (> +/-15)": f"{violation_count} ({100.0 * violation_count / total_count:.1f}%)",
+        }
+
+        if deviations.size > 0:
+            stats.update(
+                {
+                    "Min Deviation": f"{np.min(deviations):.1f}",
+                    "Mean Deviation": f"{np.mean(deviations):.2f}",
+                    "Median Deviation": f"{np.median(deviations):.1f}",
+                    "P95 Deviation": f"{np.percentile(deviations, 95):.1f}",
+                    "P99 Deviation": f"{np.percentile(deviations, 99):.1f}",
+                    "Max Deviation": f"{np.max(deviations):.1f}",
+                    "Std Dev": f"{np.std(deviations):.2f}",
+                }
+            )
+
+        summary = {
+            "name": "Output Length Check",
+            "sections": [
+                {
+                    "title": "Description",
+                    "results": {
+                        "Metric": "Output Length Deviation (Actual - Requested)",
+                        "Target": "num_requested_output_tokens",
+                        "Threshold": f"<= +/- {threshold}",
+                    },
+                },
+                {
+                    "title": "Statistics",
+                    "results": stats,
+                },
+            ],
+        }
+
+        if violation_count > 0:
+            # Add top violations (largest absolute difference)
+            violations = violations.copy()
+            violations["abs_diff"] = violations["output_len_diff"].abs()
+            top_violations = violations.nlargest(5, columns=["abs_diff"])
+
+            summary["sections"].append(
+                {
+                    "title": "Top Violations (Largest Absolute Difference)",
+                    "results": {
+                        f"#{i+1}": f"req={row['request_id']}, target={row[target_col]}, actual={row[actual_col]}, diff={row['output_len_diff']}"
+                        for i, (_, row) in enumerate(top_violations.iloc[:5].iterrows())
+                    },
+                }
+            )
+
+        return TestResult(summary=summary, passed=passed)

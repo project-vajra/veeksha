@@ -24,6 +24,13 @@ class LengthGeneratorType(BaseIntEnum):
 class SessionGeneratorType(BaseIntEnum):
     SYNTHETIC = 1
     LMEVAL = 2
+    TRACE = 3
+
+
+class TraceFlavorType(BaseIntEnum):
+    CLAUDE_CODE = 1
+    MOONCAKE_CONV = 2
+    RAG = 3
 
 
 class ChannelModality(BaseIntEnum):

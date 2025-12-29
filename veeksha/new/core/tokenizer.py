@@ -35,11 +35,21 @@ class TokenizerHandle(Generic[RawContent]):
 class TokenizerProvider:
     """Lightweight provider that returns a tokenizer handle per modality."""
 
-    def __init__(self, tokenizers: Dict[ChannelModality, TokenizerHandle[Any]]):
+    def __init__(
+        self,
+        tokenizers: Dict[ChannelModality, TokenizerHandle[Any]],
+        model_name: Optional[str] = None,
+    ):
         self._tokenizers = tokenizers
+        self._model_name = model_name
 
     def for_modality(self, modality: ChannelModality) -> TokenizerHandle[Any]:
         return self._tokenizers[modality]
+
+    @property
+    def model_name(self) -> Optional[str]:
+        """Return the model name for loading raw tokenizers."""
+        return self._model_name
 
 
 def build_hf_tokenizer_handle(tokenizer) -> TokenizerHandle[str]:

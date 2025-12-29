@@ -23,3 +23,10 @@ SessionGeneratorRegistry.register(
         "LMEvalSessionGenerator",
     ),
 )
+SessionGeneratorRegistry.register(
+    SessionGeneratorType.TRACE,
+    _LazyLoader(
+        "veeksha.new.generator.session.trace",
+        "TraceSessionGenerator",
+    ),
+)
