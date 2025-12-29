@@ -2,11 +2,14 @@ import os
 import threading
 import time
 from queue import Queue
-from typing import Any, List
-
-from tqdm import tqdm
+from typing import Any, List, Optional, Set
 
 from veeksha.logger import init_logger
+from veeksha.new.benchmark_utils import (
+    _init_output_dir,
+    _monitor_for_completion,
+    maybe_run_warmup,
+)
 from veeksha.new.client.registry import ClientRegistry
 from veeksha.new.config.benchmark import BenchmarkConfig
 from veeksha.new.core.seeding import SeedManager
@@ -28,147 +31,6 @@ from veeksha.new.workers.prefetch import SharedSessionCounter
 logger = init_logger(__name__)
 
 
-def maybe_run_warmup(session_generator, client):
-    """Maybe run warmup sessions synchronously before benchmark.
-
-    Args:
-        session_generator: SessionGenerator instance with or without get_warmup_sessions method.
-        client: Client instance with async send_request method.
-    """
-
-    import asyncio
-
-    async def warmup_one(session):
-        """Execute first request of a warmup session."""
-        first_request = list(session.requests.values())[0]
-        await client.send_request(first_request, session.id, 1)
-
-    async def run_all(warmup_sessions):
-        for session in tqdm(warmup_sessions, desc="Warmup", unit="sess"):
-            await warmup_one(session)
-
-    if hasattr(session_generator, "get_warmup_sessions"):
-        warmup_sessions = session_generator.get_warmup_sessions()
-        if warmup_sessions:
-            logger.info(f"Running warmup with {len(warmup_sessions)} sessions")
-            asyncio.run(run_all(warmup_sessions))
-            logger.info("Warmup completed")
-
-
-def _init_pbar(max_sessions: int, benchmark_timeout: float):
-    """Initialize progress bar based on benchmark mode.
-
-    Returns:
-        Tuple of (pbar, time_based_progress)
-    """
-    if max_sessions > 0:
-        # Session-based progress
-        pbar = tqdm(
-            total=max_sessions,
-            desc="Sessions",
-            unit="sess",
-            dynamic_ncols=True,
-            bar_format="{desc}: {n}/{total} [{percentage:3.0f}%] | {rate_fmt} | Elapsed: {elapsed}",
-        )
-        return pbar, False
-    else:
-        # Time-based progress
-        pbar = tqdm(
-            total=int(benchmark_timeout),
-            desc="Benchmark",
-            unit="s",
-            dynamic_ncols=True,
-            bar_format="{desc}: {elapsed}/{total}s [{percentage:3.0f}%] | Sessions: {postfix}",
-        )
-        pbar.set_postfix_str("0")
-        return pbar, True
-
-
-def _update_pbar(
-    pbar, time_based_progress: bool, elapsed: float, total_done: int, state: dict
-):
-    """Update progress bar with current state.
-
-    Args:
-        pbar: tqdm progress bar instance
-        time_based_progress: True if using time-based mode
-        elapsed: Elapsed time in seconds
-        total_done: Total completed + errored sessions
-        state: Dict with 'last_completed' and 'last_time_update' keys (mutated in place)
-    """
-    if time_based_progress:
-        elapsed_int = int(elapsed)
-        if elapsed_int > state["last_time_update"]:
-            pbar.update(elapsed_int - state["last_time_update"])
-            state["last_time_update"] = elapsed_int
-        if total_done > state["last_completed"]:
-            pbar.set_postfix_str(str(total_done))
-            state["last_completed"] = total_done
-    else:
-        if total_done > state["last_completed"]:
-            pbar.update(total_done - state["last_completed"])
-            state["last_completed"] = total_done
-
-
-def _monitor_for_completion(
-    traffic_scheduler,
-    evaluator,
-    pool_manager,
-    benchmark_start,
-    benchmark_timeout,
-    timeout_triggered,
-    pre_timeout_request_ids,
-    max_sessions,
-):
-    pbar, time_based_progress = _init_pbar(max_sessions, benchmark_timeout)
-    pbar_state = {"last_completed": 0, "last_time_update": 0}
-
-    try:
-        while True:
-            time.sleep(0.1)
-
-            completed, errored, _ = evaluator.get_session_counts()
-            total_done = completed + errored
-            elapsed = time.monotonic() - benchmark_start
-
-            _update_pbar(pbar, time_based_progress, elapsed, total_done, pbar_state)
-
-            # check timeout if not already triggered
-            if (
-                not timeout_triggered
-                and benchmark_timeout > 0
-                and elapsed >= benchmark_timeout
-            ):
-                timeout_triggered = True
-                pre_timeout_request_ids = evaluator.get_registered_request_ids()
-                in_flight = traffic_scheduler.get_in_flight_request_ids()
-                # only care about pre-timeout requests that are still in-flight
-                pending = pre_timeout_request_ids & in_flight
-                logger.info(
-                    f"Benchmark timeout after {elapsed:.1f}s. "
-                    f"Captured {len(pre_timeout_request_ids)} registered requests, "
-                    f"{len(pending)} still in-flight."
-                )
-
-            # check if all prefetch workers have finished
-            prefetch_threads = pool_manager.thread_pools.get("prefetch", [])
-            all_prefetch_done = all(not t.is_alive() for t in prefetch_threads)
-
-            if timeout_triggered:
-                # wait for pre-timeout requests to complete
-                current_in_flight = traffic_scheduler.get_in_flight_request_ids()
-                remaining = pre_timeout_request_ids & current_in_flight
-                if not remaining:
-                    logger.info("All pre-timeout requests completed")
-                    evaluator.set_included_requests(pre_timeout_request_ids)
-                    break
-            elif all_prefetch_done and not traffic_scheduler.has_pending_work():
-                logger.info("All sessions completed")
-                break
-    finally:
-        pbar.close()
-
-
 def run_main_loop(
     session_generator,
     traffic_scheduler,
@@ -176,24 +38,13 @@ def run_main_loop(
     client,
     runtime_config,
     trace_recorder=None,
-    benchmark_start_time=None,
-):
-    """Run the main benchmark loop with all workers.
-
-    Args:
-        session_generator: Session generator to produce sessions
-        traffic_scheduler: Traffic scheduler to manage dispatch timing
-        evaluator: Evaluator to collect metrics
-        client: LLM client for request execution
-        runtime_config: Runtime configuration with thread counts
-        trace_recorder: Optional trace recorder
-        benchmark_start_time: Start time of the benchmark
-    """
+    benchmark_start_time: Optional[float] = None,
+) -> None:
+    """Run the main benchmark loop with all workers."""
     logger.info("Starting main loop")
     if benchmark_start_time is None:
         benchmark_start_time = time.monotonic()
 
-    # Create queues
     client_queues = [Queue() for _ in range(runtime_config.num_client_threads)]
     output_queue = Queue()
     stop_event = threading.Event()
@@ -208,10 +59,8 @@ def run_main_loop(
         stop_event=stop_event,
     )
 
-    # Create thread pool manager
     pool_manager = ThreadPoolManager(stop_event=stop_event)
 
-    # Create worker pools
     pool_manager.create_pool(
         name="prefetch",
         worker_class=PrefetchWorker,
@@ -221,7 +70,7 @@ def run_main_loop(
             "generator_lock": generator_lock,
             "session_counter": session_counter,
         },
-        pool_size=1,  # generation is sequential because from trace needs ordering
+        pool_size=1,
     )
 
     pool_manager.create_pool(
@@ -250,7 +99,6 @@ def run_main_loop(
     if trace_recorder:
         trace_recorder.start()
 
-    # Start all threads
     client_runner.start()
     pool_manager.start_all()
 
@@ -262,7 +110,7 @@ def run_main_loop(
     benchmark_start = benchmark_start_time
     benchmark_timeout = runtime_config.benchmark_timeout
     timeout_triggered = False
-    pre_timeout_request_ids: set = set()
+    pre_timeout_request_ids: Set[str] = set()
 
     try:
         _monitor_for_completion(
@@ -275,11 +123,9 @@ def run_main_loop(
             pre_timeout_request_ids,
             max_sessions=runtime_config.max_sessions,
         )
-
     except KeyboardInterrupt:
         logger.info("Interrupted, stopping")
 
-    # Signal stop and join
     stop_event.set()
     pool_manager.join_pool("prefetch", timeout=1.0)
     pool_manager.join_pool("dispatch", timeout=1.0)
@@ -287,11 +133,9 @@ def run_main_loop(
     if trace_recorder:
         trace_recorder.stop()
 
-    # Stop client runner
     client_runner.stop()
     client_runner.wait()
 
-    # Send sentinels to completion workers and join
     for _ in range(runtime_config.num_completion_threads):
         output_queue.put(None)
     pool_manager.join_pool("completion", timeout=1.0)
@@ -311,6 +155,7 @@ def run_benchmark(
         EvaluationResult from the evaluator.
     """
     logger.info("Running benchmark with config:\n%s", benchmark_config)
+    _init_output_dir(benchmark_config)
 
     seed_manager = SeedManager(benchmark_config.seed)
 
