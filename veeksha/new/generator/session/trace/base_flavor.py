@@ -1,5 +1,6 @@
 """Base class for trace flavor generators."""
 
+import os
 from abc import abstractmethod
 from typing import Iterator, List, Optional
 
@@ -46,6 +47,7 @@ class TraceFlavorGeneratorBase:
         self.tokenizer_provider = tokenizer_provider
         self.tokenizer = tokenizer_provider.for_modality(ChannelModality.TEXT)
 
+        self._validate_trace_exists(config.trace_file)
         self.trace_df = pd.read_json(config.trace_file, lines=True)
         self._validate_trace()
 
@@ -73,6 +75,11 @@ class TraceFlavorGeneratorBase:
     def get_warmup_sessions(self) -> List[Session]:
         """Return warmup sessions. Default empty, override for RAG."""
         return []
+
+    def _validate_trace_exists(self, trace_file: str):
+        """Validate that trace file exists."""
+        if not os.path.exists(trace_file):
+            raise FileNotFoundError(f"Trace file not found: {trace_file}")
 
     def _validate_trace(self):
         """Validate that required columns exist in trace."""

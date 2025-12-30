@@ -1,20 +1,20 @@
 seed: 42
 
 traffic_scheduler:
-  type: rate
-  interval_generator:
-    type: poisson
-    arrival_rate: 0.5
-  # type: concurrent
-  # target_concurrent_sessions: 100
-  # rampup_seconds: 10
+  type: concurrent
+  target_concurrent_sessions: 32
+  rampup_seconds: 32
+  # type: rate
+  # interval_generator:
+  #   type: poisson
+  #   arrival_rate: 0.5
 
 session_generator:
   type: trace
-  trace_file: traces/mooncake/mooncake_conversation_trace-processed.jsonl
+  trace_file: traces/loogle/loogle_trace-wikipedia.jsonl
   flavor:
-    type: claude_code
-
+    type: rag
+    num_documents: 32
 
 client:
   type: openai_chat
@@ -26,13 +26,13 @@ client:
 
 runtime:
   max_sessions: -1
-  benchmark_timeout: 60
+  benchmark_timeout: 300
   num_dispatcher_threads: 5
   num_completion_threads: 5
   num_client_threads: 5
 
 trace_recorder:
   enabled: True
-  include_content: True
+  include_content: False
 
-output_dir: benchmark_outputs/trace_test
+output_dir: benchmark_outputs/loogle
