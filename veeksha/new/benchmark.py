@@ -140,8 +140,6 @@ def run_main_loop(
         output_queue.put(None)
     pool_manager.join_pool("completion", timeout=1.0)
 
-    logger.info("Main loop completed")
-
 
 def run_benchmark(
     benchmark_config: BenchmarkConfig,
@@ -212,6 +210,7 @@ def run_benchmark(
     maybe_run_warmup(session_generator, client)
 
     benchmark_start_time = time.monotonic()
+    traffic_scheduler.reset_reference_time()
 
     # get evaluator
     evaluator = EvaluatorRegistry.get(
@@ -251,6 +250,7 @@ def run_benchmark(
         if trace_recorder:
             trace_recorder.stop()
 
+    logger.info("Finalizing evaluator...")
     # finalize and save results
     result = evaluator.finalize()
 

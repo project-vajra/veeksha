@@ -1,13 +1,11 @@
 seed: 42
 
 traffic_scheduler:
-  type: concurrent
-  target_concurrent_sessions: 100
-  rampup_seconds: 10 # reach 100 concurrent sessions in 10 seconds
-  # interval_generator:
-  #   type: fixed
-  #   interval: 1
-  # cancel_session_on_failure: False
+  type: rate
+  interval_generator:
+    type: poisson
+    arrival_rate: 10
+  cancel_session_on_failure: False
 
 session_generator:
   type: synthetic
@@ -35,7 +33,7 @@ session_generator:
 client:
   type: openai_chat
   model: meta-llama/Meta-Llama-3-8B-Instruct
-  request_timeout: 120
+  request_timeout: 60
   api_base: http://localhost:30002/v1
   max_tokens_param: max_completion_tokens
   min_tokens_param: min_tokens

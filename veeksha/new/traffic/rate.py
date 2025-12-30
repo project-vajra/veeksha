@@ -207,6 +207,11 @@ class RateTrafficScheduler(BaseTrafficScheduler):
         with self._condition:
             return set(self._request_to_session.keys())
 
+    def reset_reference_time(self) -> None:
+        """Align the scheduler's clock with the current monotonic time."""
+        with self._condition:
+            self._start_monotonic = time.monotonic()
+
     def _record_history(
         self,
         state: ScheduledSessionState,

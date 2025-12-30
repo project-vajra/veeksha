@@ -79,3 +79,7 @@ class BaseTrafficScheduler:
     def get_in_flight_request_ids(self) -> Set[int]:
         """Return the set of request IDs currently in-flight."""
         raise NotImplementedError
+
+    def reset_reference_time(self) -> None:
+        """Optional hook invoked before the benchmark starts dispatching."""
+        return

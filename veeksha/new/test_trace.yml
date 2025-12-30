@@ -1,13 +1,10 @@
 seed: 42
 
 traffic_scheduler:
-  type: concurrent
-  target_concurrent_sessions: 32
-  rampup_seconds: 32
-  # type: rate
-  # interval_generator:
-  #   type: poisson
-  #   arrival_rate: 0.5
+  type: rate
+  interval_generator:
+    type: fixed
+    interval: 0.1
 
 session_generator:
   type: trace
@@ -26,7 +23,7 @@ client:
 
 runtime:
   max_sessions: -1
-  benchmark_timeout: 300
+  benchmark_timeout: 60
   num_dispatcher_threads: 5
   num_completion_threads: 5
   num_client_threads: 5
