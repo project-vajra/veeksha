@@ -42,7 +42,7 @@ class PrefetchWorker:
     """
 
     # unthrottled for first 3 seconds, then throttles
-    _BURST_DURATION_S = 3.0
+    _BURST_DURATION_S = 5.0
     _MAX_POLL_INTERVAL_S = 0.05
 
     def __init__(

@@ -1,10 +1,11 @@
 """Context-Cached trace flavor generator."""
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
-import pandas as pd
+import pandas as pd  # type: ignore[import]
 
+from veeksha.logger import init_logger
 from veeksha.new.config.generator.session import (
     ClaudeCodeTraceFlavorConfig,
     TraceSessionGeneratorConfig,
@@ -15,13 +16,14 @@ from veeksha.new.core.tokenizer import TokenizerProvider
 from veeksha.new.generator.session.trace.base_flavor import TraceFlavorGeneratorBase
 from veeksha.new.generator.session.trace.prompt_builder import TracePromptBuilder
 
+logger = init_logger(__name__)
+
 
 class ClaudeCodeTraceFlavorGenerator(TraceFlavorGeneratorBase):
-    """Context-Cached trace flavor generator.
+    """ClaudeCode trace flavor generator."""
 
-    Generates unique prefix tokens per session to enable KV-cache sharing.
-    Sessions share a common prefix but have unique suffixes.
-    """
+    _PROMPT_COL = "_cc_prompt_text"
+    _SEED_COL = "_cc_session_seed"
 
     def __init__(
         self,
@@ -43,6 +45,9 @@ class ClaudeCodeTraceFlavorGenerator(TraceFlavorGeneratorBase):
         self._session_seed_rng = seed_manager.random("cc_session_seeds")
         self._wrap_rng = seed_manager.random("cc_wrapping")
 
+        logger.info("Materializing prompts for ClaudeCode trace...")
+        self.trace_df = self._materialize_prompts(self.trace_df)
+
     @property
     def required_columns(self) -> List[str]:
         return [
@@ -57,18 +62,13 @@ class ClaudeCodeTraceFlavorGenerator(TraceFlavorGeneratorBase):
         requests = {}
         wait_times: List[float] = []
 
-        # unique seed for this session's prefix
-        session_seed = self._session_seed_rng.getrandbits(32)
-
         for i, (_, row) in enumerate(group.iterrows()):
-            input_length = int(row["input_length"])
+            prompt_tokens = int(row["new_input_length"])
             output_length = int(row["output_length"])
 
-            prompt_text = self.prompt_builder.generate_unique_prompt(
-                num_tokens=input_length,
-                page_size=self.flavor_config.page_size,
-                seed=session_seed,
-            )
+            prompt_text = row.get(self._PROMPT_COL)
+            if prompt_text is None:
+                raise ValueError("Prompt cache missing for ClaudeCode trace row.")
 
             wait_time_val = row.get("wait_after_previous_response_s")
             if wait_time_val is None or pd.isna(wait_time_val):
@@ -83,7 +83,7 @@ class ClaudeCodeTraceFlavorGenerator(TraceFlavorGeneratorBase):
                 target_output_tokens=output_length,
                 wait_after_ready=wait_time,
                 parent_node=i - 1 if i > 0 else None,
-                target_prompt_tokens=input_length,
+                target_prompt_tokens=prompt_tokens,
             )
             requests[i] = request
 
@@ -99,4 +99,66 @@ class ClaudeCodeTraceFlavorGenerator(TraceFlavorGeneratorBase):
         """Wrap trace for new epoch with new session seeds."""
         df = self.trace_df.copy()
         df["session_id"] = df["session_id"] + df["session_id"].max() + 1
-        return self._shuffle_sessions(df)
+        df = self._shuffle_sessions(df)
+        return self._materialize_prompts(df, first_turn_only=True)
+
+    def _materialize_prompts(
+        self, df: pd.DataFrame, *, first_turn_only: bool = False
+    ) -> pd.DataFrame:
+        """Generate prompts, optionally only for the first turn of each session."""
+
+        if first_turn_only:
+            df = df.copy()
+        else:
+            df = df.drop(
+                columns=[self._PROMPT_COL, self._SEED_COL], errors="ignore"
+            ).copy()
+
+        if self._SEED_COL not in df.columns:
+            df[self._SEED_COL] = None
+        if self._PROMPT_COL not in df.columns:
+            df[self._PROMPT_COL] = None
+
+        mask = self._get_first_turn_mask(df)
+
+        generated = 0
+        session_seeds: dict[int, int] = {}
+        for idx, row in df.iterrows():
+            if first_turn_only and not mask.loc[idx]:
+                continue
+
+            session_id = int(row["session_id"])
+            prompt_tokens = int(row["new_input_length"])
+            seed: Optional[int] = session_seeds.get(session_id)
+            if seed is None or (first_turn_only and mask.loc[idx]):
+                existing = row[self._SEED_COL]
+                if not first_turn_only and existing is not None:
+                    seed = int(existing)
+                else:
+                    seed = self._session_seed_rng.getrandbits(32)
+                session_seeds[session_id] = seed
+
+            df.at[idx, self._SEED_COL] = seed
+
+            prompt = self.prompt_builder.generate_unique_prompt(
+                num_tokens=prompt_tokens,
+                page_size=self.flavor_config.page_size,
+                seed=seed,
+            )
+            df.at[idx, self._PROMPT_COL] = prompt
+            generated += 1
+
+        return df
+
+    @staticmethod
+    def _get_first_turn_mask(df: pd.DataFrame) -> pd.Series:
+        """Return boolean mask indicating the first request of each session."""
+        if "turn_idx" in df.columns:
+            first_turns = df.groupby("session_id")["turn_idx"].transform("min")
+            return df["turn_idx"] == first_turns
+
+        ordered = df.reset_index()
+        first_flags = ordered.groupby("session_id").cumcount() == 0
+        mask = pd.Series(False, index=df.index)
+        mask.loc[ordered["index"]] = first_flags.values
+        return mask

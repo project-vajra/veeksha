@@ -423,8 +423,6 @@ class PerformanceEvaluator(BaseEvaluator):
         for channel, evaluator in self._channel_evaluators.items():
             evaluator.save(output_dir)
 
-        logger.info(f"Performance evaluation artifacts saved to {output_dir}")
-
     def get_streaming_metrics(self) -> Optional[Dict[str, Any]]:
         """Return current metrics for streaming updates."""
         with self.lock:

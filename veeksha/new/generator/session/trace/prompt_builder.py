@@ -55,6 +55,7 @@ class TracePromptBuilder:
                 "Tokenizer handle must support get_vocab for TracePromptBuilder"
             )
         self._sorted_vocab = tokenizer.get_vocab()
+        self._sorted_vocab = tokenizer.get_vocab()
 
         # Pre-tokenize corpus if provided
         self.pretokenized_lines: List[List[int]] = []

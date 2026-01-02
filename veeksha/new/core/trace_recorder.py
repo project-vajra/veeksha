@@ -64,7 +64,6 @@ class TraceRecorder:
         self._stop_event.set()
         self._writer_thread.join(timeout=5.0)
         self._writer_thread = None
-        logger.info("Trace recorder stopped")
 
     def record_dispatch(
         self,

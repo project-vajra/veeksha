@@ -111,19 +111,12 @@ class MooncakeConvTraceFlavorGenerator(TraceFlavorGeneratorBase):
                 # first request uses hash_ids for deterministic sharing
                 hash_ids_list: List[int] = list(row["hash_ids"])
 
-                # Mooncake trace's hash id 0 is 320 tokens, others 511 (R^2 with input size = 0.9998)
-                special_sizes = {0: 320}
-                default_size = 511
-
                 prompt_text = self.prompt_builder.build_from_hash_ids(
                     hash_ids=hash_ids_list,
-                    block_size=default_size,
-                    special_block_sizes=special_sizes,
+                    block_size=self.flavor_config.block_size,
                 )
 
-                calculated_len = sum(
-                    special_sizes.get(hid, default_size) for hid in hash_ids_list
-                )
+                calculated_len = self.flavor_config.block_size * len(hash_ids_list)
 
             else:
                 # subsequent requests: random generation from corpus

@@ -2,6 +2,7 @@
 
 import asyncio
 import threading
+import time
 from queue import Empty, Queue
 from typing import List
 
@@ -73,7 +74,9 @@ class ClientWorker:
 
     async def _process_request(self, item) -> None:
         """Process a single request item."""
-        request, session_id, session_size, dispatched_at = item
+        request, session_id, session_size = item
+
+        send_started_at: float = time.monotonic()
 
         try:
             result = await self.client.send_request(
@@ -85,12 +88,11 @@ class ClientWorker:
             logger.exception(
                 f"Client worker {self.worker_id}: Client raised unhandled exception"
             )
-            import time
 
             result = RequestResult(
                 request_id=request.id,
                 session_id=session_id,
-                dispatched_at=dispatched_at,
+                dispatched_at=send_started_at,
                 completed_at=time.monotonic(),
                 session_total_requests=session_size,
                 channels={},
@@ -100,7 +102,7 @@ class ClientWorker:
             )
 
         if not result.dispatched_at:
-            result.dispatched_at = dispatched_at
+            result.dispatched_at = send_started_at
 
         self.output_queue.put(result)
 

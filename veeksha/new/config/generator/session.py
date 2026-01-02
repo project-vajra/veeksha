@@ -83,6 +83,12 @@ class MooncakeConvTraceFlavorConfig(BaseTraceFlavorConfig):
         default="traces/corpus.txt",
         metadata={"help": "Path to corpus file for prompt padding"},
     )
+    block_size: int = field(
+        default=512,
+        metadata={
+            "help": "Number of tokens per hash id block. Only used for hash ids of first-in-session requests."
+        },
+    )
 
     @classmethod
     def get_type(cls):
