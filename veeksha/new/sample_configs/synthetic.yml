@@ -14,17 +14,19 @@ session_generator:
     num_request_generator:
       type: uniform
       min: 2
-      max: 10
+      max: 4
     request_wait_generator:
       type: poisson
       arrival_rate: 5
     inherit_history: True
   channels:
     - type: text
+      shared_prefix_ratio: 0.2
+      shared_prefix_probability: 0.5 # 50% of root requests have 20% shared prefix
       body_length_generator:
         type: uniform
         min: 20
-        max: 300
+        max: 30
       output_length_generator:
         type: uniform
         min: 100
@@ -41,7 +43,7 @@ client:
 
 runtime:
   max_sessions: -1
-  benchmark_timeout: 10
+  benchmark_timeout: 60
 
 trace_recorder:
   enabled: True

@@ -11,5 +11,5 @@ class BaseChannelGenerator:
         self.seed_manager = seed_manager
 
     @abstractmethod
-    def generate_content(self) -> Any:
+    def generate_content(self, is_root: bool = False) -> Any:
         pass

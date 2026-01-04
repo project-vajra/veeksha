@@ -51,6 +51,10 @@ def get_node_ids(graph: SessionGraph) -> List[int]:
     return list(graph.nodes.keys())
 
 
+def is_root(graph: SessionGraph, node_id: int) -> bool:
+    return len(parents(graph, node_id)) == 0
+
+
 def ready_at(
     graph: SessionGraph, node_id: int, completions: Dict[int, float]
 ) -> Optional[float]:

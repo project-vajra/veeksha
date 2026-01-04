@@ -2,7 +2,7 @@ from veeksha.new.config.generator.session import SyntheticSessionGeneratorConfig
 from veeksha.new.core.request import Request
 from veeksha.new.core.seeding import SeedManager
 from veeksha.new.core.session import Session
-from veeksha.new.core.session_graph import get_node_ids, parents
+from veeksha.new.core.session_graph import get_node_ids, is_root, parents
 from veeksha.new.core.tokenizer import TokenizerProvider
 from veeksha.new.generator.channel.registry import ChannelGeneratorRegistry
 from veeksha.new.generator.session.base import BaseSessionGenerator
@@ -59,8 +59,10 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
             # get content
             channels = {}
             for channel_type, channel in self.channels.items():
-                channels[channel_type] = channel.generate_content()
-            # populate session context
+                channels[channel_type] = channel.generate_content(
+                    is_root=is_root(session_graph, node_id)
+                )
+
             incoming_edges = parents(session_graph, node_id)
             history_parents = [e for e in incoming_edges if e.is_history_parent]
             session_context = {

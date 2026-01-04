@@ -24,6 +24,18 @@ class TextChannelGeneratorConfig(BaseChannelGeneratorConfig):
     output_length_generator: BaseLengthGeneratorConfig = field(
         default_factory=UniformLengthGeneratorConfig
     )
+    shared_prefix_ratio: float = field(
+        default=0.0,
+        metadata={
+            "help": "Fraction of prompt tokens to use as shared prefix for root requests (0.0-1.0)"
+        },
+    )
+    shared_prefix_probability: float = field(
+        default=1.0,
+        metadata={
+            "help": "Probability that a root request uses shared prefix (0.0-1.0)"
+        },
+    )
 
     @classmethod
     def get_type(cls):
