@@ -1,13 +1,11 @@
-from veeksha.new.benchmark import run_benchmark
+from veeksha.new.benchmark import manage_benchmark_run
 from veeksha.new.config.benchmark import BenchmarkConfig
 
 
 def main():
-    # instantiate benchmark configuration from CLI
-    # run benchmark
     benchmark_configs = BenchmarkConfig.create_from_cli_args()
     for benchmark_config in benchmark_configs:
-        run_benchmark(benchmark_config)
+        manage_benchmark_run(benchmark_config)
 
 
 if __name__ == "__main__":

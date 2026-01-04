@@ -1,5 +1,12 @@
 seed: 42
 
+server:
+  type: sglang
+  env_path: sglang_env
+  model: meta-llama/Llama-3.2-1B-Instruct
+  host: localhost
+  port: 30003
+
 traffic_scheduler:
   type: rate
   interval_generator:
@@ -34,9 +41,7 @@ session_generator:
 
 client:
   type: openai_chat
-  model: meta-llama/Llama-3.2-1B-Instruct
   request_timeout: 60
-  api_base: http://localhost:30002/v1
   max_tokens_param: max_completion_tokens
   min_tokens_param: min_tokens
   use_min_tokens_prompt_fallback: False

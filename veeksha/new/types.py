@@ -53,3 +53,10 @@ class EvaluationType(BaseIntEnum):
 # ----- Client -----
 class ClientType(BaseIntEnum):
     OPENAI_CHAT = 1
+
+
+# ----- Server -----
+class ServerType(BaseIntEnum):
+    VLLM = 1
+    VAJRA = 2
+    SGLANG = 3

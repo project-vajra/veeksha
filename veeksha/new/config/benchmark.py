@@ -1,8 +1,7 @@
 from dataclasses import field
+from typing import Optional
 
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
-
-# from veeksha.new.config.server import ServerConfig
 from veeksha.new.config.client import BaseClientConfig, OpenAIChatClientConfig
 from veeksha.new.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.new.config.evaluator import (
@@ -14,6 +13,7 @@ from veeksha.new.config.generator.session import (
     SyntheticSessionGeneratorConfig,
 )
 from veeksha.new.config.runtime import RuntimeConfig
+from veeksha.new.config.server import BaseServerConfig
 from veeksha.new.config.trace_recorder import TraceRecorderConfig
 from veeksha.new.config.traffic import BaseTrafficConfig, RateTrafficConfig
 
@@ -56,7 +56,12 @@ class BenchmarkConfig:
             "help": "Trace recorder configuration. Records dispatched requests (unlike the evaluator, which records them after completion)."
         },
     )
-    # server: ServerConfig = field(default_factory=ServerConfig)
+    server: Optional[BaseServerConfig] = field(
+        default=None,
+        metadata={
+            "help": "Server configuration for managed servers. If set, client.model, client.api_key and client.api_base will be overwritten."
+        },
+    )
 
     @classmethod
     def create_from_cli_args(cls):

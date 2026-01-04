@@ -1,8 +1,9 @@
 import os
 import threading
 import time
+from dataclasses import replace
 from queue import Queue
-from typing import Any, List, Optional, Set
+from typing import Optional, Set
 
 from veeksha.logger import init_logger
 from veeksha.new.benchmark_utils import (
@@ -22,6 +23,7 @@ from veeksha.new.core.trace_recorder import TraceRecorder
 from veeksha.new.evaluator.registry import EvaluatorRegistry
 from veeksha.new.generator.session.registry import SessionGeneratorRegistry
 from veeksha.new.health import HealthChecker
+from veeksha.new.orchestration import managed_server
 from veeksha.new.traffic.registry import TrafficSchedulerRegistry
 from veeksha.new.types import ChannelModality
 from veeksha.new.workers import CompletionWorker, DispatchWorker, PrefetchWorker
@@ -31,7 +33,7 @@ from veeksha.new.workers.prefetch import SharedSessionCounter
 logger = init_logger(__name__)
 
 
-def run_main_loop(
+def _run_main_loop(
     session_generator,
     traffic_scheduler,
     evaluator,
@@ -145,7 +147,7 @@ def run_main_loop(
     pool_manager.join_pool("completion", timeout=1.0)
 
 
-def run_benchmark(
+def _run_benchmark(
     benchmark_config: BenchmarkConfig,
 ):
     """Run the benchmark and return evaluation results.
@@ -156,8 +158,6 @@ def run_benchmark(
     Returns:
         EvaluationResult from the evaluator.
     """
-    logger.info("Running benchmark with config:\n%s", benchmark_config)
-    _init_output_dir(benchmark_config)
 
     seed_manager = SeedManager(benchmark_config.seed)
 
@@ -239,9 +239,8 @@ def run_benchmark(
 
     os.makedirs(f"{benchmark_config.output_dir}/metrics", exist_ok=True)
 
-    # run the benchmark
     try:
-        run_main_loop(
+        _run_main_loop(
             session_generator=session_generator,
             traffic_scheduler=traffic_scheduler,
             evaluator=evaluator,
@@ -271,34 +270,53 @@ def run_benchmark(
         f"{benchmark_config.output_dir}/health_check_results.txt"
     )
 
-    logger.info("Benchmark completed")
     return result
 
 
-def run_benchmarks(benchmark_configs: List[BenchmarkConfig]) -> List[Any]:
-    """Run benchmarks sequentially.
+def manage_benchmark_run(
+    benchmark_config: BenchmarkConfig,
+):
+    """Run a benchmark, handling optional server orchestration.
+
+    1. If server config exists: spin up server, update client config, run benchmark
+    2. If no server config: run benchmark directly
 
     Args:
-        benchmark_configs: List of configurations for the benchmarks
+        benchmark_config: The benchmark configuration.
 
     Returns:
-        List of EvaluationResult objects from each benchmark.
+        EvaluationResult from the evaluator.
     """
-    results: List[Any] = []
+    logger.info("Running benchmark with config:\n%s", benchmark_config)
 
-    if len(benchmark_configs) > 1:
-        logger.info(
-            f"Running {len(benchmark_configs)} benchmark configurations sequentially."
-        )
+    _init_output_dir(benchmark_config)
 
-    for i, benchmark_config in enumerate(benchmark_configs):
-        logger.info(f"Running benchmark {i+1}/{len(benchmark_configs)}")
-        result = run_benchmark(benchmark_config=benchmark_config)
-        results.append(result)
-        logger.info(f"Completed benchmark {i+1}/{len(benchmark_configs)}")
+    if benchmark_config.server is not None:
+        logger.info(f"Launching {benchmark_config.server.engine} server...")
 
-    logger.info("All benchmarks completed.")
-    return results
+        with managed_server(
+            benchmark_config.server, output_dir=benchmark_config.output_dir
+        ) as server_info:
+            logger.info(f"Server ready at {server_info['api_base']}")
+
+            # server dictates client
+            updated_client_config = replace(
+                benchmark_config.client,
+                api_base=server_info["api_base"],
+                api_key=server_info["api_key"],
+                model=benchmark_config.server.model,
+            )
+            updated_benchmark_config = replace(
+                benchmark_config,
+                client=updated_client_config,
+                server=None,
+            )
+
+            result = _run_benchmark(updated_benchmark_config)
+            logger.info("Server shutting down...")
+            return result
+    else:
+        return _run_benchmark(benchmark_config)
 
 
 if __name__ == "__main__":
