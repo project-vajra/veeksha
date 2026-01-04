@@ -216,7 +216,7 @@ def _monitor_for_completion(
                 # Check grace period if configured
                 grace_elapsed = time.monotonic() - timeout_start
                 if (
-                    post_timeout_grace_seconds > 0
+                    post_timeout_grace_seconds >= 0
                     and grace_elapsed >= post_timeout_grace_seconds
                 ):
                     logger.warning(

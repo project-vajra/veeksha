@@ -34,19 +34,22 @@ class RequestResult:
     Attributes:
         request_id: Unique request identifier
         session_id: Session this request belongs to
-        dispatched_at: Monotonic timestamp when request was dispatched
-        completed_at: Monotonic timestamp when response was received
         session_total_requests: Total number of requests in the session
         channels: Per-channel response data
         success: True if request completed without error
         error_code: HTTP error code if request failed
         error_msg: Error message if request failed
+
+        Lifecycle timestamps (all monotonic):
+        - scheduler_ready_at: When scheduler marked request ready
+        - scheduler_dispatched_at: When dispatcher put request in client queue
+        - client_picked_up_at: When client worker dequeued request
+        - client_completed_at: When HTTP response finished
+        - result_processed_at: When completion worker finished processing
     """
 
     request_id: int
     session_id: int
-    dispatched_at: float
-    completed_at: float
 
     session_total_requests: int = 1
 
@@ -57,7 +60,19 @@ class RequestResult:
     error_code: Optional[int] = None
     error_msg: Optional[str] = None
 
-    @property
-    def latency(self) -> float:
-        """Total request latency in seconds."""
-        return self.completed_at - self.dispatched_at
+    # Lifecycle telemetry (monotonic)
+    scheduler_ready_at: Optional[float] = (
+        None  # DispatchWorker.run() after wait_for_ready
+    )
+    scheduler_dispatched_at: Optional[float] = (
+        None  # DispatchWorker.run() after queue.put
+    )
+    client_picked_up_at: Optional[float] = (
+        None  # ClientWorker._process_request() on dequeue
+    )
+    client_completed_at: Optional[float] = (
+        None  # OpenAIChatClient.send_request() after response
+    )
+    result_processed_at: Optional[float] = (
+        None  # CompletionWorker._process_result() on entry
+    )

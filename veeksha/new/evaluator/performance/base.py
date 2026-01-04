@@ -373,6 +373,14 @@ class PerformanceEvaluator(BaseEvaluator):
             "Observed Session Dispatch Rate": self._session_dispatch_rate(),
         }
 
+    def _build_summary_stats(self) -> Dict[str, Any]:
+        """Combine aggregate stats with error code frequencies."""
+        summary_stats: Dict[str, Any] = {
+            **self.get_aggregated_summary(),
+            "error_code_freq": dict(self.error_code_freq),
+        }
+        return summary_stats
+
     def finalize(self) -> EvaluationResult:
         """Finalize evaluation and return results."""
         if self.config.stream_metrics:
@@ -400,24 +408,10 @@ class PerformanceEvaluator(BaseEvaluator):
         os.makedirs(output_dir, exist_ok=True)
 
         # Save aggregate summary
-        summary = self.get_aggregated_summary()
+        summary = self._build_summary_stats()
         summary_path = os.path.join(output_dir, "summary_stats.json")
         with open(summary_path, "w") as f:
-            json.dump(
-                {**summary, "error_code_freq": dict(self.error_code_freq)}, f, indent=2
-            )
-
-        # Save service level metrics
-        service_metrics = {
-            "successful_sessions": self.num_sessions_successful,
-            "errored_sessions": self.num_sessions_errored,
-            "cancelled_sessions": self.num_sessions_cancelled,
-            "incomplete_sessions": self.num_sessions_incomplete,
-            "session_dispatch_rate": self._session_dispatch_rate(),
-        }
-        service_path = os.path.join(output_dir, "service_level_metrics.json")
-        with open(service_path, "w") as f:
-            json.dump(service_metrics, f, indent=2)
+            json.dump(summary, f, indent=2)
 
         # Delegate to channel evaluators
         for channel, evaluator in self._channel_evaluators.items():
@@ -486,7 +480,7 @@ class PerformanceEvaluator(BaseEvaluator):
 
         with self.lock:
             # Write current summary
-            summary = self.get_aggregated_summary()
+            summary = self._build_summary_stats()
             summary_path = os.path.join(self.output_dir, "summary_stats.json")
             with open(summary_path, "w") as f:
                 json.dump(summary, f, indent=2)

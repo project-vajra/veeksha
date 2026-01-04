@@ -16,7 +16,7 @@ class RuntimeConfig:
     post_timeout_grace_seconds: int = field(
         default=-1,
         metadata={
-            "help": "Grace period for in-flight requests after timeout. -1 for unlimited (wait for all). "
+            "help": "Grace period for in-flight requests after timeout. -1 waits for all, 0 exits immediately."
         },
     )
     num_dispatcher_threads: int = field(

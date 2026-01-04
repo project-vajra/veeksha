@@ -47,9 +47,11 @@ class CompletionWorker:
 
     def _process_result(self, result: RequestResult) -> None:
         """Process a single request result."""
+        result.result_processed_at = time.monotonic()
+
         self.traffic_scheduler.notify_completion(
             request_id=result.request_id,
-            completed_at_monotonic=result.completed_at,
+            completed_at_monotonic=result.client_completed_at,  # type: ignore
             success=result.success,
             channel_responses=result.channels if result.success else None,
         )
@@ -58,7 +60,7 @@ class CompletionWorker:
         self.evaluator.record_request_completed(
             request_id=result.request_id,
             session_id=result.session_id,
-            completed_at=result.completed_at,
+            completed_at=result.client_completed_at,  # type: ignore
             response=result,
             error=error,
         )

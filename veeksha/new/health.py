@@ -95,6 +95,9 @@ class HealthChecker:
         # output length check
         results.append(self.check_output_length())
 
+        # lifecycle timing delays check
+        results.append(self.check_lifecycle_timing_delays())
+
         return results
 
     def run_and_save(self, output_path: str) -> List[TestResult]:
@@ -163,13 +166,13 @@ class HealthChecker:
         violations: List[Dict[str, Any]] = []
 
         session_col = self._get_col("session_id")
-        dispatched_col = self._get_col("dispatched_at")
+        dispatched_col = self._get_col("scheduler_dispatched_at")
 
         late_threshold = 5.0  # dispatched more than 5 seconds after ready
 
         for session_id, group in self.merged_df.groupby(session_col):
             req_completion_map = {
-                row["request_id"]: row[self._get_col("completed_at")]
+                row["request_id"]: row[self._get_col("client_completed_at")]
                 for _, row in group.iterrows()
             }
 
@@ -210,7 +213,7 @@ class HealthChecker:
                             "request_id": row["request_id"],
                             "diff": diff,
                             "ready_at": ready_at,
-                            "dispatched_at": actual_dispatch,
+                            "scheduler_dispatched_at": actual_dispatch,
                         }
                     )
 
@@ -278,7 +281,7 @@ class HealthChecker:
         After ramp-up (steady-state): limit is target_concurrent_sessions.
         """
         session_col = self._get_col("session_id")
-        dispatched_col = self._get_col("dispatched_at")
+        dispatched_col = self._get_col("scheduler_dispatched_at")
 
         # Get benchmark end time (last request completion)
         all_ends = self.merged_df[dispatched_col] + self.merged_df["end_to_end_latency"]
@@ -853,7 +856,7 @@ class HealthChecker:
 
         # Get session start times
         session_col = self._get_col("session_id")
-        dispatched_col = self._get_col("dispatched_at")
+        dispatched_col = self._get_col("scheduler_dispatched_at")
 
         if self.merged_df.empty:
             return TestResult(
@@ -1182,3 +1185,108 @@ class HealthChecker:
             )
 
         return TestResult(summary=summary, passed=passed)
+
+    def check_lifecycle_timing_delays(self) -> TestResult:
+        """
+        Report statistics on lifecycle timing delays between pipeline stages.
+
+        Computes percentiles for:
+        - scheduler_ready_at -> scheduler_dispatched_at (dispatch delay)
+        - scheduler_dispatched_at -> client_picked_up_at (queue wait time)
+        - client_completed_at -> result_processed_at (result processing delay)
+        """
+
+        def compute_delay_stats(delays: np.ndarray, name: str) -> Dict[str, str]:
+            """Compute percentile statistics for a delay array."""
+            if delays.size == 0:
+                return {f"{name} (no data)": "N/A"}
+
+            # Filter out NaN values
+            valid_delays = delays[~np.isnan(delays)]
+            if valid_delays.size == 0:
+                return {f"{name} (no valid data)": "N/A"}
+
+            return {
+                "Count": str(valid_delays.size),
+                "Min": f"{np.min(valid_delays):.4f}s",
+                "Mean": f"{np.mean(valid_delays):.4f}s",
+                "Median": f"{np.median(valid_delays):.4f}s",
+                "P95": f"{np.percentile(valid_delays, 95):.4f}s",
+                "P99": f"{np.percentile(valid_delays, 99):.4f}s",
+                "Max": f"{np.max(valid_delays):.4f}s",
+                "Std Dev": f"{np.std(valid_delays):.4f}s",
+            }
+
+        sections = []
+
+        # Check if lifecycle columns exist
+        ready_col = "scheduler_ready_at"
+        dispatched_col = "scheduler_dispatched_at"
+        pickup_col = "client_picked_up_at"
+        completed_col = "client_completed_at"
+        processed_col = "result_processed_at"
+
+        missing_cols = []
+        for col in [
+            ready_col,
+            dispatched_col,
+            pickup_col,
+            completed_col,
+            processed_col,
+        ]:
+            if col not in self.metrics_df.columns:
+                missing_cols.append(col)
+
+        if missing_cols:
+            return TestResult(
+                summary={
+                    "name": "Lifecycle Timing Delays Check",
+                    "sections": [
+                        {
+                            "title": "Missing Data",
+                            "results": {
+                                "Missing Columns": ", ".join(missing_cols),
+                                "Resolution": "Re-run benchmark with updated code that captures lifecycle timestamps.",
+                            },
+                        }
+                    ],
+                },
+                passed=True,  # Not a failure, just missing data
+            )
+
+        df = self.metrics_df.copy()
+
+        # 1. Ready-to-Dispatch delay
+        ready_to_dispatch = (df[dispatched_col] - df[ready_col]).values
+        sections.append(
+            {
+                "title": "Ready-to-Dispatch Delay (scheduler_dispatched_at - scheduler_ready_at)",
+                "results": compute_delay_stats(ready_to_dispatch, "Delay"),
+            }
+        )
+
+        # 2. Dispatch-to-Pickup delay (queue wait time)
+        dispatch_to_pickup = (df[pickup_col] - df[dispatched_col]).values
+        sections.append(
+            {
+                "title": "Dispatch-to-Pickup Delay (client_picked_up_at - scheduler_dispatched_at)",
+                "results": compute_delay_stats(dispatch_to_pickup, "Delay"),
+            }
+        )
+
+        # 3. Completion-to-Result-Processing delay
+        completion_to_processing = (df[processed_col] - df[completed_col]).values
+        sections.append(
+            {
+                "title": "Completion-to-Result-Processing Delay (result_processed_at - client_completed_at)",
+                "results": compute_delay_stats(completion_to_processing, "Delay"),
+            }
+        )
+
+        return TestResult(
+            summary={
+                "name": "Lifecycle Timing Delays Check",
+                "sections": sections,
+            },
+            passed=True,  # No pass/fail criteria for now
+        )

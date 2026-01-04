@@ -2,7 +2,6 @@ import json
 import os
 import threading
 from dataclasses import dataclass
-from itertools import accumulate
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -36,7 +35,7 @@ class TextRequestMetrics:
     request_id: int
     session_id: int
     request_dispatched_at: float
-    completed_at: float  # Actual completion timestamp
+    client_completed_at: float  # Actual completion timestamp
     num_prompt_tokens: int
     num_output_tokens: int
     inter_chunk_times: List[float]
@@ -186,11 +185,6 @@ class TextPerformanceEvaluator:
                 should_write_to_wandb=config.wandb_enabled,
                 unit="s",
             ),
-            "session_dispatch_gap": CDFSketch(
-                metric_name="Gap Between Session Starts",
-                should_write_to_wandb=config.wandb_enabled,
-                unit="s",
-            ),
             "session_think_time": CDFSketch(
                 metric_name="Intra-session Think Time",
                 should_write_to_wandb=config.wandb_enabled,
@@ -233,6 +227,13 @@ class TextPerformanceEvaluator:
         self.session_ids: List[Optional[int]] = []
         self.session_total_requests: List[Optional[int]] = []
         self.request_ids: List[int] = []
+
+        # Lifecycle timestamps
+        self.scheduler_ready_at: List[Optional[float]] = []
+        self.scheduler_dispatched_at: List[Optional[float]] = []
+        self.client_picked_up_at: List[Optional[float]] = []
+        self.client_completed_at: List[Optional[float]] = []
+        self.result_processed_at: List[Optional[float]] = []
 
         # streaming
         self._request_rows_streamed: int = 0
@@ -306,7 +307,7 @@ class TextPerformanceEvaluator:
                 request_id=request_id,
                 session_id=session_id,
                 request_dispatched_at=dispatched_at,
-                completed_at=completed_at,
+                client_completed_at=completed_at,
                 num_prompt_tokens=num_prompt_tokens,
                 num_output_tokens=num_output_tokens,
                 inter_chunk_times=inter_chunk_times,
@@ -327,8 +328,8 @@ class TextPerformanceEvaluator:
             # Update CDF sketches
             self._update_summaries(metrics)
 
-            # Store request-level metrics
-            self._store_request_metrics(metrics, dispatched_at)
+            # Store request-level metrics (including lifecycle timestamps from response)
+            self._store_request_metrics(metrics, dispatched_at, response)
 
     def _update_summaries(self, metrics: TextRequestMetrics) -> None:
         """Update CDF sketches with request metrics."""
@@ -364,7 +365,7 @@ class TextPerformanceEvaluator:
                 cdf_sketch.put(getattr(metrics, metric_name))
 
     def _store_request_metrics(
-        self, metrics: TextRequestMetrics, dispatched_at: float
+        self, metrics: TextRequestMetrics, dispatched_at: float, response: Any
     ) -> None:
         """Store request-level metrics for detailed output."""
         normalized_dispatched_at = max(
@@ -385,7 +386,7 @@ class TextPerformanceEvaluator:
 
         self.request_dispatched_at.append(normalized_dispatched_at)
         self.completed_at.append(
-            max(0.0, metrics.completed_at - self._request_time_reference)
+            max(0.0, metrics.client_completed_at - self._request_time_reference)
         )
         self.num_prompt_tokens.append(metrics.num_prompt_tokens)
         self.num_output_tokens.append(metrics.num_output_tokens)
@@ -408,6 +409,28 @@ class TextPerformanceEvaluator:
         self.session_total_requests.append(metrics.session_total_requests)
         self.request_ids.append(metrics.request_id)
 
+        # Extract and store lifecycle timestamps from response
+        def normalize_ts(ts: Optional[float]) -> Optional[float]:
+            if ts is None:
+                return None
+            return round(max(0.0, ts - self._request_time_reference), 5)
+
+        self.scheduler_ready_at.append(
+            normalize_ts(getattr(response, "scheduler_ready_at", None))
+        )
+        self.scheduler_dispatched_at.append(
+            normalize_ts(getattr(response, "scheduler_dispatched_at", None))
+        )
+        self.client_picked_up_at.append(
+            normalize_ts(getattr(response, "client_picked_up_at", None))
+        )
+        self.client_completed_at.append(
+            normalize_ts(getattr(response, "client_completed_at", None))
+        )
+        self.result_processed_at.append(
+            normalize_ts(getattr(response, "result_processed_at", None))
+        )
+
     def record_session_completed(
         self,
         session_id: int,
@@ -427,11 +450,6 @@ class TextPerformanceEvaluator:
 
             # Clean up session state
             self._session_last_completion.pop(session_id, None)
-
-    def record_session_dispatch_gap(self, gap: float) -> None:
-        """Record gap between session starts."""
-        with self.lock:
-            self.summaries["session_dispatch_gap"].put(gap)
 
     def get_summary(self) -> Dict[str, float]:
         """Get summary metrics from all CDF sketches."""
@@ -476,12 +494,10 @@ class TextPerformanceEvaluator:
         with self.lock:
             self._save_request_level_metrics(output_dir)
             self._save_cdf_csvs(output_dir)
-            self._save_performance_csv(output_dir)
             self._save_throughput_metrics(output_dir)
             self._save_deadline_miss_rate_for_target_tbc(output_dir)
             self._plot_cdfs(output_dir)
             self._store_ttfc_violin_plots(output_dir)
-            self._store_generation_stalls(output_dir)
 
             if self.config.wandb_enabled:
                 self._log_wandb_metrics(output_dir)
@@ -496,7 +512,6 @@ class TextPerformanceEvaluator:
                 self._request_rows_streamed = len(self.ttfc)
 
             # Save current CDF summaries
-            self._save_performance_csv(output_dir)
             self._save_cdf_csvs(output_dir)
 
     # -------------------------------------------------------------------------
@@ -521,8 +536,15 @@ class TextPerformanceEvaluator:
                     "request_id": self.request_ids[idx],
                     "session_id": self.session_ids[idx],
                     "session_total_requests": self.session_total_requests[idx],
-                    "dispatched_at": round(self.request_dispatched_at[idx], 5),
-                    "completed_at": round(self.completed_at[idx], 5),
+                    # Lifecycle timestamps
+                    "scheduler_ready_at": self.scheduler_ready_at[idx],
+                    "scheduler_dispatched_at": round(
+                        self.request_dispatched_at[idx], 5
+                    ),
+                    "client_picked_up_at": self.client_picked_up_at[idx],
+                    "client_completed_at": round(self.completed_at[idx], 5),
+                    "result_processed_at": self.result_processed_at[idx],
+                    # Token metrics
                     "num_delta_prompt_tokens": self.num_delta_prompt_tokens[idx],
                     "num_total_prompt_tokens": self.num_total_prompt_tokens[idx],
                     "target_num_delta_prompt_tokens": self.target_num_delta_prompt_tokens[
@@ -533,6 +555,7 @@ class TextPerformanceEvaluator:
                         idx
                     ],
                     "num_total_tokens": self.num_total_tokens[idx],
+                    # Latency metrics
                     "tpot": round(self.tpot[idx], 5),
                     "ttfc": round(self.ttfc[idx], 5),
                     "end_to_end_latency": round(self.end_to_end_latency[idx], 5),
@@ -564,16 +587,6 @@ class TextPerformanceEvaluator:
         for metric_name, cdf_sketch in self.summaries.items():
             df = cdf_sketch._to_df()
             df.to_csv(os.path.join(output_dir, f"{metric_name}.csv"), index=False)
-
-    def _save_performance_csv(self, output_dir: str) -> None:
-        """Save performance summary as CSV."""
-        path = os.path.join(output_dir, "perf_metrics.csv")
-        header = self.summaries["num_prompt_tokens"].get_csv_header()
-        rows = [header]
-        for cdf_sketch in self.summaries.values():
-            rows.append(cdf_sketch.to_csv_row())
-        with open(path, "w") as f:
-            f.write("\n".join(rows))
 
     def _save_throughput_metrics(self, output_dir: str) -> None:
         """Save throughput metrics."""
@@ -701,65 +714,6 @@ class TextPerformanceEvaluator:
         except Exception as e:
             logger.warning(f"Failed to generate TTFC violin plots: {e}")
 
-    def _store_generation_stalls(self, output_dir: str, request_idx: int = 0) -> None:
-        """Save tokens generated vs time plot for a sample request."""
-        if request_idx >= len(self.ttfc):
-            return
-
-        try:
-            import rekha as rk
-
-            from veeksha.metrics.plot_utils import (
-                apply_axis_scale,
-                format_axis_label,
-                recommend_axis_scale,
-            )
-
-            token_times = [self.ttfc[request_idx]] + self.tbc[request_idx]
-            token_times_cumulative = list(accumulate(token_times))
-            tokens_generated = list(range(1, len(token_times_cumulative) + 1))
-
-            time_scale = recommend_axis_scale(token_times_cumulative, kind="numeric")
-            x_label = "Time (s)"
-
-            df = pd.DataFrame(
-                {
-                    x_label: token_times_cumulative,
-                    "Tokens Generated": tokens_generated,
-                }
-            )
-
-            fig = rk.line(
-                df,
-                x=x_label,
-                y="Tokens Generated",
-                title="Tokens Generated vs Time",
-            )
-            fig.save(os.path.join(output_dir, "tokens_generated_vs_time.png"))
-
-            if time_scale != "linear":
-                scaled_label = format_axis_label("Time", "s", time_scale)
-                df_scaled = pd.DataFrame(
-                    {
-                        scaled_label: token_times_cumulative,
-                        "Tokens Generated": tokens_generated,
-                    }
-                )
-                fig_scaled = rk.line(
-                    df_scaled,
-                    x=scaled_label,
-                    y="Tokens Generated",
-                    title="Tokens Generated vs Time",
-                )
-                apply_axis_scale(fig_scaled, axis="x", scale=time_scale)
-                suffix = "log" if time_scale == "log" else "symlog"
-                fig_scaled.save(
-                    os.path.join(output_dir, f"tokens_generated_vs_time_{suffix}_x.png")
-                )
-
-        except Exception as e:
-            logger.warning(f"Failed to generate stall plots: {e}")
-
     def _log_wandb_metrics(self, output_dir: str) -> None:
         """Log metrics to Weights & Biases."""
         try:
@@ -811,7 +765,7 @@ class TextPerformanceEvaluator:
             self._log_ttfc_tbc_scalar_charts()
 
             # Log images
-            for plot_name in ["ttfc_violin_plot.png", "tokens_generated_vs_time.png"]:
+            for plot_name in ["ttfc_violin_plot.png"]:
                 plot_path = os.path.join(output_dir, plot_name)
                 if os.path.exists(plot_path):
                     wandb.log({plot_name.replace(".png", ""): wandb.Image(plot_path)})

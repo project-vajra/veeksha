@@ -360,7 +360,6 @@ class OpenAIChatClient(BaseLLMClient):
         video_data: Optional[Any] = None
 
         delta_prompt_len = 0
-        dispatched_at = -1
         messages = []
 
         try:
@@ -387,8 +386,7 @@ class OpenAIChatClient(BaseLLMClient):
             }
 
             client = self._get_client()
-            dispatched_at = time.monotonic()
-            most_recent_token_time = dispatched_at
+            most_recent_token_time = time.monotonic()
             async with client.stream(
                 "POST", self.address, json=body, headers=headers, timeout=timeout
             ) as response:
@@ -481,11 +479,10 @@ class OpenAIChatClient(BaseLLMClient):
         return RequestResult(
             request_id=request.id,
             session_id=session_id,
-            dispatched_at=dispatched_at,
-            completed_at=completed_at,
             session_total_requests=session_total_requests,
             channels=channels,
             success=success,
             error_code=error_code,
             error_msg=error_msg,
+            client_completed_at=completed_at,
         )

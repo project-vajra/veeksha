@@ -74,9 +74,15 @@ class ClientWorker:
 
     async def _process_request(self, item) -> None:
         """Process a single request item."""
-        request, session_id, session_size = item
+        (
+            request,
+            session_id,
+            session_size,
+            scheduler_ready_at,
+            scheduler_dispatched_at,
+        ) = item
 
-        send_started_at: float = time.monotonic()
+        client_picked_up_at: float = time.monotonic()
 
         try:
             result = await self.client.send_request(
@@ -92,17 +98,18 @@ class ClientWorker:
             result = RequestResult(
                 request_id=request.id,
                 session_id=session_id,
-                dispatched_at=send_started_at,
-                completed_at=time.monotonic(),
                 session_total_requests=session_size,
                 channels={},
                 success=False,
                 error_code=500,
                 error_msg=f"Unhandled client exception: {str(e)}",
+                client_completed_at=time.monotonic(),
             )
 
-        if not result.dispatched_at:
-            result.dispatched_at = send_started_at
+        # Set lifecycle timestamps
+        result.scheduler_ready_at = scheduler_ready_at
+        result.scheduler_dispatched_at = scheduler_dispatched_at
+        result.client_picked_up_at = client_picked_up_at
 
         self.output_queue.put(result)
 

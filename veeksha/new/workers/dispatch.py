@@ -74,6 +74,7 @@ class DispatchWorker:
                 continue
 
             request, session_id, session_size = result
+            scheduler_ready_at = time.monotonic()
             dispatched_at = time.monotonic()
 
             self.evaluator.register_request(
@@ -92,7 +93,9 @@ class DispatchWorker:
                 )
 
             queue = self._select_queue()
-            queue.put((request, session_id, session_size))
+            queue.put(
+                (request, session_id, session_size, scheduler_ready_at, dispatched_at)
+            )
 
         # Drain remaining ready requests
         self._drain()
@@ -118,6 +121,7 @@ class DispatchWorker:
                 break
 
             request, session_id, session_size = result
+            scheduler_ready_at = time.monotonic()
             dispatched_at = time.monotonic()
 
             self.evaluator.register_request(
@@ -136,4 +140,6 @@ class DispatchWorker:
                 )
 
             queue = self._select_queue()
-            queue.put((request, session_id, session_size))
+            queue.put(
+                (request, session_id, session_size, scheduler_ready_at, dispatched_at)
+            )
