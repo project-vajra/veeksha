@@ -173,7 +173,7 @@ class TraceFlavorGeneratorBase:
 
     def _shuffle_sessions(self, df: pd.DataFrame) -> pd.DataFrame:
         """Shuffle session order in DataFrame."""
-        sid_order = list(df["session_id"].unique())
+        sid_order = df["session_id"].unique().tolist()
         self._rng.shuffle(sid_order)
         df_shuffled = pd.concat(
             [df[df["session_id"] == sid] for sid in sid_order]

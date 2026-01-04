@@ -13,6 +13,12 @@ class RuntimeConfig:
         default=300,
         metadata={"help": "Benchmark timeout in seconds."},
     )
+    post_timeout_grace_seconds: int = field(
+        default=-1,
+        metadata={
+            "help": "Grace period for in-flight requests after timeout. -1 for unlimited (wait for all). "
+        },
+    )
     num_dispatcher_threads: int = field(
         default=2,
         metadata={"help": "Number of threads for dispatching requests to workers."},
@@ -22,7 +28,7 @@ class RuntimeConfig:
         metadata={"help": "Number of threads for processing completed requests."},
     )
     num_client_threads: int = field(
-        default=4,
+        default=3,
         metadata={
             "help": "Number of async worker threads for making concurrent requests."
         },

@@ -4,7 +4,7 @@ import asyncio
 import threading
 import time
 from queue import Empty, Queue
-from typing import List
+from typing import List, Optional
 
 from veeksha.logger import init_logger
 from veeksha.new.client.base import BaseLLMClient
@@ -160,11 +160,36 @@ class ClientRunnerManager:
         for queue in self.input_queues:
             queue.put(None)  # Sentinel
 
-    def wait(self) -> None:
-        """Wait for all worker threads to finish."""
+    def wait(self, timeout: Optional[float] = None) -> bool:
+        """Wait for all worker threads to finish.
+
+        Args:
+            timeout: Maximum seconds to wait for all workers. ``None`` for
+                indefinitely.
+
+        Returns:
+            True if every worker exited in time, False if the timeout expired.
+        """
+        start_time = time.monotonic()
         for thread in self.threads:
-            thread.join()
+            join_timeout = None
+            if timeout is not None:
+                elapsed = time.monotonic() - start_time
+                remaining = max(0.0, timeout - elapsed)
+                if remaining == 0.0 and thread.is_alive():
+                    break
+                join_timeout = remaining
+            thread.join(join_timeout)
+
+        alive_threads = [thread for thread in self.threads if thread.is_alive()]
+        if alive_threads:
+            logger.warning(
+                "Timed out waiting for %d client worker threads", len(alive_threads)
+            )
+            return False
+
         logger.debug("All client worker threads joined")
+        return True
 
     def get_worker_count(self) -> int:
         """Return number of workers."""

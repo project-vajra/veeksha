@@ -92,7 +92,7 @@ class DispatchWorker:
                 )
 
             queue = self._select_queue()
-            queue.put((request, session_id, session_size, dispatched_at))
+            queue.put((request, session_id, session_size))
 
         # Drain remaining ready requests
         self._drain()
@@ -136,4 +136,4 @@ class DispatchWorker:
                 )
 
             queue = self._select_queue()
-            queue.put((request, session_id, session_size, dispatched_at))
+            queue.put((request, session_id, session_size))

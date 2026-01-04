@@ -6,7 +6,6 @@ import time
 from collections import deque
 from typing import Deque, Dict, List, Mapping, Optional, Set, Tuple
 
-from veeksha.logger import init_logger
 from veeksha.new.config.traffic import ConcurrentTrafficConfig
 from veeksha.new.core.request import Request
 from veeksha.new.core.response import ChannelResponse
@@ -16,8 +15,6 @@ from veeksha.new.core.session_graph import children, parents, ready_at
 from veeksha.new.traffic.base import BaseTrafficScheduler
 from veeksha.new.traffic.session_state import ScheduledItem, ScheduledSessionState
 from veeksha.new.types import ChannelModality
-
-logger = init_logger(__name__)
 
 
 class ConcurrentTrafficScheduler(BaseTrafficScheduler):

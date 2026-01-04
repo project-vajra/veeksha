@@ -113,7 +113,7 @@ def run_main_loop(
     pre_timeout_request_ids: Set[str] = set()
 
     try:
-        _monitor_for_completion(
+        pending_in_flight = _monitor_for_completion(
             traffic_scheduler,
             evaluator,
             pool_manager,
@@ -122,9 +122,11 @@ def run_main_loop(
             timeout_triggered,
             pre_timeout_request_ids,
             max_sessions=runtime_config.max_sessions,
+            post_timeout_grace_seconds=runtime_config.post_timeout_grace_seconds,
         )
     except KeyboardInterrupt:
         logger.info("Interrupted, stopping")
+        pending_in_flight = set()
 
     stop_event.set()
     pool_manager.join_pool("prefetch", timeout=1.0)
@@ -133,8 +135,10 @@ def run_main_loop(
     if trace_recorder:
         trace_recorder.stop()
 
+    logger.info("Stopping client runner...")
     client_runner.stop()
-    client_runner.wait()
+    if not pending_in_flight:
+        client_runner.wait()
 
     for _ in range(runtime_config.num_completion_threads):
         output_queue.put(None)

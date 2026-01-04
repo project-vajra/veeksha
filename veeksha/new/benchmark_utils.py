@@ -130,7 +130,7 @@ def _init_pbar(max_sessions: int, benchmark_timeout: float) -> Tuple[Any, bool]:
         desc="Benchmark",
         unit="s",
         dynamic_ncols=True,
-        bar_format="{desc}: {elapsed}/{total}s [{percentage:3.0f}%] | Sessions: {postfix}",
+        bar_format="{desc}: {elapsed}/{total} s [{percentage:3.0f}%] | Sessions: {postfix}",
     )
     pbar.set_postfix_str("0")
     return pbar, True
@@ -168,10 +168,17 @@ def _monitor_for_completion(
     timeout_triggered: bool,
     pre_timeout_request_ids: Set[str],
     max_sessions: int,
-) -> None:
-    """Observe worker progress and exit once requests settle."""
+    post_timeout_grace_seconds: int = -1,
+) -> Set[str]:
+    """Observe worker progress and exit once requests settle.
+
+    Returns:
+        Set of request IDs that were still in-flight when monitoring stopped.
+    """
     pbar, time_based_progress = _init_pbar(max_sessions, benchmark_timeout)
     pbar_state = {"last_completed": 0, "last_time_update": 0}
+    timeout_start: float = 0.0
+    in_flight_remaining: Set[str] = set()
 
     try:
         while True:
@@ -189,6 +196,7 @@ def _monitor_for_completion(
                 and elapsed >= benchmark_timeout
             ):
                 timeout_triggered = True
+                timeout_start = time.monotonic()
                 pre_timeout_request_ids = evaluator.get_registered_request_ids()
                 in_flight = traffic_scheduler.get_in_flight_request_ids()
                 pending = pre_timeout_request_ids & in_flight
@@ -204,12 +212,33 @@ def _monitor_for_completion(
             if timeout_triggered:
                 current_in_flight = traffic_scheduler.get_in_flight_request_ids()
                 remaining = pre_timeout_request_ids & current_in_flight
+
+                # Check grace period if configured
+                grace_elapsed = time.monotonic() - timeout_start
+                if (
+                    post_timeout_grace_seconds > 0
+                    and grace_elapsed >= post_timeout_grace_seconds
+                ):
+                    logger.warning(
+                        f"Grace period of {post_timeout_grace_seconds}s expired. "
+                        f"Force-exiting with {len(remaining)} requests still in-flight."
+                    )
+                    # Only include completed requests in metrics
+                    completed_requests = pre_timeout_request_ids - remaining
+                    evaluator.set_included_requests(completed_requests)
+                    in_flight_remaining = remaining
+                    break
+
                 if not remaining:
                     logger.info("All pre-timeout requests completed")
                     evaluator.set_included_requests(pre_timeout_request_ids)
+                    in_flight_remaining = set()
                     break
             elif all_prefetch_done and not traffic_scheduler.has_pending_work():
                 logger.info("All sessions completed")
+                in_flight_remaining = set()
                 break
     finally:
         pbar.close()
+
+    return in_flight_remaining
