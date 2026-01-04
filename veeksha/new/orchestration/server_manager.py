@@ -331,9 +331,7 @@ class BaseServerManager(abc.ABC):
         """
         success = True
         try:
-            if not self.is_running:
-                logger.warning("Server is not running")
-            elif self.process is None:
+            if self.process is None:
                 logger.error("Server process is None, cannot shutdown")
                 success = False
             else:

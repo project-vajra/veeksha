@@ -64,11 +64,13 @@ class ClientWorker:
 
         if active_tasks:
             logger.debug(
-                "Client worker %d waiting for %d pending tasks",
+                "Client worker %d cancelling %d pending tasks",
                 self.worker_id,
                 len(active_tasks),
             )
-            await asyncio.wait(active_tasks)
+            for task in active_tasks:
+                task.cancel()
+            await asyncio.wait(active_tasks, timeout=2.0)
 
         logger.debug("Client worker %d exiting", self.worker_id)
 
