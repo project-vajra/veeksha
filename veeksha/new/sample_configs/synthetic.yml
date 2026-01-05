@@ -32,6 +32,20 @@ session_generator:
         min: 100
         max: 500
 
+evaluator:
+  type: performance
+  slos:
+    - type: constant
+      metric: ttfc
+      percentile: 0.99
+      value: 0.5
+      name: P99 TTFC
+    - type: constant
+      metric: tbc
+      percentile: 0.9
+      value: 0.05
+      name: P90 TBC
+
 client:
   type: openai_chat
   model: meta-llama/Llama-3.2-1B-Instruct
@@ -42,7 +56,7 @@ client:
   use_min_tokens_prompt_fallback: False
 
 runtime:
-  max_sessions: -1
+  max_sessions: 10
   benchmark_timeout: 60
 
 trace_recorder:

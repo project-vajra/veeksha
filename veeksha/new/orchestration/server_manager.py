@@ -337,11 +337,10 @@ class BaseServerManager(abc.ABC):
             else:
                 if force:
                     self.process.kill()
+                # graceful shutdown
                 else:
                     self.process.terminate()
-
                     try:
-                        # graceful shutdown
                         self.process.wait(timeout=30)
                     except subprocess.TimeoutExpired:
                         logger.warning(

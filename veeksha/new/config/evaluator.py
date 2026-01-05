@@ -5,7 +5,7 @@ framework. Evaluators are responsible for computing metrics from benchmark runs.
 
 The hierarchy follows the BasePolyConfig pattern used elsewhere in veeksha:
 - BaseEvaluatorConfig (abstract base)
-  - PerformanceEvaluatorConfig (latency, throughput, deadlines)
+  - PerformanceEvaluatorConfig (latency, throughput)
   - AccuracyEvaluatorConfig (task-specific correctness - lm-eval)
 """
 
@@ -14,6 +14,7 @@ from typing import Optional
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.new.config.core.frozen_dataclass import frozen_dataclass
+from veeksha.new.config.slo import BaseSloConfig
 from veeksha.new.types import ChannelModality, EvaluationType
 
 
@@ -40,15 +41,6 @@ class BaseChannelPerformanceConfig(BasePolyConfig):
 class TextChannelPerformanceConfig(BaseChannelPerformanceConfig):
     """Text channel performance configuration"""
 
-    ttfc_deadline: float = field(
-        default=0.5, metadata={"help": "TTFC deadline in seconds"}
-    )
-    tbc_deadline: float = field(
-        default=0.1, metadata={"help": "TBC deadline in seconds"}
-    )
-    target_deadline_miss_rate: float = field(
-        default=0.01, metadata={"help": "Target P99 deadline miss rate (0.0 to 1.0)"}
-    )
     decode_window_enabled: bool = field(
         default=False, metadata={"help": "Enable decode window analysis"}
     )
@@ -98,6 +90,13 @@ class BaseEvaluatorConfig(BasePolyConfig):
     target_channels: list = field(
         default_factory=lambda: ["text"],
         metadata={"help": "List of ChannelModality values to evaluate."},
+    )
+
+    slos: list[BaseSloConfig] = field(
+        default_factory=list,
+        metadata={
+            "help": "List of SLO definitions to evaluate against request-level metrics."
+        },
     )
 
     stream_metrics: bool = field(

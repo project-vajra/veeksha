@@ -60,3 +60,8 @@ class ServerType(BaseIntEnum):
     VLLM = 1
     VAJRA = 2
     SGLANG = 3
+
+
+# ----- SLO -----
+class SloType(BaseIntEnum):
+    CONSTANT = 1

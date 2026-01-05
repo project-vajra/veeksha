@@ -9,12 +9,6 @@ import pandas as pd
 
 from veeksha.logger import init_logger
 from veeksha.metrics.cdf_sketch import CDFSketch
-from veeksha.metrics.metric_utils import (
-    find_min_tbc_deadline_to_meet,
-    get_deadline_miss_rate_for_target_tbc_values,
-    get_request_level_deadline_miss_rate,
-    get_throughput_metrics,
-)
 from veeksha.new.config.evaluator import (
     PerformanceEvaluatorConfig,
     TextChannelPerformanceConfig,
@@ -23,9 +17,6 @@ from veeksha.new.evaluator.base import EvaluationResult
 from veeksha.new.types import ChannelModality
 
 logger = init_logger(__name__)
-
-TARGET_TBC_RANGE = [i * 0.001 for i in range(1, 101)]
-QUANTILE_FOR_DEADLINE_MISS_RATE = 0.99
 
 
 @dataclass
@@ -93,7 +84,6 @@ class TextPerformanceEvaluator:
     - CDFSketch-based metric aggregation
     - Request-level metrics tracking
     - Session metrics (size, duration, dispatch gap, think time)
-    - Deadline miss rate calculations
     - Throughput metrics
     - Output storage (CSV, JSON, plots)
     - WandB integration
@@ -111,14 +101,6 @@ class TextPerformanceEvaluator:
         self.benchmark_start_time = benchmark_start_time
 
         self.lock = threading.Lock()
-
-        # deadlines
-        self.ttfc_deadline = self.channel_config.ttfc_deadline
-        self.tbc_deadline = self.channel_config.tbc_deadline
-        self.target_deadline_miss_rate = self.channel_config.target_deadline_miss_rate
-
-        self.service_level_missed_deadlines: int = 0
-        self.service_level_total_deadlines: int = 0
 
         # request tracking
         self._pending_requests: Dict[int, Dict[str, Any]] = (
@@ -168,14 +150,6 @@ class TextPerformanceEvaluator:
                 metric_name="Output Throughput",
                 should_write_to_wandb=config.wandb_enabled,
             ),
-            "deadline_miss_rate": CDFSketch(
-                metric_name=f"Deadline Miss Rate ({self.tbc_deadline}s TBC, {self.ttfc_deadline}s TTFC)",
-                should_write_to_wandb=config.wandb_enabled,
-            ),
-            "min_tbc_deadline_to_meet": CDFSketch(
-                metric_name=f"Min TBC Deadline to Meet {self.target_deadline_miss_rate * 100}% Miss Rate",
-                should_write_to_wandb=config.wandb_enabled,
-            ),
             "session_size": CDFSketch(
                 metric_name="Requests per Session",
                 should_write_to_wandb=config.wandb_enabled,
@@ -203,8 +177,6 @@ class TextPerformanceEvaluator:
             "end_to_end_latency",
             "normalized_end_to_end_latency",
             "output_throughput",
-            "deadline_miss_rate",
-            "min_tbc_deadline_to_meet",
         }
 
         self.request_dispatched_at: List[float] = []
@@ -222,8 +194,6 @@ class TextPerformanceEvaluator:
         self.end_to_end_latency: List[float] = []
         self.normalized_end_to_end_latency: List[float] = []
         self.output_throughput: List[float] = []
-        self.deadline_miss_rate: List[float] = []
-        self.min_tbc_deadline_to_meet: List[float] = []
         self.session_ids: List[Optional[int]] = []
         self.session_total_requests: List[Optional[int]] = []
         self.request_ids: List[int] = []
@@ -340,27 +310,6 @@ class TextPerformanceEvaluator:
             if metric_name == "tbc":
                 # TBC is the inter-chunk times excluding TTFC
                 cdf_sketch.extend(metrics.inter_chunk_times[1:])
-            elif metric_name == "deadline_miss_rate":
-                (
-                    deadline_miss_rate,
-                    missed_deadlines,
-                    total_deadlines,
-                ) = get_request_level_deadline_miss_rate(
-                    inter_chunk_times=metrics.inter_chunk_times,
-                    ttfc_deadline=self.ttfc_deadline,
-                    tbc_deadline=self.tbc_deadline,
-                )
-                cdf_sketch.put(deadline_miss_rate)
-                self.service_level_missed_deadlines += missed_deadlines
-                self.service_level_total_deadlines += total_deadlines
-            elif metric_name == "min_tbc_deadline_to_meet":
-                cdf_sketch.put(
-                    find_min_tbc_deadline_to_meet(
-                        inter_chunk_times=metrics.inter_chunk_times,
-                        ttfc_deadline=self.ttfc_deadline,
-                        target_deadline_miss_rate=self.target_deadline_miss_rate,
-                    )
-                )
             else:
                 cdf_sketch.put(getattr(metrics, metric_name))
 
@@ -370,18 +319,6 @@ class TextPerformanceEvaluator:
         """Store request-level metrics for detailed output."""
         normalized_dispatched_at = max(
             0.0, dispatched_at - self._request_time_reference
-        )
-
-        # Calculate deadline miss rate for this request
-        dmr, _, _ = get_request_level_deadline_miss_rate(
-            inter_chunk_times=metrics.inter_chunk_times,
-            ttfc_deadline=self.ttfc_deadline,
-            tbc_deadline=self.tbc_deadline,
-        )
-        min_tbc = find_min_tbc_deadline_to_meet(
-            inter_chunk_times=metrics.inter_chunk_times,
-            ttfc_deadline=self.ttfc_deadline,
-            target_deadline_miss_rate=self.target_deadline_miss_rate,
         )
 
         self.request_dispatched_at.append(normalized_dispatched_at)
@@ -403,8 +340,6 @@ class TextPerformanceEvaluator:
         self.end_to_end_latency.append(metrics.end_to_end_latency)
         self.normalized_end_to_end_latency.append(metrics.normalized_end_to_end_latency)
         self.output_throughput.append(metrics.output_throughput)
-        self.deadline_miss_rate.append(dmr)
-        self.min_tbc_deadline_to_meet.append(min_tbc)
         self.session_ids.append(metrics.session_id)
         self.session_total_requests.append(metrics.session_total_requests)
         self.request_ids.append(metrics.request_id)
@@ -457,22 +392,6 @@ class TextPerformanceEvaluator:
         for cdf_sketch in self.summaries.values():
             perf_summary.update(cdf_sketch.get_summary())
 
-        # Add service-level deadline miss rate
-        if self.service_level_total_deadlines > 0:
-            service_level_dmr = (
-                self.service_level_missed_deadlines / self.service_level_total_deadlines
-            )
-        else:
-            service_level_dmr = 0.0
-
-        perf_summary["Service Level Deadline Miss Rate"] = service_level_dmr
-        perf_summary["Service Level Missed Deadlines"] = (
-            self.service_level_missed_deadlines
-        )
-        perf_summary["Service Level Total Deadlines"] = (
-            self.service_level_total_deadlines
-        )
-
         return perf_summary
 
     def finalize(self) -> EvaluationResult:
@@ -495,7 +414,6 @@ class TextPerformanceEvaluator:
             self._save_request_level_metrics(output_dir)
             self._save_cdf_csvs(output_dir)
             self._save_throughput_metrics(output_dir)
-            self._save_deadline_miss_rate_for_target_tbc(output_dir)
             self._plot_cdfs(output_dir)
             self._store_ttfc_violin_plots(output_dir)
 
@@ -563,10 +481,6 @@ class TextPerformanceEvaluator:
                         self.normalized_end_to_end_latency[idx], 5
                     ),
                     "output_throughput": round(self.output_throughput[idx], 5),
-                    "deadline_miss_rate": self.deadline_miss_rate[idx],
-                    "min_tbc_deadline_to_meet": round(
-                        self.min_tbc_deadline_to_meet[idx], 5
-                    ),
                     "tbc": [round(t, 5) for t in self.tbc[idx]],
                 }
             )
@@ -590,38 +504,23 @@ class TextPerformanceEvaluator:
 
     def _save_throughput_metrics(self, output_dir: str) -> None:
         """Save throughput metrics."""
-        tpot_based, tbc_based, deadline_based = get_throughput_metrics(
-            self.tpot, self.tbc
-        )
+        if not self.tpot:
+            tpot_based = 0.0
+        else:
+            mean_tpot = float(np.mean(self.tpot))
+            tpot_based = float("inf") if mean_tpot == 0 else float(1 / mean_tpot)
+
+        tbc_flat: List[float] = []
+        for per_request in self.tbc:
+            tbc_flat.extend(per_request)
+        tbc_based = float(1 / float(np.quantile(tbc_flat, 0.99))) if tbc_flat else 0.0
         metrics = {
             "tpot_based_throughput": tpot_based,
             "tbc_based_throughput": tbc_based,
-            "deadline_based_throughput": deadline_based,
         }
         path = os.path.join(output_dir, "throughput_metrics.json")
         with open(path, "w") as f:
             json.dump(metrics, f, indent=2)
-
-    def _save_deadline_miss_rate_for_target_tbc(self, output_dir: str) -> None:
-        """Save deadline miss rate for various TBC targets."""
-        deadline_miss_rates = get_deadline_miss_rate_for_target_tbc_values(
-            tbc_times=self.tbc,
-            target_tbc_deadline_array=TARGET_TBC_RANGE,
-            quantile=QUANTILE_FOR_DEADLINE_MISS_RATE,
-        )
-
-        percentile_value = int(QUANTILE_FOR_DEADLINE_MISS_RATE * 100)
-        data = {
-            "Target TBC (ms)": [int(i * 1000) for i in TARGET_TBC_RANGE],
-            f"Miss Rate P({percentile_value})": deadline_miss_rates,
-        }
-
-        path = os.path.join(
-            output_dir,
-            f"p{percentile_value}_deadline_miss_rate_for_target_tbc_values.json",
-        )
-        with open(path, "w") as f:
-            json.dump(data, f, indent=2)
 
     def _plot_cdfs(self, output_dir: str) -> None:
         """Generate CDF plots for all metrics."""
@@ -634,7 +533,7 @@ class TextPerformanceEvaluator:
             return
 
         try:
-            import rekha as rk
+            import rekha as rk  # type: ignore[import-not-found]
 
             from veeksha.metrics.plot_utils import (
                 apply_axis_scale,
@@ -717,9 +616,13 @@ class TextPerformanceEvaluator:
     def _log_wandb_metrics(self, output_dir: str) -> None:
         """Log metrics to Weights & Biases."""
         try:
-            import wandb
+            from typing import Any, cast
 
-            if not wandb.run:
+            import wandb  # type: ignore[import-not-found]
+
+            wandb = cast(Any, wandb)
+
+            if not getattr(wandb, "run", None):
                 return
 
             # Log summary table
@@ -742,11 +645,10 @@ class TextPerformanceEvaluator:
                 with open(throughput_path, "r") as f:
                     throughput = json.load(f)
                 data = {
-                    "Metric Type": ["TPOT Based", "TBC Based", "Deadline Based"],
+                    "Metric Type": ["TPOT Based", "TBC Based"],
                     "Throughput (tok/s)": [
                         throughput.get("tpot_based_throughput", 0),
                         throughput.get("tbc_based_throughput", 0),
-                        throughput.get("deadline_based_throughput", 0),
                     ],
                 }
                 df = pd.DataFrame(data)
@@ -776,9 +678,13 @@ class TextPerformanceEvaluator:
     def _log_ttfc_tbc_scalar_charts(self) -> None:
         """Log TTFC and TBC scalar charts to WandB."""
         try:
-            import wandb
+            from typing import Any, cast
 
-            if not wandb.run:
+            import wandb  # type: ignore[import-not-found]
+
+            wandb = cast(Any, wandb)
+
+            if not getattr(wandb, "run", None):
                 return
 
             def log_for_sketch(sketch_key: str, short_name: str) -> None:

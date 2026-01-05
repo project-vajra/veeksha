@@ -12,6 +12,7 @@ from veeksha.logger import init_logger
 from veeksha.new.config.evaluator import PerformanceEvaluatorConfig
 from veeksha.new.core.seeding import SeedManager
 from veeksha.new.evaluator.base import BaseEvaluator, EvaluationResult
+from veeksha.new.slo.runner import evaluate_and_save_slos
 from veeksha.new.types import ChannelModality
 
 logger = init_logger(__name__)
@@ -36,7 +37,7 @@ class PerformanceEvaluator(BaseEvaluator):
     """Performance evaluator that measures latency, throughput, and deadlines.
 
     This is a composite evaluator that delegates to channel-specific evaluators
-    for modality-specific metrics (e.g., TTFT/TBT for text, audio latency, etc.).
+    for modality-specific metrics (e.g., TTFC/TBC for text, audio latency, etc.).
     It also tracks aggregate session-level metrics.
     """
 
@@ -416,6 +417,9 @@ class PerformanceEvaluator(BaseEvaluator):
         # Delegate to channel evaluators
         for channel, evaluator in self._channel_evaluators.items():
             evaluator.save(output_dir)
+
+        # request-level metrics are persisted now
+        evaluate_and_save_slos(slo_configs=self.config.slos, metrics_dir=output_dir)
 
     def get_streaming_metrics(self) -> Optional[Dict[str, Any]]:
         """Return current metrics for streaming updates."""
