@@ -47,10 +47,6 @@ class BaseServerConfig(BasePolyConfig):
         default=2.0, metadata={"help": "Interval in seconds between health checks"}
     )
 
-    auto_shutdown: bool = field(
-        default=True, metadata={"help": "Automatically shutdown server after benchmark"}
-    )
-
     require_contiguous_gpus: bool = field(
         default=True,
         metadata={

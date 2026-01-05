@@ -40,7 +40,7 @@ class PoissonIntervalGeneratorConfig(BaseIntervalGeneratorConfig):
 @frozen_dataclass
 class FixedIntervalGeneratorConfig(BaseIntervalGeneratorConfig):
     interval: float = field(
-        default=0.0,
+        default=1.0,
         metadata={"help": "Fixed interval for the fixed distribution."},
     )
 

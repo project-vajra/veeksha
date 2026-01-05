@@ -33,7 +33,7 @@ def managed_server(
     1. Launch server
     2. Wait for ready
     3. Yield server info
-    4. Shutdown (if auto_shutdown=True)
+    4. Shutdown
 
     Args:
         config: Server configuration
@@ -68,5 +68,4 @@ def managed_server(
         }
 
     finally:
-        if config.auto_shutdown:
-            server_manager.shutdown()
+        server_manager.shutdown()

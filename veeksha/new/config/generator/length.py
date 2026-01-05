@@ -12,7 +12,7 @@ class BaseLengthGeneratorConfig(BasePolyConfig):
 
 @frozen_dataclass
 class FixedLengthGeneratorConfig(BaseLengthGeneratorConfig):
-    value: int = field(default=4096, metadata={"help": "Value to generate."})
+    value: int = field(default=8, metadata={"help": "Value to generate."})
 
     @classmethod
     def get_type(cls) -> LengthGeneratorType:
@@ -21,9 +21,9 @@ class FixedLengthGeneratorConfig(BaseLengthGeneratorConfig):
 
 @frozen_dataclass
 class UniformLengthGeneratorConfig(BaseLengthGeneratorConfig):
-    min: int = field(default=1024, metadata={"help": "Minimum value to generate."})
+    min: int = field(default=6, metadata={"help": "Minimum value to generate."})
     max: int = field(
-        default=4096,
+        default=12,
         metadata={"help": "Maximum value to generate."},
     )
 
@@ -48,9 +48,9 @@ class ZipfLengthGeneratorConfig(BaseLengthGeneratorConfig):
     scramble: bool = field(
         default=False, metadata={"help": "Whether to scramble the Zipf distribution."}
     )
-    min: int = field(default=1024, metadata={"help": "Minimum value to generate."})
+    min: int = field(default=6, metadata={"help": "Minimum value to generate."})
     max: int = field(
-        default=4096,
+        default=12,
         metadata={"help": "Maximum value to generate."},
     )
 
