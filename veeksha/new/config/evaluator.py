@@ -14,7 +14,7 @@ from typing import Optional
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.new.config.core.frozen_dataclass import frozen_dataclass
-from veeksha.new.config.slo import BaseSloConfig
+from veeksha.new.config.slo import BaseSloConfig, ConstantSloConfig
 from veeksha.new.types import ChannelModality, EvaluationType
 
 
@@ -83,6 +83,23 @@ class VideoChannelPerformanceConfig(BaseChannelPerformanceConfig):
 # ---- Base evaluator config ----
 
 
+def _default_slos() -> list[BaseSloConfig]:
+    return [
+        ConstantSloConfig(
+            metric="ttfc",
+            percentile=0.99,
+            value=0.5,
+            name="P99 TTFC",
+        ),
+        ConstantSloConfig(
+            metric="tbc",
+            percentile=0.9,
+            value=0.05,
+            name="P90 TBC",
+        ),
+    ]
+
+
 @frozen_dataclass
 class BaseEvaluatorConfig(BasePolyConfig):
     """Base configuration for all evaluators (performance, accuracy)"""
@@ -93,7 +110,7 @@ class BaseEvaluatorConfig(BasePolyConfig):
     )
 
     slos: list[BaseSloConfig] = field(
-        default_factory=list,
+        default_factory=_default_slos,
         metadata={
             "help": "List of SLO definitions to evaluate against request-level metrics."
         },
