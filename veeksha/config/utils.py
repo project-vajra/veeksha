@@ -285,11 +285,35 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
         origin = get_origin(field_type)
         if origin is list and isinstance(raw_value, list):
             inner_type = _strip_optional(get_args(field_type)[0])
-            if is_dataclass(inner_type) or _issubclass_safe(inner_type, BasePolyConfig):
+            if _issubclass_safe(inner_type, BasePolyConfig):
                 assert isinstance(
                     inner_type, type
                 ), f"Expected type, got {type(inner_type)}"
-                processed_list = [
+                processed_list = []
+                for itm in raw_value:
+                    if isinstance(itm, dict):
+                        type_val = itm.get("type")
+                        if type_val is not None:
+                            subclass = _match_subclass_by_type(inner_type, type_val)
+                            sub_dict = {k: v for k, v in itm.items() if k != "type"}
+                            processed_list.append(
+                                create_class_from_dict(subclass, sub_dict)
+                            )
+                        else:
+                            processed_list.append(
+                                create_class_from_dict(inner_type, itm)
+                            )
+                    else:
+                        subclass = _match_subclass_by_type(inner_type, itm)
+                        processed_list.append(subclass())
+                kwargs[f.name] = processed_list
+                continue
+
+            if is_dataclass(inner_type):
+                assert isinstance(
+                    inner_type, type
+                ), f"Expected type, got {type(inner_type)}"
+                kwargs[f.name] = [
                     (
                         create_class_from_dict(inner_type, itm)
                         if isinstance(itm, dict)
@@ -297,19 +321,39 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
                     )
                     for itm in raw_value
                 ]
-                kwargs[f.name] = processed_list
                 continue
         elif origin is dict and isinstance(raw_value, dict):
             key_type, val_type = get_args(field_type)
-            if is_dataclass(val_type) or _issubclass_safe(val_type, BasePolyConfig):
+            if _issubclass_safe(val_type, BasePolyConfig):
                 assert isinstance(
                     val_type, type
                 ), f"Expected type, got {type(val_type)}"
-                processed_dict = {
+                processed_dict = {}
+                for k, v in raw_value.items():
+                    if isinstance(v, dict):
+                        type_val = v.get("type")
+                        if type_val is not None:
+                            subclass = _match_subclass_by_type(val_type, type_val)
+                            sub_dict = {kk: vv for kk, vv in v.items() if kk != "type"}
+                            processed_dict[k] = create_class_from_dict(
+                                subclass, sub_dict
+                            )
+                        else:
+                            processed_dict[k] = create_class_from_dict(val_type, v)
+                    else:
+                        subclass = _match_subclass_by_type(val_type, v)
+                        processed_dict[k] = subclass()
+                kwargs[f.name] = processed_dict
+                continue
+
+            if is_dataclass(val_type):
+                assert isinstance(
+                    val_type, type
+                ), f"Expected type, got {type(val_type)}"
+                kwargs[f.name] = {
                     k: create_class_from_dict(val_type, v) if isinstance(v, dict) else v
                     for k, v in raw_value.items()
                 }
-                kwargs[f.name] = processed_dict
                 continue
 
         # Polymorphic config: choose subclass based on "type" key

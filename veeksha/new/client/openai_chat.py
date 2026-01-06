@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import functools
-import threading
 import time
 from typing import TYPE_CHECKING, Any, List, Optional
 
-import httpx
+import httpx  # type: ignore
 
 from veeksha.logger import init_logger
-from veeksha.new.client.base import BaseLLMClient
+from veeksha.new.client.openai_base import OpenAIBaseClient
 from veeksha.new.core.request import Request
 from veeksha.new.core.request_content import (
     AudioChannelRequestContent,
@@ -21,12 +19,12 @@ from veeksha.new.core.tokenizer import TokenizerProvider
 from veeksha.new.types import ChannelModality
 
 if TYPE_CHECKING:
-    from veeksha.new.config.client import OpenAIChatClientConfig
+    from veeksha.new.config.client import OpenAIChatCompletionsClientConfig
 
 logger = init_logger(__name__)
 
 
-class OpenAIChatClient(BaseLLMClient):
+class OpenAIChatCompletionsClient(OpenAIBaseClient):
     """Async client for OpenAI Chat Completions API using httpx.
 
     Works with new Request objects that have channels instead of prompt tuples.
@@ -34,7 +32,7 @@ class OpenAIChatClient(BaseLLMClient):
 
     def __init__(
         self,
-        config: OpenAIChatClientConfig,
+        config: OpenAIChatCompletionsClientConfig,
         tokenizer_provider: TokenizerProvider,
     ) -> None:
         """Initialize the OpenAI Chat client.
@@ -43,23 +41,8 @@ class OpenAIChatClient(BaseLLMClient):
             config: Client configuration with model, timeout, etc.
             tokenizer_provider: Provider for tokenizers per modality.
         """
-        super().__init__(config)
-        self.tokenizer_provider = tokenizer_provider
-        self.client_storage = threading.local()
-
-        # at this point either self.api_base and self.api_key are set or an error is raised
-        if not self.api_base.endswith("/"):  # type: ignore
-            self.api_base += "/"  # type: ignore
-        self.address = self.api_base + self.config.address_append_value  # type: ignore
-
-        self.text_tokenizer_handle = self.tokenizer_provider.for_modality(
-            ChannelModality.TEXT
-        )
-
-    @functools.lru_cache(maxsize=10000)
-    def _get_cached_token_count(self, text: str) -> int:
-        """Get token count for text with caching."""
-        return len(self.text_tokenizer_handle.encode(text))
+        super().__init__(config=config, tokenizer_provider=tokenizer_provider)
+        self.chat_address = str(self.api_base) + str(self.config.address_append_value)
 
     def _build_text_content_block(
         self, text_content: TextChannelRequestContent
@@ -275,6 +258,7 @@ class OpenAIChatClient(BaseLLMClient):
                 modality=ChannelModality.TEXT,
                 content=generated_text,
                 metrics={
+                    "is_stream": True,
                     "inter_chunk_times": inter_chunk_times,
                     "num_delta_prompt_tokens": delta_prompt_len,
                     "num_total_prompt_tokens": total_prompt_len,
@@ -305,14 +289,6 @@ class OpenAIChatClient(BaseLLMClient):
 
         return channels
 
-    def _get_client(self) -> httpx.AsyncClient:
-        """Get or create a thread-local httpx client."""
-        if not hasattr(self.client_storage, "client"):
-            self.client_storage.client = httpx.AsyncClient(
-                timeout=self.config.request_timeout
-            )
-        return self.client_storage.client
-
     async def _process_stream(self, response: httpx.Response):
         """Process SSE stream from server."""
         import json
@@ -340,7 +316,8 @@ class OpenAIChatClient(BaseLLMClient):
         session_id: int,
         session_total_requests: int = 1,
     ) -> RequestResult:
-        """Send a request to the OpenAI Chat Completions API."""
+        """Send a streaming request to the OpenAI Chat Completions API."""
+
         timeout = self.config.request_timeout
         max_tokens_limit = None
         if ChannelModality.TEXT in request.channels:
@@ -370,13 +347,26 @@ class OpenAIChatClient(BaseLLMClient):
                 "messages": messages,
                 "stream": True,
             }
+            body.update(self._get_sampling_params(request))
 
             max_tokens_param = self.config.max_tokens_param  # type: ignore
-            if max_tokens_limit is not None and max_tokens_param:
+            if (
+                max_tokens_limit is not None
+                and int(max_tokens_limit) > 0
+                and max_tokens_param
+                and max_tokens_param
+                not in body  # don't override the one set by the request
+            ):
                 body[max_tokens_param] = max_tokens_limit
 
             min_tokens_param = self.config.min_tokens_param  # type: ignore
-            if min_tokens_param and max_tokens_limit is not None:
+            if (
+                min_tokens_param
+                and max_tokens_limit is not None
+                and int(max_tokens_limit) > 0
+                and min_tokens_param
+                not in body  # don't override the one set by the request
+            ):
                 body[min_tokens_param] = max_tokens_limit
 
             headers = {
@@ -388,7 +378,11 @@ class OpenAIChatClient(BaseLLMClient):
             client = self._get_client()
             most_recent_token_time = time.monotonic()
             async with client.stream(
-                "POST", self.address, json=body, headers=headers, timeout=timeout
+                "POST",
+                self.chat_address,
+                json=body,
+                headers=headers,
+                timeout=timeout,
             ) as response:
                 response.raise_for_status()
 

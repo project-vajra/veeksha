@@ -26,10 +26,11 @@ class TextRequestMetrics:
     request_id: int
     session_id: int
     request_dispatched_at: float
-    client_completed_at: float  # Actual completion timestamp
+    client_completed_at: float
     num_prompt_tokens: int
     num_output_tokens: int
     inter_chunk_times: List[float]
+    is_stream: bool = False
     num_requested_output_tokens: Optional[int] = None
     session_total_requests: Optional[int] = None
     num_delta_prompt_tokens: Optional[int] = None
@@ -206,6 +207,7 @@ class TextPerformanceEvaluator:
         self.result_processed_at: List[Optional[float]] = []
 
         # streaming
+        self.is_stream: List[bool] = []
         self._request_rows_streamed: int = 0
         self._request_time_reference: float = self.benchmark_start_time
 
@@ -263,12 +265,15 @@ class TextPerformanceEvaluator:
                 num_prompt_tokens = num_delta_prompt_tokens or 0
                 num_output_tokens = channel_metrics.get("num_output_tokens", 0)
                 inter_chunk_times = channel_metrics.get("inter_chunk_times", [])
+                is_stream = channel_metrics.get("is_stream")
+                request_is_stream = is_stream
             else:
                 num_prompt_tokens = 0
                 num_output_tokens = 0
                 inter_chunk_times = []
                 num_delta_prompt_tokens = None
                 num_total_prompt_tokens = None
+                request_is_stream = False
 
             session_total_requests = getattr(response, "session_total_requests", None)
 
@@ -281,6 +286,7 @@ class TextPerformanceEvaluator:
                 num_prompt_tokens=num_prompt_tokens,
                 num_output_tokens=num_output_tokens,
                 inter_chunk_times=inter_chunk_times,
+                is_stream=bool(request_is_stream),
                 num_requested_output_tokens=target_output_tokens,
                 session_total_requests=session_total_requests,
                 num_delta_prompt_tokens=num_delta_prompt_tokens,
@@ -303,8 +309,12 @@ class TextPerformanceEvaluator:
 
     def _update_summaries(self, metrics: TextRequestMetrics) -> None:
         """Update CDF sketches with request metrics."""
+        is_streaming = metrics.is_stream
         for metric_name, cdf_sketch in self.summaries.items():
             if metric_name not in self._request_level_summary_keys:
+                continue
+
+            if not is_streaming and metric_name in {"tpot", "tbc"}:
                 continue
 
             if metric_name == "tbc":
@@ -334,6 +344,7 @@ class TextPerformanceEvaluator:
             metrics.target_num_delta_prompt_tokens
         )
         self.num_total_tokens.append(metrics.num_total_tokens)
+        self.is_stream.append(metrics.is_stream)
         self.tpot.append(metrics.tpot)
         self.ttfc.append(metrics.ttfc)
         self.tbc.append(metrics.inter_chunk_times[1:])
@@ -473,6 +484,7 @@ class TextPerformanceEvaluator:
                         idx
                     ],
                     "num_total_tokens": self.num_total_tokens[idx],
+                    "is_stream": self.is_stream[idx],
                     # Latency metrics
                     "tpot": round(self.tpot[idx], 5),
                     "ttfc": round(self.ttfc[idx], 5),

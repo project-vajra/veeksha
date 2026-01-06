@@ -21,15 +21,13 @@ EvaluatorRegistry.register(
     ),
 )
 
-# TODO
-# Accuracy evaluator registration (skeleton for now)
-# EvaluatorRegistry.register(
-#     EvaluationType.ACCURACY,
-#     _LazyLoader(
-#         "veeksha.new.evaluator.accuracy.base",
-#         "AccuracyEvaluator",
-#     ),
-# )
+EvaluatorRegistry.register(
+    EvaluationType.ACCURACY,
+    _LazyLoader(
+        "veeksha.new.evaluator.accuracy.base",
+        "LMEvalAccuracyEvaluator",
+    ),
+)
 
 
 class ChannelPerformanceEvaluatorRegistry(BaseRegistry):

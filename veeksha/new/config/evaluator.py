@@ -6,7 +6,7 @@ framework. Evaluators are responsible for computing metrics from benchmark runs.
 The hierarchy follows the BasePolyConfig pattern used elsewhere in veeksha:
 - BaseEvaluatorConfig (abstract base)
   - PerformanceEvaluatorConfig (latency, throughput)
-  - AccuracyEvaluatorConfig (task-specific correctness - lm-eval)
+  - LMEvalAccuracyEvaluatorConfig (task-specific correctness - lm-eval)
 """
 
 from dataclasses import field
@@ -190,24 +190,18 @@ class PerformanceEvaluatorConfig(BaseEvaluatorConfig):
         return None
 
 
-# ---- Accuracy evaluator config ----
+# ---- Accuracy evaluator config(s) ----
 
 
 @frozen_dataclass
-class AccuracyEvaluatorConfig(BaseEvaluatorConfig):
-    """Configuration for accuracy evaluation (task-specific correctness).
+class LMEvalAccuracyEvaluatorConfig(BaseEvaluatorConfig):
+    """Configuration for lm-eval accuracy evaluation (task-specific correctness).
 
     IMPORTANT: For lm-eval accuracy evaluation, the content generation must use
-    LmevalSessionGenerator. The generator owns the lm-eval Task/Instance objects,
+    `LMEvalSessionGenerator`. The generator owns the lm-eval Task/Instance objects,
     and the evaluator binds responses to instances for evaluation.
     """
 
-    backend: str = field(
-        default="lmeval",
-        metadata={"help": "Accuracy evaluation backend: lmeval"},
-    )
-
-    # lm-eval specific (TODO decouple?)
     bootstrap_iters: int = field(
         default=100000,
         metadata={"help": "Bootstrap iterations for confidence intervals"},

@@ -52,7 +52,9 @@ class EvaluationType(BaseIntEnum):
 
 # ----- Client -----
 class ClientType(BaseIntEnum):
-    OPENAI_CHAT = 1
+    OPENAI_CHAT_COMPLETIONS = 1
+    OPENAI_COMPLETIONS = 2
+    OPENAI_ROUTER = 3
 
 
 # ----- Server -----

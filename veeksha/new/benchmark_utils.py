@@ -13,12 +13,18 @@ from tqdm import tqdm
 from veeksha.config.utils import dataclass_to_dict
 from veeksha.logger import init_logger
 from veeksha.new.config.benchmark import BenchmarkConfig
+from veeksha.new.core.seeding import SeedManager
+from veeksha.new.evaluator.base import BaseEvaluator
+from veeksha.new.evaluator.composite import CompositeEvaluator
+from veeksha.new.evaluator.registry import EvaluatorRegistry
+from veeksha.new.types import EvaluationType
 
 logger = init_logger(__name__)
 
 __all__ = [
     "_persist_config_yaml",
     "_init_output_dir",
+    "build_evaluator",
     "maybe_run_warmup",
     "_monitor_for_completion",
 ]
@@ -111,6 +117,58 @@ def maybe_run_warmup(session_generator, client) -> None:
             logger.info(f"Running warmup with {len(warmup_sessions)} sessions")
             asyncio.run(run_all(warmup_sessions))
             logger.info("Warmup completed")
+
+
+def build_evaluator(
+    benchmark_config: BenchmarkConfig,
+    *,
+    seed_manager: SeedManager,
+    session_generator: Any,
+    benchmark_start_time: float,
+) -> BaseEvaluator:
+    """Build an evaluator instance (or composite evaluator) for a benchmark run.
+
+    Notes:
+    - Performance evaluator(s) are ordered first so that `CompositeEvaluator` uses
+      performance for progress/timeout behavior.
+    - Accuracy evaluation requires access to the session generator to map
+      request IDs back to lm-eval instances.
+
+    Args:
+        benchmark_config: Benchmark configuration.
+        seed_manager: Seed manager for reproducibility.
+        session_generator: Session generator used for this run.
+        benchmark_start_time: Run start time (monotonic), passed to evaluators for
+            time-normalization and artifact timestamps.
+
+    Returns:
+        A `BaseEvaluator` (single evaluator or `CompositeEvaluator`).
+    """
+    evaluator_configs = sorted(
+        benchmark_config.evaluators,
+        key=lambda cfg: 0 if cfg.get_type() == EvaluationType.PERFORMANCE else 1,
+    )
+
+    evaluator_instances: list[BaseEvaluator] = []
+    for cfg in evaluator_configs:
+        kwargs: Dict[str, Any] = {
+            "config": cfg,
+            "seed_manager": seed_manager,
+            "output_dir": f"{benchmark_config.output_dir}/metrics",
+            "benchmark_start_time": benchmark_start_time,
+        }
+        if cfg.get_type() == EvaluationType.ACCURACY:
+            kwargs["session_generator"] = session_generator
+        evaluator_instances.append(EvaluatorRegistry.get(cfg.get_type(), **kwargs))
+
+    if not evaluator_instances:
+        raise ValueError("BenchmarkConfig.evaluators must be non-empty.")
+
+    return (
+        evaluator_instances[0]
+        if len(evaluator_instances) == 1
+        else CompositeEvaluator(evaluator_instances)
+    )
 
 
 def _init_pbar(max_sessions: int, benchmark_timeout: float) -> Tuple[Any, bool]:

@@ -1,6 +1,4 @@
-"""Capacity search (meta-benchmark) for new Veeksha.
-
-Capacity search runs a benchmark multiple times with the same configuration,
+"""Capacity search runs a benchmark multiple times with the same configuration,
 varying only a single traffic scheduler knob. It then finds the maximum value
 that still satisfies all configured SLOs, as recorded in `metrics/slo_results.json`.
 """

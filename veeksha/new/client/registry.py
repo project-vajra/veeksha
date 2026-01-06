@@ -10,9 +10,25 @@ class ClientRegistry(BaseRegistry):
 
 
 ClientRegistry.register(
-    ClientType.OPENAI_CHAT,
+    ClientType.OPENAI_CHAT_COMPLETIONS,
     _LazyLoader(
         "veeksha.new.client.openai_chat",
-        "OpenAIChatClient",
+        "OpenAIChatCompletionsClient",
+    ),
+)
+
+ClientRegistry.register(
+    ClientType.OPENAI_ROUTER,
+    _LazyLoader(
+        "veeksha.new.client.openai_router",
+        "OpenAIRouterClient",
+    ),
+)
+
+ClientRegistry.register(
+    ClientType.OPENAI_COMPLETIONS,
+    _LazyLoader(
+        "veeksha.new.client.openai_completions",
+        "OpenAICompletionsClient",
     ),
 )

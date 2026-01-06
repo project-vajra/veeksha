@@ -48,8 +48,13 @@ class BaseClientConfig(BasePolyConfig):
 
 
 @frozen_dataclass
-class OpenAIChatClientConfig(BaseClientConfig):
-    """OpenAI Chat Completions client configuration."""
+class OpenAIChatCompletionsClientConfig(BaseClientConfig):
+    """OpenAI-compatible Chat Completions client configuration.
+
+    `client.type: openai_chat_completions` uses `/chat/completions` (streaming).
+    For per-request routing between chat + completions endpoints (e.g. lm-eval),
+    use `client.type: openai_router`.
+    """
 
     max_tokens_param: Optional[str] = field(
         default="max_completion_tokens",
@@ -70,10 +75,49 @@ class OpenAIChatClientConfig(BaseClientConfig):
 
     @classmethod
     def get_type(cls) -> ClientType:
-        return ClientType.OPENAI_CHAT
+        return ClientType.OPENAI_CHAT_COMPLETIONS
 
     def __post_init__(self):
+        super().__post_init__()
         if self.use_min_tokens_prompt_fallback and self.min_tokens_param is None:
             logger.warning(
                 "use_min_tokens_prompt_fallback is True but min_tokens_param is None. This will result in no min tokens control."
             )
+
+
+@frozen_dataclass
+class OpenAICompletionsClientConfig(OpenAIChatCompletionsClientConfig):
+    """OpenAI Completions client configuration."""
+
+    address_append_value: str = field(
+        default="completions",
+        metadata={"help": "The address append value for the LLM API."},
+    )
+
+    max_tokens_param: Optional[str] = field(
+        default="max_tokens",
+        metadata={"help": "Server parameter name for maximum tokens."},
+    )
+
+    @classmethod
+    def get_type(cls) -> ClientType:
+        return ClientType.OPENAI_COMPLETIONS
+
+
+@frozen_dataclass
+class OpenAIRouterClientConfig(OpenAIChatCompletionsClientConfig):
+    """OpenAI-compatible router client configuration.
+
+    This config has the same surface area as `OpenAIChatCompletionsClientConfig`, but the
+    corresponding client (`client.type: openai_router`) can route *per request*
+    between:
+    - `/chat/completions` (streaming)
+    - `/completions` (non-stream)
+
+    Routing is controlled by `request.metadata["api_mode"]` (e.g. set by the
+    lm-eval session generator).
+    """
+
+    @classmethod
+    def get_type(cls) -> ClientType:
+        return ClientType.OPENAI_ROUTER

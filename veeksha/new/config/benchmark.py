@@ -2,7 +2,10 @@ from dataclasses import field
 from typing import Optional
 
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
-from veeksha.new.config.client import BaseClientConfig, OpenAIChatClientConfig
+from veeksha.new.config.client import (
+    BaseClientConfig,
+    OpenAIChatCompletionsClientConfig,
+)
 from veeksha.new.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.new.config.evaluator import (
     BaseEvaluatorConfig,
@@ -39,13 +42,13 @@ class BenchmarkConfig:
             "help": "The traffic scheduler configuration for the benchmark. Available: rate, concurrent"
         },
     )
-    evaluator: BaseEvaluatorConfig = field(
-        default_factory=PerformanceEvaluatorConfig,
+    evaluators: list[BaseEvaluatorConfig] = field(
+        default_factory=lambda: [PerformanceEvaluatorConfig()],
         metadata={
-            "help": "The evaluator configuration for the benchmark. Available: performance, accuracy"
+            "help": "List of evaluators to run. Available: performance, accuracy"  # TODO: compatibility notices
         },
     )
-    client: BaseClientConfig = field(default_factory=OpenAIChatClientConfig)
+    client: BaseClientConfig = field(default_factory=OpenAIChatCompletionsClientConfig)
     runtime: RuntimeConfig = field(
         default_factory=RuntimeConfig,
         metadata={"help": "The runtime configuration for the benchmark."},
@@ -80,4 +83,5 @@ class BenchmarkConfig:
         return instances
 
     def __post_init__(self):
-        pass
+        if not self.evaluators:
+            raise ValueError("BenchmarkConfig.evaluators must be non-empty.")

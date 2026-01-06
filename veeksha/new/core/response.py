@@ -71,7 +71,7 @@ class RequestResult:
         None  # ClientWorker._process_request() on dequeue
     )
     client_completed_at: Optional[float] = (
-        None  # OpenAIChatClient.send_request() after response
+        None  # LLM client send_request() after response
     )
     result_processed_at: Optional[float] = (
         None  # CompletionWorker._process_result() on entry

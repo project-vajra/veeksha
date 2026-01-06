@@ -9,6 +9,7 @@ from veeksha.logger import init_logger
 from veeksha.new.benchmark_utils import (
     _init_output_dir,
     _monitor_for_completion,
+    build_evaluator,
     maybe_run_warmup,
 )
 from veeksha.new.client.registry import ClientRegistry
@@ -20,7 +21,6 @@ from veeksha.new.core.tokenizer import (
     build_hf_tokenizer_handle_from_model,
 )
 from veeksha.new.core.trace_recorder import TraceRecorder
-from veeksha.new.evaluator.registry import EvaluatorRegistry
 from veeksha.new.generator.session.registry import SessionGeneratorRegistry
 from veeksha.new.health import HealthChecker
 from veeksha.new.orchestration import managed_server
@@ -184,6 +184,13 @@ def _run_benchmark(
         "tokenizer_provider": tokenizer_provider,
     }
 
+    # lm-eval uses runtime.max_sessions as the only sample-size knob.
+    if (
+        benchmark_config.session_generator.get_type()
+        == SessionGeneratorRegistry.get_key_from_str("lmeval")
+    ):
+        session_generator_kwargs["max_sessions"] = benchmark_config.runtime.max_sessions
+
     if (
         benchmark_config.session_generator.get_type()
         == SessionGeneratorRegistry.get_key_from_str("synthetic")
@@ -217,11 +224,10 @@ def _run_benchmark(
     traffic_scheduler.reset_reference_time()
 
     # get evaluator
-    evaluator = EvaluatorRegistry.get(
-        benchmark_config.evaluator.get_type(),
-        config=benchmark_config.evaluator,
+    evaluator = build_evaluator(
+        benchmark_config,
         seed_manager=seed_manager,
-        output_dir=f"{benchmark_config.output_dir}/metrics",
+        session_generator=session_generator,
         benchmark_start_time=benchmark_start_time,
     )
 

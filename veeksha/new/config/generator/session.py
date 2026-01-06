@@ -41,11 +41,25 @@ class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
 
 @frozen_dataclass
 class LmevalSessionGeneratorConfig(BaseSessionGeneratorConfig):
-    pass
+    tasks: list[str] = field(
+        default_factory=lambda: ["hellaswag"],
+        metadata={"help": "The lm-eval tasks to evaluate the model on."},
+    )
+    num_fewshot: int = field(
+        default=1,
+        metadata={"help": "The number of fewshot examples to use for the tasks."},
+    )
+    # NOTE: We intentionally do not expose a separate `limit` knob here.
+    # Control total evaluated sessions via `runtime.max_sessions` (and wall time via
+    # `runtime.benchmark_timeout`) to keep run termination consistent across workloads.
 
     @classmethod
     def get_type(cls):
         return SessionGeneratorType.LMEVAL
+
+    def __post_init__(self):
+        if not self.tasks:
+            raise ValueError("LmevalSessionGeneratorConfig requires at least one task.")
 
 
 # ----- Trace Flavor Configs -----
