@@ -26,6 +26,12 @@ from veeksha.new.health import HealthChecker
 from veeksha.new.orchestration import managed_server
 from veeksha.new.traffic.registry import TrafficSchedulerRegistry
 from veeksha.new.types import ChannelModality
+from veeksha.new.wandb_integration import (
+    maybe_finish_wandb_run,
+    maybe_init_wandb_run,
+    maybe_log_benchmark_artifacts,
+    maybe_log_benchmark_scalars,
+)
 from veeksha.new.workers import CompletionWorker, DispatchWorker, PrefetchWorker
 from veeksha.new.workers.client_runner import ClientRunnerManager
 from veeksha.new.workers.prefetch import SharedSessionCounter
@@ -318,11 +324,24 @@ def manage_benchmark_run(
                 server=None,
             )
 
-            result = _run_benchmark(updated_benchmark_config)
-            logger.info("Server shutting down...")
-            return result
+            maybe_init_wandb_run(updated_benchmark_config, run_kind="benchmark")
+            try:
+                result = _run_benchmark(updated_benchmark_config)
+                maybe_log_benchmark_scalars(updated_benchmark_config.output_dir)
+                maybe_log_benchmark_artifacts(updated_benchmark_config)
+                return result
+            finally:
+                maybe_finish_wandb_run(updated_benchmark_config.output_dir)
+                logger.info("Server shutting down...")
     else:
-        return _run_benchmark(benchmark_config)
+        maybe_init_wandb_run(benchmark_config, run_kind="benchmark")
+        try:
+            result = _run_benchmark(benchmark_config)
+            maybe_log_benchmark_scalars(benchmark_config.output_dir)
+            maybe_log_benchmark_artifacts(benchmark_config)
+            return result
+        finally:
+            maybe_finish_wandb_run(benchmark_config.output_dir)
 
 
 if __name__ == "__main__":

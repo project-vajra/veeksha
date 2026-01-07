@@ -114,57 +114,45 @@ class TextPerformanceEvaluator:
         self.summaries: Dict[str, CDFSketch] = {
             "num_prompt_tokens": CDFSketch(
                 metric_name="Number of Prompt Tokens",
-                should_write_to_wandb=config.wandb_enabled,
             ),
             "num_output_tokens": CDFSketch(
                 metric_name="Number of Output Tokens",
-                should_write_to_wandb=config.wandb_enabled,
             ),
             "num_total_tokens": CDFSketch(
                 metric_name="Number of Total Tokens",
-                should_write_to_wandb=config.wandb_enabled,
             ),
             "tpot": CDFSketch(
                 metric_name="Time per Output Token",
-                should_write_to_wandb=config.wandb_enabled,
                 unit="s",
             ),
             "ttfc": CDFSketch(
                 metric_name="Time to First Chunk",
-                should_write_to_wandb=config.wandb_enabled,
                 unit="s",
             ),
             "tbc": CDFSketch(
                 metric_name="Time Between Chunks",
-                should_write_to_wandb=config.wandb_enabled,
                 unit="s",
             ),
             "end_to_end_latency": CDFSketch(
                 metric_name="End to End Latency",
-                should_write_to_wandb=config.wandb_enabled,
                 unit="s",
             ),
             "normalized_end_to_end_latency": CDFSketch(
                 metric_name="Normalized End to End Latency",
-                should_write_to_wandb=config.wandb_enabled,
                 unit="s/token",
             ),
             "output_throughput": CDFSketch(
                 metric_name="Output Throughput",
-                should_write_to_wandb=config.wandb_enabled,
             ),
             "session_size": CDFSketch(
                 metric_name="Requests per Session",
-                should_write_to_wandb=config.wandb_enabled,
             ),
             "session_duration": CDFSketch(
                 metric_name="Session Duration",
-                should_write_to_wandb=config.wandb_enabled,
                 unit="s",
             ),
             "session_think_time": CDFSketch(
                 metric_name="Intra-session Think Time",
-                should_write_to_wandb=config.wandb_enabled,
                 unit="s",
             ),
         }
@@ -267,8 +255,8 @@ class TextPerformanceEvaluator:
                 num_prompt_tokens = num_delta_prompt_tokens or 0
                 num_output_tokens = channel_metrics.get("num_output_tokens", 0)
                 inter_chunk_times = channel_metrics.get("inter_chunk_times", [])
-                is_stream = channel_metrics.get("is_stream")
-                request_is_stream = is_stream
+                is_stream_val = channel_metrics.get("is_stream")
+                request_is_stream = bool(is_stream_val)
             else:
                 num_prompt_tokens = 0
                 num_output_tokens = 0
@@ -432,8 +420,7 @@ class TextPerformanceEvaluator:
             self._plot_cdfs(output_dir)
             self._store_ttfc_violin_plots(output_dir)
 
-            if self.config.wandb_enabled:
-                self._log_wandb_metrics(output_dir)
+            self._log_wandb_metrics(output_dir)
 
     def flush_streaming_outputs(self, output_dir: str) -> None:
         """Flush current metrics for streaming."""
@@ -814,6 +801,15 @@ class TextPerformanceEvaluator:
                 "TBC samples are included based on chunk-arrival time within the window(s).",
             ],
         }
+
+        # Backward-compatible single-window view for legacy consumers/tests.
+        if len(selected_segments) == 1:
+            seg0 = selected_segments[0]
+            artifact["window"] = {
+                "start": seg0["start"],
+                "end": seg0["end"],
+                "duration_s": seg0["duration_s"],
+            }
 
         out_path = os.path.join(output_dir, "decode_window_metrics.json")
         with open(out_path, "w") as f:

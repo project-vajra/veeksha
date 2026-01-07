@@ -25,6 +25,11 @@ from veeksha.new.config.generator.interval import (
 )
 from veeksha.new.config.traffic import ConcurrentTrafficConfig, RateTrafficConfig
 from veeksha.new.config.utils import dataclass_to_dict
+from veeksha.new.wandb_integration import (
+    dedup_tags,
+    maybe_log_capacity_search_summary,
+    update_run_tags,
+)
 
 logger = init_logger(__name__)
 
@@ -276,6 +281,21 @@ def run_capacity_search(config: CapacitySearchConfig) -> Dict[str, Any]:
         # ensure run outputs are grouped under capacity search output_dir
         run_cfg = replace(base_benchmark_config, output_dir=runs_dir)
         run_cfg = patch_traffic_knob(run_cfg, value=value)
+
+        # Group all attempts under one wandb group and give them readable names.
+        if getattr(run_cfg, "wandb", None) and run_cfg.wandb.enabled:
+            auto_group = f"capsearch-{os.path.basename(config.output_dir.rstrip('/'))}"
+            short_knob = knob_path.rsplit(".", 1)[-1]
+            run_cfg = replace(
+                run_cfg,
+                wandb=replace(
+                    run_cfg.wandb,
+                    group=run_cfg.wandb.group or auto_group,
+                    run_name=run_cfg.wandb.run_name
+                    or f"{attempt_counter:02d}-{short_knob}={value}",
+                    tags=dedup_tags([*run_cfg.wandb.tags, "capsearch"]),
+                ),
+            )
         manage_benchmark_run(run_cfg)
 
         slo = _read_slo_results(run_cfg.output_dir)
@@ -376,7 +396,18 @@ def run_capacity_search(config: CapacitySearchConfig) -> Dict[str, Any]:
             best_value,
             best_run_dir,
         )
+        if best_run_dir:
+            update_run_tags(best_run_dir, ["BEST_CONFIG"])
 
+    bench_cfg = config.benchmark_config
+    if getattr(bench_cfg, "wandb", None) and bench_cfg.wandb.enabled:
+        auto_group = f"capsearch-{os.path.basename(config.output_dir.rstrip('/'))}"
+        maybe_log_capacity_search_summary(
+            output_dir=config.output_dir,
+            wandb_cfg=bench_cfg.wandb,
+            result=result,
+            group=bench_cfg.wandb.group or auto_group,
+        )
     return result
 
 

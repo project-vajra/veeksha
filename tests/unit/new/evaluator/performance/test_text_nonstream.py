@@ -36,6 +36,7 @@ def test_text_performance_skips_tpot_for_non_stream_request() -> None:
                 modality=ChannelModality.TEXT,
                 content="x",
                 metrics={
+                        "is_stream": False,
                     # Non-stream: only one duration for the whole response
                     "inter_chunk_times": [0.5],
                     "num_delta_prompt_tokens": 1,

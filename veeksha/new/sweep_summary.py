@@ -421,4 +421,82 @@ def write_sweep_summary(base_output_dir: str, run_dirs: list[str]) -> Dict[str, 
     written["sweep_summary"] = sweep_summary_path
     written["sweep_summary_csv"] = sweep_csv_path
 
+    # Decode-window aggregation (optional): key by <context_length>_<batch_size>.
+    decode_stats: dict[str, Any] = {}
+    decode_rows: list[dict[str, Any]] = []
+
+    for run in runs:
+        cl = _infer_context_length(run)
+        bs = _infer_batch_size(run)
+        if cl is None or bs is None:
+            continue
+        dwin = _safe_read_json(run.decode_window_metrics_path)
+        if not isinstance(dwin, dict) or not dwin:
+            continue
+
+        key = f"{cl}_{bs}"
+        decode_stats[key] = dwin
+
+        tbc_stats = dwin.get("tbc_in_window_stats")
+        tbc_count = None
+        tbc_mean = None
+        tbc_p99 = None
+        if isinstance(tbc_stats, dict):
+            tbc_count = tbc_stats.get("count")
+            tbc_mean = tbc_stats.get("mean")
+            tbc_p99 = tbc_stats.get("p99")
+
+        window_start = None
+        window_end = None
+        window_duration_s = None
+        if isinstance(dwin.get("window"), dict):
+            w = dwin["window"]
+            window_start = w.get("start")
+            window_end = w.get("end")
+            window_duration_s = w.get("duration_s")
+        elif isinstance(dwin.get("windows"), dict):
+            ww = dwin["windows"]
+            window_duration_s = ww.get("total_duration_s")
+            per = ww.get("per_window")
+            if isinstance(per, list) and per and isinstance(per[0], dict):
+                window_start = per[0].get("start")
+                window_end = per[0].get("end")
+
+        decode_rows.append(
+            {
+                "key": key,
+                "run_dir": run.run_dir,
+                "context_length": cl,
+                "batch_size": bs,
+                "window_start": window_start,
+                "window_end": window_end,
+                "window_duration_s": window_duration_s,
+                "tbc_count": tbc_count,
+                "tbc_mean": tbc_mean,
+                "tbc_p99": tbc_p99,
+            }
+        )
+
+    if decode_stats:
+        decode_stats_path = os.path.join(base_output_dir, "decode_stats.json")
+        with open(decode_stats_path, "w", encoding="utf-8") as f:
+            json.dump(decode_stats, f, indent=2)
+        written["decode_stats"] = decode_stats_path
+
+        decode_csv_path = os.path.join(base_output_dir, "decode_stats.csv")
+        decode_headers = [
+            "key",
+            "run_dir",
+            "context_length",
+            "batch_size",
+            "window_start",
+            "window_end",
+            "window_duration_s",
+            "tbc_count",
+            "tbc_mean",
+            "tbc_p99",
+        ]
+        _write_csv(decode_csv_path, decode_headers, decode_rows)
+        written["decode_stats_csv"] = decode_csv_path
+
     return written

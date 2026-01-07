@@ -19,6 +19,7 @@ from veeksha.new.config.runtime import RuntimeConfig
 from veeksha.new.config.server import BaseServerConfig
 from veeksha.new.config.trace_recorder import TraceRecorderConfig
 from veeksha.new.config.traffic import BaseTrafficConfig, RateTrafficConfig
+from veeksha.new.config.wandb import WandbConfig
 
 
 @frozen_dataclass(allow_from_file=True)
@@ -64,6 +65,10 @@ class BenchmarkConfig:
         metadata={
             "help": "Server configuration for managed servers. If set, client.model, client.api_key and client.api_base will be overwritten."
         },
+    )
+    wandb: WandbConfig = field(
+        default_factory=WandbConfig,
+        metadata={"help": "Weights & Biases logging configuration."},
     )
 
     @classmethod

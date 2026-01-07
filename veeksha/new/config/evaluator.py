@@ -176,19 +176,6 @@ class BaseEvaluatorConfig(BasePolyConfig):
         default=5.0, metadata={"help": "Interval for streaming metrics in seconds"}
     )
 
-    wandb_enabled: bool = field(
-        default=False, metadata={"help": "Enable Weights & Biases logging"}
-    )
-    wandb_project: Optional[str] = field(
-        default=None, metadata={"help": "WandB project name"}
-    )
-    wandb_group: Optional[str] = field(
-        default=None, metadata={"help": "WandB group name"}
-    )
-    wandb_run_name: Optional[str] = field(
-        default=None, metadata={"help": "WandB run name"}
-    )
-
     def __post_init__(self):
         if self.target_channels:
             converted = []
