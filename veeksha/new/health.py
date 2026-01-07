@@ -51,7 +51,11 @@ class HealthChecker:
                 return False
 
             try:
-                self.trace_df = pd.read_json(self.trace_file, lines=True)
+                if os.path.exists(self.trace_file):
+                    self.trace_df = pd.read_json(self.trace_file, lines=True)
+                else:
+                    logger.warning(f"Trace file not found: {self.trace_file}")
+                    self.trace_df = pd.DataFrame()
             except Exception as e:
                 logger.warning(f"Failed to load trace file; proceeding without it: {e}")
                 self.trace_df = pd.DataFrame()

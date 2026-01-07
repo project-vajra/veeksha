@@ -18,6 +18,7 @@ class LengthGeneratorType(BaseIntEnum):
     ZIPF = 1
     UNIFORM = 2
     FIXED = 3
+    FIXED_STAIR = 4
 
 
 # ----- Content -----
@@ -47,7 +48,7 @@ class SessionGraphType(BaseIntEnum):
 # ----- Evaluation -----
 class EvaluationType(BaseIntEnum):
     PERFORMANCE = 1
-    ACCURACY = 2
+    ACCURACY_LMEVAL = 2
 
 
 # ----- Client -----

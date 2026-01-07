@@ -15,7 +15,6 @@ from typing import Any, Callable, Dict, Optional, Tuple, cast
 
 import yaml
 
-from veeksha.config.utils import dataclass_to_dict
 from veeksha.logger import init_logger
 from veeksha.new.benchmark import manage_benchmark_run
 from veeksha.new.config.benchmark import BenchmarkConfig
@@ -25,6 +24,7 @@ from veeksha.new.config.generator.interval import (
     FixedIntervalGeneratorConfig,
 )
 from veeksha.new.config.traffic import ConcurrentTrafficConfig, RateTrafficConfig
+from veeksha.new.config.utils import dataclass_to_dict
 
 logger = init_logger(__name__)
 

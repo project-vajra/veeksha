@@ -7,8 +7,8 @@ maximum value that still meets the configured SLOs.
 from dataclasses import field
 from typing import List
 
-from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.new.config.benchmark import BenchmarkConfig
+from veeksha.new.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.new.config.core.frozen_dataclass import frozen_dataclass
 
 

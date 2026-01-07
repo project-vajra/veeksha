@@ -1,7 +1,7 @@
 from dataclasses import field
 
-from veeksha.config.core.base_poly_config import BasePolyConfig
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from veeksha.new.config.core.base_poly_config import BasePolyConfig
+from veeksha.new.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.new.config.generator.channel import BaseChannelGeneratorConfig
 from veeksha.new.config.generator.session_graph import (
     BaseSessionGraphGeneratorConfig,

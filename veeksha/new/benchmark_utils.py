@@ -10,9 +10,9 @@ from typing import Any, Dict, Set, Tuple
 import yaml
 from tqdm import tqdm
 
-from veeksha.config.utils import dataclass_to_dict
 from veeksha.logger import init_logger
 from veeksha.new.config.benchmark import BenchmarkConfig
+from veeksha.new.config.utils import dataclass_to_dict
 from veeksha.new.core.seeding import SeedManager
 from veeksha.new.evaluator.base import BaseEvaluator
 from veeksha.new.evaluator.composite import CompositeEvaluator
@@ -157,7 +157,7 @@ def build_evaluator(
             "output_dir": f"{benchmark_config.output_dir}/metrics",
             "benchmark_start_time": benchmark_start_time,
         }
-        if cfg.get_type() == EvaluationType.ACCURACY:
+        if cfg.get_type() == EvaluationType.ACCURACY_LMEVAL:
             kwargs["session_generator"] = session_generator
         evaluator_instances.append(EvaluatorRegistry.get(cfg.get_type(), **kwargs))
 

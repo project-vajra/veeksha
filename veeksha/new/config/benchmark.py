@@ -1,11 +1,11 @@
 from dataclasses import field
 from typing import Optional
 
-from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.new.config.client import (
     BaseClientConfig,
     OpenAIChatCompletionsClientConfig,
 )
+from veeksha.new.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.new.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.new.config.evaluator import (
     BaseEvaluatorConfig,

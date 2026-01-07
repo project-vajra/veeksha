@@ -22,7 +22,7 @@ EvaluatorRegistry.register(
 )
 
 EvaluatorRegistry.register(
-    EvaluationType.ACCURACY,
+    EvaluationType.ACCURACY_LMEVAL,
     _LazyLoader(
         "veeksha.new.evaluator.accuracy.base",
         "LMEvalAccuracyEvaluator",

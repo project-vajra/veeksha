@@ -1,7 +1,7 @@
 from dataclasses import field
 
-from veeksha.config.core.base_poly_config import BasePolyConfig
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from veeksha.new.config.core.base_poly_config import BasePolyConfig
+from veeksha.new.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.new.types import LengthGeneratorType
 
 
@@ -17,6 +17,43 @@ class FixedLengthGeneratorConfig(BaseLengthGeneratorConfig):
     @classmethod
     def get_type(cls) -> LengthGeneratorType:
         return LengthGeneratorType.FIXED
+
+
+@frozen_dataclass
+class StairLengthGeneratorConfig(BaseLengthGeneratorConfig):
+    """Emits values in the provided order, optionally repeating each value a fixed
+    number of times before stepping to the next.
+    """
+
+    values: list[int] = field(
+        default_factory=lambda: [8, 16, 32, 64],
+        metadata={"help": "Ordered list of step values to emit."},
+    )
+    repeat_each: int = field(
+        default=1,
+        metadata={
+            "help": "Number of consecutive emissions per step value before advancing."
+        },
+    )
+    wrap: bool = field(
+        default=True,
+        metadata={
+            "help": "If True, cycle back to the first value after the last. "
+            "If False, keep returning the last value."
+        },
+    )
+
+    @classmethod
+    def get_type(cls) -> LengthGeneratorType:
+        return LengthGeneratorType.FIXED_STAIR
+
+    def __post_init__(self):
+        if not self.values:
+            raise ValueError("values must be non-empty")
+        if any(v <= 0 for v in self.values):
+            raise ValueError("All values must be > 0")
+        if self.repeat_each <= 0:
+            raise ValueError("repeat_each must be > 0")
 
 
 @frozen_dataclass

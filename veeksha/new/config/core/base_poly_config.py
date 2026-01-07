@@ -1,8 +1,8 @@
 from abc import ABC
 from typing import Any
 
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
-from veeksha.config.utils import get_all_subclasses
+from veeksha.new.config.core.frozen_dataclass import frozen_dataclass
+from veeksha.new.config.utils import get_all_subclasses
 
 
 @frozen_dataclass

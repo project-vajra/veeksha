@@ -10,9 +10,9 @@ The hierarchy follows the BasePolyConfig pattern used elsewhere in veeksha:
 """
 
 from dataclasses import field
-from typing import Optional
+from typing import Optional, Union
 
-from veeksha.config.core.base_poly_config import BasePolyConfig
+from veeksha.new.config.core.base_poly_config import BasePolyConfig
 from veeksha.new.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.new.config.slo import BaseSloConfig, ConstantSloConfig
 from veeksha.new.types import ChannelModality, EvaluationType
@@ -26,7 +26,54 @@ class DecodeWindowConfig:
     with a full batch of requests.
     """
 
-    # TODO
+    min_active_requests: Union[int, str] = field(
+        default=1,
+        metadata={
+            "help": "Minimum number of simultaneously generating (decoding) requests "
+            "required for a time interval to be considered inside the decode window. "
+            "Use 'max_observed' to auto-detect the peak concurrent decoding count."
+        },
+    )
+    selection_strategy: str = field(
+        default="longest",
+        metadata={
+            "help": "Which window(s) to analyze when multiple windows exist. "
+            "Supported: 'longest' (single longest), 'first' (single first), "
+            "'all' (aggregate all qualifying windows)."
+        },
+    )
+    anchor_to_client_pickup: bool = field(
+        default=True,
+        metadata={
+            "help": "If True, anchor per-request token times to client_picked_up_at "
+            "when available; otherwise use scheduler_dispatched_at."
+        },
+    )
+    require_streaming: bool = field(
+        default=True,
+        metadata={
+            "help": "If True, only streaming requests contribute to decode window analysis."
+        },
+    )
+
+    def __post_init__(self):
+        if isinstance(self.min_active_requests, int):
+            if self.min_active_requests <= 0:
+                raise ValueError("min_active_requests must be > 0")
+        elif isinstance(self.min_active_requests, str):
+            if self.min_active_requests != "max_observed":
+                raise ValueError(
+                    f"Invalid min_active_requests '{self.min_active_requests}'. "
+                    "Supported string value: 'max_observed'"
+                )
+        else:
+            raise ValueError("min_active_requests must be int or 'max_observed'")
+        allowed = {"longest", "first", "all"}
+        if self.selection_strategy not in allowed:
+            raise ValueError(
+                f"Invalid selection_strategy '{self.selection_strategy}'. "
+                f"Supported: {sorted(allowed)}"
+            )
 
 
 # ---- Channel-specific performance configs ----
@@ -52,6 +99,12 @@ class TextChannelPerformanceConfig(BaseChannelPerformanceConfig):
     @classmethod
     def get_type(cls) -> ChannelModality:
         return ChannelModality.TEXT
+
+    def __post_init__(self):
+        if self.decode_window_enabled and self.decode_window_config is None:
+            raise ValueError(
+                "decode_window_config is required when decode_window_enabled=True"
+            )
 
 
 class ImageChannelPerformanceConfig(BaseChannelPerformanceConfig):
@@ -209,4 +262,4 @@ class LMEvalAccuracyEvaluatorConfig(BaseEvaluatorConfig):
 
     @classmethod
     def get_type(cls) -> EvaluationType:
-        return EvaluationType.ACCURACY
+        return EvaluationType.ACCURACY_LMEVAL

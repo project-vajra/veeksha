@@ -210,7 +210,7 @@ def _match_subclass_by_type(parent: type, type_val: Any) -> type:
     strings matching Enum names (case-insensitive) or the string or repr of the
     Enum value itself.
     """
-    from veeksha.config.utils import get_all_subclasses
+    from veeksha.new.config.utils import get_all_subclasses
 
     for subclass in get_all_subclasses(parent):
         subtype = subclass.get_type()
@@ -241,7 +241,7 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
     If there are any keys present in *config_dict* that do not correspond to a dataclass
     field, a TypeError is raised.
     """
-    from veeksha.config.core.base_poly_config import BasePolyConfig
+    from veeksha.new.config.core.base_poly_config import BasePolyConfig
 
     # Fast path: if cls is not a dataclass return config_dict as is
     if (
@@ -607,7 +607,7 @@ def prepare_benchmark_output_dir(benchmark_config) -> None:
         )
         return
 
-    from veeksha.config.utils import (  # local to avoid cycles
+    from veeksha.new.config.utils import (  # local to avoid cycles
         dataclass_to_dict,
         get_config_hash,
     )

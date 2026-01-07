@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -10,6 +11,7 @@ import pandas as pd
 from veeksha.logger import init_logger
 from veeksha.metrics.cdf_sketch import CDFSketch
 from veeksha.new.config.evaluator import (
+    DecodeWindowConfig,
     PerformanceEvaluatorConfig,
     TextChannelPerformanceConfig,
 )
@@ -422,9 +424,11 @@ class TextPerformanceEvaluator:
     def save(self, output_dir: str) -> None:
         """Save all evaluation artifacts."""
         with self.lock:
+            self._save_prefill_stats(output_dir)
             self._save_request_level_metrics(output_dir)
             self._save_cdf_csvs(output_dir)
             self._save_throughput_metrics(output_dir)
+            self._maybe_save_decode_window_metrics(output_dir)
             self._plot_cdfs(output_dir)
             self._store_ttfc_violin_plots(output_dir)
 
@@ -533,6 +537,456 @@ class TextPerformanceEvaluator:
         path = os.path.join(output_dir, "throughput_metrics.json")
         with open(path, "w") as f:
             json.dump(metrics, f, indent=2)
+
+    def _save_prefill_stats(self, output_dir: str) -> None:
+        """Save TTFC statistics grouped by prompt length.
+
+        Output:
+            `prefill_stats.json` in the metrics directory.
+        """
+        if not self.ttfc:
+            return
+
+        # Prefer the intended prompt length from the generator when available
+        group_key_name = "target_num_delta_prompt_tokens"
+        groups: dict[int, list[float]] = defaultdict(list)
+
+        for i in range(len(self.ttfc)):
+            key = self.target_num_delta_prompt_tokens[i]
+            if key is None:
+                # Fallbacks, in order:
+                # - observed delta prompt tokens (if populated)
+                # - evaluator's num_prompt_tokens (delta, default 0)
+                if self.num_delta_prompt_tokens[i] is not None:
+                    key = int(self.num_delta_prompt_tokens[i])  # type: ignore[arg-type]
+                    group_key_name = "num_delta_prompt_tokens"
+                else:
+                    key = int(self.num_prompt_tokens[i])
+                    group_key_name = "num_prompt_tokens"
+
+            if key is None:
+                continue
+            groups[int(key)].append(float(self.ttfc[i]))
+
+        prefill_stats: Dict[str, Any] = {
+            "metric": "ttfc",
+            "group_by": group_key_name,
+            "groups": {},
+        }
+
+        for prompt_len in sorted(groups.keys()):
+            times = groups[prompt_len]
+            if not times:
+                prefill_stats["groups"][str(prompt_len)] = {"count": 0}
+                continue
+            arr = np.asarray(times, dtype=float)
+            prefill_stats["groups"][str(prompt_len)] = {
+                "count": int(arr.size),
+                "mean": float(np.mean(arr)),
+                "median": float(np.median(arr)),
+                "std": float(np.std(arr)),
+                "min": float(np.min(arr)),
+                "max": float(np.max(arr)),
+                "p90": float(np.quantile(arr, 0.9)),
+                "p99": float(np.quantile(arr, 0.99)),
+            }
+
+        path = os.path.join(output_dir, "prefill_stats.json")
+        with open(path, "w") as f:
+            json.dump(prefill_stats, f, indent=2)
+
+    def _maybe_save_decode_window_metrics(self, output_dir: str) -> None:
+        """Optionally write decode-window analysis artifacts.
+
+        Written as a separate JSON artifact.
+        """
+        if not getattr(self.channel_config, "decode_window_enabled", False):
+            return
+        decode_cfg = getattr(self.channel_config, "decode_window_config", None)
+        if decode_cfg is None:
+            logger.warning(
+                "decode_window_enabled=True but decode_window_config is missing; skipping."
+            )
+            return
+        try:
+            self._save_decode_window_metrics(output_dir, decode_cfg=decode_cfg)
+        except Exception as exc:
+            logger.warning("Decode window analysis failed: %s", exc)
+
+    def _save_decode_window_metrics(
+        self, output_dir: str, *, decode_cfg: DecodeWindowConfig
+    ) -> None:
+        """Compute and persist decode-window stats for text streaming requests."""
+        # Per-request decoding interval is approximated as:
+        #   [anchor + TTFC, anchor + sum(inter_chunk_times)]
+        # where `anchor` is either client_picked_up_at or scheduler_dispatched_at.
+        #
+        # We then compute time intervals where at least `min_active_requests`
+        # decoding intervals overlap, select a window, and filter TBC samples to
+        # chunk-arrival times within that window.
+        eligible = []
+        skipped = {
+            "non_stream": 0,
+            "missing_anchor": 0,
+            "no_decode_chunks": 0,
+            "empty": 0,
+        }
+
+        num_rows = len(self.ttfc)
+        if num_rows == 0:
+            skipped["empty"] += 1
+        for i in range(num_rows):
+            if decode_cfg.require_streaming and not bool(self.is_stream[i]):
+                skipped["non_stream"] += 1
+                continue
+
+            inter_chunk_times = [float(self.ttfc[i])] + [float(x) for x in self.tbc[i]]
+            if len(inter_chunk_times) < 2:
+                skipped["no_decode_chunks"] += 1
+                continue
+
+            dispatched_at = float(self.request_dispatched_at[i])
+            anchor = dispatched_at
+            if (
+                decode_cfg.anchor_to_client_pickup
+                and self.client_picked_up_at[i] is not None
+            ):
+                anchor = float(self.client_picked_up_at[i])  # type: ignore[arg-type]
+
+            if anchor is None:
+                skipped["missing_anchor"] += 1
+                continue
+
+            start = anchor + inter_chunk_times[0]
+            end = anchor + float(sum(inter_chunk_times))
+            if end <= start:
+                skipped["no_decode_chunks"] += 1
+                continue
+
+            eligible.append(
+                {
+                    "index": i,
+                    "anchor": anchor,
+                    "inter_chunk_times": inter_chunk_times,
+                    "decode_start": start,
+                    "decode_end": end,
+                }
+            )
+
+        events: list[tuple[float, int]] = []
+        for r in eligible:
+            events.append((float(r["decode_start"]), 1))
+            events.append((float(r["decode_end"]), -1))
+
+        # Sort by time, and process starts before ends at the same time.
+        events.sort(key=lambda x: (x[0], -x[1]))
+
+        # Resolve min_active_requests threshold
+        min_active_threshold: int
+        if decode_cfg.min_active_requests == "max_observed":
+            # First pass: find peak concurrent decoding
+            peak_active = 0
+            current_active = 0
+            for _, delta in events:
+                current_active += delta
+                peak_active = max(peak_active, current_active)
+            min_active_threshold = max(1, peak_active)  # At least 1
+        else:
+            min_active_threshold = int(decode_cfg.min_active_requests)
+
+        segments: list[dict[str, float]] = []
+        active = 0
+        last_t: Optional[float] = None
+        for t, delta in events:
+            if last_t is not None and t > last_t and active >= min_active_threshold:
+                segments.append(
+                    {
+                        "start": float(last_t),
+                        "end": float(t),
+                        "duration_s": float(t - last_t),
+                    }
+                )
+            active += delta
+            last_t = t
+
+        # Select window(s) based on strategy
+        selected_segments: list[dict[str, float]] = []
+        if segments:
+            if decode_cfg.selection_strategy == "all":
+                selected_segments = segments
+            elif decode_cfg.selection_strategy == "first":
+                selected_segments = [
+                    min(segments, key=lambda s: (s["start"], -s["duration_s"]))
+                ]
+            else:
+                # "longest" (default): prefer longest, then earliest.
+                selected_segments = [
+                    max(segments, key=lambda s: (s["duration_s"], -s["start"]))
+                ]
+
+        # Filter TBC samples from selected window(s)
+        filtered_tbc: list[float] = []
+        per_window_tbc: list[list[float]] = []
+
+        for seg in selected_segments:
+            window_start = seg["start"]
+            window_end = seg["end"]
+            window_tbc: list[float] = []
+
+            for r in eligible:
+                anchor = float(r["anchor"])
+                inter_chunk_times = r["inter_chunk_times"]
+                cumulative = 0.0
+                for j, dt in enumerate(inter_chunk_times):
+                    cumulative += float(dt)
+                    arrival = anchor + cumulative
+                    if j == 0:
+                        continue  # TTFC
+                    if window_start <= arrival <= window_end:
+                        window_tbc.append(float(dt))
+
+            per_window_tbc.append(window_tbc)
+            filtered_tbc.extend(window_tbc)
+
+        # Compute aggregate stats
+        stats: Dict[str, Any] = {"count": int(len(filtered_tbc))}
+        if filtered_tbc:
+            arr = np.asarray(filtered_tbc, dtype=float)
+            stats.update(
+                {
+                    "mean": float(np.mean(arr)),
+                    "median": float(np.median(arr)),
+                    "std": float(np.std(arr)),
+                    "min": float(np.min(arr)),
+                    "max": float(np.max(arr)),
+                    "p90": float(np.quantile(arr, 0.9)),
+                    "p99": float(np.quantile(arr, 0.99)),
+                }
+            )
+
+        # Build per-window stats for JSON
+        per_window_stats: list[Dict[str, Any]] = []
+        for i, (seg, w_tbc) in enumerate(zip(selected_segments, per_window_tbc)):
+            w_stats: Dict[str, Any] = {
+                "window_index": i,
+                "start": seg["start"],
+                "end": seg["end"],
+                "duration_s": seg["duration_s"],
+                "tbc_count": len(w_tbc),
+            }
+            if w_tbc:
+                w_arr = np.asarray(w_tbc, dtype=float)
+                w_stats.update(
+                    {
+                        "tbc_mean": float(np.mean(w_arr)),
+                        "tbc_median": float(np.median(w_arr)),
+                        "tbc_p99": float(np.quantile(w_arr, 0.99)),
+                    }
+                )
+            per_window_stats.append(w_stats)
+
+        # Compute total window duration
+        total_window_duration = sum(seg["duration_s"] for seg in selected_segments)
+
+        artifact: Dict[str, Any] = {
+            "config": {
+                "min_active_requests": decode_cfg.min_active_requests,
+                "resolved_min_active_requests": min_active_threshold,
+                "selection_strategy": decode_cfg.selection_strategy,
+                "anchor_to_client_pickup": decode_cfg.anchor_to_client_pickup,
+                "require_streaming": decode_cfg.require_streaming,
+            },
+            "eligible_requests": {
+                "total_request_rows": num_rows,
+                "eligible": len(eligible),
+                "skipped": skipped,
+            },
+            "windows": {
+                "num_candidate_segments": len(segments),
+                "num_selected_segments": len(selected_segments),
+                "total_duration_s": total_window_duration,
+                "per_window": per_window_stats,
+            },
+            "tbc_in_window_stats": stats,
+            "notes": [
+                "Times are relative to the benchmark's request-level time reference.",
+                "Decode interval is approximated using TTFC and total stream duration.",
+                "TBC samples are included based on chunk-arrival time within the window(s).",
+            ],
+        }
+
+        out_path = os.path.join(output_dir, "decode_window_metrics.json")
+        with open(out_path, "w") as f:
+            json.dump(artifact, f, indent=2)
+
+        self._plot_decode_window(
+            output_dir=output_dir,
+            eligible=eligible,
+            selected_segments=selected_segments,
+            filtered_tbc=filtered_tbc,
+            min_active_requests=min_active_threshold,
+        )
+
+    def _plot_decode_window(
+        self,
+        output_dir: str,
+        eligible: list,
+        selected_segments: list[dict[str, float]],
+        filtered_tbc: list[float],
+        min_active_requests: int,
+    ) -> None:
+        """Generate decode window visualization plot.
+
+        Creates a two-panel figure:
+        - Top: Timeline of per-request decode intervals with highlighted window(s)
+        - Bottom: Histogram of TBC samples within the window(s)
+        """
+        if not eligible:
+            logger.debug("No eligible requests for decode window plot")
+            return
+
+        try:
+            import matplotlib
+
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            from matplotlib.patches import Rectangle
+
+            num_windows = len(selected_segments)
+            title_suffix = f"({num_windows} window{'s' if num_windows != 1 else ''})"
+
+            fig, axes = plt.subplots(2, 1, figsize=(12, 8), height_ratios=[2, 1])
+            fig.suptitle(
+                f"Decode window analysis (min_active_requests={min_active_requests}) {title_suffix}",
+                fontsize=12,
+            )
+
+            # --- Top panel: Timeline of decode intervals ---
+            ax_timeline = axes[0]
+
+            # Sort eligible by decode_start for cleaner visualization
+            sorted_eligible = sorted(eligible, key=lambda r: float(r["decode_start"]))
+
+            y_positions = list(range(len(sorted_eligible)))
+            for i, r in enumerate(sorted_eligible):
+                start = float(r["decode_start"])
+                end = float(r["decode_end"])
+                duration = end - start
+
+                # Draw request decode interval as horizontal bar
+                bar_color = "steelblue"
+                ax_timeline.barh(
+                    i,
+                    duration,
+                    left=start,
+                    height=0.6,
+                    color=bar_color,
+                    alpha=0.7,
+                    edgecolor="darkblue",
+                    linewidth=0.5,
+                )
+
+            # Highlight all selected windows with color cycling
+            window_colors = ["#2ecc71", "#27ae60", "#1abc9c", "#16a085"]  # Greens
+            for idx, seg in enumerate(selected_segments):
+                window_start = seg["start"]
+                window_end = seg["end"]
+                color = window_colors[idx % len(window_colors)]
+
+                window_rect = Rectangle(
+                    (window_start, -0.5),
+                    window_end - window_start,
+                    len(sorted_eligible),
+                    alpha=0.15,
+                    color=color,
+                    zorder=0,
+                )
+                ax_timeline.add_patch(window_rect)
+                ax_timeline.axvline(
+                    window_start, color=color, linestyle="--", linewidth=1.5, alpha=0.8
+                )
+                ax_timeline.axvline(
+                    window_end, color=color, linestyle="--", linewidth=1.5, alpha=0.8
+                )
+                # Add window label
+                window_duration = window_end - window_start
+                label = (
+                    f"W{idx + 1}: {window_duration:.2f}s"
+                    if num_windows > 1
+                    else f"Window: {window_duration:.3f}s"
+                )
+                ax_timeline.annotate(
+                    label,
+                    xy=((window_start + window_end) / 2, len(sorted_eligible) - 0.5),
+                    ha="center",
+                    va="bottom",
+                    fontsize=8 if num_windows > 2 else 9,
+                    color="darkgreen",
+                    fontweight="bold",
+                )
+
+            ax_timeline.set_xlabel("Time (s, relative to first request)")
+            ax_timeline.set_ylabel("Request index")
+            ax_timeline.set_title("Per-request decode intervals")
+            # Add extra padding at top for window labels
+            top_padding = 2 if num_windows > 1 else 1
+            ax_timeline.set_ylim(-0.5, len(sorted_eligible) - 0.5 + top_padding)
+            ax_timeline.grid(axis="x", alpha=0.3)
+
+            # --- Bottom panel: TBC histogram ---
+            ax_hist = axes[1]
+
+            if filtered_tbc:
+                arr = np.asarray(filtered_tbc, dtype=float)
+                bins = min(50, max(10, len(arr) // 5))
+                ax_hist.hist(
+                    arr * 1000,  # Convert to ms for readability
+                    bins=bins,
+                    color="steelblue",
+                    edgecolor="white",
+                    alpha=0.8,
+                )
+                ax_hist.axvline(
+                    float(np.mean(arr)) * 1000,
+                    color="red",
+                    linestyle="--",
+                    linewidth=1.5,
+                    label=f"Mean: {float(np.mean(arr)) * 1000:.2f} ms",
+                )
+                ax_hist.axvline(
+                    float(np.median(arr)) * 1000,
+                    color="orange",
+                    linestyle="--",
+                    linewidth=1.5,
+                    label=f"Median: {float(np.median(arr)) * 1000:.2f} ms",
+                )
+                ax_hist.legend(loc="upper right")
+                ax_hist.set_title(f"TBC distribution in windows (n={len(arr)})")
+            else:
+                ax_hist.text(
+                    0.5,
+                    0.5,
+                    "No TBC samples in window",
+                    ha="center",
+                    va="center",
+                    transform=ax_hist.transAxes,
+                    fontsize=12,
+                    color="gray",
+                )
+                ax_hist.set_title("TBC distribution in windows")
+
+            ax_hist.set_xlabel("Time Between Chunks (ms)")
+            ax_hist.set_ylabel("Frequency")
+            ax_hist.grid(axis="y", alpha=0.3)
+
+            plt.tight_layout()
+            out_path = os.path.join(output_dir, "decode_window_plot.png")
+            plt.savefig(out_path, dpi=150, bbox_inches="tight")
+            plt.close(fig)
+        except ImportError as e:
+            logger.warning("matplotlib not available for decode window plot: %s", e)
+        except Exception as e:
+            logger.warning("Failed to generate decode window plot: %s", e)
 
     def _plot_cdfs(self, output_dir: str) -> None:
         """Generate CDF plots for all metrics."""
