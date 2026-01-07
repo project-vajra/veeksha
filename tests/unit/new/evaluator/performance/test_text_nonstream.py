@@ -89,6 +89,7 @@ def test_text_performance_includes_tpot_for_streaming_request() -> None:
                 modality=ChannelModality.TEXT,
                 content="xy",
                 metrics={
+                    "is_stream": True,
                     # Streaming: at least TTFC + one chunk gap
                     "inter_chunk_times": [0.1, 0.2],
                     "num_delta_prompt_tokens": 1,
