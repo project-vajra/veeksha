@@ -10,6 +10,7 @@ import pytest
 from pytest import Config, Item, TestReport
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+from rich.markup import escape
 from rich.table import Table
 from rich.theme import Theme
 
@@ -188,9 +189,9 @@ def get_formatted_test_name(report: TestReport) -> str:
     category = test_category_style(report.nodeid)
 
     if params:
-        return f"[{category}]{report.nodeid.split('[')[0]}[/{category}] [bold]({params})[/bold]"
+        return f"[{category}]{escape(report.nodeid.split('[')[0])}[/{category}] [bold]({escape(params)})[/bold]"
     else:
-        return f"[{category}]{report.nodeid}[/{category}]"
+        return f"[{category}]{escape(report.nodeid)}[/{category}]"
 
 
 def update_progress(outcome: str) -> None:

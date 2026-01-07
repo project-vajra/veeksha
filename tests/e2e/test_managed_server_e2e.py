@@ -87,7 +87,17 @@ def test_managed_server_benchmark(mock_openai_server, tmp_path) -> None:
     mock_ctx.__exit__.return_value = None
     
     # We patch the call to managed_server in veeksha.new.benchmark
-    with patch("veeksha.new.benchmark.managed_server", return_value=mock_ctx) as mocked_ms:
+    with patch("veeksha.new.benchmark.managed_server", return_value=mock_ctx) as mocked_ms, \
+         patch("veeksha.new.benchmark.build_hf_tokenizer_handle_from_model") as mock_build_tok:
+        
+        # Mock tokenizer handle
+        mock_handle = MagicMock()
+        # Mock encode to return a list of token IDs
+        mock_handle.encode.return_value = [1] * 10
+        # Mock decode
+        mock_handle.decode.return_value = "mock_text"
+        mock_build_tok.return_value = mock_handle
+
         # 5. Run
         result = manage_benchmark_run(benchmark_config)
         
