@@ -62,7 +62,7 @@ jobs:
           docker exec \
           -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
           veeksha-test-new-${{ github.run_id }} \
-          bash -lc "source \$HOME/.cargo/env && make setup/dependencies"
+          bash -lc "source \$HOME/.cargo/env && make test/setup"
 
       - name: "Run New Tests"
         id: run_new_tests
@@ -70,7 +70,7 @@ jobs:
           docker exec \
           -e HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
           veeksha-test-new-${{ github.run_id }} \
-          bash -lc "pytest tests/unit/new tests/e2e/test_managed_server_e2e.py"
+          bash -lc "source .venv314/bin/activate && pytest tests/unit/new tests/e2e/test_managed_server_e2e.py"
 
       - name: "Stop Docker container"
         if: always()
