@@ -47,6 +47,15 @@ jobs:
           --name veeksha-test-new-${{ github.run_id }} \
           veeksha-ci sleep infinity
       
+      - name: "Install Rust" # allows source builds for some dependencies
+        run: |
+          docker exec \
+          veeksha-test-new-${{ github.run_id }} \
+          bash -lc "set -euo pipefail; \
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal; \
+          source \$HOME/.cargo/env; \
+          rustc --version; cargo --version"
+
       # Install minimal environment
       - name: "Install dependencies"
         run: |
