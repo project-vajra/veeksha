@@ -29,4 +29,3 @@ class StairLengthGenerator(BaseLengthGenerator):
                 self._step_idx = 0 if self.config.wrap else len(self.config.values) - 1
 
         return int(value)
-
