@@ -232,9 +232,9 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
     """Recursively instantiate *cls* using values from *config_dict*.
 
     This utility understands three kinds of fields:
-    1. Primitive (or containers of primitives) – their value is taken directly.
-    2. Nested dataclasses – they are created recursively.
-    3. Polymorphic configs that inherit from ``BasePolyConfig`` – the concrete
+    1. Primitive (or containers of primitives) - their value is taken directly.
+    2. Nested dataclasses - they are created recursively.
+    3. Polymorphic configs that inherit from ``BasePolyConfig`` - the concrete
        subclass is selected using the ``type`` key in the corresponding dict
        (or by providing the type directly as a string/enum value).
 
@@ -283,13 +283,43 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
 
         # Handle list/tuple/dict containers with potential dataclass items
         origin = get_origin(field_type)
+        is_list_field = origin is list or field_type is list
+        if isinstance(raw_value, list) and not is_list_field:
+            raise ValueError(
+                f"List provided for non-list field '{cls.__name__}.{f.name}'. "
+                "Use !expand to sweep over list values."
+            )
         if origin is list and isinstance(raw_value, list):
             inner_type = _strip_optional(get_args(field_type)[0])
-            if is_dataclass(inner_type) or _issubclass_safe(inner_type, BasePolyConfig):
+            if _issubclass_safe(inner_type, BasePolyConfig):
                 assert isinstance(
                     inner_type, type
                 ), f"Expected type, got {type(inner_type)}"
-                processed_list = [
+                processed_list = []
+                for itm in raw_value:
+                    if isinstance(itm, dict):
+                        type_val = itm.get("type")
+                        if type_val is not None:
+                            subclass = _match_subclass_by_type(inner_type, type_val)
+                            sub_dict = {k: v for k, v in itm.items() if k != "type"}
+                            processed_list.append(
+                                create_class_from_dict(subclass, sub_dict)
+                            )
+                        else:
+                            processed_list.append(
+                                create_class_from_dict(inner_type, itm)
+                            )
+                    else:
+                        subclass = _match_subclass_by_type(inner_type, itm)
+                        processed_list.append(subclass())
+                kwargs[f.name] = processed_list
+                continue
+
+            if is_dataclass(inner_type):
+                assert isinstance(
+                    inner_type, type
+                ), f"Expected type, got {type(inner_type)}"
+                kwargs[f.name] = [
                     (
                         create_class_from_dict(inner_type, itm)
                         if isinstance(itm, dict)
@@ -297,19 +327,39 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
                     )
                     for itm in raw_value
                 ]
-                kwargs[f.name] = processed_list
                 continue
         elif origin is dict and isinstance(raw_value, dict):
             key_type, val_type = get_args(field_type)
-            if is_dataclass(val_type) or _issubclass_safe(val_type, BasePolyConfig):
+            if _issubclass_safe(val_type, BasePolyConfig):
                 assert isinstance(
                     val_type, type
                 ), f"Expected type, got {type(val_type)}"
-                processed_dict = {
+                processed_dict = {}
+                for k, v in raw_value.items():
+                    if isinstance(v, dict):
+                        type_val = v.get("type")
+                        if type_val is not None:
+                            subclass = _match_subclass_by_type(val_type, type_val)
+                            sub_dict = {kk: vv for kk, vv in v.items() if kk != "type"}
+                            processed_dict[k] = create_class_from_dict(
+                                subclass, sub_dict
+                            )
+                        else:
+                            processed_dict[k] = create_class_from_dict(val_type, v)
+                    else:
+                        subclass = _match_subclass_by_type(val_type, v)
+                        processed_dict[k] = subclass()
+                kwargs[f.name] = processed_dict
+                continue
+
+            if is_dataclass(val_type):
+                assert isinstance(
+                    val_type, type
+                ), f"Expected type, got {type(val_type)}"
+                kwargs[f.name] = {
                     k: create_class_from_dict(val_type, v) if isinstance(v, dict) else v
                     for k, v in raw_value.items()
                 }
-                kwargs[f.name] = processed_dict
                 continue
 
         # Polymorphic config: choose subclass based on "type" key
@@ -341,7 +391,7 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
                 kwargs[f.name] = raw_value
             continue
 
-        # Primitive or unknown – assign directly.
+        # Primitive or unknown - assign directly.
         kwargs[f.name] = raw_value
 
     try:
@@ -363,7 +413,7 @@ def load_yaml_config(file_path: str):
     informative log messages for each failure mode.
 
     1. Verifies the file exists and is readable.
-    2. Attempts to parse using ``yaml.safe_load``.
+    2. Attempts to parse using a safe PyYAML loader (supports ``!expand``).
     3. On YAML parse errors, falls back to ``json.loads`` (helpful when the
        file is actually JSON or a subset thereof).
     4. Returns the parsed content, which can be either a dictionary (mapping)
@@ -398,6 +448,19 @@ def load_yaml_config(file_path: str):
 
     import yaml
 
+    class _ExpandList(list):
+        __veeksha_expand__ = True
+
+    class _Loader(yaml.SafeLoader):
+        pass
+
+    def _construct_expand(loader, node):
+        if not isinstance(node, yaml.SequenceNode):
+            raise yaml.YAMLError("!expand can only be used with YAML sequences.")
+        return _ExpandList(loader.construct_sequence(node, deep=True))
+
+    _Loader.add_constructor("!expand", _construct_expand)
+
     # check file
     if not os.path.exists(file_path):
         logger.error("Configuration file '%s' does not exist.", file_path)
@@ -412,10 +475,10 @@ def load_yaml_config(file_path: str):
 
     # try yaml first
     try:
-        data = yaml.safe_load(raw_content)
+        data = yaml.load(raw_content, Loader=_Loader)
     except yaml.YAMLError as yaml_err:
         logger.warning(
-            "YAML parsing error in '%s': %s – attempting JSON fallback.",
+            "YAML parsing error in '%s': %s - attempting JSON fallback.",
             file_path,
             yaml_err,
         )

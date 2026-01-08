@@ -6,7 +6,7 @@ from textwrap import dedent
 import pytest  # type: ignore[import]
 import yaml
 
-from veeksha.config.server import ServerConfig
+from veeksha.config.server import VLLMServerConfig, VajraServerConfig
 from veeksha.orchestration.vllm_server import VLLMServerManager
 from veeksha.orchestration.vajra_server import VajraServerManager
 
@@ -14,8 +14,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_vllm_launch_command_with_advanced_configuration():
-    config = ServerConfig(
-        engine="vllm",
+    config = VLLMServerConfig(
         model="meta/test-model",
         host="0.0.0.0",
         port=9001,
@@ -32,7 +31,7 @@ def test_vllm_launch_command_with_advanced_configuration():
         },
     )
 
-    command = VLLMServerManager(config)._build_launch_command()
+    command = VLLMServerManager(config, output_dir="/tmp")._build_launch_command()
 
     # Base flags
     assert command[:3] == ["python", "-m", "vllm.entrypoints.openai.api_server"]
@@ -57,8 +56,7 @@ def test_vllm_launch_command_with_advanced_configuration():
 
 
 def test_vajra_launch_command_with_extra_cli_options():
-    config = ServerConfig(
-        engine="vajra",
+    config = VajraServerConfig(
         model="meta/test-model",
         host="127.0.0.1",
         port=7777,
@@ -72,15 +70,15 @@ def test_vajra_launch_command_with_extra_cli_options():
         },
     )
 
-    command = VajraServerManager(config)._build_launch_command()
+    command = VajraServerManager(config, output_dir="/tmp")._build_launch_command()
 
-    assert command[:3] == ["python", "-m", "vajra.entrypoints.openai.server"]
-    assert command[command.index("--model_deployment_config_model") + 1] == "meta/test-model"
+    assert command[:3] == ["python", "-m", "vajra_server.server"]
+    assert command[command.index("--model") + 1] == "meta/test-model"
     assert command[command.index("--host") + 1] == "127.0.0.1"
     assert command[command.index("--port") + 1] == "7777"
-    assert command[command.index("--api_key") + 1] == "another-secret"
-    assert command[command.index("--model_deployment_config_tensor_parallel_size") + 1] == "3"
-    assert command[command.index("--model_deployment_config_max_model_len") + 1] == "4096"
+    assert command[command.index("--api-key") + 1] == "another-secret"
+    assert command[command.index("--tensor-parallel-size") + 1] == "3"
+    assert command[command.index("--max-model-len") + 1] == "4096"
 
     assert command[command.index("--pipeline_parallel_size") + 1] == "4"
     assert "--log_requests" in command
@@ -109,8 +107,15 @@ def test_server_config_additional_args_loaded_from_yaml(tmp_path):
     )
 
     data = yaml.safe_load(config_file.read_text())
-    server_config = ServerConfig(**data)
-    command = VLLMServerManager(server_config)._build_launch_command()
+    # ServerConfig logic for creating from dict might be gone.
+    # We should manually create VLLMServerConfig if 'engine' is vllm.
+    engine = data.pop("engine", "vllm")
+    if engine == "vllm":
+        server_config = VLLMServerConfig(**data)
+    else:
+        server_config = VajraServerConfig(**data)
+        
+    command = VLLMServerManager(server_config, output_dir="/tmp")._build_launch_command()
 
     assert "--trust-remote-code" in command
     idx = command.index("--max-num-batched-tokens")

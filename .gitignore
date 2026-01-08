@@ -265,6 +265,7 @@ venv*/
 .coverage
 lmeval_results/
 microbenchmark_results/
+traces/
 
 # cursor
 .cursorrules

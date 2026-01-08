@@ -56,17 +56,17 @@ class ThreadPoolManager:
             for thread in threads:
                 thread.start()
 
-    def join_pool(self, name: str) -> None:
+    def join_pool(self, name: str, timeout: float) -> None:
         """Wait for all threads in a specific pool to complete."""
         if name in self.thread_pools:
             for thread in self.thread_pools[name]:
-                thread.join()
+                thread.join(timeout=timeout)
             logger.debug(f"All {len(self.thread_pools[name])} {name} threads joined")
 
-    def join_all(self) -> None:
+    def join_all(self, timeout: float) -> None:
         """Wait for all threads in all pools to complete."""
         for name in self.thread_pools.keys():
-            self.join_pool(name)
+            self.join_pool(name, timeout=timeout)
 
     def get_total_thread_count(self) -> int:
         """Get total number of threads across all pools."""

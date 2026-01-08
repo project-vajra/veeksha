@@ -11,12 +11,13 @@ import socket
 import subprocess
 import tempfile
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import IO, Any, Dict, Optional
 
 import requests
 
-from veeksha.config.server import ServerConfig
+from veeksha.config.server import BaseServerConfig
 from veeksha.logger import init_logger
 from veeksha.orchestration.resource_manager import ResourceManager
 
@@ -30,13 +31,15 @@ class BaseServerManager(abc.ABC):
     health check logic.
     """
 
-    def __init__(self, config: ServerConfig):
+    def __init__(self, config: BaseServerConfig, output_dir: Optional[str] = None):
         """Initialize the server manager.
 
         Args:
             config: Server configuration
+            output_dir: Directory for server logs.
         """
-        self.config = config
+        self.config: BaseServerConfig = config
+        self.output_dir = output_dir
         self.process: Optional[subprocess.Popen] = None
         self._is_running = False
         self._log_file = None  # Store log file for cleanup
@@ -70,7 +73,7 @@ class BaseServerManager(abc.ABC):
             f"{self.config.port}_{timestamp}.log"
         )
 
-        output_dir = os.environ.get("VEEKSHA_OUTPUT_DIR")
+        output_dir = self.output_dir or os.environ.get("VEEKSHA_OUTPUT_DIR")
         if output_dir:
             log_dir = Path(output_dir)
             try:
@@ -79,10 +82,11 @@ class BaseServerManager(abc.ABC):
                 log_file = open(log_path, "w+", encoding="utf-8")
                 self._log_file_path = log_path
                 self._delete_log_file_on_cleanup = False
+                logger.info(f"Server logs will be written to: {log_path}")
                 return log_file
             except Exception as exc:  # pragma: no cover - fallback path
                 logger.warning(
-                    "Unable to create server log file in benchmark output directory "
+                    "Unable to create server log file in output directory "
                     f"'{output_dir}': {exc}. Falling back to a temporary file."
                 )
 
@@ -114,10 +118,9 @@ class BaseServerManager(abc.ABC):
             return False, error_msg
 
         try:
-            # Auto-allocate GPUs if not specified
+            # auto-allocate if not specified
             if self.config.gpu_ids is None:
                 num_gpus = self.config.get_num_gpus()
-                logger.info(f"Auto-allocating {num_gpus} GPUs for server...")
 
                 job_id = (
                     f"server_{self.config.host}_{self.config.port}_{int(time.time())}"
@@ -133,32 +136,18 @@ class BaseServerManager(abc.ABC):
                     logger.error(f"Failed to allocate {num_gpus} GPUs for server")
                     return False, f"Failed to allocate {num_gpus} GPUs for server"
 
-                # Track allocated job id for later release / Vajra mapping
                 self._allocated_job_id = job_id
-
-                # Extract GPU IDs from resource mapping
                 gpu_ids = [gpu_id for _, gpu_id in resource_mapping]
-
-                # Update config with allocated GPUs
-                # Create a new config object with the allocated gpu_ids
-                from dataclasses import replace
-
                 self.config = replace(self.config, gpu_ids=gpu_ids)
-
-                logger.info(f"Allocated GPUs {gpu_ids} for server")
 
             command = self._build_launch_command()
             logger.info(f"Launching server with command: {' '.join(command)}")
 
-            # Set up environment variables
             env = os.environ.copy()
 
-            # If an environment path is provided in the config, prepend its
-            # bin/Scripts directory to PATH so the subprocess resolves the
-            # `python` executable from that environment.
-            env_path = getattr(self.config, "environment_path", None)
+            env_path = getattr(self.config, "env_path", None)
             if env_path:
-                # Determine platform-specific scripts directory
+                # platform-specific scripts directory
                 scripts_dir = "Scripts" if os.name == "nt" else "bin"
                 bin_dir = os.path.join(env_path, scripts_dir)
                 if os.path.isdir(bin_dir):
@@ -170,21 +159,18 @@ class BaseServerManager(abc.ABC):
                         f"Configured environment_path '{env_path}' does not contain {scripts_dir} at {bin_dir}"
                     )
 
-            # Set CUDA_VISIBLE_DEVICES if gpu_ids specified
             gpu_env = self.config.get_gpu_env_var()
             if gpu_env is not None:
                 env["CUDA_VISIBLE_DEVICES"] = gpu_env
-                logger.info(f"Setting CUDA_VISIBLE_DEVICES={gpu_env}")
 
-            # Launch server process
-            # Redirect output to a log file inside the benchmark output directory
             self._log_file = self._create_log_file()
 
+            # launch server
             self.process = subprocess.Popen(
                 command,
                 env=env,
                 stdout=self._log_file,
-                stderr=subprocess.STDOUT,  # Combine stderr into stdout
+                stderr=subprocess.STDOUT,
                 text=True,
             )
 
@@ -193,11 +179,8 @@ class BaseServerManager(abc.ABC):
             return True, None
 
         except Exception as e:
-            # If we allocated GPUs earlier, make sure to release them
+            # release GPUs
             if self._allocated_job_id is not None:
-                logger.info(
-                    f"Releasing allocated resources for job {self._allocated_job_id} due to launch failure"
-                )
                 self.resource_manager.release_resources(self._allocated_job_id)
                 self._allocated_job_id = None
             if self._log_file is not None:
@@ -257,7 +240,6 @@ class BaseServerManager(abc.ABC):
             health_url = self.config.get_health_check_url()
             response = requests.get(health_url, timeout=5)
 
-            # Most servers return 200 OK when healthy
             if response.status_code == 200:
                 return True
             else:
@@ -284,23 +266,21 @@ class BaseServerManager(abc.ABC):
         start_time = time.time()
 
         while time.time() - start_time < timeout:
-            # Check if process is still alive
             if not self.is_running:
                 logger.error("Server process terminated unexpectedly")
-                # Read the log file to check for common errors
+                # check common errors
                 if self._log_file:
                     try:
                         self._log_file.seek(0)
                         logs = self._log_file.read()
 
-                        # Check for GPU memory error
+                        # GPU memory error
                         if (
                             "Free memory on device" in logs
                             and "is less than desired GPU memory utilization" in logs
                         ):
                             import re
 
-                            # Extract memory info from error message
                             match = re.search(
                                 r"Free memory on device \(([0-9.]+)/([0-9.]+) GiB\).*desired GPU memory utilization.*\(([0-9.]+), ([0-9.]+) GiB\)",
                                 logs,
@@ -322,10 +302,9 @@ class BaseServerManager(abc.ABC):
                                 )
                             else:
                                 logger.error(
-                                    "GPU memory error detected but couldn't parse details"
+                                    "GPU memory detected but couldn't parse details"
                                 )
                         else:
-                            # Show last 50 lines of logs for other errors
                             log_lines = logs.strip().split("\n")
                             recent_logs = "\n".join(log_lines[-50:])
                             logger.error(f"Recent server logs:\n{recent_logs}")
@@ -333,11 +312,9 @@ class BaseServerManager(abc.ABC):
                         logger.error(f"Failed to read server logs: {e}")
                 return False
 
-            # Check health
             if self.health_check():
                 return True
 
-            # Wait before next check
             time.sleep(self.config.health_check_interval)
 
         logger.error(f"Server did not become ready within {timeout}s")
@@ -354,32 +331,23 @@ class BaseServerManager(abc.ABC):
         """
         success = True
         try:
-            if not self.is_running:
-                logger.warning("Server is not running")
-            elif self.process is None:
+            if self.process is None:
                 logger.error("Server process is None, cannot shutdown")
                 success = False
             else:
-                logger.info(f"Shutting down server (PID: {self.process.pid})")
-
                 if force:
                     self.process.kill()
-                    logger.info("Force killed server process")
+                # graceful shutdown
                 else:
                     self.process.terminate()
-                    logger.info("Sent termination signal to server")
-
-                    # Wait for graceful shutdown
                     try:
                         self.process.wait(timeout=30)
-                        logger.info("Server shut down gracefully")
                     except subprocess.TimeoutExpired:
                         logger.warning(
                             "Server did not shut down gracefully, force killing"
                         )
                         self.process.kill()
 
-                # Ensure process is reaped, ignore errors
                 try:
                     self.process.wait(timeout=5)
                 except Exception as e:
@@ -389,22 +357,17 @@ class BaseServerManager(abc.ABC):
             logger.error(f"Error during shutdown: {e}")
             success = False
         finally:
-            # Always reset state and clean up resources, even if exceptions occur
+            # reset state and clean up resources, even with exceptions
             self._is_running = False
 
-            # Release allocated resources if any
             if self._allocated_job_id is not None:
                 try:
-                    logger.info(
-                        f"Releasing allocated resources for job {self._allocated_job_id}"
-                    )
                     self.resource_manager.release_resources(self._allocated_job_id)
                 except Exception as e:
                     logger.error(f"Error releasing resources: {e}")
                 finally:
                     self._allocated_job_id = None
 
-            # Clean up log file
             if self._log_file:
                 try:
                     self._log_file.close()
@@ -440,7 +403,6 @@ class BaseServerManager(abc.ABC):
             subprocess redirects stderr into stdout, so stderr will usually
             be an empty string and stdout will contain both streams.
         """
-        # If we never set up a log file we can't return anything useful
         log_path: Optional[Path] = None
         if self._log_file_path is not None:
             log_path = self._log_file_path
@@ -449,27 +411,16 @@ class BaseServerManager(abc.ABC):
         else:
             return "", ""
 
-        # Note: This is a simple implementation that reads available output
-        # For production, consider using proper log file management (rotation,
-        # streaming, or structured logs). The server's launch() redirects
-        # both stdout and stderr to the same temporary file, so we return
-        # that combined stream as stdout and leave stderr empty.
         try:
-            # Ensure any buffered output is flushed before we read the file
             if self._log_file is not None:
                 try:
                     self._log_file.flush()
                 except Exception:
-                    # Ignore any flush errors; we'll still attempt to read the file
                     pass
 
             if not log_path.exists():
                 return "", ""
 
-            # Read the log file content from disk rather than relying on the
-            # file object's current pointer. This avoids disturbing the file
-            # pointer used by the subprocess and reads bytes safely even while
-            # the subprocess is still running.
             with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                 all_lines = f.read().splitlines()
 
@@ -524,5 +475,4 @@ class BaseServerManager(abc.ABC):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""
-        if self.config.auto_shutdown:
-            self.shutdown()
+        self.shutdown()

@@ -29,6 +29,7 @@ dependencies = [
     "numpy",
     "jinja2",
     "datasets",
+    "lm-eval",
     "sacrebleu",
     "rouge-score",
     "scikit-learn",

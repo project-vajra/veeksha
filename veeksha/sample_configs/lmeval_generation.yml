@@ -1,0 +1,36 @@
+seed: 42
+
+session_generator:
+  type: lmeval
+  tasks: ["triviaqa", "truthfulqa_gen"]
+  num_fewshot: 0
+
+traffic_scheduler:
+  type: concurrent
+  target_concurrent_sessions: 4
+  rampup_seconds: 0
+  cancel_session_on_failure: False
+
+evaluators:
+  - type: performance
+    target_channels: ["text"]
+    stream_metrics: False
+  - type: accuracy_lmeval
+    bootstrap_iters: 200
+
+client:
+  type: openai_completions
+  model: meta-llama/Llama-3.1-8B-Instruct
+  request_timeout: 240
+  api_base: http://localhost:30002/v1
+  max_tokens_param: max_tokens
+  additional_sampling_params: "{\"temperature\": 0, \"max_gen_toks\": 64}"
+
+runtime:
+  max_sessions: 40 # 20 docs per task
+  benchmark_timeout: 1200
+
+trace_recorder:
+  enabled: False
+
+

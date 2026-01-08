@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest  # type: ignore[import]
 from unittest.mock import MagicMock, patch, ANY
 from veeksha.orchestration.server_manager import BaseServerManager
-from veeksha.config.server import ServerConfig
+from veeksha.config.server import VLLMServerConfig
 
 pytestmark = pytest.mark.unit
 
@@ -18,8 +18,7 @@ class TestServerManager(BaseServerManager):
 
 @pytest.fixture
 def server_config():
-    return ServerConfig(
-        engine="test",
+    return VLLMServerConfig(
         host="localhost",
         port=8000,
         gpu_ids=[0],
@@ -193,19 +192,19 @@ class TestBaseServerManager:
     def test_get_additional_args_dict(self):
         """Test parsing additional args."""
         # Test string (JSON)
-        config = ServerConfig(additional_args='{"key": "value"}')
+        config = VLLMServerConfig(additional_args='{"key": "value"}')
         manager = TestServerManager(config)
         args = manager.get_additional_args_dict()
         assert args == {"key": "value"}
 
         # Test None
-        config = ServerConfig(additional_args=None)
+        config = VLLMServerConfig(additional_args=None)
         manager = TestServerManager(config)
         args = manager.get_additional_args_dict()
         assert args == {}
 
         # Test dict
-        config = ServerConfig(additional_args={"key": "value"})
+        config = VLLMServerConfig(additional_args={"key": "value"})
         manager = TestServerManager(config)
         args = manager.get_additional_args_dict()
         assert args == {"key": "value"}
@@ -214,7 +213,7 @@ class TestBaseServerManager:
         assert config.additional_args == {"key": "value"}
 
         # Test invalid JSON string
-        config = ServerConfig(additional_args='{"invalid": json}')
+        config = VLLMServerConfig(additional_args='{"invalid": json}')
         manager = TestServerManager(config)
         with pytest.raises(ValueError, match="Invalid JSON in additional_args"):
             manager.get_additional_args_dict()
@@ -224,7 +223,7 @@ class TestBaseServerManager:
     def test_auto_allocation(self):
         """Test auto-allocation of GPUs during launch."""
         # Config without explicit GPU IDs
-        config = ServerConfig(gpu_ids=None, tensor_parallel_size=2)
+        config = VLLMServerConfig(gpu_ids=None, tensor_parallel_size=2)
         manager = TestServerManager(config)
         
         # Mock resource manager
@@ -255,7 +254,7 @@ class TestBaseServerManager:
 
     def test_auto_allocation_non_contiguous(self):
         """Ensure we can request non-contiguous GPUs when flag is disabled."""
-        config = ServerConfig(
+        config = VLLMServerConfig(
             gpu_ids=None,
             tensor_parallel_size=2,
             require_contiguous_gpus=False,
@@ -316,8 +315,7 @@ class TestBaseServerManager:
         self, mock_popen, tmp_path, monkeypatch
     ):
         """Server logs should live inside the benchmark output directory."""
-        config = ServerConfig(
-            engine="test",
+        config = VLLMServerConfig(
             host="localhost",
             port=8123,
             gpu_ids=[0],

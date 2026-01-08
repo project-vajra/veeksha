@@ -1,4 +1,4 @@
-.PHONY: help lint format
+.PHONY: help lint format test test/unit test/e2e test/setup test/setup/314 test/failed-only coverage/report
 .DEFAULT_GOAL := help
 
 VENV314 ?= .venv314
@@ -35,31 +35,21 @@ format/autoflake: ## remove unused imports
 format: format/isort format/autoflake format/black ## format code
 
 # Test targets
-test: test/unit test/functional test/gpu ## Run all tests
+test: test/unit test/e2e ## Run all tests
 
-test/setup: test/setup/314 test/setup/312 ## Create both virtual environments and install deps
+test/setup: test/setup/314 ## Create virtual environment and install deps
 
 test/setup/314: ## Create Python $(PY314) env for unit/lint and install dev deps
 	@VENV314=$(VENV314) PY314=$(PY314) bash scripts/test_setup_314.sh
-
-test/setup/312: ## Create Python $(PY312) env for vLLM/torch and install test deps
-	@VENV312=$(VENV312) PY312=$(PY312) bash scripts/test_setup_312.sh
-
-test/functional: ## Run functional tests
-	@echo "Running functional tests..."
-	@VENV314=$(VENV314) VENV312=$(VENV312) bash scripts/run_tests_functional.sh
-
-test/gpu: ## Run GPU tests
-	@echo "Running GPU tests..."
-	@VENV314=$(VENV314) VENV312=$(VENV312) bash scripts/run_tests_gpu.sh
 
 # optional: keep unit generating initial data but skip reports, or regenerate at end
 test/unit: ## Run unit tests
 	@echo "Running unit tests..."
 	@VENV314=$(VENV314) bash scripts/run_tests_unit.sh
-	
-test/integration: ## Run integration tests
-	@echo "Integration tests not yet implemented..."
+
+test/e2e: ## Run end-to-end tests
+	@echo "Running e2e tests..."
+	@VENV314=$(VENV314) bash scripts/run_tests_e2e.sh
 
 # Emit final coverage reports into mounted test_output directory
 coverage/report:

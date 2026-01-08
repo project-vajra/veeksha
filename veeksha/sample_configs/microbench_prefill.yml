@@ -1,0 +1,54 @@
+seed: 42
+output_dir: microbench_output/prefill_stair
+
+traffic_scheduler:
+  type: concurrent
+  target_concurrent_sessions: 1
+  rampup_seconds: 0
+  cancel_session_on_failure: False
+
+session_generator:
+  type: synthetic
+  session_graph:
+    type: linear
+    inherit_history: False
+    num_request_generator:
+      type: fixed
+      value: 1
+    request_wait_generator:
+      type: fixed
+      interval: 0
+  channels:
+    - type: text
+      body_length_generator:
+        type: fixed_stair # deterministic sweep
+        values: [8, 16, 32, 64]
+        repeat_each: 10
+        wrap: False
+      output_length_generator:
+        type: fixed
+        value: 1
+
+evaluators:
+  - type: performance
+    target_channels: ["text"]
+    stream_metrics: False
+
+client:
+  type: openai_chat_completions
+  model: meta-llama/Llama-3.1-8B-Instruct
+  api_base: http://localhost:30002/v1
+  api_key: dummy
+  request_timeout: 60
+  max_tokens_param: max_tokens
+
+runtime:
+  max_sessions: 40 # we will see 10 requests for each step value in total
+  benchmark_timeout: 600
+
+trace_recorder:
+  enabled: False
+
+
+
+

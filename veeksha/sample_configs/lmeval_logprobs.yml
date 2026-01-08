@@ -1,0 +1,36 @@
+seed: 42
+
+session_generator:
+  type: lmeval
+  tasks: ["arc_easy", "arc_challenge", "hellaswag", "winogrande"]
+  num_fewshot: 0
+
+traffic_scheduler:
+  type: concurrent
+  target_concurrent_sessions: 1
+  rampup_seconds: 0
+  cancel_session_on_failure: False
+
+evaluators:
+  - type: performance
+    target_channels: ["text"]
+    stream_metrics: False
+  - type: accuracy_lmeval
+    bootstrap_iters: 10
+
+client:
+  type: openai_router
+  model: meta-llama/Llama-3.1-8B-Instruct
+  request_timeout: 60
+  api_base: http://localhost:30002/v1
+  max_tokens_param: max_completion_tokens
+  min_tokens_param: min_tokens
+  use_min_tokens_prompt_fallback: False
+
+runtime:
+  max_sessions: 80 # 20 lmeval documents per task
+  benchmark_timeout: 600
+
+trace_recorder:
+  enabled: True
+  include_content: True

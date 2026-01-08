@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple, get_args
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.utils import (
+    create_class_from_dict,
     get_all_subclasses,
     get_inner_type,
     has_allow_from_file_attribute,
@@ -52,7 +53,7 @@ def explode_dict(
                  {'test_a': 2, 'test_b': 3}, {'test_a': 2, 'test_b': 4}]
 
     NOTE:
-        In deeply–nested configs with many lists, the number of combinations can grow
+        In deeply-nested configs with many lists, the number of combinations can grow
         exponentially. This method raises a ``ValueError`` if the number of combinations
         exceeds ``max_combinations``. Pass ``float('inf')`` to disable the limit.
     """
@@ -95,15 +96,14 @@ def explode_dict(
             type_key = str(data["type"]).lower()
             if data["type"] is None or type_key in {"none", "null", ""}:
                 return current_prefix
-            typed_child_name = cls.base_poly_children_types.get(
-                stripped_prefix, {}
-            ).get(type_key)
+            type_map = cls.base_poly_children_types.get(stripped_prefix, {})
+            if not type_map:
+                return current_prefix
+            typed_child_name = type_map.get(type_key)
             if typed_child_name:
                 resolved_prefix = f"{typed_child_name}_"
             elif strict:
-                valid = list(
-                    cls.base_poly_children_types.get(stripped_prefix, {}).keys()
-                )
+                valid = list(type_map.keys())
                 raise ValueError(
                     f"Invalid type '{data['type']}' for '{stripped_prefix}_type'. Valid types: {valid}"
                 )
@@ -121,15 +121,22 @@ def explode_dict(
             expected_type = getattr(cls, "__annotations__", {}).get(prefixed_key, None)
             is_literal_list = expected_type and is_list(expected_type)
 
-            if isinstance(value, list) and len(value) > 0:
+            if isinstance(value, list):
                 # (only) if the dataclass declares the field as a List[...]
                 # we treat the whole list as a single literal value and don't
                 # explode it
                 if is_literal_list:
                     non_list_items[key] = value
+                elif not getattr(value, "__veeksha_expand__", False):
+                    if expected_type is not None:
+                        raise ValueError(
+                            f"List provided for non-List field '{prefixed_key}'. "
+                            "Use !expand to sweep over list values."
+                        )
+                    non_list_items[key] = value
                 else:
                     # will explode
-                    if isinstance(value[0], dict):
+                    if value and isinstance(value[0], dict):
                         # list of config dictionaries
                         list_keys.append(key)
                         list_values.append(value)
@@ -241,6 +248,30 @@ def explode_dict(
         list_keys, list_values, non_list_items, dict_items = _categorize_dict_items(
             d, effective_prefix
         )
+
+        for key, value in list(non_list_items.items()):
+            prefixed_key = f"{effective_prefix}{key}" if effective_prefix else key
+            expected_type = getattr(cls, "__annotations__", {}).get(prefixed_key, None)
+            if not (
+                expected_type and is_list(expected_type) and isinstance(value, list)
+            ):
+                continue
+            nested_prefix = (
+                f"{effective_prefix}{key}_" if effective_prefix else f"{key}_"
+            )
+            parts = [
+                (
+                    _explode_dict_recursive(item, level + 1, nested_prefix)
+                    if isinstance(item, dict)
+                    else [item]
+                )
+                for item in value
+            ]
+            variants = [list(combo) for combo in product(*parts)]
+            if len(variants) > 1:
+                del non_list_items[key]
+                list_keys.append(key)
+                list_values.append(variants)
 
         # generate combinations from nested dictionaries
         dict_combinations = _generate_dict_combinations(
@@ -406,8 +437,8 @@ def reconstruct_original_dataclass(self) -> Any:
         cls_type_arg = cls + "_type"
 
         # skip if the field defaults to None and the user did not provide it
-        #   – For polymorphic configs: no <cls>_type
-        #   – For regular dataclasses: no sub-field with the <cls>_ prefix
+        #   - For polymorphic configs: no <cls>_type
+        #   - For regular dataclasses: no sub-field with the <cls>_ prefix
         if (
             cls in self.args_with_default_none
             and cls_type_arg not in self.provided_args
@@ -534,7 +565,9 @@ def init_iterable_args(loaded_configs, cli_provided_args, list_fields):
                                 subclass_kwargs = {
                                     k: v for k, v in raw_value.items() if k != "type"
                                 }
-                                return_iterable.append(subclass(**subclass_kwargs))
+                                return_iterable.append(
+                                    create_class_from_dict(subclass, subclass_kwargs)
+                                )
                                 is_match = True
                                 break
                         assert (
@@ -542,7 +575,9 @@ def init_iterable_args(loaded_configs, cli_provided_args, list_fields):
                         ), f"No class found for type '{raw_value['type']}' in children of {target_type}"
                 elif hasattr(target_type, "__dataclass_fields__"):
                     for raw_value in arg_value:
-                        return_iterable.append(target_type(**raw_value))
+                        return_iterable.append(
+                            create_class_from_dict(target_type, raw_value)
+                        )
                 elif isinstance(target_type, type):
                     for raw_value in arg_value:
                         return_iterable.append(target_type(raw_value))

@@ -3,13 +3,17 @@ import os
 from importlib.resources import files as _pkg_files
 from typing import Dict, List
 
-from veeksha.core.response import Response
+from veeksha.core.response import ChannelResponse
 
 
-def store_generated_texts(output_dir: str, generated_responses: List[Response]) -> None:
+def store_generated_texts(
+    output_dir: str, generated_responses: List[ChannelResponse]
+) -> None:
     """Store generated responses in a text file."""
     with open(os.path.join(output_dir, "generated_texts.txt"), "w") as f:
-        f.write(("\n" + "-" * 30 + "\n").join([i.text for i in generated_responses]))
+        f.write(
+            ("\n" + "-" * 30 + "\n").join([str(i.content) for i in generated_responses])
+        )
 
 
 def store_lmeval_results(output_dir: str, lmeval_results: Dict) -> None:

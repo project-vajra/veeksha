@@ -6,14 +6,6 @@ from threading import Lock
 
 
 @dataclass
-class BenchmarkContext:
-    """Context object containing benchmark-level information."""
-
-    benchmark_id: str
-    telemetry_enabled: bool
-
-
-@dataclass
 class WorkerContext:
     """Context object for worker threads."""
 

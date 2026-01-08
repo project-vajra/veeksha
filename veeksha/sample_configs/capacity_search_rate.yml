@@ -1,0 +1,39 @@
+output_dir: capacity_search_output
+start_value: 5
+max_value: 100
+expansion_factor: 2.0
+max_iterations: 3
+precision: 2
+
+benchmark_config:
+  seed: 42
+
+  traffic_scheduler:
+    type: rate
+    interval_generator:
+      type: gamma # rate is set by capsearch
+    cancel_session_on_failure: False
+
+  session_generator:
+    type: synthetic
+    session_graph:
+      type: linear
+      inherit_history: True
+    channels:
+      - type: text
+
+  client:
+    type: openai_chat_completions
+    model: meta-llama/Llama-3.2-1B-Instruct
+    request_timeout: 60
+    api_base: http://localhost:30002/v1
+    max_tokens_param: max_completion_tokens
+    min_tokens_param: min_tokens
+
+  runtime:
+    max_sessions: -1
+    benchmark_timeout: 10
+
+  trace_recorder:
+    enabled: True
+    include_content: True
