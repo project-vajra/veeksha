@@ -2,7 +2,7 @@
 
 import os
 from abc import abstractmethod
-from typing import Iterator, List, Optional
+from typing import Iterator, List, Optional, cast
 
 import pandas as pd
 
@@ -178,4 +178,4 @@ class TraceFlavorGeneratorBase:
         df_shuffled = pd.concat(
             [df[df["session_id"] == sid] for sid in sid_order]
         ).reset_index(drop=True)
-        return df_shuffled
+        return cast(pd.DataFrame, df_shuffled)

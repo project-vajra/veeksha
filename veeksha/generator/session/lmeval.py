@@ -84,13 +84,18 @@ class LMEvalSessionGenerator(BaseSessionGenerator):
 
             instances_by_doc_id: Dict[int, List[Instance]] = defaultdict(list)
             for instance in task.instances:
-                instances_by_doc_id[instance.doc_id].append(instance)
+                doc_id = instance.doc_id
+                if doc_id is None:
+                    continue
+                instances_by_doc_id[doc_id].append(instance)
             for instances in instances_by_doc_id.values():
                 instances.sort(key=lambda x: x.idx)
 
             tname = str(task_output.task_name)
             doc_ids: List[int] = [
-                doc_id for doc_id, _ in task.doc_iterator(limit=per_task_doc_limit)
+                doc_id
+                for doc_id, _ in task.doc_iterator(limit=per_task_doc_limit)
+                if doc_id is not None
             ]
             task_to_doc_ids[tname] = doc_ids
             task_to_instances_by_doc[tname] = instances_by_doc_id

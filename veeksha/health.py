@@ -1061,8 +1061,8 @@ class HealthChecker:
         if violation_count > 0:
             # Add top violations (largest absolute difference)
             violations = violations.copy()
-            violations["abs_diff"] = violations["prompt_len_diff"].abs()
-            top_violations = violations.nlargest(5, columns=["abs_diff"])
+            violations["abs_diff"] = np.abs(violations["prompt_len_diff"])
+            top_violations = violations.nlargest(5, ["abs_diff"])
 
             summary["sections"].append(
                 {
@@ -1175,8 +1175,8 @@ class HealthChecker:
         if violation_count > 0:
             # Add top violations (largest absolute difference)
             violations = violations.copy()
-            violations["abs_diff"] = violations["output_len_diff"].abs()
-            top_violations = violations.nlargest(5, columns=["abs_diff"])
+            violations["abs_diff"] = np.abs(violations["output_len_diff"])
+            top_violations = violations.nlargest(5, ["abs_diff"])
 
             summary["sections"].append(
                 {

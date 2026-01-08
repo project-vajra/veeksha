@@ -13,7 +13,7 @@ import os
 import threading
 from abc import ABC
 from collections import defaultdict
-from typing import Any, Dict, Optional, Set, Tuple
+from typing import Any, Dict, Optional, Set, Tuple, cast
 
 # NOTE: `lm_eval` is an external dependency; type checkers in some environments
 # may not have it available, so we silence missing-import diagnostics here.
@@ -364,17 +364,14 @@ class LMEvalAccuracyEvaluator(BaseAccuracyEvaluator):
             "higher_is_better": dict(sorted(higher_is_better.items())),
             "n-samples": {
                 task_output.task_name: {
-                    "original": len(task_output.task.eval_docs),  # type: ignore
+                    "original": len(task.eval_docs),
                     "effective": min(
-                        (
-                            limit
-                            if limit is not None
-                            else len(task_output.task.eval_docs)
-                        ),  # type: ignore
-                        len(task_output.task.eval_docs),  # type: ignore
+                        (limit if limit is not None else len(task.eval_docs)),
+                        len(task.eval_docs),
                     ),
                 }
                 for task_output, limit in zip(eval_tasks, limits)
+                for task in (cast(Any, task_output.task),)
             },
         }
 
