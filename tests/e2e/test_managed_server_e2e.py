@@ -9,11 +9,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from veeksha.new.benchmark import manage_benchmark_run
-from veeksha.new.config.benchmark import BenchmarkConfig
-from veeksha.new.config.utils import create_class_from_dict
+from veeksha.benchmark import manage_benchmark_run
+from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.utils import create_class_from_dict
+from veeksha.core.request_content import TextChannelRequestContent
 
-SAMPLE_CONFIG_PATH = "veeksha/new/sample_configs/managed_server.yml"
+SAMPLE_CONFIG_PATH = "veeksha/sample_configs/managed_server.yml"
 
 class MockOpenAIHandler(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -86,9 +87,10 @@ def test_managed_server_benchmark(mock_openai_server, tmp_path) -> None:
     mock_ctx.__enter__.return_value = server_info
     mock_ctx.__exit__.return_value = None
     
-    # We patch the call to managed_server in veeksha.new.benchmark
-    with patch("veeksha.new.benchmark.managed_server", return_value=mock_ctx) as mocked_ms, \
-         patch("veeksha.new.benchmark.build_hf_tokenizer_handle_from_model") as mock_build_tok:
+    # We patch the call to managed_server in veeksha.benchmark
+    with patch("veeksha.benchmark.managed_server", return_value=mock_ctx) as mocked_ms, \
+         patch("veeksha.benchmark.build_hf_tokenizer_handle_from_model") as mock_build_tok, \
+         patch("veeksha.core.tokenizer.build_hf_tokenizer_handle_from_model") as mock_build_tok_core:
         
         # Mock tokenizer handle
         mock_handle = MagicMock()
@@ -97,22 +99,26 @@ def test_managed_server_benchmark(mock_openai_server, tmp_path) -> None:
         # Mock decode
         mock_handle.decode.return_value = "mock_text"
         mock_build_tok.return_value = mock_handle
+        mock_build_tok_core.return_value = mock_handle
 
-        # 5. Run
-        result = manage_benchmark_run(benchmark_config)
-        
-        # 6. Verify
-        # Check that mocked_ms was called
-        mocked_ms.assert_called_once()
-        
-        # Check result
-        # Metrics return e.g. "Time to First Chunk" from CDFSketch
-        # The key names in result.metrics correspond to metric_name passed to CDFSketch
-        
-        # Looking at TextPerformanceEvaluator: "Time per Output Token"
-        tpot_mean = result.metrics.get("Time per Output Token (Mean)")
-        assert tpot_mean is not None
-        assert tpot_mean >= 0
-        
-        ttfc_mean = result.metrics.get("Time to First Chunk (Mean)")
-        assert ttfc_mean is not None
+        # Stub the channel generator to avoid heavy prompt generation
+        mock_channel_gen = MagicMock()
+        mock_channel_gen.generate_content.return_value = TextChannelRequestContent(
+            input_text="mock prompt",
+            target_output_tokens=1,
+            target_prompt_tokens=5,
+        )
+
+        with patch(
+            "veeksha.generator.channel.registry.ChannelGeneratorRegistry.get",
+            return_value=mock_channel_gen,
+        ):
+
+            # 5. Run
+            result = manage_benchmark_run(benchmark_config)
+
+            # 6. Verify
+            mocked_ms.assert_called_once()
+            assert result.metrics.get("Successful Sessions", 0) == 5
+            assert result.metrics.get("Number of Completed Requests", 0) > 0
+            assert result.metrics.get("Error Rate", 0) == 0

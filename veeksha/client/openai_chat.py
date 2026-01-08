@@ -1,0 +1,482 @@
+from __future__ import annotations
+
+import time
+from typing import TYPE_CHECKING, Any, List, Optional
+
+import httpx  # type: ignore
+
+from veeksha.client.openai_base import OpenAIBaseClient
+from veeksha.core.request import Request
+from veeksha.core.request_content import (
+    AudioChannelRequestContent,
+    ImageChannelRequestContent,
+    TextChannelRequestContent,
+    VideoChannelRequestContent,
+)
+from veeksha.core.response import ChannelResponse, RequestResult
+from veeksha.core.tokenizer import TokenizerProvider
+from veeksha.logger import init_logger
+from veeksha.types import ChannelModality
+
+if TYPE_CHECKING:
+    from veeksha.config.client import OpenAIChatCompletionsClientConfig
+
+logger = init_logger(__name__)
+
+
+class OpenAIChatCompletionsClient(OpenAIBaseClient):
+    """Async client for OpenAI Chat Completions API using httpx.
+
+    Works with new Request objects that have channels instead of prompt tuples.
+    """
+
+    def __init__(
+        self,
+        config: OpenAIChatCompletionsClientConfig,
+        tokenizer_provider: TokenizerProvider,
+    ) -> None:
+        """Initialize the OpenAI Chat client.
+
+        Args:
+            config: Client configuration with model, timeout, etc.
+            tokenizer_provider: Provider for tokenizers per modality.
+        """
+        super().__init__(config=config, tokenizer_provider=tokenizer_provider)
+        self.chat_address = str(self.api_base) + str(self.config.address_append_value)
+
+    def _build_text_content_block(
+        self, text_content: TextChannelRequestContent
+    ) -> tuple[dict, int]:
+        """Build a text content block for multimodal messages.
+
+        Args:
+            text_content: Text content from request channels.
+
+        Returns:
+            Tuple of (content_block_dict, token_count).
+        """
+        prompt_text = text_content.input_text
+        prompt_len = len(self.text_tokenizer_handle.encode(prompt_text))
+
+        return {"type": "text", "text": prompt_text}, prompt_len
+
+    def _build_image_content_block(
+        self, image_content: ImageChannelRequestContent
+    ) -> dict:
+        """Build an image content block for multimodal messages."""
+        return {"type": "image_url", "image_url": {"url": image_content.input_image}}
+
+    def _build_audio_content_block(
+        self, audio_content: AudioChannelRequestContent
+    ) -> dict:
+        """Build an audio content block for multimodal messages."""
+        return {"type": "audio_url", "audio_url": {"url": audio_content.input_audio}}
+
+    def _build_video_content_block(
+        self, video_content: VideoChannelRequestContent
+    ) -> dict:
+        """Build a video content block for multimodal messages."""
+        return {"type": "video_url", "video_url": {"url": video_content.input_video}}
+
+    def _build_message_content(self, request: Request) -> tuple[list, int]:
+        """Build multimodal message content from request channels.
+
+        Constructs a list of content blocks in OpenAI multimodal format.
+
+        Args:
+            request: Request with channels dict mapping modalities to content.
+
+        Returns:
+            Tuple of (content_blocks_list, text_token_count).
+        """
+        content_blocks: List[dict] = []
+        text_token_count = 0
+        if ChannelModality.TEXT in request.channels:
+            text_block, text_token_count = self._build_text_content_block(
+                request.channels[ChannelModality.TEXT]  # type: ignore
+            )
+            content_blocks.append(text_block)
+
+        if ChannelModality.IMAGE in request.channels:
+            image_block = self._build_image_content_block(
+                request.channels[ChannelModality.IMAGE]  # type: ignore
+            )
+            content_blocks.append(image_block)
+
+        if ChannelModality.AUDIO in request.channels:
+            audio_block = self._build_audio_content_block(
+                request.channels[ChannelModality.AUDIO]  # type: ignore
+            )
+            content_blocks.append(audio_block)
+
+        if ChannelModality.VIDEO in request.channels:
+            video_block = self._build_video_content_block(
+                request.channels[ChannelModality.VIDEO]  # type: ignore
+            )
+            content_blocks.append(video_block)
+
+        messages = []
+        if request.history:
+            messages.extend(request.history)
+
+        # current request content
+        if len(content_blocks) == 1 and content_blocks[0].get("type") == "text":
+            messages.append({"role": "user", "content": content_blocks[0]["text"]})
+        else:
+            messages.append({"role": "user", "content": content_blocks})
+
+        return messages, text_token_count
+
+    # ---------- response processing
+
+    def _process_text_delta(
+        self,
+        delta_content: str,
+        receive_time: float,
+        most_recent_token_time: float,
+        inter_chunk_times: List[float],
+        generated_text: str,
+        chunks_received: int,
+    ) -> tuple[str, int, float, List[float]]:
+        """Process a text delta from the streaming response.
+
+        Args:
+            delta_content: Text content from the delta.
+            receive_time: Time of chunk receipt.
+            most_recent_token_time: Time of last token received.
+            inter_chunk_times: List of inter-chunk times.
+            generated_text: Accumulated generated text.
+            chunks_received: Total chunks received so far.
+
+        Returns:
+            Tuple of (generated_text, chunks_received,
+                     most_recent_token_time, inter_chunk_times).
+        """
+        # treat each streaming delta as a single token
+        generated_text += delta_content
+        delta_duration = receive_time - most_recent_token_time
+        inter_chunk_times.append(delta_duration)
+        chunks_received += 1
+        most_recent_token_time = receive_time
+
+        return (
+            generated_text,
+            chunks_received,
+            most_recent_token_time,
+            inter_chunk_times,
+        )
+
+    def _process_image_response(
+        self,
+        delta: dict,
+        image_data: Optional[Any],
+    ) -> Optional[Any]:
+        """Process image data from the streaming response.
+
+        Args:
+            delta: Delta dict from the streaming response.
+            image_data: Accumulated image data (if any).
+
+        Returns:
+            Updated image data or None.
+        """
+        # Skeleton: Log warning and return None
+        # Future: Parse image data from delta and accumulate
+        return None
+
+    def _process_audio_response(
+        self,
+        delta: dict,
+        audio_data: Optional[Any],
+    ) -> Optional[Any]:
+        """Process audio data from the streaming response.
+
+        Args:
+            delta: Delta dict from the streaming response.
+            audio_data: Accumulated audio data (if any).
+
+        Returns:
+            Updated audio data or None.
+        """
+        # Skeleton: Log warning and return None
+        # Future: Parse audio chunks from delta and accumulate
+        return None
+
+    def _process_video_response(
+        self,
+        delta: dict,
+        video_data: Optional[Any],
+    ) -> Optional[Any]:
+        """Process video data from the streaming response.
+
+        Args:
+            delta: Delta dict from the streaming response.
+            video_data: Accumulated video data (if any).
+
+        Returns:
+            Updated video data or None.
+        """
+        # Skeleton: Log warning and return None
+        # Future: Parse video data from delta and accumulate
+        return None
+
+    def _build_channel_responses(
+        self,
+        success: bool,
+        generated_text: str,
+        inter_chunk_times: List[float],
+        delta_prompt_len: int,
+        total_prompt_len: int,
+        tokens_received: int,
+        image_data: Optional[Any],
+        audio_data: Optional[Any],
+        video_data: Optional[Any],
+    ) -> dict:
+        """Build channel responses for all modalities.
+
+        Args:
+            success: Whether the request was successful.
+            generated_text: Generated text output.
+            inter_chunk_times: List of inter-chunk times.
+            delta_prompt_len: Number of prompt tokens in the delta.
+            total_prompt_len: Number of prompt tokens in the total prompt.
+            tokens_received: Number of output tokens.
+            image_data: Image response data (if any).
+            audio_data: Audio response data (if any).
+            video_data: Video response data (if any).
+
+        Returns:
+            Dict mapping ChannelModality to ChannelResponse.
+        """
+        channels = {}
+
+        if not success:
+            return channels
+
+        if generated_text:
+            channels[ChannelModality.TEXT] = ChannelResponse(
+                modality=ChannelModality.TEXT,
+                content=generated_text,
+                metrics={
+                    "is_stream": True,
+                    "inter_chunk_times": inter_chunk_times,
+                    "num_delta_prompt_tokens": delta_prompt_len,
+                    "num_total_prompt_tokens": total_prompt_len,
+                    "num_output_tokens": tokens_received,
+                },
+            )
+
+        if image_data is not None:
+            channels[ChannelModality.IMAGE] = ChannelResponse(
+                modality=ChannelModality.IMAGE,
+                content=image_data,
+                metrics={},
+            )
+
+        if audio_data is not None:
+            channels[ChannelModality.AUDIO] = ChannelResponse(
+                modality=ChannelModality.AUDIO,
+                content=audio_data,
+                metrics={},
+            )
+
+        if video_data is not None:
+            channels[ChannelModality.VIDEO] = ChannelResponse(
+                modality=ChannelModality.VIDEO,
+                content=video_data,
+                metrics={},
+            )
+
+        return channels
+
+    async def _process_stream(self, response: httpx.Response):
+        """Process SSE stream from server."""
+        import json
+
+        buffer = ""
+        async for chunk in response.aiter_text():
+            buffer += chunk
+            while "\n" in buffer:
+                line, buffer = buffer.split("\n", 1)
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith("data:"):
+                    data_str = line[5:].strip()
+                    if data_str == "[DONE]":
+                        return
+                    try:
+                        yield json.loads(data_str)
+                    except json.JSONDecodeError:
+                        continue
+
+    async def send_request(
+        self,
+        request: Request,
+        session_id: int,
+        session_total_requests: int = 1,
+    ) -> RequestResult:
+        """Send a streaming request to the OpenAI Chat Completions API."""
+
+        timeout = self.config.request_timeout
+        max_tokens_limit = None
+        if ChannelModality.TEXT in request.channels:
+            text_content = request.channels[ChannelModality.TEXT]
+            max_tokens_limit = text_content.target_output_tokens  # type: ignore
+
+        # text metrics
+        inter_chunk_times: List[float] = []
+        error_msg: Optional[str] = None
+        error_code: Optional[int] = None
+        chunks_received = 0
+        generated_text = ""
+
+        # multimodal response data
+        image_data: Optional[Any] = None
+        audio_data: Optional[Any] = None
+        video_data: Optional[Any] = None
+
+        delta_prompt_len = 0
+        messages = []
+
+        try:
+            messages, delta_prompt_len = self._build_message_content(request)
+
+            body = {
+                "model": self.config.model,
+                "messages": messages,
+                "stream": True,
+            }
+            body.update(self._get_sampling_params(request))
+
+            max_tokens_param = self.config.max_tokens_param  # type: ignore
+            if (
+                max_tokens_limit is not None
+                and int(max_tokens_limit) > 0
+                and max_tokens_param
+                and max_tokens_param
+                not in body  # don't override the one set by the request
+            ):
+                body[max_tokens_param] = max_tokens_limit
+
+            min_tokens_param = self.config.min_tokens_param  # type: ignore
+            if (
+                min_tokens_param
+                and max_tokens_limit is not None
+                and int(max_tokens_limit) > 0
+                and min_tokens_param
+                not in body  # don't override the one set by the request
+            ):
+                body[min_tokens_param] = max_tokens_limit
+
+            headers = {
+                "Authorization": f"Bearer {self.config.api_key}",
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream",
+            }
+
+            client = self._get_client()
+            most_recent_token_time = time.monotonic()
+            async with client.stream(
+                "POST",
+                self.chat_address,
+                json=body,
+                headers=headers,
+                timeout=timeout,
+            ) as response:
+                response.raise_for_status()
+
+                async for data in self._process_stream(response):
+                    receive_time = time.monotonic()
+                    if "error" in data:
+                        err = data.get("error") or {}
+                        error_msg = err.get("message", "Unknown error")
+                        code_value = err.get("code")
+                        error_code = code_value if isinstance(code_value, int) else 400
+                        break
+
+                    choices = data.get("choices")
+                    if not choices:
+                        continue
+
+                    first_choice = choices[0]
+                    delta = first_choice.get("delta")
+                    if not isinstance(delta, dict):
+                        logger.warning(
+                            "Streaming event missing delta: %s", first_choice
+                        )
+                        continue
+
+                    if delta.get("content"):
+                        (
+                            generated_text,
+                            chunks_received,
+                            most_recent_token_time,
+                            inter_chunk_times,
+                        ) = self._process_text_delta(
+                            delta["content"],
+                            receive_time,
+                            most_recent_token_time,
+                            inter_chunk_times,
+                            generated_text,
+                            chunks_received,
+                        )
+
+                    # TODO: image deltas
+                    image_data = self._process_image_response(delta, image_data)
+
+                    # TODO: audio deltas
+                    audio_data = self._process_audio_response(delta, audio_data)
+
+                    # TODO: video deltas
+                    video_data = self._process_video_response(delta, video_data)
+
+        except httpx.HTTPStatusError as e:
+            error_code = e.response.status_code if e.response else 500
+            error_msg = error_msg or str(e)
+            logger.warning(f"HTTP Error: status={error_code} msg={error_msg}")
+        except httpx.ConnectError as e:
+            error_code = 503
+            error_msg = error_msg or str(e)
+            logger.warning(f"Connection Error: ({error_code}) {error_msg}")
+        except httpx.TimeoutException:
+            error_code = 408
+            error_msg = error_msg or "Request timed out"
+            logger.warning(f"Timeout Error: ({error_code}) {error_msg}")
+        except Exception as e:
+            error_code = error_code or 520
+            error_msg = error_msg or str(e)
+            logger.exception(f"Unexpected error: ({error_code}) {error_msg}")
+
+        completed_at = time.monotonic()
+        success = error_msg is None and error_code is None
+
+        num_total_prompt_tokens = 0
+        for msg in messages:
+            content = msg.get("content", "")
+            num_total_prompt_tokens += self._get_cached_token_count(content)
+
+        num_completion_tokens = len(self.text_tokenizer_handle.encode(generated_text))
+
+        channels = self._build_channel_responses(
+            success=success,
+            generated_text=generated_text,
+            inter_chunk_times=inter_chunk_times,
+            delta_prompt_len=delta_prompt_len,
+            total_prompt_len=num_total_prompt_tokens,
+            tokens_received=num_completion_tokens,
+            image_data=image_data,
+            audio_data=audio_data,
+            video_data=video_data,
+        )
+
+        return RequestResult(
+            request_id=request.id,
+            session_id=session_id,
+            session_total_requests=session_total_requests,
+            channels=channels,
+            success=success,
+            error_code=error_code,
+            error_msg=error_msg,
+            client_completed_at=completed_at,
+        )

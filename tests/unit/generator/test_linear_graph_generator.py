@@ -1,9 +1,9 @@
 import pytest
-from veeksha.new.config.generator.session_graph import LinearSessionGraphGeneratorConfig
-from veeksha.new.config.generator.length import UniformLengthGeneratorConfig
-from veeksha.new.core.seeding import SeedManager
-from veeksha.new.generator.session_graph.linear import LinearSessionGraphGenerator
-from veeksha.new.core.session_graph import SessionGraph
+from veeksha.config.generator.session_graph import LinearSessionGraphGeneratorConfig
+from veeksha.config.generator.length import UniformLengthGeneratorConfig
+from veeksha.core.seeding import SeedManager
+from veeksha.generator.session_graph.linear import LinearSessionGraphGenerator
+from veeksha.core.session_graph import SessionGraph
 
 
 @pytest.fixture
@@ -16,7 +16,7 @@ def test_linear_graph_generator_inherit_history_true(seed_manager):
     """Verify that edges have is_history_parent=True when configured."""
     # Configure generator to produce exactly 2 requests
     config = LinearSessionGraphGeneratorConfig(
-        num_request_generator=UniformLengthGeneratorConfig(min_length=2, max_length=2),
+        num_request_generator=UniformLengthGeneratorConfig(min=2, max=2),
         inherit_history=True
     )
     generator = LinearSessionGraphGenerator(config, seed_manager)
@@ -41,7 +41,7 @@ def test_linear_graph_generator_inherit_history_false(seed_manager):
     """Verify that edges have is_history_parent=False when configured."""
     # Configure generator to produce exactly 2 requests
     config = LinearSessionGraphGeneratorConfig(
-        num_request_generator=UniformLengthGeneratorConfig(min_length=2, max_length=2),
+        num_request_generator=UniformLengthGeneratorConfig(min=2, max=2),
         inherit_history=False
     )
     generator = LinearSessionGraphGenerator(config, seed_manager)

@@ -17,8 +17,7 @@ from veeksha.logger import init_logger
 logger = init_logger(__name__)
 
 
-# Type aliases for clarity
-ResourceMapping = List[Tuple[str, int]]  # List of (node_hostname, gpu_id)
+ResourceMapping = List[Tuple[str, int]]  # list of (node_hostname, gpu_id)
 
 
 @dataclass
@@ -230,12 +229,12 @@ class ResourceManager:
                 )
                 return None
 
-            # Try to allocate on a single node first
+            # try single node first
             for node in self.nodes.values():
                 free_gpus = [gpu for gpu in node.gpus if gpu.is_free]
 
                 if len(free_gpus) >= num_gpus:
-                    # Check for contiguous allocation if required
+                    # contiguous allocation if required
                     if contiguous:
                         allocated = self._allocate_contiguous(free_gpus, num_gpus)
                     else:
@@ -246,14 +245,11 @@ class ResourceManager:
                             (gpu.node_hostname, gpu.gpu_id) for gpu in allocated
                         ]
 
-                        # Mark GPUs as allocated
                         for gpu in allocated:
                             gpu.is_free = False
 
-                        # Update node status
                         node.is_fully_free = all(gpu.is_free for gpu in node.gpus)
 
-                        # Track allocation
                         if job_id is None:
                             job_id = f"job_{uuid.uuid4().hex}"
                         self.allocated_resources[job_id] = resource_mapping
@@ -264,7 +260,7 @@ class ResourceManager:
                         )
                         return resource_mapping
 
-            # Multi-node allocation (if single-node failed and we have multiple nodes)
+            # multi-node allocation (if single-node failed and we have multiple nodes)
             if len(self.nodes) > 1 and not contiguous:
                 allocated_gpus = []
                 for node in self.nodes.values():
@@ -280,15 +276,12 @@ class ResourceManager:
                         (gpu.node_hostname, gpu.gpu_id) for gpu in allocated_gpus
                     ]
 
-                    # Mark GPUs as allocated
                     for gpu in allocated_gpus:
                         gpu.is_free = False
 
-                    # Update all node statuses
                     for node in self.nodes.values():
                         node.is_fully_free = all(gpu.is_free for gpu in node.gpus)
 
-                    # Track allocation
                     if job_id is None:
                         job_id = f"job_{uuid.uuid4().hex}"
                     self.allocated_resources[job_id] = resource_mapping
@@ -333,20 +326,16 @@ class ResourceManager:
         Returns:
             List of allocated GPUs if successful, None otherwise
         """
-        # Sort by GPU ID
         sorted_gpus = sorted(free_gpus, key=lambda g: g.gpu_id)
 
-        # Find contiguous blocks
+        # find contiguous blocks
         for i in range(len(sorted_gpus) - num_gpus + 1):
-            # Check if this starting position gives us contiguous GPUs
+            # does this starting position gives us contiguous GPUs?
             candidate = sorted_gpus[i : i + num_gpus]
             gpu_ids = [g.gpu_id for g in candidate]
-
-            # Check if GPU IDs are contiguous
             if gpu_ids == list(range(gpu_ids[0], gpu_ids[0] + num_gpus)):
                 return candidate
 
-        # If contiguous allocation failed, return any num_gpus
         logger.debug(
             "Could not find contiguous GPUs, falling back to non-contiguous allocation"
         )
@@ -368,7 +357,7 @@ class ResourceManager:
 
             resource_mapping = self.allocated_resources[job_id]
 
-            # Free the GPUs
+            # free gpus
             for hostname, gpu_id in resource_mapping:
                 if hostname in self.nodes:
                     node = self.nodes[hostname]
@@ -377,13 +366,9 @@ class ResourceManager:
                             gpu.is_free = True
                             break
 
-                    # Update node status
                     node.is_fully_free = all(gpu.is_free for gpu in node.gpus)
 
-            # Remove from tracking
             del self.allocated_resources[job_id]
-
-            logger.info(f"Released resources for {job_id}")
             return True
 
     def get_resource_status(self) -> Dict[str, Any]:
@@ -443,12 +428,11 @@ class ResourceManager:
         start_time = time.time()
 
         while True:
-            # Check timeout before attempting allocation
+            # check timeout before attempting allocation
             if timeout is not None and (time.time() - start_time) >= timeout:
                 logger.warning(f"Timeout waiting for {num_gpus} GPUs after {timeout}s")
                 return None
 
-            # Try to allocate
             resource_mapping = self.allocate_resources(
                 num_gpus,
                 job_id=job_id,
@@ -457,7 +441,6 @@ class ResourceManager:
             if resource_mapping:
                 return resource_mapping
 
-            # Wait before next attempt
             logger.debug(
                 f"Waiting for {num_gpus} GPUs... (free: {self.get_free_gpus()})"
             )
