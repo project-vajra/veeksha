@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple, cast
 
 import numpy as np
 import pandas as pd
@@ -1060,9 +1060,9 @@ class HealthChecker:
 
         if violation_count > 0:
             # Add top violations (largest absolute difference)
-            violations = violations.copy()
-            violations["abs_diff"] = np.abs(violations["prompt_len_diff"])
-            top_violations = violations.nlargest(5, "abs_diff")
+            violations_df = cast(pd.DataFrame, violations.copy())
+            violations_df["abs_diff"] = np.abs(violations_df["prompt_len_diff"])
+            top_violations = violations_df.nlargest(5, "abs_diff")
 
             summary["sections"].append(
                 {
@@ -1174,9 +1174,9 @@ class HealthChecker:
 
         if violation_count > 0:
             # Add top violations (largest absolute difference)
-            violations = violations.copy()
-            violations["abs_diff"] = np.abs(violations["output_len_diff"])
-            top_violations = violations.nlargest(5, "abs_diff")
+            violations_df = cast(pd.DataFrame, violations.copy())
+            violations_df["abs_diff"] = np.abs(violations_df["output_len_diff"])
+            top_violations = violations_df.nlargest(5, "abs_diff")
 
             summary["sections"].append(
                 {
