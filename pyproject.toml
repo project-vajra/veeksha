@@ -106,7 +106,8 @@ extend_skip = ["veeksha/_version.py"]
 include = ["veeksha"]
 exclude = [
     "**/__pycache__",
-    "veeksha/lm_eval/**",
+    "veeksha/cli/config_docs_generator.py",
+    "veeksha/config/schema.py",
 ]
 
 [tool.black]
