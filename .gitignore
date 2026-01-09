@@ -262,6 +262,7 @@ results*
 data/generated_traces
 veeksha/benchmark_config_files/
 veeksha/capacity_search/capsearch_config_files/
+_version.py
 
 # cursor
 .cursorrules
