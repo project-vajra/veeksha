@@ -21,7 +21,9 @@ class BaseTrafficConfig(BasePolyConfig):
 class RateTrafficConfig(BaseTrafficConfig):
     interval_generator: BaseIntervalGeneratorConfig = field(
         default_factory=PoissonIntervalGeneratorConfig,
-        metadata={"help": "Interval generator for the traffic (sessions per second)."},
+        metadata={
+            "help": "Interval generator for the traffic (sessions per second). Available: poisson, gamma, fixed."
+        },
     )
 
     @classmethod

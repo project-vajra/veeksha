@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 pytestmark = pytest.mark.unit
 from veeksha.orchestration.benchmark_orchestrator import create_server_manager, managed_server
-from veeksha.config.server import VLLMServerConfig, VajraServerConfig, SGLangServerConfig, BaseServerConfig
+from veeksha.config.server import VllmServerConfig, VajraServerConfig, SglangServerConfig, BaseServerConfig
 from veeksha.orchestration.vllm_server import VLLMServerManager
 from veeksha.orchestration.vajra_server import VajraServerManager
 from veeksha.orchestration.sglang_server import SGLangServerManager
@@ -12,7 +12,7 @@ from veeksha.orchestration.sglang_server import SGLangServerManager
 class TestBenchmarkOrchestrator:
     
     def test_create_server_manager_vllm(self):
-        config = VLLMServerConfig()
+        config = VllmServerConfig()
         manager = create_server_manager(config, output_dir="/tmp")
         assert isinstance(manager, VLLMServerManager)
 
@@ -22,14 +22,14 @@ class TestBenchmarkOrchestrator:
         assert isinstance(manager, VajraServerManager)
 
     def test_create_server_manager_sglang(self):
-        config = SGLangServerConfig()
+        config = SglangServerConfig()
         manager = create_server_manager(config, output_dir="/tmp")
         assert isinstance(manager, SGLangServerManager)
 
     @patch("veeksha.orchestration.benchmark_orchestrator.create_server_manager")
     def test_managed_server_context(self, mock_create):
         """Test the managed_server context manager."""
-        config = VLLMServerConfig(
+        config = VllmServerConfig(
             host="localhost",
             port=8000,
             api_key="test-key",
@@ -58,7 +58,7 @@ class TestBenchmarkOrchestrator:
     @patch("veeksha.orchestration.benchmark_orchestrator.create_server_manager")
     def test_managed_server_launch_failure(self, mock_create):
         """Test managed_server when launch fails."""
-        config = VLLMServerConfig()
+        config = VllmServerConfig()
         mock_manager = MagicMock()
         mock_manager.launch.return_value = False
         mock_create.return_value = mock_manager
@@ -72,7 +72,7 @@ class TestBenchmarkOrchestrator:
     @patch("veeksha.orchestration.benchmark_orchestrator.create_server_manager")
     def test_managed_server_ready_failure(self, mock_create):
         """Test managed_server when wait_for_ready fails."""
-        config = VLLMServerConfig()
+        config = VllmServerConfig()
         mock_manager = MagicMock()
         mock_manager.launch.return_value = True
         mock_manager.wait_for_ready.return_value = False

@@ -3,45 +3,99 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-veeksha
-=======
+Veeksha Documentation
+=====================
 
-   A tool for benchmarking the performance of LLM Inference Systems.
+**Veeksha** is a high-fidelity benchmarking framework for LLM inference systems.
+Whether you're optimizing a production deployment, comparing serving backends, or
+running capacity planning experiments, Veeksha gives you precise, reproducible
+measurements with realistic workloads.
 
-Serving large language models (LLMs) in production is very expensive, and this challenge has prompted recent advances in inference system optimizations. As of today, these systems are evaluated through conventional metrics like TTFT (time to first token), TBT (time between tokens), normalized latency, and TPOT (time per output token). However, these metrics fail to capture the nuances of LLM inference leading to incomplete assessment of user-facing performance in real-time applications like chat.
+Built for accuracy: Veeksha models real-world traffic patterns-multi-turn
+conversations, arrival rate distributions, and shared prefix caching-so your
+benchmarks reflect actual production behavior.
 
-``veeksha`` is a holistic performance evaluation framework that includes new metrics, :ref:`fluidity-index` and :ref:`fluid-token-generation-rate`, alongside existing conventional metrics. The new metrics reflect the intricacies of LLM inference process and its impact on real-time user experience.
+.. note::
 
-``veeksha`` is designed to be easy to use, and can be integrated with any LLM inference system. It is built on top of Ray, a popular distributed computing framework, and can be used to benchmark LLM inference systems on a single machine or a cluster.
+   Veeksha (वीक्षा) means "observation" or "investigation" in Sanskrit.
 
-Check out the following resources to get started:
+
+Key Features
+------------
+
+**Realistic Workload Modeling**
+    - **DAG-Based Sessions**: Model multi-turn conversations as directed acyclic graphs with
+      history inheritance, capturing real chat context accumulation
+    - **Shared Prefix Testing**: Generate workloads with configurable prefix sharing to
+      benchmark KV-cache efficiency
+    - **Trace Replay**: Replay production traces (Claude Code, RAG, conversational) with
+      preserved timing and token distributions
+
+**Flexible Traffic Generation**
+    - **Open-Loop (Rate-Based)**: Poisson, gamma, or fixed arrival rates to measure latency
+      under realistic bursty traffic
+    - **Closed-Loop (Concurrency-Based)**: Maintain target concurrent sessions with ramp-up
+      control for throughput testing
+
+**SLO-Aware Evaluation**
+    - **Per-Request Metrics**: TTFC, TBC, TPOT, and end-to-end latency with percentile distributions
+    - **Automated Health Checks**: Validates prompt/output lengths, arrival rates, and
+      request dependencies to ensure benchmark correctness
+    - **Capacity Search**: Adaptive probe-then-binary-search algorithm to find maximum
+      sustainable throughput or rate meeting latency SLOs
+
+**Production-Ready Tooling**
+    - **Managed Server Orchestration**: Launch and manage vLLM/SGLang servers automatically
+      with health checks and log capture
+    - **Configuration Sweeps**: Use ``!expand`` YAML tag to run Cartesian product of
+      parameter combinations with aggregated summaries
+    - **WandB Integration**: Automatic logging of metrics, artifacts, and experiment tracking
+      with sweep/capacity-search summaries
+
+
+Quick Example
+-------------
+
+Run a simple benchmark against an OpenAI-compatible endpoint::
+
+    python -Xgil=0 -m veeksha.benchmark \
+        --client-type openai_chat_completions \
+        --client-api-base http://localhost:8000/v1 \
+        --client-model my-model \
+        --traffic-scheduler-type rate \
+        --traffic-scheduler-interval-generator-type poisson \
+        --traffic-scheduler-interval-generator-arrival-rate 5.0 \
+        --runtime-benchmark-timeout 60
+
+Or use a YAML configuration file::
+
+    python -Xgil=0 -m veeksha.benchmark --benchmark-config-from-file my_benchmark.veeksha.yml
+
+
+Documentation
+-------------
 
 .. toctree::
    :maxdepth: 2
+   :caption: Getting Started
 
    installation
-   tutorials/metrics
-   how_to_use
-   guides/guide
 
-Citation
---------
+.. toctree::
+   :maxdepth: 2
+   :caption: Core Concepts
 
-If you use our work, please consider citing our paper `veeksha: Holistic Performance Evaluation Framework for LLM Inference Systems <https://arxiv.org/abs/2407.07000>`_:
+   understanding_veeksha/index
 
-.. code-block:: bibtex
+.. toctree::
+   :maxdepth: 2
+   :caption: Tutorials
 
-      @misc{agrawal2024Veekshaholisticperformanceevaluation,
-         title={veeksha: Holistic Performance Evaluation Framework for LLM Inference Systems}, 
-         author={Amey Agrawal and Anmol Agarwal and Nitin Kedia and Jayashree Mohan and Souvik Kundu and Nipun Kwatra and Ramachandran Ramjee and Alexey Tumanov},
-         year={2024},
-         eprint={2407.07000},
-         archivePrefix={arXiv},
-         primaryClass={cs.LG},
-         url={https://arxiv.org/abs/2407.07000}, 
-      }
+   basic_usage/index
+   advanced_usage/index
 
-Acknowledgement
----------------
-`veeksha <https://github.com/project-vajra/veeksha>`_ code was originally created as a fork from `LLMPerf <https://github.com/ray-project/llmperf>`_ project.
+.. toctree::
+   :maxdepth: 2
+   :caption: Reference
 
+   config_reference/index

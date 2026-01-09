@@ -23,7 +23,14 @@ def extract_metric_values(
     Returns:
         Flat list of float samples for percentile evaluation.
     """
-    raw = request_level_metrics.get(metric, [])
+    # Map SLO metric names to request-level metric keys
+    key = metric
+    if metric == "e2e":
+        key = "end_to_end_latency"
+    elif metric == "tpot":
+        key = "tpot"
+
+    raw = request_level_metrics.get(key, [])
     if not isinstance(raw, list) or not raw:
         return []
 

@@ -33,7 +33,6 @@ class TextChannelGenerator(BaseChannelGenerator):
             rng=self.seed_manager.numpy_factory("output_length")(),
         )
         self.tokenizer_handle = tokenizer_handle
-        # TODO: load corpus function to .new
         corpus_lines = [line.strip() for line in load_corpus()]
         self._corpus_lines = [
             list(self.tokenizer_handle.encode(line)) for line in corpus_lines if line

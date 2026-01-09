@@ -20,6 +20,12 @@ from veeksha.config.server import BaseServerConfig
 from veeksha.config.trace_recorder import TraceRecorderConfig
 from veeksha.config.traffic import BaseTrafficConfig, RateTrafficConfig
 from veeksha.config.wandb import WandbConfig
+from veeksha.types import (
+    ClientType,
+    EvaluationType,
+    SessionGeneratorType,
+    TrafficType,
+)
 
 
 @frozen_dataclass(allow_from_file=True)
@@ -35,21 +41,26 @@ class BenchmarkConfig:
     )
     session_generator: BaseSessionGeneratorConfig = field(
         default_factory=SyntheticSessionGeneratorConfig,
-        metadata={"help": "The session generator configuration for the benchmark."},
+        metadata={
+            "help": f"The session generator configuration for the benchmark. {SessionGeneratorType.help_str()}"
+        },
     )
     traffic_scheduler: BaseTrafficConfig = field(
         default_factory=RateTrafficConfig,
         metadata={
-            "help": "The traffic scheduler configuration for the benchmark. Available: rate, concurrent"
+            "help": f"The traffic scheduler configuration for the benchmark. {TrafficType.help_str()}"
         },
     )
     evaluators: list[BaseEvaluatorConfig] = field(
         default_factory=lambda: [PerformanceEvaluatorConfig()],
+        metadata={"help": f"List of evaluators to run. {EvaluationType.help_str()}"},
+    )
+    client: BaseClientConfig = field(
+        default_factory=OpenAIChatCompletionsClientConfig,
         metadata={
-            "help": "List of evaluators to run. Available: performance, accuracy"  # TODO: compatibility notices
+            "help": f"The client configuration for the benchmark. {ClientType.help_str()}"
         },
     )
-    client: BaseClientConfig = field(default_factory=OpenAIChatCompletionsClientConfig)
     runtime: RuntimeConfig = field(
         default_factory=RuntimeConfig,
         metadata={"help": "The runtime configuration for the benchmark."},

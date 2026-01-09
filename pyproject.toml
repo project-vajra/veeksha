@@ -45,6 +45,11 @@ dependencies = [
     "nvidia-ml-py"
 ]
 
+[project.scripts]
+veeksha = "veeksha.__main__:main"
+"veeksha.benchmark" = "veeksha.cli.benchmarks:main"
+"veeksha.config" = "veeksha.cli.config:main"
+
 [project.urls]
 Homepage = "https://github.com/project-vajra/veeksha"
 Documentation = "https://project-vajra.github.io/veeksha"

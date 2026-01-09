@@ -10,7 +10,11 @@ from veeksha.config.generator.length import (
     BaseLengthGeneratorConfig,
     UniformLengthGeneratorConfig,
 )
-from veeksha.types import SessionGraphType
+from veeksha.types import (
+    IntervalGeneratorType,
+    LengthGeneratorType,
+    SessionGraphType,
+)
 
 
 @frozen_dataclass
@@ -32,12 +36,14 @@ class LinearSessionGraphGeneratorConfig(BaseSessionGraphGeneratorConfig):
     num_request_generator: BaseLengthGeneratorConfig = field(
         default_factory=UniformLengthGeneratorConfig,
         metadata={
-            "help": "The generator for the number of requests. Available: uniform"
+            "help": f"The generator for the number of requests. {LengthGeneratorType.help_str()}"
         },
     )
     request_wait_generator: BaseIntervalGeneratorConfig = field(
         default_factory=PoissonIntervalGeneratorConfig,
-        metadata={"help": "The generator for the wait time between requests."},
+        metadata={
+            "help": f"The generator for the wait time between requests. {IntervalGeneratorType.help_str()}"
+        },
     )
 
     @classmethod

@@ -1,6 +1,6 @@
 from typing import List
 
-from veeksha.config.server import SGLangServerConfig
+from veeksha.config.server import SglangServerConfig
 from veeksha.logger import init_logger
 from veeksha.orchestration.server_manager import BaseServerManager
 
@@ -10,7 +10,7 @@ logger = init_logger(__name__)
 class SGLangServerManager(BaseServerManager):
     """Manager for SGLang inference servers."""
 
-    def __init__(self, config: SGLangServerConfig, output_dir: str):
+    def __init__(self, config: SglangServerConfig, output_dir: str):
         super().__init__(config, output_dir=output_dir)
 
     def _build_launch_command(self) -> List[str]:

@@ -7,12 +7,16 @@ from veeksha.config.generator.session_graph import (
     BaseSessionGraphGeneratorConfig,
     LinearSessionGraphGeneratorConfig,
 )
-from veeksha.types import SessionGeneratorType, TraceFlavorType
+from veeksha.types import (
+    ChannelModality,
+    SessionGeneratorType,
+    SessionGraphType,
+    TraceFlavorType,
+)
 
 
 @frozen_dataclass
 class BaseSessionGeneratorConfig(BasePolyConfig):
-    # TODO: how to think about system prompts?
     pass
 
 
@@ -20,12 +24,14 @@ class BaseSessionGeneratorConfig(BasePolyConfig):
 class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
     session_graph: BaseSessionGraphGeneratorConfig = field(
         default_factory=LinearSessionGraphGeneratorConfig,
-        metadata={"help": "The generator for the session graphs. Available: linear"},
+        metadata={
+            "help": f"The generator for the session graphs. {SessionGraphType.help_str()}"
+        },
     )
     channels: list[BaseChannelGeneratorConfig] = field(
         default_factory=list,
         metadata={
-            "help": "The modality channels for the content of each request. Available: text"
+            "help": f"The modality channels for the content of each request. {ChannelModality.help_str()}"
         },
     )
 
@@ -140,9 +146,7 @@ class TraceSessionGeneratorConfig(BaseSessionGeneratorConfig):
     )
     flavor: BaseTraceFlavorConfig = field(
         default_factory=ClaudeCodeTraceFlavorConfig,
-        metadata={
-            "help": "Trace flavor configuration. Available: cl, mooncake_conv, rag"
-        },
+        metadata={"help": f"Trace flavor configuration. {TraceFlavorType.help_str()}"},
     )
 
     @classmethod

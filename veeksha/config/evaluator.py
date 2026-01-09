@@ -15,7 +15,7 @@ from typing import Optional, Union
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.slo import BaseSloConfig, ConstantSloConfig
-from veeksha.types import ChannelModality, EvaluationType
+from veeksha.types import ChannelModality, EvaluationType, SloType
 
 
 @frozen_dataclass
@@ -165,7 +165,7 @@ class BaseEvaluatorConfig(BasePolyConfig):
     slos: list[BaseSloConfig] = field(
         default_factory=_default_slos,
         metadata={
-            "help": "List of SLO definitions to evaluate against request-level metrics."
+            "help": f"List of SLO definitions to evaluate against request-level metrics. {SloType.help_str()}"
         },
     )
 
