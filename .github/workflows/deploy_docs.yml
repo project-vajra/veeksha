@@ -36,8 +36,9 @@ jobs:
           pip install uv
           uv venv --python 3.14t .venv
           source .venv/bin/activate
-          cd docs
           uv pip install .
+          cd docs
+          uv pip install -r requirements.txt
 
       - name: Build documentation
         run: |
