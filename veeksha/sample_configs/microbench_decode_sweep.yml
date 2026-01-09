@@ -1,0 +1,57 @@
+# sweeps over len(target_concurrent_sessions) * len(body_length_generator.value) = 4 runs
+
+seed: 42
+output_dir: microbench_output/decode_sweep_cartesian
+
+traffic_scheduler:
+  type: concurrent
+  target_concurrent_sessions: !expand [4, 8] # expands to 2 configs
+  rampup_seconds: 0
+  cancel_session_on_failure: False
+
+session_generator:
+  type: synthetic
+  session_graph:
+    type: linear
+    inherit_history: False
+    num_request_generator:
+      type: fixed
+      value: 1
+    request_wait_generator:
+      type: fixed
+      interval: 0
+  channels:
+    - type: text
+      body_length_generator:
+        type: fixed
+        value: !expand [512, 1024] # expands to 2 configs
+      output_length_generator:
+        type: fixed
+        value: 256
+
+evaluators:
+  - type: performance
+    target_channels: ["text"]
+    stream_metrics: False
+    text_channel:
+      decode_window_enabled: True
+      decode_window_config:
+        min_active_requests: "max_observed" # auto-detects peak batch size (4 or 8 in this case)
+        selection_strategy: all
+        anchor_to_client_pickup: True
+        require_streaming: True
+
+client:
+  type: openai_chat_completions
+  model: meta-llama/Llama-3.1-8B-Instruct
+  api_base: http://localhost:30002/v1
+  api_key: dummy
+  request_timeout: 240
+  max_tokens_param: max_tokens
+
+runtime:
+  max_sessions: 32
+  benchmark_timeout: 1200
+
+trace_recorder:
+  enabled: False

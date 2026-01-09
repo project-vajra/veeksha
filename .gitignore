@@ -231,7 +231,6 @@ tag-mapping.json
 # ignore tmp files
 *.tmp
 out
-temp*
 
 # build output
 build/
@@ -247,22 +246,26 @@ __pycache__
 
 env/
 benchmark_results/
-benchmark_test_dir/
+capsearch_results/
 profile_dir*
-temp*
 experiment*
 wandb/
 prefill_outputs/
 prefill_experiments*
-cap_experiments*
 experiments/
 experiments_*
 results*
 .qodo
-data/generated_traces
+generated_traces
 veeksha/benchmark_config_files/
 veeksha/capacity_search/capsearch_config_files/
-_version.py
+veeksha/_version.py
+test_output/
+venv*/
+.coverage
+lmeval_results/
+microbenchmark_results/
+traces/
 
 # cursor
 .cursorrules
@@ -270,3 +273,4 @@ _version.py
 
 # claude
 CLAUDE.md
+benchmark_outputs/

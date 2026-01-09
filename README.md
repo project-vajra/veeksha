@@ -1,5 +1,7 @@
 # Veeksha
 
+[![Publish Release to PyPI](https://github.com/project-vajra/veeksha/actions/workflows/publish_release.yml/badge.svg)](https://github.com/project-vajra/veeksha/actions/workflows/publish_release.yml) [![Deploy Documentation](https://github.com/project-vajra/veeksha/actions/workflows/deploy_docs.yml/badge.svg)](https://github.com/project-vajra/veeksha/actions/workflows/deploy_docs.yml) [![Test Suite](https://github.com/project-vajra/veeksha/actions/workflows/test_suite.yml/badge.svg)](https://github.com/project-vajra/veeksha/actions/workflows/test_suite.yml) [![Run Linters](https://github.com/project-vajra/veeksha/actions/workflows/lint.yml/badge.svg)](https://github.com/project-vajra/veeksha/actions/workflows/lint.yml)
+
 Veeksha is a LLM Inference systems benchmarking tool. Please refer to our [documentation](https://project-vajra.github.io/veeksha) and [paper](https://arxiv.org/abs/2407.07000) for more details.
 
 ## Setup
@@ -10,15 +12,19 @@ git clone https://github.com/project-vajra/veeksha.git
 cd veeksha
 ```
 
-### Create conda environment
+### Create uv environment and install the dependencies
+
+Install uv if you haven't already:
+
 ```bash
-conda create -p ./env python=3.12
-conda activate ./env
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### Install veeksha
+Create a virtual environment and install Veeksha. We recommend using Python 3.14 free-threaded:
 ```bash
-pip install -e .
+uv venv --python 3.14t
+source .venv/bin/activate
+uv pip install -e .
 ```
 
 ### Setup Wandb [Optional]
@@ -40,29 +46,19 @@ export OPENAI_API_BASE=https://api.endpoints.anyscale.com/v1
 ```
 #### Running Benchmark
 ```bash
-python -m veeksha.run_benchmark \
---client_config_model "meta-llama/Meta-Llama-3-8B-Instruct" \
---max_completed_requests 150 \
+python -Xgil=0 -m veeksha.benchmark \
+--client-config-model "Qwen/Qwen3-4B-Instruct-2507" \
+--max-completed-requests 100 \
 --timeout 600 \
---client_config_num_clients 2 \
---client_config_num_concurrent_requests_per_client 5 \
---metrics_config_output_dir "result_outputs" \
---request_interval_generator_config_type "poisson" \
---poisson_request_interval_generator_config_qps 0.5 \
---request_length_generator_config_type "trace" \
---trace_request_length_generator_config_trace_file "./data/processed_traces/arxiv_summarization_filtered_stats_llama2_tokenizer.csv" \
---trace_request_length_generator_config_max_tokens 8192 \
---deadline_config_ttft_deadline 0.3 \
---deadline_config_tbt_deadline 0.03 \
---metrics_config_should_write_metrics \
---metrics_config_wandb_project Project \
---metrics_config_wandb_group Group \
---metrics_config_wandb_run_name Run
+--metrics-config-output-dir "benchmark_outputs" \
+--synthetic-request-generator-config-interval-generator-config-type "static"
 ```
+
+**Note:** We recommend running with `-Xgil=0` to enable GIL-free Python with true parallel execution of worker threads.
 
 There are many more arguments for running benchmark, run the following to know more:
 ```bash
-python -m veeksha.run_benchmark -h
+python -m veeksha.benchmark -h
 ```
 
 ### Running with Open Source Systems
@@ -89,31 +85,7 @@ And then we can run the benchmark as shown [here](#running-benchmark). Be sure t
 
 The results of the benchmark are saved in the results directory specified by the `--output-dir` argument.
 
-## Running Prefill Profiler
-To profile prefill times of open source systems and create a prefill time predictor for a given model and open source system, based on input prompt length, we can run `veeksha.prefill_profiler`.
-
-Launch any open source system and setup API keys and URL as shown for [vLLM](#running-with-open-source-systems).
-```bash
-python -m veeksha.prefill_profiler \
---client_config_model "meta-llama/Meta-Llama-3-8B-Instruct" \
---timeout 600 \
---metrics_config_output_dir "prefill_experiments/prefill_profiler_vllm_llama-3-8b" \
---metrics_config_should_use_given_dir true
-```
-
-To modify range of prompt tokens for which prefill times get profiled, use the flag ``--prefill-lengths`` as follows:
-```bash
-python -m veeksha.prefill_profiler \
---client_config_model "meta-llama/Meta-Llama-3-8B-Instruct" \
---timeout 600 \
---metrics_config_output_dir "prefill_experiments/prefill_profiler_vllm_llama-3-8b" \
---metrics_config_should_use_given_dir true \
---prefill_profiler_config_prefill_lengths 256 512 1024 2048 4096 8192 16384 32768 65536
-```
-
 ## Running Capacity Search
-`Important`: Run prefill profiler for a given model and open source system before running capacity search of `deadline-based` SLO type.
-
 Refer to [readme](veeksha/capacity_search/README.md) file of `veeksha/capacity_search` folder to know more about how to run capacity search.
 
 

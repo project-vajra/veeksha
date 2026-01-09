@@ -3,11 +3,9 @@ from typing import Optional
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
-from veeksha.logger import init_logger
-from veeksha.metrics.metric_registry import MetricRegistry
 from veeksha.types import SloType
 
-logger = init_logger(__name__)
+SUPPORTED_SLO_METRICS = {"ttfc", "tbc"}
 
 
 @frozen_dataclass
@@ -22,8 +20,7 @@ class BaseSloConfig(BasePolyConfig):
         default=None, metadata={"help": "Human-readable name for this SLO"}
     )
 
-    def __post_init__(self):
-        """Validate SLO definition."""
+    def __post_init__(self) -> None:
         if not 0.0 <= self.percentile <= 1.0:
             raise ValueError(
                 f"percentile must be between 0.0 and 1.0, got {self.percentile}"
@@ -35,7 +32,10 @@ class ConstantSloConfig(BaseSloConfig):
     """SLO with a fixed constant value threshold."""
 
     metric: str = field(
-        default="ttft", metadata={"help": "The metric key this SLO applies to"}
+        default="ttfc",
+        metadata={
+            "help": f"The metric key this SLO applies to. Supported: {sorted(SUPPORTED_SLO_METRICS)}"
+        },
     )
 
     value: float = field(
@@ -45,16 +45,16 @@ class ConstantSloConfig(BaseSloConfig):
         },
     )
 
-    def __post_init__(self):
-        """Validate SLO definition."""
+    def __post_init__(self) -> None:
         super().__post_init__()
-        if not MetricRegistry.has(self.metric):
+        if self.metric not in SUPPORTED_SLO_METRICS:
             raise ValueError(
-                f"ConstantSLO: metric '{self.metric}' is not registered in MetricRegistry"
+                f"ConstantSLO: metric '{self.metric}' is not supported. "
+                f"Supported: {sorted(SUPPORTED_SLO_METRICS)}"
             )
         if self.value <= 0.0:
             raise ValueError("ConstantSLO: value must be specified and must be > 0")
 
     @classmethod
-    def get_type(cls) -> str:
+    def get_type(cls) -> SloType:
         return SloType.CONSTANT

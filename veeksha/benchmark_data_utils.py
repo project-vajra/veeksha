@@ -1,14 +1,19 @@
 import json
 import os
+from importlib.resources import files as _pkg_files
 from typing import Dict, List
 
-from veeksha.core.response import Response
+from veeksha.core.response import ChannelResponse
 
 
-def store_generated_texts(output_dir: str, generated_responses: List[Response]) -> None:
+def store_generated_texts(
+    output_dir: str, generated_responses: List[ChannelResponse]
+) -> None:
     """Store generated responses in a text file."""
     with open(os.path.join(output_dir, "generated_texts.txt"), "w") as f:
-        f.write(("\n" + "-" * 30 + "\n").join([i.text for i in generated_responses]))
+        f.write(
+            ("\n" + "-" * 30 + "\n").join([str(i.content) for i in generated_responses])
+        )
 
 
 def store_lmeval_results(output_dir: str, lmeval_results: Dict) -> None:
@@ -18,10 +23,7 @@ def store_lmeval_results(output_dir: str, lmeval_results: Dict) -> None:
 
 
 def load_corpus() -> List[str]:
-    """Load the corpus lines from the corpus.txt file."""
-    corpus_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "data", "corpus.txt")
-    )
-    with open(corpus_path, "r") as f:
-        corpus_lines = f.readlines()
-    return corpus_lines
+    """Load corpus lines from packaged corpus.txt file"""
+    corpus_resource = _pkg_files("veeksha.data").joinpath("corpus.txt")
+    with corpus_resource.open("r", encoding="utf-8") as f:
+        return f.readlines()

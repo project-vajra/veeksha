@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple, get_args
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.utils import (
+    create_class_from_dict,
     get_all_subclasses,
     get_inner_type,
     has_allow_from_file_attribute,
@@ -52,7 +53,7 @@ def explode_dict(
                  {'test_a': 2, 'test_b': 3}, {'test_a': 2, 'test_b': 4}]
 
     NOTE:
-        In deeply–nested configs with many lists, the number of combinations can grow
+        In deeply-nested configs with many lists, the number of combinations can grow
         exponentially. This method raises a ``ValueError`` if the number of combinations
         exceeds ``max_combinations``. Pass ``float('inf')`` to disable the limit.
     """
@@ -73,7 +74,42 @@ def explode_dict(
                 "to avoid combinatorial explosion."
             )
 
-    def _categorize_dict_items(d: Dict[str, Any]) -> tuple:
+    def _resolve_prefix_for_data(
+        cls, current_prefix: str, data: Dict[str, Any], strict: bool = True
+    ) -> str:
+        """Resolve the effective prefix for a dictionary possibly representing a BasePolyConfig.
+
+        If the dictionary contains a "type" key, resolve the typed child name from
+        `base_poly_children_types` using the stripped `current_prefix`. When `strict`
+        is True, raise a ValueError if the type is invalid for the given prefix.
+        """
+        resolved_prefix = current_prefix
+        if "type" in data:
+            stripped_prefix = (
+                current_prefix[:-1]
+                if current_prefix and current_prefix[-1] == "_"
+                else current_prefix
+            )
+            # remove a trailing "_type"
+            if stripped_prefix.endswith("_type"):
+                stripped_prefix = stripped_prefix[: -len("_type")]
+            type_key = str(data["type"]).lower()
+            if data["type"] is None or type_key in {"none", "null", ""}:
+                return current_prefix
+            type_map = cls.base_poly_children_types.get(stripped_prefix, {})
+            if not type_map:
+                return current_prefix
+            typed_child_name = type_map.get(type_key)
+            if typed_child_name:
+                resolved_prefix = f"{typed_child_name}_"
+            elif strict:
+                valid = list(type_map.keys())
+                raise ValueError(
+                    f"Invalid type '{data['type']}' for '{stripped_prefix}_type'. Valid types: {valid}"
+                )
+        return resolved_prefix
+
+    def _categorize_dict_items(d: Dict[str, Any], current_prefix: str = "") -> tuple:
         """Categorize dictionary items into lists, dicts, and primitives."""
         list_keys = []
         list_values = []
@@ -81,18 +117,26 @@ def explode_dict(
         dict_items = {}
 
         for key, value in d.items():
-            expected_type = getattr(cls, "__annotations__", {}).get(key, None)
+            prefixed_key = f"{current_prefix}{key}" if current_prefix else key
+            expected_type = getattr(cls, "__annotations__", {}).get(prefixed_key, None)
             is_literal_list = expected_type and is_list(expected_type)
 
-            if isinstance(value, list) and len(value) > 0:
+            if isinstance(value, list):
                 # (only) if the dataclass declares the field as a List[...]
                 # we treat the whole list as a single literal value and don't
                 # explode it
                 if is_literal_list:
                     non_list_items[key] = value
+                elif not getattr(value, "__veeksha_expand__", False):
+                    if expected_type is not None:
+                        raise ValueError(
+                            f"List provided for non-List field '{prefixed_key}'. "
+                            "Use !expand to sweep over list values."
+                        )
+                    non_list_items[key] = value
                 else:
                     # will explode
-                    if isinstance(value[0], dict):
+                    if value and isinstance(value[0], dict):
                         # list of config dictionaries
                         list_keys.append(key)
                         list_values.append(value)
@@ -108,23 +152,30 @@ def explode_dict(
         return list_keys, list_values, non_list_items, dict_items
 
     def _explode_dict_list(
-        dict_list: List[Dict[str, Any]], level: int
+        dict_list: List[Dict[str, Any]], level: int, current_prefix: str = ""
     ) -> List[Dict[str, Any]]:
         """Explode a list of dictionaries recursively."""
         exploded_configs = []
         for config in dict_list:
-            exploded = _explode_dict_recursive(config, level + 1)
+            # child will resolve its own prefix types if needed
+            exploded = _explode_dict_recursive(config, level + 1, current_prefix)
             exploded_configs.extend(exploded)
         return exploded_configs
 
     def _generate_dict_combinations(
-        dict_items: Dict[str, Dict[str, Any]], level: int
+        dict_items: Dict[str, Dict[str, Any]], level: int, current_prefix: str = ""
     ) -> List[Dict[str, Any]]:
         """Generate all combinations from nested dictionaries."""
         dict_combinations = [{}]
 
         for key, nested_dict in dict_items.items():
-            exploded_nested = _explode_dict_recursive(nested_dict, level + 1)
+            # Build prefix for nested dictionary - add current key to prefix chain
+            nested_prefix = (
+                f"{current_prefix}{key}_" if current_prefix or key else f"{key}_"
+            )
+            exploded_nested = _explode_dict_recursive(
+                nested_dict, level + 1, nested_prefix
+            )
             new_combinations = []
 
             for base_combo in dict_combinations:
@@ -155,6 +206,7 @@ def explode_dict(
         non_list_items: Dict[str, Any],
         dict_combinations: List[Dict[str, Any]],
         level: int,
+        current_prefix: str = "",
     ) -> List[Dict[str, Any]]:
         """Generate all combinations including list values."""
         # handle list of config dictionaries vs primitives
@@ -162,7 +214,9 @@ def explode_dict(
         for values in list_values:
             if values and isinstance(values[0], dict):
                 # explode each config dict in the list
-                processed_list_values.append(_explode_dict_list(values, level))
+                processed_list_values.append(
+                    _explode_dict_list(values, level, current_prefix)
+                )
             else:
                 # keep primitive values as-is
                 processed_list_values.append(values)
@@ -182,13 +236,47 @@ def explode_dict(
         return result
 
     def _explode_dict_recursive(
-        d: Dict[str, Any], level: int = 0
+        d: Dict[str, Any], level: int = 0, current_prefix: str = ""
     ) -> List[Dict[str, Any]]:
         """Recursively explode a dictionary into all combinations."""
-        list_keys, list_values, non_list_items, dict_items = _categorize_dict_items(d)
+
+        # resolve effective prefix (might be typed)
+        effective_prefix = _resolve_prefix_for_data(
+            cls, current_prefix=current_prefix, data=d, strict=True
+        )
+
+        list_keys, list_values, non_list_items, dict_items = _categorize_dict_items(
+            d, effective_prefix
+        )
+
+        for key, value in list(non_list_items.items()):
+            prefixed_key = f"{effective_prefix}{key}" if effective_prefix else key
+            expected_type = getattr(cls, "__annotations__", {}).get(prefixed_key, None)
+            if not (
+                expected_type and is_list(expected_type) and isinstance(value, list)
+            ):
+                continue
+            nested_prefix = (
+                f"{effective_prefix}{key}_" if effective_prefix else f"{key}_"
+            )
+            parts = [
+                (
+                    _explode_dict_recursive(item, level + 1, nested_prefix)
+                    if isinstance(item, dict)
+                    else [item]
+                )
+                for item in value
+            ]
+            variants = [list(combo) for combo in product(*parts)]
+            if len(variants) > 1:
+                del non_list_items[key]
+                list_keys.append(key)
+                list_values.append(variants)
 
         # generate combinations from nested dictionaries
-        dict_combinations = _generate_dict_combinations(dict_items, level)
+        dict_combinations = _generate_dict_combinations(
+            dict_items, level, effective_prefix
+        )
 
         # if no lists found, just combine non-list items with dict combinations
         if not list_keys:
@@ -196,7 +284,12 @@ def explode_dict(
 
         # generate all combinations including lists
         return _generate_all_combinations(
-            list_keys, list_values, non_list_items, dict_combinations, level
+            list_keys,
+            list_values,
+            non_list_items,
+            dict_combinations,
+            level,
+            effective_prefix,
         )
 
     def _add_prefix_to_dict(cls, d: Dict[str, Any], prefix: str) -> Dict[str, Any]:
@@ -207,24 +300,17 @@ def explode_dict(
         ) -> Dict[str, Any]:
             result = {}
 
+            # resolve effective typed prefix once per node
+            effective_prefix = _resolve_prefix_for_data(
+                cls, current_prefix=current_prefix, data=data, strict=True
+            )
+
             for key, value in data.items():
-                if "type" in data and key != "type":
-                    # simply appending prefix is not enough
-                    # we fetch actual type name from base poly children
-                    stripped_prefix = (
-                        current_prefix[:-1]
-                        if current_prefix[-1] == "_"
-                        else current_prefix
-                    )
-                    try:
-                        typed_child_name = cls.base_poly_children_types[
-                            stripped_prefix
-                        ][data["type"]]
-                        prefixed_key = f"{typed_child_name}_{key}"
-                    except KeyError:
-                        prefixed_key = f"Cannot find type {data['type']} in {cls.base_poly_children_types[stripped_prefix]}"
-                else:
+                # For the 'type' meta-key itself, keep the current (un-typed) prefix
+                if "type" in data and key == "type":
                     prefixed_key = f"{current_prefix}{key}"
+                else:
+                    prefixed_key = f"{effective_prefix}{key}"
 
                 if isinstance(value, dict):
                     # for nested dicts, recursively process with composed prefix
@@ -249,7 +335,7 @@ def explode_dict(
         all_exploded = []
         for item in list_data:
             if isinstance(item, dict):
-                exploded = _explode_dict_recursive(item)
+                exploded = _explode_dict_recursive(item, current_prefix=prefix)
                 all_exploded.extend(exploded)
             else:
                 # non-dict items are wrapped
@@ -264,7 +350,7 @@ def explode_dict(
         return _handle_list_config(config, prefix)
 
     # standard case: explode the config and add prefixes
-    exploded_configs = _explode_dict_recursive(config)
+    exploded_configs = _explode_dict_recursive(config, current_prefix=prefix)
     _increment_counter(len(exploded_configs))
     return [_add_prefix_to_dict(cls, cfg, prefix) for cfg in exploded_configs]
 
@@ -345,10 +431,18 @@ def reconstruct_original_dataclass(self) -> Any:
     # skip all classes with default None and that have not been provided by the user
     classes_to_skip = set()
     for cls, dependencies in self.dataclass_dependencies.items():
-        cls_type_arg = cls + "_type"  # to specify a class, one provides the type
+        # did the user provide anything that belongs to this dataclass?
+        sub_arg_provided = any(k.startswith(f"{cls}_") for k in self.provided_args)
+        # fallback for base poly configs: to specify a poly class, one provides the type
+        cls_type_arg = cls + "_type"
+
+        # skip if the field defaults to None and the user did not provide it
+        #   - For polymorphic configs: no <cls>_type
+        #   - For regular dataclasses: no sub-field with the <cls>_ prefix
         if (
             cls in self.args_with_default_none
             and cls_type_arg not in self.provided_args
+            and not sub_arg_provided
         ):
             classes_to_skip.add(cls)
             for dependency in dependencies:
@@ -374,27 +468,49 @@ def reconstruct_original_dataclass(self) -> Any:
             _cls
         ]:
             if is_subclass(field_type, BasePolyConfig):
+                # pick the instantiated child that matches the selected type
                 config_type = getattr(self, f"{prefixed_field_name}_type")
-                # find all subclasses of field_type and check which one matches the config_type
-                config_type_matched = False
-                # base poly children contains all subclasses of the base poly config
-                for child_name, child_cls in self.base_poly_children[
-                    prefixed_field_name
-                ].items():
-                    if str(child_cls.get_type()) == config_type:
-                        config_type_matched = True
-                        args[original_field_name] = instances[child_name]
-                        break
-                assert (
-                    config_type_matched
-                ), f"Invalid type {config_type} for {prefixed_field_name}_type. Valid types: {[str(subclass.get_type()) for subclass in get_all_subclasses(field_type)]}"
+                if config_type == "None":
+                    args[original_field_name] = None
+                else:
+                    type_key = config_type.lower()
+                    try:
+                        child_node_name = self.base_poly_children_types[
+                            prefixed_field_name
+                        ][type_key]
+                    except KeyError:
+                        valid = list(
+                            self.base_poly_children_types.get(
+                                prefixed_field_name, {}
+                            ).keys()
+                        )
+                        raise ValueError(
+                            f"Invalid type '{config_type}' (key: {type_key}) for '{prefixed_field_name}_type'. Valid types: {valid}"
+                        ) from None
+                    args[original_field_name] = instances[child_node_name]
             # child dataclass has already been instantiated, so just assign it
             elif hasattr(field_type, "__dataclass_fields__"):
-                if prefixed_field_name in instances:
-                    args[original_field_name] = instances[prefixed_field_name]
+                # find the dependency name corresponding to this field's type.
+                dependency_name = None
+                for dep_name in self.dataclass_dependencies[_cls]:
+                    dep_cls = self.dataclass_names_to_classes.get(dep_name)
+                    if dep_cls is field_type:
+                        dependency_name = dep_name
+                        break
+
+                if dependency_name and dependency_name in instances:
+                    args[original_field_name] = instances[dependency_name]
                 else:
-                    # if not found in instances, the class has not been provided by the user and is None by default
-                    args[original_field_name] = None
+                    if (
+                        prefixed_field_name not in self.args_with_default_none
+                        and dependency_name is None
+                    ):
+                        raise ValueError(
+                            f"Class {_cls} has no dependency name and is not in args_with_default_none"
+                        )
+                    else:
+                        # not been provided by the user and is None by default
+                        args[original_field_name] = None
             # primitive type
             else:
                 value = getattr(self, prefixed_field_name)
@@ -446,8 +562,12 @@ def init_iterable_args(loaded_configs, cli_provided_args, list_fields):
                                 subclass.get_type().name.upper()
                                 == raw_value["type"].upper()
                             ):
-                                raw_value.pop("type")
-                                return_iterable.append(subclass(**raw_value))
+                                subclass_kwargs = {
+                                    k: v for k, v in raw_value.items() if k != "type"
+                                }
+                                return_iterable.append(
+                                    create_class_from_dict(subclass, subclass_kwargs)
+                                )
                                 is_match = True
                                 break
                         assert (
@@ -455,7 +575,9 @@ def init_iterable_args(loaded_configs, cli_provided_args, list_fields):
                         ), f"No class found for type '{raw_value['type']}' in children of {target_type}"
                 elif hasattr(target_type, "__dataclass_fields__"):
                     for raw_value in arg_value:
-                        return_iterable.append(target_type(**raw_value))
+                        return_iterable.append(
+                            create_class_from_dict(target_type, raw_value)
+                        )
                 elif isinstance(target_type, type):
                     for raw_value in arg_value:
                         return_iterable.append(target_type(raw_value))
@@ -581,15 +703,17 @@ def _add_field_to_parser(
     elif is_dict(field_type):
         assert is_composed_of_primitives(field_type)
         field_type = json.loads
-    elif is_bool(field_type):
+    elif isinstance(field_type, type) and is_bool(field_type):
         action = BooleanOptionalAction
 
     # build argument parameters
     arg_params = {
-        "type": field_type,
         "action": action,
         "help": help_text,
     }
+
+    if not (isinstance(field_type, type) and is_bool(field_type)):
+        arg_params["type"] = field_type
 
     # handle default values
     if field.default is not MISSING:
@@ -672,10 +796,6 @@ def _load_config_files(cls, args):
     """Load and process all config files specified in arguments."""
     loaded_configs: Dict[str, List[Dict[str, Any]]] = {}
 
-    logger.info("--------------------------------")
-    logger.info("BEGIN LOADING ARGS FROM FILES")
-    logger.info("--------------------------------")
-
     for file_field_name in cls.dataclass_file_fields.values():
         file_path = getattr(args, file_field_name, None)
         if not file_path:
@@ -700,7 +820,7 @@ def _load_config_files(cls, args):
     for file_field_name, configs in loaded_configs.items():
         n_configs = len(configs)
         logger.info(
-            f"File field name: {file_field_name}. Expanded to {n_configs} configs."
+            f"File field name '{file_field_name}' expanded to {n_configs} config{'' if n_configs == 1 else 's'}."
         )
         total_configs += n_configs
 
@@ -739,10 +859,8 @@ def _create_config_combinations(loaded_configs):
         all_config_combinations.append(combined_config)
         all_keys_to_file_field_names.append(params_to_files)
 
-    logger.info(f"Created {len(all_config_combinations)} total config combinations")
-    logger.info("--------------------------------")
-    logger.info("END LOADING ARGS FROM FILES")
-    logger.info("--------------------------------")
+    logger.info(f"Created {len(all_config_combinations)} total config combinations.")
+    logger.info("---")
 
     return all_config_combinations, all_keys_to_file_field_names
 
@@ -767,7 +885,7 @@ def _merge_args_with_configs(
     all_provided_args: List[Dict[str, Any]] = []
 
     if not all_config_combinations:
-        return [args], all_provided_args
+        return [args], [cli_provided_args]
 
     final_args = []
     for config, keys_to_file_field_names in zip(
@@ -875,30 +993,30 @@ def _handle_polymorphic_config_field(
     # process all subclasses of the polymorphic config
     assert hasattr(field_type, "__dataclass_fields__")
     for subclass in get_all_subclasses(field_type):
-        child_name = prefix + to_snake_case(subclass.__name__)
-        state["base_poly_children"][prefixed_name][child_name] = subclass
-        state["base_poly_children_types"][prefixed_name][
-            subclass.get_type().name.lower()
-        ] = child_name
-        state["dataclass_dependencies"][prefixed_input_dataclass].append(child_name)
-
-        _process_single_dataclass(
-            state, subclass, f"{to_snake_case(prefix[:-1] + subclass.__name__)}_"
+        type_key = subclass.get_type().name.lower()
+        child_node_name = f"{prefix}{to_snake_case(type_key)}_{field.name}"
+        # map the child node name to the subclass
+        state["base_poly_children"][prefixed_name][child_node_name] = subclass
+        # map type -> child node name
+        state["base_poly_children_types"][prefixed_name][type_key] = child_node_name
+        # ensure parent depends on this child node name
+        state["dataclass_dependencies"][prefixed_input_dataclass].append(
+            child_node_name
         )
+
+        _process_single_dataclass(state, subclass, f"{child_node_name}_")
 
 
 def _handle_nested_dataclass_field(
-    state, field, field_type, prefixed_name, prefixed_input_dataclass, prefix
+    state, field, field_type, prefixed_name, prefixed_input_dataclass
 ):
     """Process a field that is a nested dataclass."""
-    dependency_name = prefix + to_snake_case(field_type.__name__)
+    dependency_name = prefixed_name
     state["dataclass_dependencies"][prefixed_input_dataclass].append(dependency_name)
     state["dataclass_args"][prefixed_input_dataclass].append(
         (prefixed_name, field.name, field_type)
     )
-    _process_single_dataclass(
-        state, field_type, f"{prefix + to_snake_case(field_type.__name__)}_"
-    )
+    _process_single_dataclass(state, field_type, f"{prefixed_name}_")
 
 
 def _handle_primitive_field(
@@ -954,6 +1072,10 @@ def _process_single_dataclass(state, input_dataclass, prefix=""):
         prefixed_name = f"{prefix}{field.name}"
         field_type, _ = _get_field_type_info(field)
 
+        # Skip fields that are not part of __init__ (e.g., init=False fields)
+        if not field.init:
+            continue
+
         if field.default is None:
             state["args_with_default_none"].add(prefixed_name)
 
@@ -963,7 +1085,7 @@ def _process_single_dataclass(state, input_dataclass, prefix=""):
             )
         elif hasattr(field_type, "__dataclass_fields__"):
             _handle_nested_dataclass_field(
-                state, field, field_type, prefixed_name, prefixed_class_name, prefix
+                state, field, field_type, prefixed_name, prefixed_class_name
             )
         else:
             _handle_primitive_field(

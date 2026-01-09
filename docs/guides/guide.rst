@@ -10,4 +10,5 @@ Check out the following guides to learn more:
 
    new_llm_client
    request_generator_providers
+   server_management
 

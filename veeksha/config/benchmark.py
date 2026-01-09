@@ -1,104 +1,75 @@
-import json
-import os
 from dataclasses import field
 from typing import Optional
 
-from veeksha.config.client import ClientConfig
+from veeksha.config.client import (
+    BaseClientConfig,
+    OpenAIChatCompletionsClientConfig,
+)
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
-from veeksha.config.deadline import DeadlineConfig
-from veeksha.config.generators.request_generator.base_generator import (
-    BaseRequestGeneratorConfig,
+from veeksha.config.evaluator import (
+    BaseEvaluatorConfig,
+    PerformanceEvaluatorConfig,
 )
-from veeksha.config.generators.request_generator.lmeval_generator import (
-    LmevalRequestGeneratorConfig,
+from veeksha.config.generator.session import (
+    BaseSessionGeneratorConfig,
+    SyntheticSessionGeneratorConfig,
 )
-from veeksha.config.generators.request_generator.synthetic_generator import (
-    SyntheticRequestGeneratorConfig,
-)
-from veeksha.config.metrics import MetricsConfig
-from veeksha.config.prefill_profiler import PrefillProfilerConfig
-from veeksha.config.utils import dataclass_to_dict
-from veeksha.constants.configuration_constants import DEFAULT_SEED
-from veeksha.logger import init_logger
-from veeksha.types import RequestGeneratorType
-
-logger = init_logger(__name__)
+from veeksha.config.runtime import RuntimeConfig
+from veeksha.config.server import BaseServerConfig
+from veeksha.config.trace_recorder import TraceRecorderConfig
+from veeksha.config.traffic import BaseTrafficConfig, RateTrafficConfig
+from veeksha.config.wandb import WandbConfig
 
 
 @frozen_dataclass(allow_from_file=True)
 class BenchmarkConfig:
-    seed: int = field(
-        default=DEFAULT_SEED,
-        metadata={"help": "Seed for the random number generator."},
-    )
-    timeout: int = field(
-        default=1200,
-        metadata={"help": "The amount of time to run the load test for."},
-    )
-    max_completed_requests: int = field(
-        default=10,
+    output_dir: str = field(
+        default="benchmark_output",
         metadata={
-            "help": "The number of requests to complete before finishing the test. Note "
-            "that its possible for the test to timeout first."
+            "help": "Base directory for all benchmark outputs (traces, metrics, logs)"
         },
     )
-    api_url: Optional[str] = field(
-        default="http://localhost:8000/v1",
-        metadata={"help": "The API URL for the benchmark."},
+    seed: int = field(
+        default=42, metadata={"help": "Seed for the random number generator."}
     )
-    api_key: Optional[str] = field(
-        default="token-abc123",
-        metadata={"help": "The API key for the benchmark."},
+    session_generator: BaseSessionGeneratorConfig = field(
+        default_factory=SyntheticSessionGeneratorConfig,
+        metadata={"help": "The session generator configuration for the benchmark."},
     )
-    client_config: ClientConfig = field(
-        default_factory=ClientConfig,
-        metadata={"help": "The client configuration for the benchmark."},
+    traffic_scheduler: BaseTrafficConfig = field(
+        default_factory=RateTrafficConfig,
+        metadata={
+            "help": "The traffic scheduler configuration for the benchmark. Available: rate, concurrent"
+        },
     )
-    metrics_config: MetricsConfig = field(
-        default_factory=MetricsConfig,
-        metadata={"help": "The metrics configuration for the benchmark."},
+    evaluators: list[BaseEvaluatorConfig] = field(
+        default_factory=lambda: [PerformanceEvaluatorConfig()],
+        metadata={
+            "help": "List of evaluators to run. Available: performance, accuracy"  # TODO: compatibility notices
+        },
     )
-    deadline_config: DeadlineConfig = field(
-        default_factory=DeadlineConfig,
-        metadata={"help": "The deadline configuration for the benchmark."},
+    client: BaseClientConfig = field(default_factory=OpenAIChatCompletionsClientConfig)
+    runtime: RuntimeConfig = field(
+        default_factory=RuntimeConfig,
+        metadata={"help": "The runtime configuration for the benchmark."},
     )
-    prefill_profiler_config: PrefillProfilerConfig = field(
-        default_factory=PrefillProfilerConfig,
-        metadata={"help": "The prefill profiler configuration for the benchmark."},
+    trace_recorder: TraceRecorderConfig = field(
+        default_factory=TraceRecorderConfig,
+        metadata={
+            "help": "Trace recorder configuration. Records dispatched requests (unlike the evaluator, which records them after completion)."
+        },
     )
-    request_generator_config: BaseRequestGeneratorConfig = field(
-        default_factory=SyntheticRequestGeneratorConfig,
-        metadata={"help": "The request generator configuration for the benchmark."},
+    server: Optional[BaseServerConfig] = field(
+        default=None,
+        metadata={
+            "help": "Server configuration for managed servers. If set, client.model, client.api_key and client.api_base will be overwritten."
+        },
     )
-
-    # TODO mv
-    def __post_init__(self):
-        if not os.path.exists(self.metrics_config.output_dir):
-            os.makedirs(self.metrics_config.output_dir)
-
-        if self.prefill_profiler_config.use_predictions_for_ttft:
-            self.prefill_profiler_config.max_prefill_tokens_to_predict = max(
-                self.prefill_profiler_config.max_prefill_tokens_to_predict,
-                self.request_generator_config.max_tokens,
-            )
-            self.prefill_profiler_config.fill_predictions_array()
-
-        if self.request_generator_config.get_type() == RequestGeneratorType.LMEVAL:
-            logger.warning("Removing timeout for LMEval.")
-            self.timeout = -1
-            assert isinstance(
-                self.request_generator_config, LmevalRequestGeneratorConfig
-            )
-
-            if self.request_generator_config.is_logit_based:
-                self.client_config.llm_api = "openai_completions"
-                self.client_config.address_append_value = "completions"
-            else:
-                self.client_config.llm_api = "openai_chat"
-                self.client_config.address_append_value = "chat/completions"
-
-        self.write_config_to_file()
+    wandb: WandbConfig = field(
+        default_factory=WandbConfig,
+        metadata={"help": "Weights & Biases logging configuration."},
+    )
 
     @classmethod
     def create_from_cli_args(cls):
@@ -116,16 +87,6 @@ class BenchmarkConfig:
             instances.append(instance)
         return instances
 
-    def to_dict(self):
-        if not hasattr(self, "__flat_config__") or self.__flat_config__ is None:
-            logger.debug("Flat config not found or is None. Using dataclass_to_dict.")
-            return dataclass_to_dict(self)
-
-        return self.__flat_config__.__dict__  # type: ignore
-
-    def write_config_to_file(self):
-        config_dict = dataclass_to_dict(self)
-        with open(
-            os.path.join(f"{self.metrics_config.output_dir}", "config.json"), "w"
-        ) as f:
-            json.dump(config_dict, f, indent=4)
+    def __post_init__(self):
+        if not self.evaluators:
+            raise ValueError("BenchmarkConfig.evaluators must be non-empty.")

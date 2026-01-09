@@ -1,0 +1,41 @@
+output_dir: capacity_search_output
+start_value: 10
+max_value: 20
+expansion_factor: 2.0
+max_iterations: 2
+
+benchmark_config:
+  seed: 42
+
+  wandb:
+    enabled: True
+    project: veeksha
+
+  traffic_scheduler:
+    type: concurrent # both target concurrency and rampup seconds are set by capsearch
+    cancel_session_on_failure: False
+
+  session_generator:
+    type: synthetic
+    session_graph:
+      type: linear
+      inherit_history: True
+    channels:
+      - type: text
+
+  client:
+    type: openai_chat_completions
+    model: meta-llama/Llama-3.2-1B-Instruct
+    request_timeout: 60
+    api_base: http://localhost:30002/v1
+    max_tokens_param: max_completion_tokens
+    min_tokens_param: min_tokens
+    use_min_tokens_prompt_fallback: False
+
+  runtime:
+    max_sessions: -1
+    benchmark_timeout: 10
+
+  trace_recorder:
+    enabled: True
+    include_content: True
