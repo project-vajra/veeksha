@@ -5,7 +5,7 @@ from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.types import SloType
 
-SUPPORTED_SLO_METRICS = {"ttfc", "tbc"}
+SUPPORTED_SLO_METRICS = {"ttfc", "tbc", "tpot", "e2e"}
 
 
 @frozen_dataclass
@@ -34,7 +34,7 @@ class ConstantSloConfig(BaseSloConfig):
     metric: str = field(
         default="ttfc",
         metadata={
-            "help": f"The metric key this SLO applies to. Supported: {sorted(SUPPORTED_SLO_METRICS)}"
+            "help": f"The metric key this SLO applies to. Available: {', '.join(sorted(SUPPORTED_SLO_METRICS))}."
         },
     )
 

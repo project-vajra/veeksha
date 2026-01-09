@@ -1,6 +1,6 @@
 from typing import List
 
-from veeksha.config.server import VLLMServerConfig
+from veeksha.config.server import VllmServerConfig
 from veeksha.logger import init_logger
 from veeksha.orchestration.server_manager import BaseServerManager
 
@@ -10,7 +10,7 @@ logger = init_logger(__name__)
 class VLLMServerManager(BaseServerManager):
     """Manager for vLLM inference servers."""
 
-    def __init__(self, config: VLLMServerConfig, output_dir: str):
+    def __init__(self, config: VllmServerConfig, output_dir: str):
         super().__init__(config, output_dir=output_dir)
 
     def _build_launch_command(self) -> List[str]:

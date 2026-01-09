@@ -103,7 +103,7 @@ class BaseServerConfig(BasePolyConfig):
 
 
 @frozen_dataclass
-class VLLMServerConfig(BaseServerConfig):
+class VllmServerConfig(BaseServerConfig):
     @classmethod
     def get_type(cls) -> ServerType:
         return ServerType.VLLM
@@ -117,7 +117,7 @@ class VajraServerConfig(BaseServerConfig):
 
 
 @frozen_dataclass
-class SGLangServerConfig(BaseServerConfig):
+class SglangServerConfig(BaseServerConfig):
     @classmethod
     def get_type(cls) -> ServerType:
         return ServerType.SGLANG

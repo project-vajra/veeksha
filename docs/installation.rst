@@ -1,57 +1,47 @@
 Installation
 ============
 
-Setup
------
+We recommend using `uv <https://github.com/astral-sh/uv>`_ for managing environments and dependencies.
+For optimal performance and true worker parallelism, it is recommended to use **Python 3.14 free-threaded**.
 
-Clone Repository
-~~~~~~~~~~~~~~~~
+Prerequisites
+-------------
 
-.. code-block:: shell
+If you haven't installed ``uv`` yet, you can do so with:
 
-    git clone https://github.com/project-vajra/veeksha.git
+.. code-block:: bash
 
-Create Conda Environment
-~~~~~~~~~~~~~~~~~~~~~~~~
-.. code-block:: shell
+   curl -LsSf https://astral.sh/uv/install.sh | sh
 
-    conda create -n veeksha python=3.12
-    conda activate veeksha
+Environment Setup
+-----------------
+
+Create and activate a virtual environment with Python 3.14t:
+
+.. code-block:: bash
+
+   uv venv --python 3.14t
+   source .venv/bin/activate
 
 Install Veeksha
-~~~~~~~~~~~~~~~
-.. code-block:: shell
+---------------
 
-    cd veeksha
-    pip install -e .
+From PyPI
+~~~~~~~~~
 
-.. _huggingface_setup:
+You can install the latest stable version of ``veeksha`` directly using ``uv``:
 
-Setup Hugging Face
-~~~~~~~~~~~~~~~~~~
+.. code-block:: bash
 
-First create and setup your account at ``https://huggingface.co/`` and obtain API key. Then run the following command and enter API key linked to your hugging face account:
+   uv pip install veeksha
 
-.. code-block:: shell
+From Source
+~~~~~~~~~~~
 
-    huggingface-cli login
+If you want to install from the latest source code or contribute to development:
 
-Custom tokenizer corresponding to the model is fetched from Hugging Face hub. Make sure you have access to the model and are logged in to Hugging Face though command line.
+.. code-block:: bash
 
-.. _wandb_setup:
-
-Setup Wandb [Optional]
-~~~~~~~~~~~~~~~~~~~~~~
-First create and setup your account at ``https://<your-org>.wandb.io/`` or public Wandb and obtain API key. Then run the following command and enter API key linked to your wandb account:
-
-.. code-block:: shell
-
-    wandb login --host https://<your-org>.wandb.io
-
-Disabling Wandb
-^^^^^^^^^^^^^^^^^^^
-To opt out of wandb, do any of the following:
-
-1. Don't pass any wandb related args like ``--wandb-project``, ``--wandb-group`` and ``wandb-run-name`` when running python scripts. Alternatively, pass in ``--no-should-write-metrics`` instead of ``--should-write-metrics`` boolean flag.
-2. Run ``export WANDB_MODE=disabled`` in your shell or add this to ``~/.zshrc`` or ``~/.bashrc``. Remember to reload your shell using ``source ~/.zshrc`` or ``source ~/.bashrc``.
-
+   git clone https://github.com/project-vajra/veeksha.git
+   cd veeksha
+   uv pip install -e .

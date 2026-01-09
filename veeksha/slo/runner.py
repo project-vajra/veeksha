@@ -94,5 +94,8 @@ def _get_slo_metric_keys(slo_configs: Sequence[BaseSloConfig]) -> Set[str]:
     for slo in slo_configs:
         metric = getattr(slo, "metric", None)
         if isinstance(metric, str):
-            keys.add(metric)
+            if metric == "e2e":
+                keys.add("end_to_end_latency")
+            else:
+                keys.add(metric)
     return keys

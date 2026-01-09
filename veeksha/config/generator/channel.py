@@ -6,7 +6,7 @@ from veeksha.config.generator.length import (
     BaseLengthGeneratorConfig,
     UniformLengthGeneratorConfig,
 )
-from veeksha.types import ChannelModality
+from veeksha.types import ChannelModality, LengthGeneratorType
 from veeksha.types.base_registry import BaseRegistry
 
 
@@ -19,10 +19,16 @@ class BaseChannelGeneratorConfig(BasePolyConfig):
 class TextChannelGeneratorConfig(BaseChannelGeneratorConfig):
 
     body_length_generator: BaseLengthGeneratorConfig = field(
-        default_factory=UniformLengthGeneratorConfig
+        default_factory=UniformLengthGeneratorConfig,
+        metadata={
+            "help": f"The generator for the body length. {LengthGeneratorType.help_str()}"
+        },
     )
     output_length_generator: BaseLengthGeneratorConfig = field(
-        default_factory=UniformLengthGeneratorConfig
+        default_factory=UniformLengthGeneratorConfig,
+        metadata={
+            "help": f"The generator for the output length. {LengthGeneratorType.help_str()}"
+        },
     )
     shared_prefix_ratio: float = field(
         default=0.0,

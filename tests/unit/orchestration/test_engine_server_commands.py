@@ -6,7 +6,7 @@ from textwrap import dedent
 import pytest  # type: ignore[import]
 import yaml
 
-from veeksha.config.server import VLLMServerConfig, VajraServerConfig
+from veeksha.config.server import VllmServerConfig, VajraServerConfig
 from veeksha.orchestration.vllm_server import VLLMServerManager
 from veeksha.orchestration.vajra_server import VajraServerManager
 
@@ -14,7 +14,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_vllm_launch_command_with_advanced_configuration():
-    config = VLLMServerConfig(
+    config = VllmServerConfig(
         model="meta/test-model",
         host="0.0.0.0",
         port=9001,
@@ -108,10 +108,10 @@ def test_server_config_additional_args_loaded_from_yaml(tmp_path):
 
     data = yaml.safe_load(config_file.read_text())
     # ServerConfig logic for creating from dict might be gone.
-    # We should manually create VLLMServerConfig if 'engine' is vllm.
+    # We should manually create VllmServerConfig if 'engine' is vllm.
     engine = data.pop("engine", "vllm")
     if engine == "vllm":
-        server_config = VLLMServerConfig(**data)
+        server_config = VllmServerConfig(**data)
     else:
         server_config = VajraServerConfig(**data)
         
