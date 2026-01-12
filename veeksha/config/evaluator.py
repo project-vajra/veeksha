@@ -153,7 +153,7 @@ def _default_slos() -> list[BaseSloConfig]:
     ]
 
 
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)
 class BaseEvaluatorConfig(BasePolyConfig):
     """Base configuration for all evaluators (performance, accuracy)"""
 

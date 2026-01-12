@@ -15,7 +15,7 @@ from veeksha.types import (
 )
 
 
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)
 class BaseSessionGeneratorConfig(BasePolyConfig):
     pass
 

@@ -16,7 +16,7 @@ Overview
 
 At the highest level, Veeksha:
 
-1. **Generates sessions** representing user conversations as directed acyclic graphs (DAGs)
+1. **Generates sessions** representing user conversations or agentic flows as directed acyclic graphs (DAGs)
 2. **Schedules sessions** according to configurable traffic patterns
 3. **Sends requests** to LLM inference endpoints via async HTTP clients
 4. **Evaluates results** by computing latency/accuracy metrics and checking SLO compliance

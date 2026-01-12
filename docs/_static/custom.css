@@ -1,0 +1,61 @@
+/* Custom styles for veeksha config documentation */
+/* Targeting Furo theme structure */
+
+/* Field name styling in definition lists - make them stand out */
+dt > code.docutils.literal {
+    background-color: rgba(59, 130, 246, 0.15) !important;
+    border: 1px solid rgba(59, 130, 246, 0.3) !important;
+    color: #60a5fa !important;
+    padding: 2px 8px !important;
+    border-radius: 4px !important;
+    font-weight: 600 !important;
+}
+
+/* Type annotations styling (the em elements inside classifiers) */
+dt .classifier em {
+    color: #34d399 !important;
+    font-style: italic !important;
+}
+
+/* Default values in code blocks */
+dt .classifier code.docutils.literal {
+    background-color: rgba(148, 163, 184, 0.1) !important;
+    border: 1px solid rgba(148, 163, 184, 0.2) !important;
+    color: #94a3b8 !important;
+    font-weight: normal !important;
+}
+
+/* Required field indicator */
+dt .classifier em:only-child {
+    color: #f87171 !important;
+}
+
+/* Definition description styling */
+dd {
+    margin-left: 2em !important;
+    margin-bottom: 1em !important;
+    padding-left: 1em !important;
+    border-left: 2px solid rgba(59, 130, 246, 0.2) !important;
+}
+
+/* Available types styling */
+dd p strong {
+    color: #a78bfa !important;
+}
+
+/* Better spacing for field definition terms */
+dt {
+    margin-top: 1.2em !important;
+    padding-bottom: 0.3em !important;
+}
+
+/* Section headers styling */
+section > h2 {
+    border-bottom: 2px solid rgba(59, 130, 246, 0.3);
+    padding-bottom: 0.5em;
+}
+
+/* Class name in title - make it more prominent */
+.section > h1 {
+    color: #60a5fa;
+}

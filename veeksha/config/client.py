@@ -10,7 +10,7 @@ from veeksha.types import ClientType
 logger = init_logger(__name__)
 
 
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)
 class BaseClientConfig(BasePolyConfig):
     api_base: Optional[str] = field(
         default=None,

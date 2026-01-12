@@ -230,14 +230,14 @@ Create a base config and run with different servers:
     python -Xgil=0 -m veeksha.benchmark \
         --benchmark-config-from-file base_config.yml \
         --server-type vllm \
-        --server-env-path vllm_env \
-        --server-model meta-llama/Llama-3-8B-Instruct \
+        --vllm-server-env-path vllm_env \
+        --vllm-server-model meta-llama/Llama-3.2-1B-Instruct \
         --output-dir results/vllm
 
     # Run with SGLang
     python -Xgil=0 -m veeksha.benchmark \
         --benchmark-config-from-file base_config.yml \
         --server-type sglang \
-        --server-env-path sglang_env \
-        --server-model meta-llama/Llama-3-8B-Instruct \
+        --sglang-server-env-path sglang_env \
+        --sglang-server-model meta-llama/Llama-3-8B-Instruct \
         --output-dir results/sglang

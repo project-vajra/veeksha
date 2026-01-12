@@ -314,18 +314,5 @@ After the benchmark, Veeksha runs health checks to validate correctness:
 
 Results are saved to ``health_check_results.txt``:
 
-.. code-block:: text
-
-    ============================================================
-    SESSION DISPATCH RATE CHECK
-    ============================================================
-    Result: PASSED
-
-    Rate Statistics:
-      Expected Rate            10.0000 sessions/sec
-      Actual Rate              11.4026 sessions/sec
-      Error                    14.03%
-      Threshold                15.0%
-
 Health checks help identify configuration issues or system problems that
 could invalidate benchmark results.

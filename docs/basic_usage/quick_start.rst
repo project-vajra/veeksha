@@ -156,7 +156,7 @@ Override configuration values without editing the file:
 
     python -Xgil=0 -m veeksha.benchmark \
         --benchmark-config-from-file my_benchmark.veeksha.yml \
-        --traffic-scheduler-interval-generator-arrival-rate 20.0 \
+        --rate-traffic-scheduler-poisson-interval-generator-arrival-rate 20.0 \
         --runtime-benchmark-timeout 120
 
 This runs at 20 sessions/second for 120 seconds instead of the file's values.
@@ -171,7 +171,7 @@ Common Patterns
 
     python -Xgil=0 -m veeksha.benchmark \
         --benchmark-config-from-file my_benchmark.veeksha.yml \
-        --traffic-scheduler-interval-generator-arrival-rate 1.0 \
+        --rate-traffic-scheduler-poisson-interval-generator-arrival-rate 1.0 \
         --runtime-max-sessions 50
 
 **Throughput saturation test:**
@@ -195,6 +195,12 @@ Common Patterns
         output_length_generator:
           type: fixed
           value: 256
+
+
+Configuration Reference
+-----------------------
+
+For a detailed reference of all configuration options, see the :doc:`/config_reference/index`.
 
 Next Steps
 ----------
