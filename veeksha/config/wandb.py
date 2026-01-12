@@ -4,7 +4,7 @@ from typing import Optional
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 
 
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)
 class WandbConfig:
     """Configuration for Weights & Biases logging.
 

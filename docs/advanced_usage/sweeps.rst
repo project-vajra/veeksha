@@ -154,6 +154,73 @@ Veeksha automatically generates summary files at the end of each sweep:
 **sweep_summary.csv** provides the same data in a tabular format for easy
 spreadsheet analysis.
 
+Cross-File Expansion
+--------------------
+
+When using :ref:`multiple config files <configuration-splitting>`, ``!expand`` tags
+work across file boundaries. Veeksha collects **all** ``!expand`` markers from all
+config files and computes the Cartesian product.
+
+**Example: Sweep across client endpoints and traffic rates**
+
+Create ``client.yml`` with multiple endpoints:
+
+.. code-block:: yaml
+
+    # client.yml - sweep across 2 servers
+    type: openai_chat_completions
+    api_base: !expand [http://server-a:8000/v1, http://server-b:8000/v1]
+    model: meta-llama/Llama-3-8B-Instruct
+
+Create ``traffic.yml`` with multiple arrival rates:
+
+.. code-block:: yaml
+
+    # traffic.yml - sweep across 3 rates
+    traffic_scheduler:
+      type: rate
+      interval_generator:
+        type: poisson
+        arrival_rate: !expand [5, 10, 20]
+
+Run combining both files:
+
+.. code-block:: bash
+
+    python -Xgil=0 -m veeksha.benchmark \
+        --benchmark-config-from-file traffic.yml \
+        --client-from-file client.yml
+
+This creates **6 runs** (2 servers × 3 rates):
+
+1. api_base=server-a, rate=5
+2. api_base=server-a, rate=10
+3. api_base=server-a, rate=20
+4. api_base=server-b, rate=5
+5. api_base=server-b, rate=10
+6. api_base=server-b, rate=20
+
+**Three-file example**
+
+You can split configuration across as many files as needed:
+
+.. code-block:: bash
+
+    python -Xgil=0 -m veeksha.benchmark \
+        --benchmark-config-from-file base.yml \
+        --client-from-file client.yml \               # 2 !expand values
+        --traffic-scheduler-from-file traffic.yml     # 3 !expand values
+
+If ``base.yml`` contains ``!expand [256, 512]`` for prompt length,
+this creates **12 runs** (2 × 3 × 2).
+
+.. hint::
+    Cross-file expansion is particularly useful for:
+
+    - Testing multiple server deployments with the same workload
+    - Comparing different models without duplicating config files
+    - Running the same sweep against staging and production endpoints
+
 
 Common Sweep Patterns
 ---------------------

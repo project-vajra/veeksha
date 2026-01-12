@@ -317,5 +317,4 @@ Less reliable but works with servers lacking ``min_tokens`` support.
 
 .. tip::
 
-    For accurate benchmarks, use a server that supports ``min_tokens``
-    (vLLM, SGLang) to control output lengths precisely.
+    For accurate benchmarks, use a server that supports ``min_tokens`` to control output lengths precisely.

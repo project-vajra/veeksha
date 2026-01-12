@@ -121,6 +121,7 @@ scripts/nodes.txt
 /docs/source/_static/thumbs
 /docs/source/tune/generated_guides/
 /dosc/source/**/doc/
+/docs/config_reference/api_reference/
 
 # User-specific stuff:
 .idea/**/workspace.xml

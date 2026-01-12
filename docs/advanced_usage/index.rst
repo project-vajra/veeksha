@@ -5,18 +5,6 @@ This section covers advanced Veeksha features for power users and researchers
 who need fine-grained control over benchmarking workflows.
 
 
-In This Section
----------------
-
-.. toctree::
-   :maxdepth: 2
-
-   capacity_search
-   server_management
-   sweeps
-   microbenchmarks
-
-
 Overview
 --------
 
@@ -35,3 +23,15 @@ Overview
 **Microbenchmarks**
     Isolate and measure specific operations like prefill or decode throughput
     using specialized configurations.
+
+
+In This Section
+---------------
+
+.. toctree::
+   :maxdepth: 2
+
+   capacity_search
+   server_management
+   sweeps
+   microbenchmarks

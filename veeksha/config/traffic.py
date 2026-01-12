@@ -9,7 +9,7 @@ from veeksha.config.generator.interval import (
 from veeksha.types import TrafficType
 
 
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)
 class BaseTrafficConfig(BasePolyConfig):
     cancel_session_on_failure: bool = field(
         default=True,

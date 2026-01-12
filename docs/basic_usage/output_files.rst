@@ -232,36 +232,136 @@ Health Check Results
 
     .. code-block:: text
 
-        ============================================================
-        SESSION DISPATCH RATE CHECK
-        ============================================================
-        Result: PASSED
+      ============================================================
+      INTRA-SESSION REQUEST ARRIVAL CHECK
+      ============================================================
+      Result: PASSED
 
-        Rate Statistics:
-          Total Sessions                 110
-          Expected Rate                  10.0000 sessions/sec
-          Actual Rate                    11.4026 sessions/sec
-          Error                          14.03%
-          Threshold                      15.0%
+      Description:
+        Metric                         Scheduler delay (actual_dispatch - ready_time)
+        Ready Time                     Parent requests completion + wait_after_ready (if available)
 
-        ============================================================
-        PROMPT LENGTH CHECK
-        ============================================================
-        Result: PASSED
+      Deviation Statistics (seconds):
+        Requests w/ Dependencies       1616
+        Min                            0.0000s
+        Mean                           0.0010s
+        Median                         0.0001s
+        P95                            0.0002s
+        P99                            0.0003s
+        Max                            0.2864s
+        Std Dev                        0.0140s
 
-        Statistics:
-          Total Requests Checked         555
-          Exact Matches                  555 (100.0%)
-          Violations (> +/-15)           0 (0.0%)
+      Violation Info:
+        Late Threshold                 5.0s (dispatched >5.0s after ready)
+        Violations                     0
 
-        ============================================================
-        LIFECYCLE TIMING DELAYS CHECK
-        ============================================================
-        Result: PASSED
 
-        Dispatch-to-Pickup Delay:
-          Mean                           0.0006s
-          P99                            0.0030s
+      ============================================================
+      SESSION DISPATCH RATE CHECK
+      ============================================================
+      Result: PASSED
+
+      Rate Statistics:
+        Total Sessions                 344
+        Measurement Duration           62.8338s
+        Expected Rate                  5.0000 sessions/sec
+        Actual Rate                    5.4588 sessions/sec
+        Error                          9.18%
+        Threshold                      15.0%
+
+      Inter-Arrival Time Statistics:
+        Min                            0.0002s
+        Mean                           0.1832s
+        Median                         0.1346s
+        P95                            0.5782s
+        P99                            0.6000s
+        Max                            0.6706s
+        Std Dev                        0.1676s
+
+
+      ============================================================
+      PROMPT LENGTH CHECK
+      ============================================================
+      Result: PASSED
+
+      Description:
+        Metric                         Prompt Length Deviation (Actual - Target)
+        Target                         Specified target_prompt_tokens
+        Threshold                      <= +/- 15.0
+
+      Statistics:
+        Total Requests Checked         1960
+        Exact Matches                  1960 (100.0%)
+        Mismatches (All)               0 (0.0%)
+        Violations (> +/-15)           0 (0.0%)
+        Min Deviation                  0.0
+        Mean Deviation                 0.00
+        Median Deviation               0.0
+        P95 Deviation                  0.0
+        P99 Deviation                  0.0
+        Max Deviation                  0.0
+        Std Dev                        0.00
+
+
+      ============================================================
+      OUTPUT LENGTH CHECK
+      ============================================================
+      Result: PASSED
+
+      Description:
+        Metric                         Output Length Deviation (Actual - Requested)
+        Target                         num_requested_output_tokens
+        Threshold                      <= +/- 15.0
+
+      Statistics:
+        Total Requests Checked         1960
+        Exact Matches                  1953 (99.6%)
+        Mismatches (All)               7 (0.4%)
+        Violations (> +/-15)           0 (0.0%)
+        Min Deviation                  -1.0
+        Mean Deviation                 -0.00
+        Median Deviation               0.0
+        P95 Deviation                  0.0
+        P99 Deviation                  0.0
+        Max Deviation                  1.0
+        Std Dev                        0.06
+
+
+      ============================================================
+      LIFECYCLE TIMING DELAYS CHECK
+      ============================================================
+      Result: PASSED
+
+      Ready-to-Dispatch Delay (scheduler_dispatched_at - scheduler_ready_at):
+        Count                          1960
+        Min                            0.0000s
+        Mean                           0.0000s
+        Median                         0.0000s
+        P95                            0.0000s
+        P99                            0.0000s
+        Max                            0.0000s
+        Std Dev                        0.0000s
+
+      Dispatch-to-Pickup Delay (client_picked_up_at - scheduler_dispatched_at):
+        Count                          1960
+        Min                            0.0001s
+        Mean                           0.0015s
+        Median                         0.0004s
+        P95                            0.0039s
+        P99                            0.0255s
+        Max                            0.1155s
+        Std Dev                        0.0071s
+
+      Completion-to-Result-Processing Delay (result_processed_at - client_completed_at):
+        Count                          1960
+        Min                            0.0004s
+        Mean                           0.0023s
+        Median                         0.0012s
+        P95                            0.0020s
+        P99                            0.0490s
+        Max                            0.1006s
+        Std Dev                        0.0081s
+
 
     Checks included:
 
@@ -290,42 +390,6 @@ If WandB is enabled:
 
 **wandb/**
     Local WandB sync directory containing logs and artifacts.
-
-
-Analyzing Results Programmatically
-----------------------------------
-
-Load metrics in Python:
-
-.. code-block:: python
-
-    import json
-    import pandas as pd
-    from pathlib import Path
-
-    output_dir = Path("benchmark_output/09:01:2026-10:30:00-a1b2c3d4")
-
-    # Load per-request metrics
-    metrics = pd.read_json(
-        output_dir / "metrics/request_level_metrics.jsonl",
-        lines=True
-    )
-
-    # Compute statistics
-    print(f"Median TTFC: {metrics['ttfc'].median() * 1000:.1f} ms")
-    print(f"P99 TTFC: {metrics['ttfc'].quantile(0.99) * 1000:.1f} ms")
-    print(f"Mean TBC: {metrics['tbc'].mean() * 1000:.1f} ms")
-
-    # Load summary
-    with open(output_dir / "metrics/summary_stats.json") as f:
-        summary = json.load(f)
-    print(f"Completed: {summary['Number of Completed Requests']}")
-
-    # Check SLO results
-    with open(output_dir / "metrics/slo_results.json") as f:
-        slos = json.load(f)
-    print(f"All SLOs met: {slos['all_slos_met']}")
-
 
 See Also
 --------

@@ -18,8 +18,9 @@ Configuration can be provided via YAML files or CLI arguments.
 Quick Links
 -----------
 
-- :doc:`benchmark` - Configuration for standard benchmark runs
-- :doc:`capacity_search` - Configuration for capacity search experiments
+- :doc:`api_reference/BenchmarkConfig` - Configuration for standard benchmark runs
+- :doc:`api_reference/CapacitySearchConfig` - Configuration for capacity search experiments
+- :doc:`api_reference/index` - Full API reference for all config classes
 
 
 Understanding the Config System
@@ -47,24 +48,11 @@ For example, the ``traffic_scheduler`` can be either ``rate`` or ``concurrent``:
 IDE Autocompletion
 ------------------
 
-Export a JSON schema for YAML autocompletion in your IDE::
-
-    python -m veeksha.cli.config export-schema -o veeksha-schema.json
-
-Then configure your IDE to use this schema for ``*.veeksha.yml`` files.
-
-For VS Code, add to ``.vscode/settings.json``::
-
-    {
-        "yaml.schemas": {
-            "./veeksha-schema.json": "*.veeksha.yml"
-        }
-    }
+See :doc:`/basic_usage/configuration` for instructions on how to set up YAML autocompletion and validation in your IDE.
 
 
 .. toctree::
    :maxdepth: 2
    :hidden:
 
-   benchmark
-   capacity_search
+   api_reference/index

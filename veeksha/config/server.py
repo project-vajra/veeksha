@@ -10,7 +10,7 @@ from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.types import ServerType
 
 
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)
 class BaseServerConfig(BasePolyConfig):
     """Base configuration for server launch and management."""
 

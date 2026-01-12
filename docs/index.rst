@@ -60,11 +60,11 @@ Run a simple benchmark against an OpenAI-compatible endpoint::
 
     python -Xgil=0 -m veeksha.benchmark \
         --client-type openai_chat_completions \
-        --client-api-base http://localhost:8000/v1 \
-        --client-model my-model \
+        --openai-chat-completions-client-api-base http://localhost:8000/v1 \
+        --openai-chat-completions-client-model meta-llama/Llama-3.2-1B-Instruct \
         --traffic-scheduler-type rate \
-        --traffic-scheduler-interval-generator-type poisson \
-        --traffic-scheduler-interval-generator-arrival-rate 5.0 \
+        --rate-traffic-scheduler-interval-generator-type poisson \
+        --rate-traffic-scheduler-poisson-interval-generator-arrival-rate 5.0 \
         --runtime-benchmark-timeout 60
 
 Or use a YAML configuration file::
