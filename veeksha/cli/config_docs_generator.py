@@ -165,6 +165,59 @@ def _generate_class_rst(cls: Type, all_classes: Dict[str, Type]) -> str:
                 lines.append(f"    {first_para}")
                 lines.append("")
 
+    # Polymorphic type info (if this is a poly subclass)
+    if (
+        isinstance(cls, type)
+        and issubclass(cls, BasePolyConfig)
+        and cls is not BasePolyConfig
+    ):
+        has_header = False
+
+        # 1. Try to display the specific type of this class
+        try:
+            type_value = cls.get_type()
+            if hasattr(type_value, "name"):
+                type_value = type_value.name.lower()
+            lines.append("**Polymorphic Type:**")
+            lines.append("")
+            lines.append(f"    ``type: {type_value}``")
+            has_header = True
+        except NotImplementedError:
+            pass
+
+        # 2. Display all available types for this family
+        # Find the root polymorphic base (closest to BasePolyConfig)
+        mro = cls.mro()
+        # Filter for custom classes that inherit from BasePolyConfig
+        poly_parents = [
+            c
+            for c in mro
+            if issubclass(c, BasePolyConfig)
+            and c is not BasePolyConfig
+            and c is not object
+        ]
+
+        variant_lines = []
+        if poly_parents:
+            poly_root = poly_parents[-1]
+            variant_lines = _get_variant_lines(poly_root, all_classes)
+
+            if variant_lines:
+                if not has_header:
+                    lines.append("**Polymorphic Type:**")
+                    lines.append("")
+                else:
+                    lines.append("")
+
+                lines.append(f"    All ``{poly_root.__name__}`` types:")
+                lines.append("")
+                for v_line in variant_lines:
+                    lines.append(f"    {v_line}")
+
+        # Add trailing newline if we added any polymorphic info
+        if has_header or (poly_parents and variant_lines):
+            lines.append("")
+
     # Fields section
     class_fields = list(fields(cls))
     if class_fields:
@@ -175,23 +228,6 @@ def _generate_class_rst(cls: Type, all_classes: Dict[str, Type]) -> str:
             if f.name == "type":  # Skip polymorphic type discriminator
                 continue
             _generate_field_rst(f, lines, all_classes)
-
-    # Polymorphic type info (if this is a poly subclass)
-    if (
-        isinstance(cls, type)
-        and issubclass(cls, BasePolyConfig)
-        and cls is not BasePolyConfig
-    ):
-        try:
-            type_value = cls.get_type()
-            if hasattr(type_value, "name"):
-                type_value = type_value.name.lower()
-            lines.append("**Polymorphic Type:**")
-            lines.append("")
-            lines.append(f"    ``type: {type_value}``")
-            lines.append("")
-        except NotImplementedError:
-            pass
 
     return "\n".join(lines)
 
