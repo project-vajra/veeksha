@@ -220,10 +220,13 @@ def _generate_field_rst(f: Any, lines: List[str], all_classes: Dict[str, Type]) 
 
     # Available types for polymorphic fields
     if is_poly and poly_base:
-        variant_links = _get_variant_links(poly_base, all_classes)
-        if variant_links:
+        variant_lines = _get_variant_lines(poly_base, all_classes)
+        if variant_lines:
             lines.append("")
-            lines.append(f"    **Available types:** {variant_links}")
+            lines.append("    Available types:")
+            lines.append("")
+            for v_line in variant_lines:
+                lines.append(f"    {v_line}")
 
     lines.append("")
 
@@ -344,12 +347,12 @@ def _extract_first_paragraph(docstring: str) -> str:
     return " ".join(result_lines)
 
 
-def _get_variant_links(
+def _get_variant_lines(
     poly_base: Type[BasePolyConfig], all_classes: Dict[str, Type]
-) -> str:
-    """Get hyperlinked list of polymorphic variants."""
+) -> List[str]:
+    """Get formatted list of polymorphic variants."""
     subclasses = get_all_subclasses(poly_base)
-    parts = []
+    lines = []
     for subclass in subclasses:
         class_name = subclass.__name__
         try:
@@ -360,11 +363,13 @@ def _get_variant_links(
             type_value = class_name.lower()
 
         if class_name in all_classes:
-            parts.append(f":doc:`{class_name}` *({type_value})*")
+            link = f":doc:`{class_name}`"
         else:
-            parts.append(f"``{class_name}`` *({type_value})*")
+            link = f"``{class_name}``"
 
-    return ", ".join(parts)
+        lines.append(f"- ``{type_value}``: {link}")
+
+    return lines
 
 
 def _generate_api_index(all_classes: Dict[str, Type]) -> str:
