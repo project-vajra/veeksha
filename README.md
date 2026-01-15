@@ -8,13 +8,13 @@ running capacity planning experiments, Veeksha lets you measure what matters to 
 realistic multi-turn conversations, agentic workflows, high-frequency stress tests, or targeted
 microbenchmarks. One tool, any workload.
 
-**Veeksha benchmarks true users, not just requests.**
+**Veeksha can benchmark a lot more than just requests.**
 
-Most LLM benchmarking tools measure how fast your server can process requests.
-But your users don't send isolated requests. They have conversations. They think
-before typing. Their agents make parallel tool calls. Their sessions have structure.
-Veeksha models all of this with session graphs, flexible traffic patterns, and
-composable evaluation.
+Most of today's LLM system benchmarking tools essentially measure how fast a server can process requests.
+But users don't send isolated requests. They have conversations. They think
+before typing, or they might not even be users, but agents making parallel tool calls.
+Users' sessions have structure, and in order for benchmarks to reflect performance under production-like conditions,
+their workloads need to be modeled as such. Veeksha does exactly that with session graphs, flexible traffic patterns, and composable evaluation.
 
 👉 **[Why Veeksha?](https://project-vajra.github.io/veeksha/understanding_veeksha/why_veeksha.html)** — Learn what sets Veeksha apart  
 📚 **[Documentation](https://project-vajra.github.io/veeksha)** — Full guides and API reference

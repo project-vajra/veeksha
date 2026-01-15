@@ -1,32 +1,33 @@
 Why Veeksha?
 ============
 
-Most LLM benchmarking tools measure how fast your server can process *requests*.
-But your users don't send isolated requests. They have *conversations*. They think
-before typing. Their agents make parallel tool calls. Their sessions have structure.
+Most of today's LLM system benchmarking tools essentially measure how fast a server can process *requests*.
+But users don't send isolated requests. They have *conversations*. They think
+before typing, or they might not even be users, but agents making parallel tool calls.
+Users' sessions have structure, and in order for benchmarks to reflect performance under production-like conditions, 
+their workloads need to be modeled as such.
 
-**Veeksha benchmarks users, not just requests.**
+**Veeksha can benchmark a lot more than just requests.**
 
 This page explains the challenges Veeksha addresses and the capabilities that set
 it apart.
 
 
-The Problem: Benchmarks That Miss Real-World Behavior
+Benchmarks usually miss real-world behavior
 -----------------------------------------------------
 
 When you deploy an LLM application, your users don't behave like load generators.
-They read responses before replying. They start sessions at unpredictable times.
+They read responses before replying and start sessions at unpredictable times.
 Their interactions have dependencies: one request's output becomes the next
-request's input.
+request's input. Testing under synthetic and unrealistic loads is
+useful under certain conditions, but it's just part of a bigger story.
+A benchmark library should be able to go further than that.
 
-Traditional LLM system benchmarks often miss these patterns, leading to metrics that look
-good on paper but might not predict production performance.
-
-
-Session Graphs: Beyond Linear Conversations
+Session graphs: beyond linear conversations
 -------------------------------------------
 
-Most benchmarking tools model multi-turn conversations as a **linear sequence**:
+Most benchmarking tools model multi-turn conversations (if they even support them) as 
+a **linear sequence**:
 Turn 1 -> Turn 2 -> Turn 3. Each turn waits for the previous one to complete before
 starting.
 
@@ -38,7 +39,7 @@ This works for simple chatbots, but modern LLM applications are more complex:
 - **Map-reduce patterns**: Process multiple chunks in parallel, then aggregate
 
 A linear "list of turns" cannot express "wait for both Tool A and Tool B, then
-continue." You need a graph.
+continue."
 
 **Veeksha's approach**: Sessions are modeled as **directed acyclic graphs (DAGs)**.
 Each node is a request, and edges define dependencies. Nodes with no unfinished
@@ -52,7 +53,7 @@ dependencies can execute in parallel.
 
 .. figure:: /_static/assets/nonlinear-session.png
    :alt: DAG session with parallel branches
-   :width: 500px
+   :width: 495px
 
    A DAG session: parallel branches with synchronization points.
 
@@ -67,7 +68,7 @@ Veeksha makes this explicit with the ``is_history_parent`` flag on edges, giving
 you precise control over what context each request receives.
 
 
-Flexible Traffic Scheduling
+Flexible traffic scheduling
 ----------------------------
 
 Veeksha supports two fundamentally different traffic models:
@@ -85,7 +86,7 @@ Veeksha supports two fundamentally different traffic models:
 Both modes can be combined with any workload type.
 
 
-Think Time: User Simulation, Not Rate Limiting
+Think time: user simulation, not rate limiting
 ----------------------------------------------
 
 Some benchmarks add a "sleep" after sending a request to throttle the load. But
@@ -107,24 +108,24 @@ whether your cache survives realistic user pauses.
 the user reading the response before continuing.
 
 
-Trace Flavors: Real Workloads, Real Characteristics
----------------------------------------------------
+Trace flavors for real workloads
+--------------------------------
 
 Many benchmarks treat all traces the same way. Veeksha introduces **trace flavors**
 that define how to parse and replay different trace types (coding assistants, RAG,
 conversational datasets), each with appropriate wrapping and shuffling behavior.
 See :doc:`content_generation` for details.
 
-Multimodal Architecture
+Multimodal architecture
 -----------------------
 
 Veeksha's content generation uses a **channel-based architecture** (text, image,
-audio, video). Currently text is fully implemented today, with the architecture ready for
+audio, video). Text is fully implemented today, with the architecture ready for
 multimodal workloads. See :doc:`content_generation` for details.
 
 
-Beyond Performance: Composable Evaluation
------------------------------------------
+Composable evaluation
+---------------------
 
 Veeksha isn't just a workload generator. It's a composable evaluation framework.
 
@@ -142,8 +143,8 @@ concurrency that meets your SLOs using an adaptive probe-then-binary-search algo
 performance measurement with decode window analysis.
 
 
-Veeksha Scales Down Too
------------------------
+Veeksha scales down too!
+------------------------
 
 Veeksha doesn't force you to model complex sessions. A session can contain a single
 request, which makes Veeksha behave like a traditional request dispatcher:
@@ -164,28 +165,15 @@ This means you can:
 - Simulate multi-turn conversations (linear sessions)
 - Model agentic workflows (DAG sessions)
 
+And because you also control the traffic model, you can construct any benchmark you might need.
 All with the same tool, the same configuration format, and the same evaluation pipeline.
 
 When to Use Veeksha
 -------------------
 
-Veeksha is designed for teams who need to:
-
-- **Benchmark agentic applications**: If your LLM makes tool calls, branches, or
-  has parallel execution paths
-- **Validate production readiness**: Test how your serving infrastructure behaves
-  under realistic user arrival patterns
-- **Understand tail latency**: See what happens when traffic spikes, using open-loop
-  scheduling that reveals true performance degradation
-- **Test prefix caching**: Model think times to see if your cache optimizations
-  survive real user behavior
-- **Run capacity planning**: Find your system's saturation point with automated
-  capacity search
-- **Evaluate accuracy under load**: Measure model quality degradation as concurrency
-  increases
-
-Whether you're running single-turn throughput tests or modeling complex agentic
-workflows, Veeksha gives you the fidelity to benchmark what actually matters.
+Veeksha is designed for teams who need to evaluate LLM inference systems across the whole range of use cases.
+If you need to understand your system's capacity, benchmark agentic support at scale, understand tail effects under bursty traffic,
+test prefix caching and production readiness, model accuracy under load, or more, we believe Veeksha can help.
 
 
 Next Steps
