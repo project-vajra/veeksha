@@ -1,47 +1,71 @@
 # Veeksha
 
-[![Publish Release to PyPI](https://github.com/project-vajra/veeksha/actions/workflows/publish_release.yml/badge.svg)](https://github.com/project-vajra/veeksha/actions/workflows/publish_release.yml) [![Deploy Documentation](https://github.com/project-vajra/veeksha/actions/workflows/deploy_docs.yml/badge.svg)](https://github.com/project-vajra/veeksha/actions/workflows/deploy_docs.yml) [![Test Suite](https://github.com/project-vajra/veeksha/actions/workflows/test_veeksha.yml/badge.svg)](https://github.com/project-vajra/veeksha/actions/workflows/test_veeksha.yml) [![Run Linters](https://github.com/project-vajra/veeksha/actions/workflows/lint.yml/badge.svg)](https://github.com/project-vajra/veeksha/actions/workflows/lint.yml) 
+[![Publish Release to PyPI](https://github.com/project-vajra/veeksha/actions/workflows/publish_release.yml/badge.svg)](https://github.com/project-vajra/veeksha/actions/workflows/publish_release.yml) [![Deploy Documentation](https://github.com/project-vajra/veeksha/actions/workflows/deploy_docs.yml/badge.svg)](https://github.com/project-vajra/veeksha/actions/workflows/deploy_docs.yml) [![Test Suite](https://github.com/project-vajra/veeksha/actions/workflows/test_veeksha.yml/badge.svg)](https://github.com/project-vajra/veeksha/actions/workflows/test_veeksha.yml) [![Run Linters](https://github.com/project-vajra/veeksha/actions/workflows/lint.yml/badge.svg)](https://github.com/project-vajra/veeksha/actions/workflows/lint.yml)
 
-Veeksha is a framework for evaluating the performance of LLM inference systems.  It allows users to simulate almost any real-life workload at scale by easily shaping the content, scheduling and evaluation schemas.
+**Veeksha** is a high-fidelity benchmarking framework for LLM inference systems.
+Whether you're optimizing a production deployment, comparing serving backends, or
+running capacity planning experiments, Veeksha lets you measure what matters to you:
+realistic multi-turn conversations, agentic workflows, high-frequency stress tests, or targeted
+microbenchmarks. One tool, any workload.
 
-- Content: Veeksha's content primitive is a session (a Directed Acyclic Graph of requests). From single-turn text generation tasks to multi-turn, non-linear agentic patterns with content inheritance, sessions can represent any workload shape. Moreover, the content in each request can be customized for any modality (multi-modality coming soon).
+**Veeksha benchmarks true users, not just requests.**
 
-- Scheduling: Veeksha supports synchronous intra-session dependencies, while asynchronously scheduling multiple sessions to simulate real-world usage patterns. One can use Veeksha to simulate a variety of session traffic, from a set concurrency level to a target rate of dispatch.
+Most LLM benchmarking tools measure how fast your server can process requests.
+But your users don't send isolated requests. They have conversations. They think
+before typing. Their agents make parallel tool calls. Their sessions have structure.
+Veeksha models all of this with session graphs, flexible traffic patterns, and
+composable evaluation.
 
-- Evaluation: Veeksha provides automatic evaluation of the performance metrics one would expect (throughput, latency, time to first token, time between tokens, etc.) as well as accuracy metrics for supported content (we support LM-Eval content and evaluation out of the box). All with native Weights & Biases integration, so that you can always track and visualize your results.
+👉 **[Why Veeksha?](https://project-vajra.github.io/veeksha/understanding_veeksha/why_veeksha.html)** — Learn what sets Veeksha apart  
+📚 **[Documentation](https://project-vajra.github.io/veeksha)** — Full guides and API reference
 
-Please refer to our [documentation](https://project-vajra.github.io/veeksha) for more.
+## Quick Start
 
-## Setup
+Install from PyPI:
 
-### From source
+```bash
+pip install veeksha
+```
 
-#### Clone repository
+Run a benchmark against an OpenAI-compatible endpoint:
+
+```bash
+python -m veeksha.benchmark \
+    --client-type openai_chat_completions \
+    --openai-chat-completions-client-api-base http://localhost:8000/v1 \
+    --openai-chat-completions-client-model meta-llama/Llama-3.2-1B-Instruct \
+    --traffic-scheduler-type rate \
+    --rate-traffic-scheduler-interval-generator-type poisson \
+    --rate-traffic-scheduler-poisson-interval-generator-arrival-rate 5.0 \
+    --runtime-benchmark-timeout 60
+```
+
+Or use a YAML configuration file:
+
+```bash
+python -m veeksha.benchmark --benchmark-config-from-file my_benchmark.veeksha.yml
+```
+
+## Installation from Source
+
 ```bash
 git clone https://github.com/project-vajra/veeksha.git
 cd veeksha
-```
 
-#### Create uv environment and install the dependencies
-
-Install uv if you haven't already:
-
-```bash
+# Install uv if needed
 curl -LsSf https://astral.sh/uv/install.sh | sh
-```
 
-Create a virtual environment and install Veeksha. We recommend using Python 3.14 free-threaded for true worker parallelism:
-
-```bash
+# Create environment (Python 3.14t recommended for true parallelism)
 uv venv --python 3.14t
 source .venv/bin/activate
 uv pip install -e .
 ```
 
-
 ## Citation
+
 If you use our work, please consider citing our paper:
-```cite
+
+```bibtex
 @misc{agrawal2024Etalon,
       title={Etalon: Holistic Performance Evaluation Framework for LLM Inference Systems}, 
       author={Amey Agrawal and Anmol Agarwal and Nitin Kedia and Jayashree Mohan and Souvik Kundu and Nipun Kwatra and Ramachandran Ramjee and Alexey Tumanov},
@@ -54,4 +78,5 @@ If you use our work, please consider citing our paper:
 ```
 
 ## Acknowledgement
-This repository was originally created as fork from [LLMPerf](https://github.com/ray-project/llmperf) project.
+
+This repository was originally created as a fork from [LLMPerf](https://github.com/ray-project/llmperf) project.

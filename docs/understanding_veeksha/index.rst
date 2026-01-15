@@ -48,6 +48,7 @@ In This Section
 .. toctree::
    :maxdepth: 2
 
+   why_veeksha
    architecture
    sessions_and_graphs
    content_generation

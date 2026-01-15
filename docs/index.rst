@@ -8,12 +8,20 @@ Veeksha Documentation
 
 **Veeksha** is a high-fidelity benchmarking framework for LLM inference systems.
 Whether you're optimizing a production deployment, comparing serving backends, or
-running capacity planning experiments, Veeksha gives you precise, reproducible
-measurements with realistic workloads.
+running capacity planning experiments, Veeksha lets you measure what matters to you:
+realistic multi-turn conversations, agentic workflows, high-frequency stress tests, or targeted
+microbenchmarks. One tool, any workload.
 
-Built for accuracy: Veeksha models real-world traffic patterns-multi-turn
-conversations, arrival rate distributions, and shared prefix caching-so your
-benchmarks reflect actual production behavior.
+**Veeksha benchmarks true users, not just requests.**
+
+Most LLM benchmarking tools measure how fast your server can process requests.
+But your users don't send isolated requests. They have conversations. They think
+before typing. Their agents make parallel tool calls. Their sessions have structure.
+Veeksha models all of this with session graphs, flexible traffic patterns, and
+composable evaluation.
+
+👉 **New here?** Start with :doc:`understanding_veeksha/why_veeksha` to learn what
+sets Veeksha apart.
 
 .. note::
 
@@ -79,6 +87,7 @@ Documentation
    :maxdepth: 2
    :caption: Getting Started
 
+   understanding_veeksha/why_veeksha
    installation
 
 .. toctree::
