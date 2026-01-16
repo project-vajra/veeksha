@@ -15,6 +15,8 @@ microbenchmarks. One tool, any workload.
 
 ## Quick start
 
+In a fresh environment (Python 3.14t recommended for true parallelism):
+
 Install from PyPI:
 
 ```bash
@@ -24,7 +26,7 @@ pip install veeksha
 Run a benchmark against an OpenAI-compatible endpoint:
 
 ```bash
-python -m veeksha.benchmark \
+python -Xgil=0 -m veeksha.benchmark \
     --client-type openai_chat_completions \
     --openai-chat-completions-client-api-base http://localhost:8000/v1 \
     --openai-chat-completions-client-model meta-llama/Llama-3.2-1B-Instruct \
@@ -37,7 +39,7 @@ python -m veeksha.benchmark \
 Or use a YAML configuration file:
 
 ```bash
-python -m veeksha.benchmark --benchmark-config-from-file my_benchmark.veeksha.yml
+python -Xgil=0 -m veeksha.benchmark --benchmark-config-from-file my_benchmark.veeksha.yml
 ```
 
 ## Installation from source
