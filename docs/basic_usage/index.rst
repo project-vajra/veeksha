@@ -1,4 +1,4 @@
-Basic Usage
+Basic usage
 ===========
 
 This section covers the fundamentals of using Veeksha for LLM benchmarking.
@@ -19,7 +19,7 @@ Before running benchmarks, ensure you have:
 3. **Python 3.12+** (3.14t highly recommended for best performance)
 
 
-In This Section
+In this section
 ---------------
 
 .. toctree::

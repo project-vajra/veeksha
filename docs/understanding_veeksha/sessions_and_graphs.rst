@@ -6,7 +6,7 @@ in a directed acyclic graph (DAG). This design captures the dependency structure
 of multi-turn conversations.
 
 
-The Session Model
+The session model
 -----------------
 
 A **Session** represents a complete user conversation and contains:
@@ -34,23 +34,15 @@ A **Request** represents a single interaction (prompt + expected response):
         session_context: Dict[str, Any]            # Graph metadata
 
 
-Session Graphs as DAGs
+Session graphs as DAGs
 ----------------------
 
 The **SessionGraph** models request dependencies using nodes and directed edges:
 
-.. code-block:: text
-
-    Linear Session (3 turns):
-    
-    ┌───────┐      ┌───────┐      ┌───────┐
-    │ Node 0│─────▶│ Node 1│─────▶│ Node 2│
-    └───────┘      └───────┘      └───────┘
-    (root)         wait: 0.5s     wait: 0.3s
-    
-    Edges indicate dependencies:
-    - Node 1 cannot start until Node 0 completes
-    - Node 2 cannot start until Node 1 completes
+.. image:: /_static/assets/annotated-linear-session.png
+   :alt: Annotated Linear Session
+   :align: center
+   :width: 300px
 
 Each **SessionNode** contains:
 
@@ -62,8 +54,20 @@ Each **SessionEdge** contains:
 - ``src``, ``dst``: Source and destination node IDs
 - ``is_history_parent``: Whether parent's output should be included in context
 
+A non-linear session might look like this:
 
-Linear Sessions
+.. _branching-session-graph:
+
+.. image:: /_static/assets/annotated-nonlinear-session.png
+   :alt: Annotated Non-linear Session
+   :align: center
+   :width: 495px
+
+That is, each node has an independent ``wait_after_ready`` value and, if enabled, inherits history from one of its parents. 
+Only after all its parents are finished can a request be considered for dispatch. Next, we talk more about these concepts.
+
+
+Linear sessions
 ---------------
 
 The most common pattern is a **linear session** representing a typical
@@ -99,8 +103,7 @@ Configuration options:
     If ``true``, each request includes the conversation history from
     its parent node(s), simulating chat context accumulation.
 
-
-History Inheritance
+History inheritance
 -------------------
 
 When ``inherit_history: true``, the traffic scheduler populates each request's
@@ -123,15 +126,15 @@ The history is recorded when a request completes and includes:
 This accurately models how LLM chat APIs accumulate conversation context.
 
 
-Branching Graphs (Future)
+Branching graphs
 -------------------------
 
 While linear sessions cover most use cases, the DAG structure supports
-more complex patterns:
+more complex patterns, such as the :ref:`branching session graph <branching-session-graph>` shown earlier.
 
 .. code-block:: text
 
-    Branching Session:
+    Branching session:
     
          ┌───────┐
          │ Root  │
@@ -149,13 +152,8 @@ This could model scenarios like:
 - A/B testing different conversation paths
 - Multi-agent interactions
 
-.. note::
 
-    Currently, only the ``linear`` graph generator is implemented.
-    The architecture supports future graph types.
-
-
-Session Generators
+Session generators
 ------------------
 
 Three session generator types are available:
@@ -201,7 +199,7 @@ Three session generator types are available:
     Best for: Model accuracy evaluation under load.
 
 
-Request Scheduling Within Sessions
+Request scheduling within sessions
 ----------------------------------
 
 When a session is scheduled, its requests don't all dispatch immediately.

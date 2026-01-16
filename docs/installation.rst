@@ -13,7 +13,7 @@ If you haven't installed ``uv`` yet, you can do so with:
 
    curl -LsSf https://astral.sh/uv/install.sh | sh
 
-Environment Setup
+Environment setup
 -----------------
 
 Create and activate a virtual environment with Python 3.14t:
@@ -35,7 +35,7 @@ You can install the latest stable version of ``veeksha`` directly using ``uv``:
 
    uv pip install veeksha
 
-From Source
+From source
 ~~~~~~~~~~~
 
 If you want to install from the latest source code or contribute to development:

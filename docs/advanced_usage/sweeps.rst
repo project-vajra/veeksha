@@ -6,7 +6,7 @@ using the ``!expand`` YAML tag. This creates a Cartesian product of configuratio
 enabling systematic exploration of the parameter space.
 
 
-The !expand Tag
+The !expand tag
 ---------------
 
 Use ``!expand`` to expand a list into multiple configurations:
@@ -25,7 +25,7 @@ This creates three separate benchmark runs with rates 5, 10, and 20.
     `!expand` can only be specified for fields that were not originally typed as lists. For example, `arrival_rate` is a float, so it can be swept.
 
 
-Cartesian Product Expansion
+Cartesian product expansion
 ---------------------------
 
 Multiple ``!expand`` tags create a Cartesian product:
@@ -54,7 +54,7 @@ This creates **6 runs** (3 × 2):
 6. concurrency=16, prompt=512
 
 
-Basic Example
+Basic example
 -------------
 
 Create a file ``sweep.veeksha.yml``:
@@ -103,7 +103,7 @@ Run it:
 Veeksha automatically runs 4 benchmarks with rates 5, 10, 20, and 30.
 
 
-Output Structure
+Output structure
 ----------------
 
 Sweeps create a parent directory containing all run subdirectories and summary files:
@@ -126,7 +126,7 @@ Each run's full metrics are preserved in its subdirectory, enabling detailed
 cross-run analysis (e.g., comparing TTFC distributions, throughput, or SLO compliance).
 
 
-Sweep Summary
+Sweep summary
 -------------
 
 Veeksha automatically generates summary files at the end of each sweep:
@@ -154,7 +154,7 @@ Veeksha automatically generates summary files at the end of each sweep:
 **sweep_summary.csv** provides the same data in a tabular format for easy
 spreadsheet analysis.
 
-Cross-File Expansion
+Cross-file expansion
 --------------------
 
 When using :ref:`multiple config files <configuration-splitting>`, ``!expand`` tags
@@ -222,7 +222,7 @@ this creates **12 runs** (2 × 3 × 2).
     - Running the same sweep against staging and production endpoints
 
 
-Common Sweep Patterns
+Common sweep patterns
 ---------------------
 
 **Rate Sweep** - Find latency vs load relationship

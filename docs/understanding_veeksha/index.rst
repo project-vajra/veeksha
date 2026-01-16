@@ -22,7 +22,7 @@ At the highest level, Veeksha:
 4. **Evaluates results** by computing latency/accuracy metrics and checking SLO compliance
 
 
-Key Design Principles
+Key design principles
 ---------------------
 
 **Sessions, not just requests**
@@ -42,7 +42,7 @@ Key Design Principles
     detailed performance analysis.
 
 
-In This Section
+In this section
 ---------------
 
 .. toctree::

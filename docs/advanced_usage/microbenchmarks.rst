@@ -6,7 +6,7 @@ performance measurement. This guide covers how to configure Veeksha for
 targeted microbenchmarking.
 
 
-Prefill vs Decode
+Prefill vs decode
 -----------------
 
 LLM inference has two main phases:
@@ -22,7 +22,7 @@ LLM inference has two main phases:
 Measuring these separately helps identify bottlenecks.
 
 
-Prefill Microbenchmark
+Prefill microbenchmark
 ----------------------
 
 Isolate prefill by using fixed-length prompts, minimal outputs, and no batching:
@@ -83,7 +83,7 @@ The **stair length generator** creates requests with increasing prompt lengths:
 Analyze ``prefill_stats.json`` to see TTFC grouped by prompt length.
 
 
-Decode Microbenchmark
+Decode microbenchmark
 ---------------------
 
 Isolate decode by using fixed prompts, variable outputs, and controlled batching:
@@ -139,7 +139,7 @@ Isolate decode by using fixed prompts, variable outputs, and controlled batching
             require_streaming: true
 
 
-Decode Window Analysis
+Decode window analysis
 ----------------------
 
 The **decode window** isolates steady-state decode performance by filtering
@@ -166,7 +166,7 @@ out prefill and ramp-up effects:
 This produces accurate per-token decode throughput without prefill influence.
 
 
-Decode Window Output Files
+Decode window output files
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 When decode window analysis is enabled, additional files are generated in the
@@ -189,7 +189,7 @@ The plot shows active requests over time, with the decode windows
 to the final, windowed, decode throughput metrics.
 
 
-Batch Size Sweep
+Batch size sweep
 ----------------
 
 Measure decode throughput across batch sizes:

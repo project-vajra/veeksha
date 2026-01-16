@@ -15,7 +15,7 @@ Configuration can be provided via YAML files or CLI arguments.
        python -m veeksha.cli.config show --format yaml
 
 
-Quick Links
+Quick links
 -----------
 
 - :doc:`api_reference/BenchmarkConfig` - Configuration for standard benchmark runs
@@ -23,7 +23,7 @@ Quick Links
 - :doc:`api_reference/index` - Full API reference for all config classes
 
 
-Understanding the Config System
+Understanding the config system
 -------------------------------
 
 Veeksha uses a **polymorphic configuration system**. Many options have a ``type`` field
@@ -45,7 +45,7 @@ For example, the ``traffic_scheduler`` can be either ``rate`` or ``concurrent``:
       rampup_seconds: 10
 
 
-IDE Autocompletion
+IDE autocompletion
 ------------------
 
 See :doc:`/basic_usage/configuration` for instructions on how to set up YAML autocompletion and validation in your IDE.

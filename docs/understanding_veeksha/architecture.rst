@@ -5,7 +5,7 @@ This page describes Veeksha's internal architecture, including how components
 interact and how requests flow through the system.
 
 
-High-Level Components
+High-level components
 ---------------------
 
 Veeksha is composed of several key components that work together:
@@ -45,7 +45,7 @@ Veeksha is composed of several key components that work together:
                         └───────────────────────┘
 
 
-Component Descriptions
+Component descriptions
 ----------------------
 
 **Session Generator**
@@ -82,7 +82,7 @@ Component Descriptions
     - SLO checking (latency percentile thresholds)
 
 
-Request Lifecycle
+Request lifecycle
 -----------------
 
 Every request goes through these stages with precise timestamp capture:
@@ -119,7 +119,7 @@ These timestamps enable computing:
 - **Processing delay**: ``result_processed_at - client_completed_at``
 
 
-Threading Model
+Threading model
 ---------------
 
 Veeksha uses a multi-threaded architecture with configurable worker counts:
@@ -149,7 +149,7 @@ Veeksha uses a multi-threaded architecture with configurable worker counts:
     disabled, allowing true parallelism across all worker threads.
 
 
-Output Pipeline
+Output pipeline
 ---------------
 
 During and after the benchmark, several output mechanisms record data:

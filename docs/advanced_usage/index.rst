@@ -1,4 +1,4 @@
-Advanced Usage
+Advanced usage
 ==============
 
 This section covers advanced Veeksha features for power users and researchers
@@ -8,15 +8,15 @@ who need fine-grained control over benchmarking workflows.
 Overview
 --------
 
-**Capacity Search**
+**Capacity search**
     Automatically find the maximum sustainable rate or concurrency that meets
     your latency SLOs. Uses an adaptive probe-then-binary-search algorithm.
 
-**Server Management**
+**Server management**
     Let Veeksha launch and manage inference servers (vLLM, SGLang) automatically.
     Useful for CI pipelines and reproducible experiments.
 
-**Configuration Sweeps**
+**Configuration sweeps**
     Run multiple benchmarks with different parameters using the ``!expand`` YAML
     tag. Creates Cartesian product of configurations.
 
@@ -25,7 +25,7 @@ Overview
     using specialized configurations.
 
 
-In This Section
+In this section
 ---------------
 
 .. toctree::

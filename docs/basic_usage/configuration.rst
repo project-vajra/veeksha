@@ -6,7 +6,7 @@ CLI arguments, and programmatic access. This guide explains how the system works
 and how to navigate it effectively.
 
 
-Configuration Methods
+Configuration methods
 ---------------------
 
 **YAML Files** (recommended)
@@ -47,7 +47,7 @@ Note how argument names contain their type.
             --rate-traffic-scheduler-poisson-interval-generator-arrival-rate 30.0
 
 
-Polymorphic Options
+Polymorphic options
 -------------------
 
 Many options have a ``type`` field that selects a variant with its own options:
@@ -72,10 +72,10 @@ Many options have a ``type`` field that selects a variant with its own options:
 Each ``type`` exposes different options. Use the config explorer (next section) to discover them or take a look at the :doc:`/config_reference/index`.
 
 
-Config Exploration Tools
+Config exploration tools
 ------------------------
 
-Veeksha includes CLI tools for exploring the configuration schema:
+On top of the full API reference (:doc:`/config_reference/index`), Veeksha includes CLI tools for exploring the configuration schema:
 
 **Interactive Explorer**
 
@@ -97,7 +97,7 @@ To navigate the config tree interactively.
 
 .. _configuration-export-json-schema:
 
-**Export JSON Schema** (for YAML IDE autocompletion and linting)
+**Export JSON schema** (for YAML IDE autocompletion and linting)
 
 .. code-block:: bash
 
@@ -128,7 +128,7 @@ Configure your IDE to use this schema. In VSCode and forks:
    The VSCode YAML extension providing autocompletion and documentation on hover.
 
 
-Common Configuration Sections
+Common configuration sections
 -----------------------------
 
 **client** - API endpoint configuration
@@ -208,7 +208,7 @@ Common Configuration Sections
             type: constant
 
 
-Environment Variables
+Environment variables
 ---------------------
 
 Veeksha automatically reads certain environment variables as fallbacks when
@@ -241,8 +241,9 @@ This is especially useful for:
 - Avoiding committing secrets to version control
 - Sharing configs across environments with different servers
 
+Veeksha also reads ``HF_TOKEN`` from the environment in order to access gated models.
 
-Stop Conditions
+Stop conditions
 ---------------
 
 Benchmarks stop when either condition is met:
@@ -261,7 +262,8 @@ Use ``-1`` for unlimited:
       benchmark_timeout: -1     # Run indefinitely
       max_sessions: 500         # Stop only after 500 sessions
 
-When a timeout hits, Veeksha will record all in-flight requests and keep dispatching sessions as usual. Then, it might exit after the ``post_timeout_grace_seconds``:
+When a timeout hits, Veeksha will record all in-flight requests and keep dispatching sessions as usual. 
+Then, it will exit after ``post_timeout_grace_seconds`` have passed, only if the session limit is not reached before that. 
 
 .. code-block:: yaml
 
@@ -272,7 +274,7 @@ When a timeout hits, Veeksha will record all in-flight requests and keep dispatc
       # 0 = exit immediately (cancel in-flight)
 
 
-Output Directory
+Output directory
 ----------------
 
 Control where results are saved:
@@ -297,7 +299,7 @@ The subdirectory name includes:
 - Short hash of the configuration (for uniqueness)
 
 
-Trace Recording
+Trace recording
 ---------------
 
 Control what's recorded for debugging:
@@ -331,7 +333,7 @@ Invalid configurations produce clear error messages:
 
 .. _configuration-splitting:
 
-Splitting Configuration Across Files
+Splitting configuration across files
 -------------------------------------
 
 For better organization and reusability, you can split your configuration across
@@ -432,7 +434,7 @@ To avoid collisions, ensure each config file defines **disjoint** sections of th
 configuration tree.
 
 
-See Also
+See also
 --------
 
 - :doc:`/config_reference/api_reference/BenchmarkConfig` - Complete benchmark configuration reference

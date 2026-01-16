@@ -6,7 +6,7 @@ computes aggregate statistics. This page explains the available metrics,
 how they're computed, and how SLOs are evaluated.
 
 
-Evaluator Architecture
+Evaluator architecture
 ----------------------
 
 Evaluators consume completed requests and produce metrics:
@@ -28,7 +28,7 @@ Two evaluator types are available:
 - **Accuracy** (``type: accuracy_lmeval``): Model evaluation using lm-eval-harness
 
 
-Performance Metrics
+Performance metrics
 -------------------
 
 The performance evaluator computes these key metrics:
@@ -69,7 +69,7 @@ The performance evaluator computes these key metrics:
     - ``tbc_based_throughput``: Tokens/sec based on average TBC
 
 
-Configuring Evaluators
+Configuring evaluators
 ----------------------
 
 Add evaluators to your benchmark configuration:
@@ -103,7 +103,7 @@ Add evaluators to your benchmark configuration:
     Seconds between streaming metric updates.
 
 
-SLO Definitions
+SLO definitions
 ---------------
 
 Service Level Objectives (SLOs) define acceptable performance thresholds:
@@ -145,7 +145,7 @@ SLO results are saved to ``metrics/slo_results.json``:
     }
 
 
-Output Files
+Output files
 ------------
 
 The performance evaluator writes several files to ``metrics/``:
@@ -215,7 +215,7 @@ For each metric (``ttfc``, ``tbc``, ``tpot``, ``e2e``, etc.):
 - ``<metric>.png``: Distribution histogram
 
 
-Prefill Statistics
+Prefill statistics
 ------------------
 
 For understanding prefill latency scaling, the evaluator groups TTFC by prompt length:
@@ -244,7 +244,7 @@ For understanding prefill latency scaling, the evaluator groups TTFC by prompt l
 This helps analyze how prefill time scales with prompt length.
 
 
-Accuracy Evaluation
+Accuracy evaluation
 -------------------
 
 For model accuracy testing, use the lm-eval integration:
@@ -271,7 +271,7 @@ The accuracy evaluator outputs:
 - Integration with standard lm-eval result formats
 
 
-Streaming Metrics
+Streaming metrics
 -----------------
 
 During a benchmark, enable real-time metric output:
@@ -292,7 +292,7 @@ This logs current statistics every 5 seconds:
 Useful for monitoring long-running benchmarks without waiting for completion.
 
 
-Health Checks
+Health checks
 -------------
 
 After the benchmark, Veeksha runs health checks to validate correctness:

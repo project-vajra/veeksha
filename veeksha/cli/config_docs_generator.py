@@ -430,36 +430,36 @@ def _generate_api_index(all_classes: Dict[str, Type]) -> str:
 
     # Group definitions: (Section Title, Base Class or None for root, classes list)
     groups: Dict[str, List[str]] = {
-        "Root Configurations": [],
-        "Session Generators": [],
-        "Traffic Schedulers": [],
+        "Root configurations": [],
+        "Session generators": [],
+        "Traffic schedulers": [],
         "Clients": [],
         "Servers": [],
         "Evaluators": [],
-        "Channel Performance": [],
-        "Length Generators": [],
-        "Interval Generators": [],
-        "Channel Generators": [],
-        "Session Graph Generators": [],
-        "Trace Flavors": [],
-        "SLO Configs": [],
+        "Channel performance": [],
+        "Length generators": [],
+        "Interval generators": [],
+        "Channel generators": [],
+        "Session graph generators": [],
+        "Trace flavors": [],
+        "SLO configs": [],
         "Other": [],
     }
 
     # Mapping of base classes to group names
     base_to_group: List[tuple[Type, str]] = [
-        (BaseSessionGeneratorConfig, "Session Generators"),
-        (BaseTrafficConfig, "Traffic Schedulers"),
+        (BaseSessionGeneratorConfig, "Session generators"),
+        (BaseTrafficConfig, "Traffic schedulers"),
         (BaseClientConfig, "Clients"),
         (BaseServerConfig, "Servers"),
         (BaseEvaluatorConfig, "Evaluators"),
-        (BaseChannelPerformanceConfig, "Channel Performance"),
-        (BaseLengthGeneratorConfig, "Length Generators"),
-        (BaseIntervalGeneratorConfig, "Interval Generators"),
-        (BaseChannelGeneratorConfig, "Channel Generators"),
-        (BaseSessionGraphGeneratorConfig, "Session Graph Generators"),
-        (BaseTraceFlavorConfig, "Trace Flavors"),
-        (BaseSloConfig, "SLO Configs"),
+        (BaseChannelPerformanceConfig, "Channel performance"),
+        (BaseLengthGeneratorConfig, "Length generators"),
+        (BaseIntervalGeneratorConfig, "Interval generators"),
+        (BaseChannelGeneratorConfig, "Channel generators"),
+        (BaseSessionGraphGeneratorConfig, "Session graph generators"),
+        (BaseTraceFlavorConfig, "Trace flavors"),
+        (BaseSloConfig, "SLO configs"),
     ]
 
     # Root configs
@@ -468,7 +468,7 @@ def _generate_api_index(all_classes: Dict[str, Type]) -> str:
     # Classify each class
     for class_name, cls in all_classes.items():
         if class_name in root_configs:
-            groups["Root Configurations"].append(class_name)
+            groups["Root configurations"].append(class_name)
             continue
 
         # Check against base classes
@@ -502,7 +502,7 @@ def _generate_api_index(all_classes: Dict[str, Type]) -> str:
         lines.append("")
 
         # Root configs get special treatment with descriptions
-        if group_name == "Root Configurations":
+        if group_name == "Root configurations":
             lines.append(
                 "- :doc:`BenchmarkConfig` - Configuration for ``veeksha.benchmark`` runs"
             )
@@ -545,7 +545,7 @@ Configuration can be provided via YAML files or CLI arguments.
        python -m veeksha.cli.config show --format yaml
 
 
-Quick Links
+Quick links
 -----------
 
 - :doc:`api_reference/BenchmarkConfig` - Configuration for standard benchmark runs
@@ -553,7 +553,7 @@ Quick Links
 - :doc:`api_reference/index` - Full API reference for all config classes
 
 
-Understanding the Config System
+Understanding the config system
 -------------------------------
 
 Veeksha uses a **polymorphic configuration system**. Many options have a ``type`` field
@@ -575,7 +575,7 @@ For example, the ``traffic_scheduler`` can be either ``rate`` or ``concurrent``:
       rampup_seconds: 10
 
 
-IDE Autocompletion
+IDE autocompletion
 ------------------
 
 See :doc:`/basic_usage/configuration` for instructions on how to set up YAML autocompletion and validation in your IDE.

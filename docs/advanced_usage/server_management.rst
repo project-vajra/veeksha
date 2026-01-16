@@ -6,7 +6,7 @@ benchmarks fully self-contained and reproducible. This is especially useful
 for CI pipelines and comparing different server configurations.
 
 
-Supported Servers
+Supported servers
 -----------------
 
 Veeksha currently supports:
@@ -16,7 +16,7 @@ Veeksha currently supports:
 - **vLLM**
 
 
-Basic Configuration
+Basic configuration
 -------------------
 
 Add a ``server`` section to your benchmark config:
@@ -44,7 +44,7 @@ When ``server`` is configured:
 5. Shuts down the server when complete
 
 
-Server Configuration Options
+Server configuration options
 ----------------------------
 
 All server types share these common options:
@@ -89,7 +89,7 @@ All server types share these common options:
     JSON string or dict of extra arguments passed to the server command.
 
 
-GPU Resource Management
+GPU resource management
 -----------------------
 
 Veeksha includes a resource manager for multi-GPU systems:
@@ -125,7 +125,7 @@ The resource manager finds 4 contiguous available GPUs.
       cpu_ids: [0, 2]           # Use GPUs 0 and 2
       require_contiguous_gpus: false
 
-Server Logs
+Server logs
 -----------
 
 Server stdout/stderr are written to the benchmark output directory:
@@ -139,7 +139,7 @@ Server stdout/stderr are written to the benchmark output directory:
 This is useful for debugging server issues.
 
 
-Example: Full Managed Benchmark
+Example: Full managed benchmark
 -------------------------------
 
 .. code-block:: yaml
@@ -195,7 +195,7 @@ Example: Full Managed Benchmark
         target_channels: ["text"]
 
 
-Example: Comparing Servers
+Example: Comparing servers
 --------------------------
 
 Create a base config and run with different servers:
