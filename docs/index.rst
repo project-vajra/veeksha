@@ -12,15 +12,9 @@ running capacity planning experiments, Veeksha lets you measure what matters to 
 realistic multi-turn conversations, agentic workflows, high-frequency stress tests, or targeted
 microbenchmarks. One tool, any workload.
 
-**Veeksha benchmarks true users, not just requests.**
+**From isolated requests to complex agentic sessions, Veeksha captures the full complexity of modern LLM workloads.**
 
-Most LLM benchmarking tools measure how fast your server can process requests.
-But your users don't send isolated requests. They have conversations. They think
-before typing. Their agents make parallel tool calls. Their sessions have structure.
-Veeksha models all of this with session graphs, flexible traffic patterns, and
-composable evaluation.
-
-👉 **New here?** Start with :doc:`understanding_veeksha/why_veeksha` to learn what
+👉 **New here?** Start with :doc:`why_veeksha` to learn what
 sets Veeksha apart.
 
 .. note::
@@ -28,43 +22,43 @@ sets Veeksha apart.
    Veeksha (वीक्षा) means "observation" or "investigation" in Sanskrit.
 
 
-Key Features
+Key features
 ------------
 
-**Realistic Workload Modeling**
-    - **DAG-Based Sessions**: Model multi-turn conversations as directed acyclic graphs with
+**Realistic workload modeling**
+    - **DAG-based sessions**: Model multi-turn conversations as directed acyclic graphs with
       history inheritance, capturing real chat context accumulation
-    - **Shared Prefix Testing**: Generate workloads with configurable prefix sharing to
+    - **Shared prefix testing**: Generate workloads with configurable prefix sharing to
       benchmark KV-cache efficiency
-    - **Trace Replay**: Replay production traces (Claude Code, RAG, conversational) with
+    - **Trace replay**: Replay production traces (Claude Code, RAG, conversational) with
       preserved timing and token distributions
 
-**Flexible Traffic Generation**
-    - **Open-Loop (Rate-Based)**: Poisson, gamma, or fixed arrival rates to measure latency
+**Flexible traffic generation**
+    - **Open-loop (rate-based)**: Poisson, gamma, or fixed arrival rates to measure latency
       under realistic bursty traffic
-    - **Closed-Loop (Concurrency-Based)**: Maintain target concurrent sessions with ramp-up
+    - **Closed-loop (concurrency-based)**: Maintain target concurrent sessions with ramp-up
       control for throughput testing
 
-**SLO-Aware Evaluation**
-    - **Per-Request Metrics**: TTFC, TBC, TPOT, and end-to-end latency with percentile distributions
-    - **Automated Health Checks**: Validates prompt/output lengths, arrival rates, and
+**SLO-aware evaluation**
+    - **Per-request metrics**: TTFC, TBC, TPOT, and end-to-end latency with percentile distributions
+    - **Automated health checks**: Validates prompt/output lengths, arrival rates, and
       request dependencies to ensure benchmark correctness
-    - **Capacity Search**: Adaptive probe-then-binary-search algorithm to find maximum
+    - **Capacity search**: Adaptive probe-then-binary-search algorithm to find maximum
       sustainable throughput or rate meeting latency SLOs
 
-**Production-Ready Tooling**
-    - **Managed Server Orchestration**: Launch and manage vLLM/SGLang servers automatically
+**Production-ready tooling**
+    - **Managed server orchestration**: Launch and manage inference servers automatically
       with health checks and log capture
-    - **Configuration Sweeps**: Use ``!expand`` YAML tag to run Cartesian product of
+    - **Configuration sweeps**: Use ``!expand`` YAML tag to run Cartesian product of
       parameter combinations with aggregated summaries
-    - **WandB Integration**: Automatic logging of metrics, artifacts, and experiment tracking
+    - **WandB integration**: Automatic logging of metrics, artifacts, and experiment tracking
       with sweep/capacity-search summaries
 
 
-Quick Example
+Quick example
 -------------
 
-Run a simple benchmark against an OpenAI-compatible endpoint::
+Run a simple benchmark against a running OpenAI-compatible endpoint::
 
     python -Xgil=0 -m veeksha.benchmark \
         --client-type openai_chat_completions \
@@ -72,8 +66,8 @@ Run a simple benchmark against an OpenAI-compatible endpoint::
         --openai-chat-completions-client-model meta-llama/Llama-3.2-1B-Instruct \
         --traffic-scheduler-type rate \
         --rate-traffic-scheduler-interval-generator-type poisson \
-        --rate-traffic-scheduler-poisson-interval-generator-arrival-rate 5.0 \
-        --runtime-benchmark-timeout 60
+        --rate-traffic-scheduler-poisson-interval-generator-arrival-rate 2.0 \
+        --runtime-benchmark-timeout 30
 
 Or use a YAML configuration file::
 
@@ -85,14 +79,14 @@ Documentation
 
 .. toctree::
    :maxdepth: 2
-   :caption: Getting Started
+   :caption: Getting started
 
-   understanding_veeksha/why_veeksha
+   why_veeksha
    installation
 
 .. toctree::
    :maxdepth: 2
-   :caption: Core Concepts
+   :caption: Core concepts
 
    understanding_veeksha/index
 

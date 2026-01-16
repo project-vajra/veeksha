@@ -6,7 +6,7 @@ modalities (text, images, audio, video) and provides fine-grained control over
 request characteristics.
 
 
-Channel Architecture
+Channel architecture
 --------------------
 
 Request content is organized by **channel modality**:
@@ -31,7 +31,7 @@ Each request contains content for one or more channels:
 Currently, the **text channel** is fully implemented with others planned.
 
 
-Text Channel Generator
+Text channel generator
 ----------------------
 
 The text channel generator produces prompt content with configurable lengths
@@ -70,7 +70,7 @@ Key configuration options:
     Probability that a root request uses the shared prefix.
 
 
-Length Generators
+Length generators
 -----------------
 
 Length generators control numeric parameters like token counts:
@@ -119,7 +119,7 @@ Length generators control numeric parameters like token counts:
           alpha: 1.5
 
 
-Content Generation Process
+Content generation process
 --------------------------
 
 When a synthetic session is generated:
@@ -143,7 +143,7 @@ When a synthetic session is generated:
    - Requested output length
 
 
-Shared Prefix for Prefix Caching
+Shared prefix for prefix caching
 --------------------------------
 
 LLM inference engines like vLLM support **prefix caching** where repeated
@@ -175,7 +175,7 @@ This accurately models scenarios like:
 - Function calling with shared tool definitions
 
 
-Tokenizer Integration
+Tokenizer integration
 ---------------------
 
 Content generation requires tokenization to control token counts precisely.
@@ -203,7 +203,7 @@ The tokenizer is used to:
     ``client.model`` or ``server.model``.
 
 
-Trace-Based Content
+Trace-based content
 -------------------
 
 For trace-based session generation, content comes from recorded conversations
@@ -219,7 +219,7 @@ metadata matching real production traffic.
         type: claude_code
 
 
-Trace Flavors
+Trace flavors
 ~~~~~~~~~~~~~
 
 Different trace sources have different formats and characteristics. **Flavors**
@@ -272,7 +272,7 @@ implements:
     Required columns: ``session_id``, ``prompt_text``, ``output_length``
 
 
-Wrap Mode
+Wrap mode
 ~~~~~~~~~
 
 When ``wrap_mode: true`` (default), the trace loops indefinitely:
@@ -289,7 +289,7 @@ running benchmarks longer than the trace duration while maintaining realistic
 content distributions.
 
 
-Output Length Control
+Output length control
 ---------------------
 
 Veeksha supports flexible output length control:

@@ -31,7 +31,7 @@ Veeksha will:
 4. Provide a link to the run dashboard
 
 
-Configuration Options
+Configuration options
 ---------------------
 
 .. code-block:: yaml
@@ -62,7 +62,7 @@ Key options:
     List of tags for filtering runs in the WandB UI.
 
 
-What Gets Logged
+What gets logged
 ----------------
 
 **Scalar Metrics**
@@ -89,7 +89,7 @@ What Gets Logged
     - ``health_check_results.txt`` - Verification results
 
 
-Using with Advanced Features
+Using with advanced features
 ----------------------------
 
 WandB integrates seamlessly with Veeksha's advanced features. For details on
@@ -105,7 +105,7 @@ these workflows, see the corresponding documentation:
     for details.
 
 
-Viewing Results in WandB
+Viewing results in WandB
 ------------------------
 
 After a run completes, open the provided URL:
@@ -129,7 +129,7 @@ In the WandB dashboard:
     Browse uploaded files directly.
 
 
-Filtering and Comparing Runs
+Filtering and comparing runs
 ----------------------------
 
 Use tags and group names to filter runs:
@@ -145,7 +145,7 @@ Create custom charts to compare metrics across runs:
 - Error rate trends
 
 
-Offline Mode
+Offline mode
 ------------
 
 For environments without internet access:
@@ -163,7 +163,7 @@ Runs are saved locally to ``wandb/`` and can be synced later:
     wandb sync benchmark_output/*/wandb/
 
 
-Environment Variables
+Environment variables
 ---------------------
 
 WandB uses its standard environment variables. Set these if you don't want
@@ -177,7 +177,7 @@ See `WandB Environment Variables <https://docs.wandb.ai/guides/track/environment
 for the full list.
 
 
-Example: Complete WandB Config
+Example: Complete WandB config
 ------------------------------
 
 .. code-block:: yaml
@@ -231,7 +231,7 @@ Example: Complete WandB Config
       max_sessions: -1
 
 
-See Also
+See also
 --------
 
 - `WandB Documentation <https://docs.wandb.ai>`_

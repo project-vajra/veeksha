@@ -6,7 +6,7 @@ concurrency that meets your latency service level objectives (SLOs). This is
 essential for capacity planning and performance regression testing.
 
 
-How It Works
+How it works
 ------------
 
 Veeksha uses an **adaptive two-phase algorithm**:
@@ -37,7 +37,7 @@ Veeksha uses an **adaptive two-phase algorithm**:
       → Converged at 36.25
 
 
-Running Capacity Search
+Running capacity search
 -----------------------
 
 Create a capacity search configuration:
@@ -107,7 +107,7 @@ Run the search:
     python -Xgil=0 -m veeksha.capacity_search --capacity-search-config-from-file capacity_search.veeksha.yml
 
 
-Rate-Based vs Concurrency-Based Searches
+Rate-based vs concurrency-based searches
 ----------------------------------------
 
 **Rate-Based** (finding max sessions/second)
@@ -138,7 +138,7 @@ Use when you want to find maximum sustainable concurrency:
 Capacity search sets ``target_concurrent_sessions``.
 
 
-Configuration Reference
+Configuration reference
 -----------------------
 
 .. code-block:: yaml
@@ -205,7 +205,7 @@ Available metrics:
 An iteration **passes** only if **all** SLOs are met.
 
 
-Output Structure
+Output structure
 ----------------
 
 .. code-block:: text
@@ -248,7 +248,7 @@ Output Structure
     }
 
 
-WandB Integration
+WandB integration
 -----------------
 
 Enable WandB to track all iterations and get a summary run:
@@ -269,7 +269,7 @@ The summary run includes:
 - "BEST_CONFIG" tag on the optimal run
 
 
-Example: Production Capacity Planning
+Example: Production capacity planning
 -------------------------------------
 
 Find the maximum rate for a latency-sensitive deployment:

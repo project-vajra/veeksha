@@ -6,7 +6,7 @@ sessions are dispatched. Veeksha provides two fundamentally different scheduling
 modes for different benchmarking scenarios.
 
 
-Scheduling Modes
+Scheduling modes
 ----------------
 
 **Rate-Based** (``type: rate``)
@@ -41,7 +41,7 @@ Scheduling Modes
      - Push beyond normal operating conditions
 
 
-Rate-Based Scheduling
+Rate-based scheduling
 ---------------------
 
 Sessions arrive according to an interval generator:
@@ -94,7 +94,7 @@ Sessions arrive according to an interval generator:
           interval: 0.1  # Exactly 100ms between sessions
 
 
-Concurrency-Based Scheduling
+Concurrency-based scheduling
 ----------------------------
 
 Maintains a fixed number of concurrent sessions:
@@ -135,7 +135,7 @@ During ramp-up, target concurrency increases linearly:
     current_target = int(target * (elapsed_time / rampup_seconds))
 
 
-Intra-Session Scheduling
+Intra-session scheduling
 ------------------------
 
 Within a session, requests are scheduled based on the session graph:
@@ -170,7 +170,7 @@ When a request completes:
 4. History is recorded if this node is a history parent
 
 
-Session Cancellation
+Session cancellation
 --------------------
 
 The ``cancel_session_on_failure`` option controls behavior when a request fails:
@@ -192,7 +192,7 @@ When ``false``:
 - Useful for testing partial failure scenarios
 
 
-Ready Queue and Dispatch
+Ready queue and dispatch
 ------------------------
 
 Both schedulers maintain a **ready queue** of requests eligible for dispatch:
@@ -216,7 +216,7 @@ Dispatch workers call ``wait_for_ready()`` which:
 This ensures requests are dispatched at the right time (not early, not late).
 
 
-History Population
+History population
 ------------------
 
 When ``inherit_history: true`` in the session graph, the scheduler populates
@@ -239,7 +239,7 @@ The history includes:
 - Enables accurate multi-turn conversation simulation
 
 
-Timing Verification
+Timing verification
 -------------------
 
 Veeksha's health checker verifies scheduling accuracy:

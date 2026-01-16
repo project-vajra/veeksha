@@ -1,10 +1,10 @@
-Quick Start
+Quick start
 ===========
 
 This guide walks you through running your first Veeksha benchmark in minutes.
 
 
-Step 1: Create a Configuration File
+Step 1: Create a configuration file
 ------------------------------------
 
 Create a file named ``my_benchmark.veeksha.yml``:
@@ -59,16 +59,16 @@ Create a file named ``my_benchmark.veeksha.yml``:
    Use the ``.veeksha.yml`` extension for IDE autocompletion support. We highly recommend adding Veeksha's YAML schema to your IDE (see :ref:`Export JSON Schema <configuration-export-json-schema>`)
 
 
-Step 2: Run the Benchmark
+Step 2: Run the benchmark
 -------------------------
 
-Execute the benchmark using the CLI:
+Execute the benchmark using the CLI (against an already-running server; for managed servers see :doc:`/advanced_usage/server_management`):
 
 .. code-block:: bash
 
     python -Xgil=0 -m veeksha.benchmark --benchmark-config-from-file my_benchmark.veeksha.yml
 
-Step 3: View Results
+Step 3: View results
 --------------------
 
 Navigate to the output directory to find:
@@ -100,7 +100,7 @@ Quick summary from ``summary_stats.json``:
     }
 
 
-Essential Configuration Options
+Essential configuration options
 -------------------------------
 
 Here are the most commonly adjusted options:
@@ -147,7 +147,7 @@ Here are the most commonly adjusted options:
           value: 128       # Request 128 token outputs
 
 
-Using CLI Overrides
+Using CLI overrides
 -------------------
 
 Override configuration values without editing the file:
@@ -162,7 +162,7 @@ Override configuration values without editing the file:
 This runs at 20 sessions/second for 120 seconds instead of the file's values.
 
 
-Common Patterns
+Common patterns
 ---------------
 
 **Quick latency test at low load:**
@@ -197,12 +197,12 @@ Common Patterns
           value: 256
 
 
-Configuration Reference
+Configuration reference
 -----------------------
 
 For a detailed reference of all configuration options, see the :doc:`/config_reference/index`.
 
-Next Steps
+Next steps
 ----------
 
 - :doc:`configuration` - Learn the full configuration system

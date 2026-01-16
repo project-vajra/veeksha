@@ -6,7 +6,7 @@ configuration, metrics, traces, and verification results. This guide
 explains each file and how to use them.
 
 
-Output Directory Structure
+Output directory structure
 --------------------------
 
 .. code-block:: text
@@ -34,7 +34,7 @@ Output Directory Structure
 The directory name format is: ``DD:MM:YYYY-HH:MM:SS-<config_hash>``
 
 
-Configuration File
+Configuration file
 ------------------
 
 ``config.yml``
@@ -58,7 +58,7 @@ Configuration File
     This file enables exact reproduction of the benchmark.
 
 
-Metrics Directory
+Metrics directory
 -----------------
 
 **request_level_metrics.jsonl**
@@ -168,7 +168,7 @@ Metrics Directory
         }
 
 
-Metric Distribution Files
+Metric distribution files
 -------------------------
 
 For each metric, a CSV and PNG file are generated:
@@ -196,7 +196,7 @@ For each metric, a CSV and PNG file are generated:
 *(Similar files exist for tbc, tpot, e2e, session_duration, etc.)*
 
 
-Traces Directory
+Traces directory
 ----------------
 
 **trace.jsonl**
@@ -224,7 +224,7 @@ Traces Directory
     - History from parent requests
 
 
-Health Check Results
+Health check results
 --------------------
 
 ``health_check_results.txt``
@@ -372,7 +372,7 @@ Health Check Results
     - **Lifecycle Timing Delays**: Pipeline overhead
 
 
-WandB Files
+WandB files
 -----------
 
 If WandB is enabled:
@@ -391,7 +391,7 @@ If WandB is enabled:
 **wandb/**
     Local WandB sync directory containing logs and artifacts.
 
-See Also
+See also
 --------
 
 - :doc:`/understanding_veeksha/evaluation` - How metrics are computed
