@@ -19,12 +19,7 @@ from veeksha.types import (
 
 @frozen_dataclass
 class BaseSessionGraphGeneratorConfig(BasePolyConfig):
-    inherit_history: bool = field(
-        default=True,
-        metadata={
-            "help": "Whether subsequent requests can inherit history from previous ones."
-        },
-    )
+    pass
 
 
 @frozen_dataclass
@@ -33,6 +28,12 @@ class LinearSessionGraphGeneratorConfig(BaseSessionGraphGeneratorConfig):
     Generator of linear request graphs (a sequence of requests).
     """
 
+    inherit_history: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether subsequent requests can inherit history from previous ones."
+        },
+    )
     num_request_generator: BaseLengthGeneratorConfig = field(
         default_factory=UniformLengthGeneratorConfig,
         metadata={
@@ -49,3 +50,14 @@ class LinearSessionGraphGeneratorConfig(BaseSessionGraphGeneratorConfig):
     @classmethod
     def get_type(cls):
         return SessionGraphType.LINEAR
+
+
+@frozen_dataclass
+class SingleRequestSessionGraphGeneratorConfig(BaseSessionGraphGeneratorConfig):
+    """
+    Generator of single request graphs (a single request).
+    """
+
+    @classmethod
+    def get_type(cls):
+        return SessionGraphType.SINGLE_REQUEST

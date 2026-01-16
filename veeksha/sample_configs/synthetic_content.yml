@@ -1,23 +1,17 @@
 seed: 42
 
-server:
-  type: sglang
-  env_path: sglang_env
-  model: meta-llama/Llama-3.2-1B-Instruct
-  host: localhost
-  port: 30003
-
 traffic_scheduler:
   type: rate
   interval_generator:
     type: poisson
-    arrival_rate: !expand [10, 11]
+    arrival_rate: 10
   cancel_session_on_failure: False
 
 session_generator:
   type: synthetic
   session_graph:
     type: linear
+    inherit_history: True
     num_request_generator:
       type: uniform
       min: 2
@@ -25,7 +19,6 @@ session_generator:
     request_wait_generator:
       type: poisson
       arrival_rate: 5
-    inherit_history: True
   channels:
     - type: text
       shared_prefix_ratio: 0.2

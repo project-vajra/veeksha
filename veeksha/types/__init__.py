@@ -43,6 +43,7 @@ class ChannelModality(BaseIntEnum):
 
 class SessionGraphType(BaseIntEnum):
     LINEAR = 1
+    SINGLE_REQUEST = 2
 
 
 # ----- Evaluation -----
