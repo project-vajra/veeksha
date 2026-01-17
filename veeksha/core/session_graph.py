@@ -148,7 +148,7 @@ def render_session_graph(
         # Creates my_graph.png
     """
     try:
-        import graphviz
+        import graphviz  # type: ignore
     except ImportError:
         return (
             "ERROR: graphviz not installed. Install with:\n"
@@ -250,19 +250,3 @@ def render_session_graph(
         dot.render(output_path, format=format, view=view, cleanup=True)
 
     return dot.source
-
-
-if __name__ == "__main__":
-    graph = SessionGraph()
-    add_node(graph, SessionNode(id=1, wait_after_ready=0))
-    add_node(graph, SessionNode(id=2, wait_after_ready=0))
-    add_edge(graph, SessionEdge(src=1, dst=2))
-    print(f"parents of 2: {parents(graph, 2)}")
-    print(f"children of 1: {children(graph, 1)}")
-    print(f"ready_at of 2: {ready_at(graph, 2, {})}")
-    print(f"is_ready: {is_ready(graph, 2, {1: 0}, 0)}")
-    try:
-        print(f"topological_order: {topological_order(graph)}")
-    except ValueError as e:
-        print(f"Error: {e}")
-    print_session_graph(graph)
