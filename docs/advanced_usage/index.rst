@@ -24,6 +24,10 @@ Overview
     Isolate and measure specific operations like prefill or decode throughput
     using specialized configurations.
 
+**Programmatic usage**
+    Use Veeksha as a Python library to run benchmarks programmatically,
+    build custom configurations, and integrate with other tools.
+
 
 In this section
 ---------------
@@ -35,3 +39,4 @@ In this section
    server_management
    sweeps
    microbenchmarks
+   programmatic_usage

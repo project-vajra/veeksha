@@ -118,17 +118,135 @@ def print_session_graph(graph: SessionGraph) -> None:
     print(format_session_graph(graph))
 
 
-if __name__ == "__main__":
-    graph = SessionGraph()
-    add_node(graph, SessionNode(id=1, wait_after_ready=0))
-    add_node(graph, SessionNode(id=2, wait_after_ready=0))
-    add_edge(graph, SessionEdge(src=1, dst=2))
-    print(f"parents of 2: {parents(graph, 2)}")
-    print(f"children of 1: {children(graph, 1)}")
-    print(f"ready_at of 2: {ready_at(graph, 2, {})}")
-    print(f"is_ready: {is_ready(graph, 2, {1: 0}, 0)}")
+def render_session_graph(
+    graph: SessionGraph,
+    output_path: Optional[str] = None,
+    format: str = "png",
+    view: bool = False,
+) -> str:
+    """
+    Render session graph using Graphviz.
+
+    Generates a proper graph visualization with:
+    - Nodes arranged by depth (layers)
+    - Edges with arrows and proper routing
+    - History parent edges in bold/red
+    - Skip connections visible
+
+    Args:
+        graph: The SessionGraph to render
+        output_path: Path to save the image (without extension).
+                     If None, returns DOT source only.
+        format: Output format (png, svg, pdf)
+        view: If True, open the rendered image
+
+    Returns:
+        DOT source string
+
+        >>> from veeksha.core.session_graph import render_session_graph
+        >>> render_session_graph(graph, "my_graph", format="png")
+        # Creates my_graph.png
+    """
     try:
-        print(f"topological_order: {topological_order(graph)}")
-    except ValueError as e:
-        print(f"Error: {e}")
-    print_session_graph(graph)
+        import graphviz  # type: ignore
+    except ImportError:
+        return (
+            "ERROR: graphviz not installed. Install with:\n"
+            "  pip install graphviz\n"
+            "And ensure Graphviz is installed on your system:\n"
+            "  apt-get install graphviz  # Ubuntu/Debian\n"
+            "  brew install graphviz     # macOS"
+        )
+
+    # Create directed graph
+    dot = graphviz.Digraph(comment="Session Graph")
+    dot.attr(rankdir="TB")  # Top to bottom
+    dot.attr("node", shape="circle", style="filled", fillcolor="lightblue")
+
+    # Compute depths using LONGEST path from roots (matches generation layers)
+    # For DAGs, longest path = topological layer = correct visualization
+    depths: Dict[int, int] = {}
+    roots = [nid for nid in graph.nodes if len(parents(graph, nid)) == 0]
+
+    # Initialize roots at depth 0
+    for r in roots:
+        depths[r] = 0
+
+    # Process in topological order, taking max depth from parents + 1
+    # Use modified BFS that updates depth to maximum seen
+    from collections import deque
+
+    queue = deque(roots)
+    while queue:
+        node_id = queue.popleft()
+        current_depth = depths[node_id]
+        for edge in children(graph, node_id):
+            child_id = edge.dst
+            new_depth = current_depth + 1
+            if child_id not in depths or depths[child_id] < new_depth:
+                depths[child_id] = new_depth
+                queue.append(child_id)
+
+    # Group by depth for subgraph ranking
+    max_depth = max(depths.values()) if depths else 0
+    levels: Dict[int, List[int]] = {d: [] for d in range(max_depth + 1)}
+    for nid, d in depths.items():
+        levels[d].append(nid)
+
+    # Add nodes with same rank per level
+    for depth in range(max_depth + 1):
+        with dot.subgraph() as s:  # type: ignore
+            s.attr(rank="same")
+            for nid in sorted(levels[depth]):
+                node = graph.nodes[nid]
+                label = f"{nid}"
+                if node.wait_after_ready > 0:
+                    label += f"\\n({node.wait_after_ready:.1f}s)"
+                s.node(str(nid), label)
+
+    # Add edges with skip connection highlighting
+    for src_id in graph.nodes:
+        src_depth = depths.get(src_id, 0)
+        for edge in children(graph, src_id):
+            dst_depth = depths.get(edge.dst, 0)
+            layer_span = dst_depth - src_depth
+
+            if edge.is_history_parent:
+                # History parent: red, bold
+                if layer_span > 1:
+                    # Skip connection + history parent: red, bold, dashed
+                    dot.edge(
+                        str(edge.src),
+                        str(edge.dst),
+                        color="red",
+                        penwidth="2",
+                        style="dashed",
+                        label=f"H (+{layer_span})",
+                    )
+                else:
+                    dot.edge(
+                        str(edge.src),
+                        str(edge.dst),
+                        color="red",
+                        penwidth="2",
+                        label="H",
+                    )
+            else:
+                if layer_span > 1:
+                    # Skip connection: blue, dashed
+                    dot.edge(
+                        str(edge.src),
+                        str(edge.dst),
+                        color="blue",
+                        style="dashed",
+                        label=f"+{layer_span}",
+                    )
+                else:
+                    # Regular edge: gray
+                    dot.edge(str(edge.src), str(edge.dst), color="gray")
+
+    # Render if path provided
+    if output_path:
+        dot.render(output_path, format=format, view=view, cleanup=True)
+
+    return dot.source

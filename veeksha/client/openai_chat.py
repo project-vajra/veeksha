@@ -454,7 +454,14 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
         num_total_prompt_tokens = 0
         for msg in messages:
             content = msg.get("content", "")
-            num_total_prompt_tokens += self._get_cached_token_count(content)
+            if isinstance(content, str):
+                num_total_prompt_tokens += self._get_cached_token_count(content)
+            elif isinstance(content, list):
+                # multimodal format
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        text = block.get("text", "")
+                        num_total_prompt_tokens += self._get_cached_token_count(text)
 
         num_completion_tokens = len(self.text_tokenizer_handle.encode(generated_text))
 

@@ -16,3 +16,19 @@ SessionGraphGeneratorRegistry.register(
         "LinearSessionGraphGenerator",
     ),
 )
+
+SessionGraphGeneratorRegistry.register(
+    SessionGraphType.SINGLE_REQUEST,
+    _LazyLoader(
+        "veeksha.generator.session_graph.single_request",
+        "SingleRequestSessionGraphGenerator",
+    ),
+)
+
+SessionGraphGeneratorRegistry.register(
+    SessionGraphType.BRANCHING,
+    _LazyLoader(
+        "veeksha.generator.session_graph.branching",
+        "BranchingSessionGraphGenerator",
+    ),
+)

@@ -4,25 +4,41 @@ traffic_scheduler:
   type: rate
   interval_generator:
     type: poisson
-    arrival_rate: 10
-  cancel_session_on_failure: False
+    arrival_rate: 10  # Lower rate for complex graphs
 
 session_generator:
   type: synthetic
   session_graph:
-    type: linear
-    inherit_history: True
-    num_request_generator:
+    type: branching
+    num_layers_generator:
+      type: uniform
+      min: 3
+      max: 5
+    layer_width_generator:
       type: uniform
       min: 2
+      max: 6
+    fan_out_generator:
+      type: uniform
+      min: 1
+      max: 5
+    fan_in_generator:
+      type: uniform
+      min: 1
       max: 4
+    connection_dist_generator:
+      type: uniform
+      min: 1
+      max: 2  # Allow skip connections
+    single_root: true
+    inherit_history: true
     request_wait_generator:
       type: poisson
-      arrival_rate: 5
+      arrival_rate: 3
   channels:
     - type: text
       shared_prefix_ratio: 0.2
-      shared_prefix_probability: 0.5 # 50% of root requests have 20% shared prefix
+      shared_prefix_probability: 0.5
       body_length_generator:
         type: uniform
         min: 20
@@ -30,7 +46,7 @@ session_generator:
       output_length_generator:
         type: uniform
         min: 100
-        max: 500
+        max: 300
 
 client:
   type: openai_chat_completions
@@ -42,7 +58,7 @@ client:
   use_min_tokens_prompt_fallback: False
 
 runtime:
-  max_sessions: 10
+  max_sessions: 100
   benchmark_timeout: 60
 
 trace_recorder:
@@ -54,9 +70,3 @@ evaluators:
     target_channels: ["text"]
     stream_metrics: true
     stream_metrics_interval: 5.0
-    slos:
-      - name: "P99 TTFC under 500ms"
-        metric: ttfc          # Metric to check
-        percentile: 0.99      # Percentile level
-        value: 0.5            # Threshold in seconds
-        type: constant        # SLO type
