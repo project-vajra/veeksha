@@ -56,23 +56,3 @@ uv venv --python 3.14t
 source .venv/bin/activate
 uv pip install -e .
 ```
-
-## Citation
-
-If you use our work, please consider citing our paper:
-
-```bibtex
-@misc{agrawal2024Etalon,
-      title={Etalon: Holistic Performance Evaluation Framework for LLM Inference Systems}, 
-      author={Amey Agrawal and Anmol Agarwal and Nitin Kedia and Jayashree Mohan and Souvik Kundu and Nipun Kwatra and Ramachandran Ramjee and Alexey Tumanov},
-      year={2024},
-      eprint={2407.07000},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2407.07000}, 
-}
-```
-
-## Acknowledgement
-
-This repository was originally created as a fork from [LLMPerf](https://github.com/ray-project/llmperf) project.
