@@ -24,3 +24,11 @@ SessionGraphGeneratorRegistry.register(
         "SingleRequestSessionGraphGenerator",
     ),
 )
+
+SessionGraphGeneratorRegistry.register(
+    SessionGraphType.BRANCHING,
+    _LazyLoader(
+        "veeksha.generator.session_graph.branching",
+        "BranchingSessionGraphGenerator",
+    ),
+)

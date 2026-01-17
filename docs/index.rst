@@ -26,8 +26,8 @@ Key features
 ------------
 
 **Realistic workload modeling**
-    - **DAG-based sessions**: Model multi-turn conversations as directed acyclic graphs with
-      history inheritance, capturing real chat context accumulation
+    - **DAG-based sessions**: Model multi-turn conversations and complex agentic workflows 
+      as directed acyclic graphs with history inheritance, capturing real chat context accumulation
     - **Shared prefix testing**: Generate workloads with configurable prefix sharing to
       benchmark KV-cache efficiency
     - **Trace replay**: Replay production traces (Claude Code, RAG, conversational) with

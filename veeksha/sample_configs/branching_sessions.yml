@@ -1,0 +1,72 @@
+seed: 42
+
+traffic_scheduler:
+  type: rate
+  interval_generator:
+    type: poisson
+    arrival_rate: 10  # Lower rate for complex graphs
+
+session_generator:
+  type: synthetic
+  session_graph:
+    type: branching
+    num_layers_generator:
+      type: uniform
+      min: 3
+      max: 5
+    layer_width_generator:
+      type: uniform
+      min: 2
+      max: 6
+    fan_out_generator:
+      type: uniform
+      min: 1
+      max: 5
+    fan_in_generator:
+      type: uniform
+      min: 1
+      max: 4
+    connection_dist_generator:
+      type: uniform
+      min: 1
+      max: 2  # Allow skip connections
+    single_root: true
+    inherit_history: true
+    request_wait_generator:
+      type: poisson
+      arrival_rate: 3
+  channels:
+    - type: text
+      shared_prefix_ratio: 0.2
+      shared_prefix_probability: 0.5
+      body_length_generator:
+        type: uniform
+        min: 20
+        max: 30
+      output_length_generator:
+        type: uniform
+        min: 100
+        max: 300
+
+client:
+  type: openai_chat_completions
+  model: meta-llama/Llama-3.2-1B-Instruct
+  request_timeout: 60
+  api_base: http://localhost:30002/v1
+  max_tokens_param: max_completion_tokens
+  min_tokens_param: min_tokens
+  use_min_tokens_prompt_fallback: False
+
+runtime:
+  max_sessions: 100
+  benchmark_timeout: 60
+
+trace_recorder:
+  enabled: True
+  include_content: True
+
+evaluators:
+  - type: performance
+    target_channels: ["text"]
+    stream_metrics: true
+    stream_metrics_interval: 5.0

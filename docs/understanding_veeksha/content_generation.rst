@@ -146,9 +146,9 @@ When a synthetic session is generated:
 Shared prefix for prefix caching
 --------------------------------
 
-LLM inference engines like vLLM support **prefix caching** where repeated
+Most LLM inference engines support **prefix caching** where repeated
 prompt prefixes are cached in KV cache. Veeksha can generate workloads that
-test this:
+test this. First, by setting a shared prefix configuration:
 
 .. code-block:: yaml
 
@@ -174,6 +174,16 @@ This accurately models scenarios like:
 - RAG with common document prefixes
 - Function calling with shared tool definitions
 
+Another way in which Veeksha helps test prefix cache capabilities is by making session nodes inherit conversation
+history. This is done by setting the ``inherit_history`` flag to ``true`` in the session generator configuration:
+
+.. code-block:: yaml
+
+    session_generator:
+      type: synthetic
+      inherit_history: true
+
+A node can only inherit history from one of its parent nodes. 
 
 Tokenizer integration
 ---------------------

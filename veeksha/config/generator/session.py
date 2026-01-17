@@ -2,7 +2,10 @@ from dataclasses import field
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
-from veeksha.config.generator.channel import BaseChannelGeneratorConfig
+from veeksha.config.generator.channel import (
+    BaseChannelGeneratorConfig,
+    TextChannelGeneratorConfig,
+)
 from veeksha.config.generator.session_graph import (
     BaseSessionGraphGeneratorConfig,
     LinearSessionGraphGeneratorConfig,
@@ -29,7 +32,7 @@ class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
         },
     )
     channels: list[BaseChannelGeneratorConfig] = field(
-        default_factory=list,
+        default_factory=lambda: [TextChannelGeneratorConfig()],
         metadata={
             "help": f"The modality channels for the content of each request. {ChannelModality.help_str()}"
         },
@@ -43,6 +46,9 @@ class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
         channel_types = set([channel.get_type() for channel in self.channels])
         if len(channel_types) != len(self.channels):
             raise ValueError("All channel generators must have unique types")
+
+        if not self.channels:
+            raise ValueError("At least one channel generator must be specified")
 
 
 @frozen_dataclass
