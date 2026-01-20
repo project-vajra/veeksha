@@ -50,14 +50,16 @@ def test_openai_completions_client_sends_all_requests_to_completions() -> None:
 
     client._send_completions_request = _fake_send_completions_request  # type: ignore[attr-defined]
 
+    from veeksha.core.requested_output import RequestedOutputSpec, TextOutputSpec
+
     req = Request(
         id=123,
         channels={
             ChannelModality.TEXT: TextChannelRequestContent(
                 input_text="hello",
-                target_output_tokens=1,
             )
         },
+        requested_output=RequestedOutputSpec(text=TextOutputSpec(target_tokens=1)),
     )
 
     result = asyncio.run(client.send_request(req, session_id=7, session_total_requests=1))

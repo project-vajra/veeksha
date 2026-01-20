@@ -68,25 +68,27 @@ def test_openai_router_client_routes_per_request_api_mode() -> None:
         _fake_completions_send_request
     )
 
+    from veeksha.core.requested_output import RequestedOutputSpec, TextOutputSpec
+
     chat_req = Request(
         id=1,
         channels={
             ChannelModality.TEXT: TextChannelRequestContent(
                 input_text="hello",
-                target_output_tokens=1,
             )
         },
         metadata={"api_mode": "chat"},
+        requested_output=RequestedOutputSpec(text=TextOutputSpec(target_tokens=1)),
     )
     completions_req = Request(
         id=2,
         channels={
             ChannelModality.TEXT: TextChannelRequestContent(
                 input_text="hello",
-                target_output_tokens=1,
             )
         },
         metadata={"api_mode": "completions"},
+        requested_output=RequestedOutputSpec(text=TextOutputSpec(target_tokens=1)),
     )
 
     asyncio.run(client.send_request(chat_req, session_id=0, session_total_requests=1))

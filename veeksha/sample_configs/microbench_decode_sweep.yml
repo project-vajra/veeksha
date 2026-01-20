@@ -25,6 +25,8 @@ session_generator:
       body_length_generator:
         type: fixed
         value: !expand [512, 1024] # expands to 2 configs
+  output_spec:
+    text:
       output_length_generator:
         type: fixed
         value: 256

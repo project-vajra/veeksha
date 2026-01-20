@@ -65,11 +65,16 @@ class OpenAICompletionsClient(OpenAIBaseClient):
         timeout = self.config.request_timeout
 
         prompt_text = ""
-        max_tokens_limit = None
         if ChannelModality.TEXT in request.channels:
             text_content = request.channels[ChannelModality.TEXT]
             prompt_text = text_content.input_text  # type: ignore
-            max_tokens_limit = text_content.target_output_tokens  # type: ignore
+
+        max_tokens_limit = None
+        if (
+            request.requested_output is not None
+            and request.requested_output.text is not None
+        ):
+            max_tokens_limit = request.requested_output.text.target_tokens
 
         sampling_params = self._get_sampling_params(request)
         body: Dict[str, Any] = {

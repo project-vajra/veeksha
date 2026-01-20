@@ -147,7 +147,6 @@ def test_capacity_search_rate_benchmark(tmp_path) -> None:
         mock_channel_gen = MagicMock()
         mock_channel_gen.generate_content.return_value = TextChannelRequestContent(
             input_text="mock prompt",
-            target_output_tokens=1,
             target_prompt_tokens=5,
         )
 

@@ -17,17 +17,12 @@ class BaseChannelGeneratorConfig(BasePolyConfig):
 
 @frozen_dataclass
 class TextChannelGeneratorConfig(BaseChannelGeneratorConfig):
+    """Configuration for text channel input generation."""
 
     body_length_generator: BaseLengthGeneratorConfig = field(
         default_factory=UniformLengthGeneratorConfig,
         metadata={
-            "help": f"The generator for the body length. {LengthGeneratorType.help_str()}"
-        },
-    )
-    output_length_generator: BaseLengthGeneratorConfig = field(
-        default_factory=UniformLengthGeneratorConfig,
-        metadata={
-            "help": f"The generator for the output length. {LengthGeneratorType.help_str()}"
+            "help": f"The generator for the body (prompt) length. {LengthGeneratorType.help_str()}"
         },
     )
     shared_prefix_ratio: float = field(

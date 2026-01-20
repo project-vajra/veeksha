@@ -82,6 +82,7 @@ class DispatchWorker:
                 session_id=session_id,
                 dispatched_at=dispatched_at,
                 channels=request.channels,
+                requested_output=request.requested_output,
             )
 
             if self.trace_recorder:
@@ -129,6 +130,7 @@ class DispatchWorker:
                 session_id=session_id,
                 dispatched_at=dispatched_at,
                 channels=request.channels,
+                requested_output=request.requested_output,
             )
 
             if self.trace_recorder:

@@ -28,7 +28,6 @@ def mock_load_corpus():
 def text_config():
     return TextChannelGeneratorConfig(
         body_length_generator=FixedLengthGeneratorConfig(value=10),
-        output_length_generator=FixedLengthGeneratorConfig(value=5),
         shared_prefix_ratio=0.5,
         shared_prefix_probability=1.0,  # Always use shared prefix if is_root
     )
@@ -44,7 +43,6 @@ def test_generate_content_basic(mock_load_corpus, mock_tokenizer, mock_seed_mana
     
     # Check if target lengths match config
     assert content.target_prompt_tokens == 10
-    assert content.target_output_tokens == 5
     assert isinstance(content.input_text, str)
 
 def test_generate_content_shared_prefix(mock_load_corpus, mock_tokenizer, mock_seed_manager, text_config):
@@ -68,16 +66,16 @@ def test_generate_content_shared_prefix(mock_load_corpus, mock_tokenizer, mock_s
     assert len(generator._shared_prefix_tokens) >= 5
 
 def test_generate_content_min_tokens_instruction(mock_load_corpus, mock_tokenizer, mock_seed_manager, text_config):
-    # Enable instruction
+    # Generate content with min_tokens_suffix
     generator = TextChannelGenerator(
         text_config, 
         mock_seed_manager, 
-        mock_tokenizer, 
-        append_min_tokens_instruction=True
+        mock_tokenizer,
     )
     
     # Mock tokenizer to return short length for suffix so it fits
     mock_tokenizer.encode.side_effect = lambda x: [1] * (1 if "Generate" in x else len(x.split()))
     
-    content = generator.generate_content(is_root=False)
+    content = generator.generate_content(is_root=False, min_tokens_suffix=5)
     assert "Generate at least" in content.input_text or content.target_prompt_tokens == 10
+

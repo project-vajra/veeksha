@@ -14,11 +14,10 @@ class TextChannelRequestContent(BaseChannelRequestContent):
 
     Attributes:
         input_text: The actual text content to send to the model.
-        target_output_tokens: The target number of tokens for the model to generate.
+        target_prompt_tokens: The target number of prompt tokens (for tracing/metrics).
     """
 
     input_text: str
-    target_output_tokens: int
     target_prompt_tokens: Optional[int] = None
 
 

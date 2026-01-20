@@ -43,6 +43,8 @@ session_generator:
         type: uniform
         min: 20
         max: 30
+  output_spec:
+    text:
       output_length_generator:
         type: uniform
         min: 100

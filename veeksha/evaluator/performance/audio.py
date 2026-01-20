@@ -35,6 +35,7 @@ class AudioPerformanceEvaluator:
         session_id: int,
         dispatched_at: float,
         content: Any,
+        requested_output: Any = None,
     ) -> None:
         """Register an audio request that was dispatched."""
         pass  # Skeleton

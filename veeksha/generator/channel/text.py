@@ -1,3 +1,5 @@
+from typing import Optional
+
 from veeksha.benchmark_data_utils import load_corpus
 from veeksha.config.generator.channel import TextChannelGeneratorConfig
 from veeksha.core.request_content import TextChannelRequestContent
@@ -11,26 +13,24 @@ logger = init_logger(__name__)
 
 
 class TextChannelGenerator(BaseChannelGenerator):
+    """Generator for text channel input content.
+
+    This generator produces text input content for requests.
+    """
+
     def __init__(
         self,
         config: TextChannelGeneratorConfig,
         seed_manager: SeedManager,
         tokenizer_handle: TokenizerHandle,
-        append_min_tokens_instruction: bool = False,
     ):
         self.config = config
         self._logged_body_length_warning = False
         self.seed_manager = seed_manager
-        self.append_min_tokens_instruction = append_min_tokens_instruction
         self.body_length_generator = LengthGeneratorRegistry.get(
             self.config.body_length_generator.get_type(),
             self.config.body_length_generator,
             rng=self.seed_manager.numpy_factory("body_length")(),
-        )
-        self.output_length_generator = LengthGeneratorRegistry.get(
-            self.config.output_length_generator.get_type(),
-            self.config.output_length_generator,
-            rng=self.seed_manager.numpy_factory("output_length")(),
         )
         self.tokenizer_handle = tokenizer_handle
         corpus_lines = [line.strip() for line in load_corpus()]
@@ -59,9 +59,23 @@ class TextChannelGenerator(BaseChannelGenerator):
             )
         return self._shared_prefix_tokens[:num_tokens]
 
-    def generate_content(self, is_root: bool = False) -> TextChannelRequestContent:
+    def generate_content(
+        self,
+        is_root: bool = False,
+        min_tokens_suffix: Optional[int] = None,
+    ) -> TextChannelRequestContent:
+        """Generate text channel content.
+
+        Args:
+            is_root: Whether this is a root request (for shared prefix handling).
+            min_tokens_suffix: If provided, appends a suffix instruction requesting
+                at least this many output tokens. This is used when
+                use_min_tokens_prompt_fallback is enabled in the client.
+
+        Returns:
+            TextChannelRequestContent with the generated input text.
+        """
         text_token_length = self.body_length_generator.get_next_value()
-        output_token_length = self.output_length_generator.get_next_value()
 
         use_shared_prefix = (
             is_root
@@ -79,10 +93,10 @@ class TextChannelGenerator(BaseChannelGenerator):
             remainder_length = text_token_length
             effective_length = text_token_length
 
-        # see suffix against effective length (remainder when using shared prefix)
+        # Build suffix for min tokens instruction if requested
         suffix = ""
-        if self.append_min_tokens_instruction:
-            suffix = f"\n\nGenerate at least {output_token_length} tokens."
+        if min_tokens_suffix is not None:
+            suffix = f"\n\nGenerate at least {min_tokens_suffix} tokens."
             suffix_tokens = len(self.tokenizer_handle.encode(suffix))
             if effective_length <= suffix_tokens:
                 if not self._logged_body_length_warning:
@@ -121,6 +135,5 @@ class TextChannelGenerator(BaseChannelGenerator):
 
         return TextChannelRequestContent(
             input_text=input_text,
-            target_output_tokens=output_token_length,
             target_prompt_tokens=text_token_length,
         )

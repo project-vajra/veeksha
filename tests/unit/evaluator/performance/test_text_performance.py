@@ -9,6 +9,7 @@ from veeksha.config.evaluator import (
     PerformanceEvaluatorConfig,
     TextChannelPerformanceConfig,
 )
+from veeksha.core.requested_output import RequestedOutputSpec, TextOutputSpec
 from veeksha.evaluator.performance.text import TextPerformanceEvaluator
 from veeksha.types import ChannelModality
 
@@ -31,7 +32,6 @@ class MockResponse:
 
 @dataclass
 class MockRequestContent:
-    target_output_tokens: int = 10
     target_prompt_tokens: int = 5
 
 
@@ -49,9 +49,10 @@ def test_end_to_end_metrics(evaluator: TextPerformanceEvaluator) -> None:
     dispatched_at = 10.0
     completed_at = 12.0
     
-    # 1. Register request
-    content = MockRequestContent(target_output_tokens=10)
-    evaluator.register_request(request_id, session_id, dispatched_at, content)
+    # 1. Register request with requested_output
+    content = MockRequestContent()
+    requested_output = RequestedOutputSpec(text=TextOutputSpec(target_tokens=10))
+    evaluator.register_request(request_id, session_id, dispatched_at, content, requested_output)
     
     assert request_id in evaluator._pending_requests
     

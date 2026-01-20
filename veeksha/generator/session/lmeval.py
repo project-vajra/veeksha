@@ -21,6 +21,7 @@ from veeksha.core.request import Request
 from veeksha.core.request_content import (
     TextChannelRequestContent,
 )
+from veeksha.core.requested_output import RequestedOutputSpec, TextOutputSpec
 from veeksha.core.seeding import SeedManager
 from veeksha.core.session import Session
 from veeksha.core.session_graph import SessionGraph, SessionNode, add_node
@@ -206,6 +207,7 @@ class LMEvalSessionGenerator(BaseSessionGenerator):
         metadata: Dict[str, Any] = {
             "lmeval_request_type": instance.request_type,
         }
+        requested_output: Optional[RequestedOutputSpec] = None
 
         if instance.request_type == str(LMEvalOutputType.GENERATE_UNTIL):
             context, gen_kwargs, *rest = instance.args  # type: ignore
@@ -213,13 +215,16 @@ class LMEvalSessionGenerator(BaseSessionGenerator):
 
             ctxlen = len(self.text_tokenizer.encode(context))
             max_gen_toks = gen_kwargs.get("max_gen_toks")
+            target_output_tokens = (
+                int(max_gen_toks) if isinstance(max_gen_toks, int) else 0
+            )
 
             channels[ChannelModality.TEXT] = TextChannelRequestContent(
                 input_text=context,
-                target_output_tokens=(
-                    int(max_gen_toks) if isinstance(max_gen_toks, int) else 0
-                ),
                 target_prompt_tokens=ctxlen,
+            )
+            requested_output = RequestedOutputSpec(
+                text=TextOutputSpec(target_tokens=target_output_tokens)
             )
 
             metadata["api_mode"] = "chat"
@@ -243,9 +248,9 @@ class LMEvalSessionGenerator(BaseSessionGenerator):
 
             channels[ChannelModality.TEXT] = TextChannelRequestContent(
                 input_text=prompt,
-                target_output_tokens=1,
                 target_prompt_tokens=prompt_len,
             )
+            requested_output = RequestedOutputSpec(text=TextOutputSpec(target_tokens=1))
             if multimodal_arg:
                 logger.warning(
                     "Ignoring multimodal inputs for loglikelihood request_id=%d",
@@ -280,4 +285,5 @@ class LMEvalSessionGenerator(BaseSessionGenerator):
             channels=channels,
             session_context=session_context,
             metadata=metadata,
+            requested_output=requested_output,
         )

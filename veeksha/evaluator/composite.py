@@ -29,6 +29,7 @@ class CompositeEvaluator(BaseEvaluator):
         session_id: int,
         dispatched_at: float,
         channels: Dict[Any, Any],
+        requested_output: Any = None,
     ) -> None:
         for evaluator in self._evaluators:
             evaluator.register_request(
@@ -36,6 +37,7 @@ class CompositeEvaluator(BaseEvaluator):
                 session_id=session_id,
                 dispatched_at=dispatched_at,
                 channels=channels,
+                requested_output=requested_output,
             )
 
     def record_request_completed(

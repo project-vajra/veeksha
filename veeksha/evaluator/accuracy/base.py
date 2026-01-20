@@ -100,6 +100,7 @@ class LMEvalAccuracyEvaluator(BaseAccuracyEvaluator):
         session_id: int,
         dispatched_at: float,
         channels: Dict[ChannelModality, Any],
+        requested_output: Any = None,
     ) -> None:
         with self._lock:
             self.num_requests += 1

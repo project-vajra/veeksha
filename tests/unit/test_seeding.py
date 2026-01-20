@@ -3,6 +3,7 @@ import pytest
 
 from veeksha.config.generator.interval import PoissonIntervalGeneratorConfig
 from veeksha.config.generator.length import UniformLengthGeneratorConfig, FixedLengthGeneratorConfig
+from veeksha.config.generator.requested_output import OutputSpecConfig, TextOutputSpecConfig
 from veeksha.config.generator.session import SyntheticSessionGeneratorConfig
 from veeksha.config.generator.session_graph import LinearSessionGraphGeneratorConfig
 from veeksha.config.generator.channel import TextChannelGeneratorConfig
@@ -100,9 +101,13 @@ class TestSeeding:
             channels=[
                 TextChannelGeneratorConfig(
                     body_length_generator=UniformLengthGeneratorConfig(min=5, max=5),
+                )
+            ],
+            output_spec=OutputSpecConfig(
+                text=TextOutputSpecConfig(
                     output_length_generator=FixedLengthGeneratorConfig(value=10)
                 )
-            ]
+            )
         )
 
         generator = SyntheticSessionGenerator(

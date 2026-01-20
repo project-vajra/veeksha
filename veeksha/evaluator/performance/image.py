@@ -35,6 +35,7 @@ class ImagePerformanceEvaluator:
         session_id: int,
         dispatched_at: float,
         content: Any,
+        requested_output: Any = None,
     ) -> None:
         """Register an image request that was dispatched."""
         pass  # Skeleton

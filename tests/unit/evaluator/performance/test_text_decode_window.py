@@ -5,6 +5,7 @@ import pytest
 from veeksha.config.evaluator import DecodeWindowConfig, PerformanceEvaluatorConfig
 from veeksha.config.evaluator import TextChannelPerformanceConfig
 from veeksha.core.request_content import TextChannelRequestContent
+from veeksha.core.requested_output import RequestedOutputSpec, TextOutputSpec
 from veeksha.core.response import ChannelResponse, RequestResult
 from veeksha.evaluator.performance.text import TextPerformanceEvaluator
 from veeksha.types import ChannelModality
@@ -35,9 +36,9 @@ def test_text_decode_window_writes_expected_stats(tmp_path) -> None:
             dispatched_at=0.0,
             content=TextChannelRequestContent(
                 input_text="hello",
-                target_output_tokens=3,
                 target_prompt_tokens=1,
             ),
+            requested_output=RequestedOutputSpec(text=TextOutputSpec(target_tokens=3)),
         )
 
     result0 = RequestResult(
