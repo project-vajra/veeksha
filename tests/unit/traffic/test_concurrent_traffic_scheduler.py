@@ -30,7 +30,7 @@ def make_request(request_id: int) -> Request:
         id=request_id,
         channels={
             ChannelModality.TEXT: TextChannelRequestContent(
-                input_text=f"test_{request_id}", target_output_tokens=10
+                input_text=f"test_{request_id}"
             )
         },
     )

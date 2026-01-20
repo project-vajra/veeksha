@@ -105,7 +105,6 @@ def test_managed_server_benchmark(mock_openai_server, tmp_path) -> None:
         mock_channel_gen = MagicMock()
         mock_channel_gen.generate_content.return_value = TextChannelRequestContent(
             input_text="mock prompt",
-            target_output_tokens=1,
             target_prompt_tokens=5,
         )
 

@@ -35,6 +35,7 @@ class VideoPerformanceEvaluator:
         session_id: int,
         dispatched_at: float,
         content: Any,
+        requested_output: Any = None,
     ) -> None:
         """Register a video request that was dispatched."""
         pass  # Skeleton

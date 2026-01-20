@@ -25,6 +25,8 @@ session_generator:
         values: [8, 16, 32, 64]
         repeat_each: 10
         wrap: False
+  output_spec:
+    text:
       output_length_generator:
         type: fixed
         value: 1

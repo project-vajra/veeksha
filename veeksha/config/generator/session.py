@@ -6,6 +6,7 @@ from veeksha.config.generator.channel import (
     BaseChannelGeneratorConfig,
     TextChannelGeneratorConfig,
 )
+from veeksha.config.generator.requested_output import OutputSpecConfig
 from veeksha.config.generator.session_graph import (
     BaseSessionGraphGeneratorConfig,
     LinearSessionGraphGeneratorConfig,
@@ -25,6 +26,14 @@ class BaseSessionGeneratorConfig(BasePolyConfig):
 
 @frozen_dataclass
 class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
+    """Configuration for synthetic session generation.
+
+    Attributes:
+        session_graph: Configuration for session graph structure.
+        channels: Input channel configurations (text, image, etc.).
+        output_spec: Specification for expected output from the model.
+    """
+
     session_graph: BaseSessionGraphGeneratorConfig = field(
         default_factory=LinearSessionGraphGeneratorConfig,
         metadata={
@@ -34,7 +43,13 @@ class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
     channels: list[BaseChannelGeneratorConfig] = field(
         default_factory=lambda: [TextChannelGeneratorConfig()],
         metadata={
-            "help": f"The modality channels for the content of each request. {ChannelModality.help_str()}"
+            "help": f"The modality channels for the input content of each request. {ChannelModality.help_str()}"
+        },
+    )
+    output_spec: OutputSpecConfig = field(
+        default_factory=OutputSpecConfig,
+        metadata={
+            "help": "Specification for expected output from the model, for supported modalities (e.g., output token length, image count)."
         },
     )
 

@@ -12,6 +12,7 @@ from veeksha.config.generator.session import (
 )
 from veeksha.core.request import Request
 from veeksha.core.request_content import TextChannelRequestContent
+from veeksha.core.requested_output import RequestedOutputSpec, TextOutputSpec
 from veeksha.core.seeding import SeedManager
 from veeksha.core.session import Session
 from veeksha.core.session_graph import (
@@ -151,11 +152,11 @@ class TraceFlavorGeneratorBase:
         parent_node: Optional[int] = None,
         target_prompt_tokens: Optional[int] = None,
     ) -> Request:
-        """Create a text-only Request."""
+        """Create a text-only Request and attach output spec."""
+
         channels = {
             ChannelModality.TEXT: TextChannelRequestContent(
                 input_text=prompt_text,
-                target_output_tokens=target_output_tokens,
                 target_prompt_tokens=target_prompt_tokens,
             )
         }
@@ -165,10 +166,14 @@ class TraceFlavorGeneratorBase:
             "parent_nodes": [parent_node] if parent_node is not None else [],
             "history_parent": parent_node,
         }
+        requested_output = RequestedOutputSpec(
+            text=TextOutputSpec(target_tokens=target_output_tokens)
+        )
         return Request(
             id=self._next_request_id(),
             channels=channels,  # type: ignore
             session_context=session_context,
+            requested_output=requested_output,
         )
 
     def _shuffle_sessions(self, df: pd.DataFrame) -> pd.DataFrame:

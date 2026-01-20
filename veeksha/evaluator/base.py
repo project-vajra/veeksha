@@ -80,6 +80,7 @@ class BaseEvaluator(ABC):
         session_id: int,
         dispatched_at: float,
         channels: Dict[ChannelModality, Any],
+        requested_output: Any = None,
     ) -> None:
         """Register a request that was dispatched to the server
 
@@ -88,6 +89,7 @@ class BaseEvaluator(ABC):
             session_id: Session id this request belongs to
             dispatched_at: Monotonic timestamp when request was dispatched
             channels: Request content indexed by modality
+            requested_output: Optional output specification for the request
         """
         raise NotImplementedError
 

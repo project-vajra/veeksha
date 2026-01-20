@@ -6,6 +6,7 @@ import pytest
 
 from veeksha.config.generator.channel import TextChannelGeneratorConfig
 from veeksha.config.generator.length import FixedLengthGeneratorConfig
+from veeksha.config.generator.requested_output import OutputSpecConfig, TextOutputSpecConfig
 from veeksha.config.generator.session import SyntheticSessionGeneratorConfig
 from veeksha.config.generator.session_graph import LinearSessionGraphGeneratorConfig
 from veeksha.core.seeding import SeedManager
@@ -37,9 +38,13 @@ def linear_session_config() -> SyntheticSessionGeneratorConfig:
         channels=[
             TextChannelGeneratorConfig(
                 body_length_generator=FixedLengthGeneratorConfig(value=10),
+            )
+        ],
+        output_spec=OutputSpecConfig(
+            text=TextOutputSpecConfig(
                 output_length_generator=FixedLengthGeneratorConfig(value=5)
             )
-        ]
+        )
     )
 
 @pytest.mark.unit
@@ -60,9 +65,11 @@ def test_generate_simple_session(tokenizer_provider, linear_session_config) -> N
     # Check request content
     req0 = session.requests[0]
     assert ChannelModality.TEXT in req0.channels
-    text_content = req0.channels[ChannelModality.TEXT]
     
-    assert text_content.target_output_tokens == 5
+    # Check that output spec is attached
+    assert req0.requested_output is not None
+    assert req0.requested_output.text is not None
+    assert req0.requested_output.text.target_tokens == 5
 
 @pytest.mark.unit
 def test_generate_session_ids_increment(tokenizer_provider, linear_session_config) -> None:

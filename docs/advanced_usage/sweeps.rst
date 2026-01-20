@@ -248,27 +248,33 @@ Common sweep patterns
 
 .. code-block:: yaml
 
-    channels:
-      - type: text
-        body_length_generator:
-          type: fixed
-          value: !expand [128, 256, 512, 1024, 2048]
-        output_length_generator:
-          type: fixed
-          value: 128
+    session_generator:
+      channels:
+        - type: text
+          body_length_generator:
+            type: fixed
+            value: !expand [128, 256, 512, 1024, 2048]
+      output_spec:
+        text:
+          output_length_generator:
+            type: fixed
+            value: 128
 
 **Output Length Sweep** - Decode scaling
 
 .. code-block:: yaml
 
-    channels:
-      - type: text
-        body_length_generator:
-          type: fixed
-          value: 256
-        output_length_generator:
-          type: fixed
-          value: !expand [64, 128, 256, 512, 1024]
+    session_generator:
+      channels:
+        - type: text
+          body_length_generator:
+            type: fixed
+            value: 256
+      output_spec:
+        text:
+          output_length_generator:
+            type: fixed
+            value: !expand [64, 128, 256, 512, 1024]
 
 **Multi-Dimensional Sweep**
 
@@ -278,13 +284,17 @@ Common sweep patterns
       type: concurrent
       target_concurrent_sessions: !expand [4, 8]
 
-    channels:
-      - type: text
-        body_length_generator:
-          type: fixed
-          value: !expand [256, 512]
-        output_length_generator:
-          type: fixed
-          value: !expand [128, 256]
+    session_generator:
+      channels:
+        - type: text
+          body_length_generator:
+            type: fixed
+            value: !expand [256, 512]
+      output_spec:
+        text:
+          output_length_generator:
+            type: fixed
+            value: !expand [128, 256]
 
 Creates 2 × 2 × 2 = **8 runs**.
+

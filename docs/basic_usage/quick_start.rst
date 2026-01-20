@@ -39,6 +39,8 @@ Create a file named ``my_benchmark.veeksha.yml``:
             type: uniform
             min: 50
             max: 200
+      output_spec:
+        text:
           output_length_generator:
             type: uniform
             min: 100
@@ -137,14 +139,17 @@ Here are the most commonly adjusted options:
 
 .. code-block:: yaml
 
-    channels:
-      - type: text
-        body_length_generator:
-          type: fixed
-          value: 256       # Fixed 256 tokens per prompt
-        output_length_generator:
-          type: fixed
-          value: 128       # Request 128 token outputs
+    session_generator:
+      channels:
+        - type: text
+          body_length_generator:
+            type: fixed
+            value: 256       # Fixed 256 tokens per prompt
+      output_spec:
+        text:
+          output_length_generator:
+            type: fixed
+            value: 128       # Request 128 token outputs
 
 
 Using CLI overrides
@@ -187,14 +192,17 @@ Common patterns
 
 .. code-block:: yaml
 
-    channels:
-      - type: text
-        body_length_generator:
-          type: fixed
-          value: 512
-        output_length_generator:
-          type: fixed
-          value: 256
+    session_generator:
+      channels:
+        - type: text
+          body_length_generator:
+            type: fixed
+            value: 512
+      output_spec:
+        text:
+          output_length_generator:
+            type: fixed
+            value: 256
 
 
 Configuration reference

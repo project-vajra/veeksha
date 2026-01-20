@@ -4,6 +4,7 @@ import pytest
 
 from veeksha.config.evaluator import PerformanceEvaluatorConfig
 from veeksha.core.request_content import TextChannelRequestContent
+from veeksha.core.requested_output import RequestedOutputSpec, TextOutputSpec
 from veeksha.core.response import ChannelResponse, RequestResult
 from veeksha.evaluator.performance.text import TextPerformanceEvaluator
 from veeksha.types import ChannelModality
@@ -27,9 +28,9 @@ def test_text_prefill_stats_groups_by_target_prompt_tokens(tmp_path) -> None:
             dispatched_at=0.0,
             content=TextChannelRequestContent(
                 input_text="hello",
-                target_output_tokens=2,
                 target_prompt_tokens=target_prompt_tokens,
             ),
+            requested_output=RequestedOutputSpec(text=TextOutputSpec(target_tokens=2)),
         )
 
         result = RequestResult(

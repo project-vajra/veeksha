@@ -142,6 +142,7 @@ class PerformanceEvaluator(BaseEvaluator):
         session_id: int,
         dispatched_at: float,
         channels: Dict[ChannelModality, Any],
+        requested_output: Any = None,
     ) -> None:
         """Register a request that was dispatched."""
         with self.lock:
@@ -159,6 +160,7 @@ class PerformanceEvaluator(BaseEvaluator):
                         session_id=session_id,
                         dispatched_at=dispatched_at,
                         content=content,
+                        requested_output=requested_output,
                     )
 
     def get_registered_request_ids(self) -> set:

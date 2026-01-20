@@ -181,6 +181,8 @@ Example: Full managed benchmark
             type: uniform
             min: 100
             max: 500
+      output_spec:
+        text:
           output_length_generator:
             type: uniform
             min: 100
@@ -212,6 +214,8 @@ Create a base config and run with different servers:
           body_length_generator:
             type: fixed
             value: 512
+      output_spec:
+        text:
           output_length_generator:
             type: fixed
             value: 256

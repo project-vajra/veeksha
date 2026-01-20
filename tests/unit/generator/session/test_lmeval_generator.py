@@ -80,15 +80,19 @@ def test_lmeval_generator_generate_sessions(lmeval_config, mock_seed_manager, mo
     session1 = generator.generate_session()
     assert len(session1.requests) == 1
     req1 = session1.requests[0]
-    assert req1.channels[ChannelModality.TEXT].target_output_tokens == 10
+    assert req1.requested_output is not None
+    assert req1.requested_output.text is not None
+    assert req1.requested_output.text.target_tokens == 10
     assert req1.metadata["lmeval_request_type"] == str(LMEvalOutputType.GENERATE_UNTIL)
     
     # Session 2 (LogLikelihood)
     session2 = generator.generate_session()
     assert len(session2.requests) == 1
     req2 = session2.requests[0]
-    # Loglikelihood defaults to target_output_tokens=1 in the implementation
-    assert req2.channels[ChannelModality.TEXT].target_output_tokens == 1
+    # Loglikelihood defaults to target_tokens=1 in the implementation
+    assert req2.requested_output is not None
+    assert req2.requested_output.text is not None
+    assert req2.requested_output.text.target_tokens == 1
     assert req2.metadata["lmeval_request_type"] == str(LMEvalOutputType.LOGLIKELIHOOD)
     
     # Exhaustion

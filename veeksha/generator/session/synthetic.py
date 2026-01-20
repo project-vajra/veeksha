@@ -5,11 +5,21 @@ from veeksha.core.session import Session
 from veeksha.core.session_graph import get_node_ids, is_root, parents
 from veeksha.core.tokenizer import TokenizerProvider
 from veeksha.generator.channel.registry import ChannelGeneratorRegistry
+from veeksha.generator.output_spec import OutputSpecGenerator
 from veeksha.generator.session.base import BaseSessionGenerator
 from veeksha.generator.session_graph.registry import SessionGraphGeneratorRegistry
+from veeksha.types import ChannelModality
 
 
 class SyntheticSessionGenerator(BaseSessionGenerator):
+    """Generates synthetic sessions with configurable input content and output specs.
+
+    This generator creates sessions with:
+    - Session graphs defining the request structure (linear, branching, etc.)
+    - Input content for each channel (text, image, etc.)
+    - Output specifications defining expected model output
+    """
+
     def __init__(
         self,
         config: SyntheticSessionGeneratorConfig,
@@ -22,7 +32,7 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
         self.tokenizer_provider = tokenizer_provider
         self.append_min_tokens_instruction = append_min_tokens_instruction
 
-        # get generators
+        # channel generators
         self.channels = {}
         for channel in self.config.channels:
             tokenizer_handle = self.tokenizer_provider.for_modality(channel.get_type())
@@ -32,20 +42,22 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
                 ),
                 "tokenizer_handle": tokenizer_handle,
             }
-            if channel.get_type() == ChannelGeneratorRegistry.get_key_from_str("text"):
-                channel_kwargs["append_min_tokens_instruction"] = (
-                    self.append_min_tokens_instruction
-                )
 
             self.channels[channel.get_type()] = ChannelGeneratorRegistry.get(
                 channel.get_type(),
                 channel,
                 **channel_kwargs,
             )
+
         self.session_graph_generator = SessionGraphGeneratorRegistry.get(
             self.config.session_graph.get_type(),
             self.config.session_graph,
             seed_manager=seed_manager.child("session_graph"),
+        )
+
+        self.output_spec_generator = OutputSpecGenerator(
+            self.config.output_spec,
+            seed_manager.child("output_spec"),
         )
 
         self.current_session_id = 0  # incremental global session id
@@ -56,12 +68,28 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
         requests = {}
 
         for node_id in get_node_ids(session_graph):
-            # get content
+            requested_output = self.output_spec_generator.generate()
+
+            # min_tokens_suffix for text channel if needed
+            min_tokens_suffix = None
+            if (
+                self.append_min_tokens_instruction
+                and requested_output is not None
+                and requested_output.text is not None
+            ):
+                min_tokens_suffix = requested_output.text.target_tokens
+
             channels = {}
             for channel_type, channel in self.channels.items():
-                channels[channel_type] = channel.generate_content(
-                    is_root=is_root(session_graph, node_id)
-                )
+                if channel_type == ChannelModality.TEXT:
+                    channels[channel_type] = channel.generate_content(
+                        is_root=is_root(session_graph, node_id),
+                        min_tokens_suffix=min_tokens_suffix,
+                    )
+                else:
+                    channels[channel_type] = channel.generate_content(
+                        is_root=is_root(session_graph, node_id)
+                    )
 
             incoming_edges = parents(session_graph, node_id)
             history_parents = [e for e in incoming_edges if e.is_history_parent]
@@ -76,9 +104,11 @@ class SyntheticSessionGenerator(BaseSessionGenerator):
                 id=self.current_request_id,
                 channels=channels,
                 session_context=session_context,
+                requested_output=requested_output,
             )
             requests[node_id] = request
             self.current_request_id += 1
+
         session = Session(
             id=self.current_session_id,
             session_graph=session_graph,

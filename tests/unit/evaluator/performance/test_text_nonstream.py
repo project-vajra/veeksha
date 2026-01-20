@@ -2,6 +2,7 @@ import pytest
 
 from veeksha.config.evaluator import PerformanceEvaluatorConfig
 from veeksha.core.request_content import TextChannelRequestContent
+from veeksha.core.requested_output import RequestedOutputSpec, TextOutputSpec
 from veeksha.core.response import ChannelResponse, RequestResult
 from veeksha.evaluator.performance.text import TextPerformanceEvaluator
 from veeksha.types import ChannelModality
@@ -22,9 +23,9 @@ def test_text_performance_skips_tpot_for_non_stream_request() -> None:
         dispatched_at=0.0,
         content=TextChannelRequestContent(
             input_text="hello",
-            target_output_tokens=1,
             target_prompt_tokens=1,
         ),
+        requested_output=RequestedOutputSpec(text=TextOutputSpec(target_tokens=1)),
     )
 
     result = RequestResult(
@@ -75,9 +76,9 @@ def test_text_performance_includes_tpot_for_streaming_request() -> None:
         dispatched_at=0.0,
         content=TextChannelRequestContent(
             input_text="hello",
-            target_output_tokens=2,
             target_prompt_tokens=1,
         ),
+        requested_output=RequestedOutputSpec(text=TextOutputSpec(target_tokens=2)),
     )
 
     result = RequestResult(
@@ -110,5 +111,3 @@ def test_text_performance_includes_tpot_for_streaming_request() -> None:
     )
 
     assert len(evaluator.summaries["tpot"]) == 1
-
-

@@ -319,10 +319,13 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
         """Send a streaming request to the OpenAI Chat Completions API."""
 
         timeout = self.config.request_timeout
+
         max_tokens_limit = None
-        if ChannelModality.TEXT in request.channels:
-            text_content = request.channels[ChannelModality.TEXT]
-            max_tokens_limit = text_content.target_output_tokens  # type: ignore
+        if (
+            request.requested_output is not None
+            and request.requested_output.text is not None
+        ):
+            max_tokens_limit = request.requested_output.text.target_tokens
 
         # text metrics
         inter_chunk_times: List[float] = []

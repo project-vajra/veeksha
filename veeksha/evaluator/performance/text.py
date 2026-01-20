@@ -210,13 +210,18 @@ class TextPerformanceEvaluator:
         session_id: int,
         dispatched_at: float,
         content: Any,
+        requested_output: Any = None,
     ) -> None:
         """Register a text request that was dispatched."""
         with self.lock:
             if self._request_time_reference == 0.0:
                 self._request_time_reference = dispatched_at
 
-            target_output_tokens = getattr(content, "target_output_tokens", None)
+            target_output_tokens = None
+            if requested_output is not None and hasattr(requested_output, "text"):
+                text_spec = requested_output.text
+                target_output_tokens = text_spec.target_tokens
+
             target_prompt_tokens = getattr(content, "target_prompt_tokens", None)
 
             self._pending_requests[request_id] = {
