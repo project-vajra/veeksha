@@ -181,6 +181,12 @@ Common configuration sections
             type: uniform
             min: 100
             max: 500
+      output_spec:
+        text:
+          output_length_generator:
+            type: uniform
+            min: 50
+            max: 200
 
 **runtime** - Execution parameters
 

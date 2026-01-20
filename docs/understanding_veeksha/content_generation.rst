@@ -47,20 +47,19 @@ and optional shared prefixes:
             type: uniform
             min: 100
             max: 500
+          shared_prefix_ratio: 0.2
+          shared_prefix_probability: 0.5
+      output_spec:
+        text:
           output_length_generator:
             type: uniform
             min: 50
             max: 200
-          shared_prefix_ratio: 0.2
-          shared_prefix_probability: 0.5
 
 Key configuration options:
 
 ``body_length_generator``
     Controls the number of tokens in the prompt body (new content per turn).
-
-``output_length_generator``
-    Controls the requested output length (``max_tokens`` / ``min_tokens``).
 
 ``shared_prefix_ratio``
     Fraction of prompt tokens that should be identical across root requests.
@@ -68,6 +67,12 @@ Key configuration options:
 
 ``shared_prefix_probability``
     Probability that a root request uses the shared prefix.
+
+Output specification is configured separately at the session generator level. Specified output
+specs will only be relevant if the model supports the modality. For example:
+
+``output_spec.text.output_length_generator``
+    Controls the requested output length (``max_tokens`` / ``min_tokens``).
 
 
 Length generators
@@ -137,10 +142,8 @@ When a synthetic session is generated:
 3. The ``is_root`` flag enables special handling (e.g., shared prefixes apply
    only to root requests)
 
-4. Content includes:
-   - Token IDs for the prompt
-   - Target prompt length
-   - Requested output length
+4. The **output specification** is generated via ``OutputSpecGenerator``
+   and attached to each request. This includes target output tokens.
 
 
 Shared prefix for prefix caching

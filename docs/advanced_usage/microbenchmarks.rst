@@ -52,6 +52,8 @@ Isolate prefill by using fixed-length prompts, minimal outputs, and no batching:
             type: fixed_stair              # Sweep prompt lengths
             values: [128, 256, 512, 1024, 2048]
             repeat_each: 10                # 10 requests per length
+      output_spec:
+        text:
           output_length_generator:
             type: fixed
             value: 1                 # Minimal output
@@ -112,6 +114,8 @@ Isolate decode by using fixed prompts, variable outputs, and controlled batching
           body_length_generator:
             type: fixed
             value: 128              # Minimal context
+      output_spec:
+        text:
           output_length_generator:
             type: fixed
             value: 512              # Focus on decode
@@ -217,6 +221,8 @@ Measure decode throughput across batch sizes:
           body_length_generator:
             type: fixed
             value: 128
+      output_spec:
+        text:
           output_length_generator:
             type: fixed
             value: 256
