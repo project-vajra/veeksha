@@ -242,11 +242,14 @@ implements:
 - Session/request preparation from trace rows
 - Wrapping behavior for looping through traces
 
+We provide flavors for three different use cases. You can also implement your own flavor by creating a class that 
+inherits from ``TraceFlavorGeneratorBase`` and implements the methods ``required_columns``, ``prepare_session`` and ``wrap``.
+
 Comparison table:
 
 .. list-table::
    :header-rows: 1
-   :widths: 20 20 20 40
+   :widths: 20 20 20 40 20
 
    * - Flavor
      - Turns
