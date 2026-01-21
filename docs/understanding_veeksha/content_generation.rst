@@ -220,8 +220,7 @@ Trace-based content
 -------------------
 
 For trace-based session generation, content comes from recorded conversations
-stored in JSONL files. Each trace file contains pre-recorded prompts and
-metadata matching real production traffic.
+stored in JSONL files. Each trace file contains metadata matching real production traffic.
 
 .. code-block:: yaml
 
@@ -243,15 +242,41 @@ implements:
 - Session/request preparation from trace rows
 - Wrapping behavior for looping through traces
 
+Comparison table:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 20 20 40
+
+   * - Flavor
+     - Turns
+     - Prompt generation
+     - Best for
+     - Content modalities
+   * - ``claude_code``
+     - Multi-turn
+     - Synthetic (from length)
+     - Coding assistants, long-context chat, prefix caching
+     - Text
+   * - ``rag``
+     - Single-turn
+     - From trace (text col)
+     - RAG workloads, document caching, massive shared prefixes
+     - Text
+   * - ``mooncake_conv``
+     - Multi-turn
+     - Synthetic (from Hash IDs)
+     - Replaying privacy-safe conversation structures
+     - Text
+
 **claude_code** (``type: claude_code``)
     Context-cached coding assistant traces with these characteristics:
 
     - Multi-turn conversations with history accumulation
-    - Unique prompts generated via hashing for KV-cache diversity
+    - The first ``page_size`` tokens are guaranteed to be unique across sessions for KV-cache diversity
     - Wait times between turns preserved from trace
-    - Session prefix seeds for reproducible prompt generation
 
-    Required columns: ``session_id``, ``input_length``, ``output_length``
+    Required columns: ``session_id``, ``input_length``, ``new_input_length``, ``output_length``
 
     .. code-block:: yaml
 
@@ -279,10 +304,11 @@ implements:
 **mooncake_conv** (``type: mooncake_conv``)
     Mooncake conversational dataset traces:
 
-    - Multi-turn conversations with varying session lengths
-    - Direct prompt text from trace (no generation)
+    - Multi-turn conversations with hash-based prompt generation
+    - Uses ``hash_ids`` to reconstruct shared prefixes deterministically
+    - Privacy-safe (no real text in trace)
 
-    Required columns: ``session_id``, ``prompt_text``, ``output_length``
+    Required columns: ``session_id``, ``hash_ids``, ``new_input_length``, ``output_length``
 
 
 Wrap mode
