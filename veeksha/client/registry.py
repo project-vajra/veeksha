@@ -32,3 +32,11 @@ ClientRegistry.register(
         "OpenAICompletionsClient",
     ),
 )
+
+ClientRegistry.register(
+    ClientType.OPENAI_IMAGES,
+    _LazyLoader(
+        "veeksha.client.openai_images",
+        "OpenAIImagesClient",
+    ),
+)

@@ -169,9 +169,15 @@ def _run_benchmark(
 
     # get session generator
     model_name = benchmark_config.client.model
+    tokenizer_model_name = model_name
+
+    #For Image models, override tokenizer model if specified in benchmark config
+    if hasattr(benchmark_config.client, "tokenizer_model") and benchmark_config.client.tokenizer_model is not None:
+        tokenizer_model_name = benchmark_config.client.tokenizer_model
+
     tokenizer_provider = TokenizerProvider(
-        {ChannelModality.TEXT: build_hf_tokenizer_handle_from_model(model_name)},
-        model_name=model_name,
+        {ChannelModality.TEXT: build_hf_tokenizer_handle_from_model(tokenizer_model_name)},
+        model_name=tokenizer_model_name,
     )
     append_min_tokens_instruction = False
     if (

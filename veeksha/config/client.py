@@ -104,6 +104,7 @@ class OpenAICompletionsClientConfig(OpenAIChatCompletionsClientConfig):
         return ClientType.OPENAI_COMPLETIONS
 
 
+
 @frozen_dataclass
 class OpenAIRouterClientConfig(OpenAIChatCompletionsClientConfig):
     """OpenAI-compatible router client configuration.
@@ -133,3 +134,47 @@ class OpenAIRouterClientConfig(OpenAIChatCompletionsClientConfig):
     @classmethod
     def get_type(cls) -> ClientType:
         return ClientType.OPENAI_ROUTER
+
+
+@frozen_dataclass
+class OpenAIImagesClientConfig(BaseClientConfig):
+    """OpenAI-compatible Images client configuration.
+    `client.type: openai_images` uses `/images/generations`.
+
+    """
+
+    address_append_value: str = field(
+        default="images/generations",
+        metadata={"help": "The address append value for the LLM API."},
+    )
+
+    num_images: int = field(
+        default=1,
+        metadata={"help": "Number of images to generate per request."},
+    )
+
+    response_format: str = field(
+        default="b64_json",
+        metadata={"help": "The response format for the images API."},
+    )
+
+    size: str = field(
+        default="1024x1024",
+        metadata={"help": "The size of the generated images."},
+    )
+
+    stream: bool = field(
+        default=False,
+        metadata={"help": "Whether to stream the response."},
+    )
+
+    tokenizer_model: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Model to use for tokenization. If not specified, defaults to client.model."
+        },
+    )
+
+    @classmethod
+    def get_type(cls) -> ClientType:
+        return ClientType.OPENAI_IMAGES

@@ -77,6 +77,22 @@ class DecodeWindowConfig:
 
 
 # ---- Channel-specific performance configs ----
+def _default_slos() -> list[BaseSloConfig]:
+    return [
+        ConstantSloConfig(
+            metric="ttfc",
+            percentile=0.99,
+            value=0.5,
+            name="P99 TTFC",
+        ),
+        ConstantSloConfig(
+            metric="tbc",
+            percentile=0.9,
+            value=0.05,
+            name="P90 TBC",
+        ),
+    ]
+
 
 
 @frozen_dataclass
@@ -95,6 +111,13 @@ class TextChannelPerformanceConfig(BaseChannelPerformanceConfig):
         default=None,
         metadata={"help": "Decode window configuration (required if enabled)"},
     )
+    
+    slos: list[BaseSloConfig] = field(
+        default_factory=_default_slos,
+        metadata={
+            "help": f"List of SLO definitions to evaluate against request-level metrics. {SloType.help_str()}"
+        },
+    )
 
     @classmethod
     def get_type(cls) -> ChannelModality:
@@ -107,8 +130,20 @@ class TextChannelPerformanceConfig(BaseChannelPerformanceConfig):
             )
 
 
+@frozen_dataclass
 class ImageChannelPerformanceConfig(BaseChannelPerformanceConfig):
     """Image channel performance configuration"""
+
+    save_images: bool = field(
+        default=False, metadata={"help": "Save generated images to disk for analysis"}
+    )
+
+    slos: list[BaseSloConfig] = field(
+        default_factory=lambda: [],
+        metadata={
+            "help": f"List of SLO definitions to evaluate against request-level metrics. {SloType.help_str()}"
+        },
+    )
 
     @classmethod
     def get_type(cls) -> ChannelModality:
@@ -135,22 +170,6 @@ class VideoChannelPerformanceConfig(BaseChannelPerformanceConfig):
 
 # ---- Base evaluator config ----
 
-
-def _default_slos() -> list[BaseSloConfig]:
-    return [
-        ConstantSloConfig(
-            metric="ttfc",
-            percentile=0.99,
-            value=0.5,
-            name="P99 TTFC",
-        ),
-        ConstantSloConfig(
-            metric="tbc",
-            percentile=0.9,
-            value=0.05,
-            name="P90 TBC",
-        ),
-    ]
 
 
 @frozen_dataclass(allow_from_file=True)
