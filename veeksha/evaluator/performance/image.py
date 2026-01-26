@@ -268,7 +268,9 @@ class ImagePerformanceEvaluator:
             if response.channels.get(ChannelModality.IMAGE)
             else []
         )
-        self.images[metrics.request_id] = imgs
+
+        if self.channel_config and getattr(self.channel_config, "save_images", False):
+            self.images[metrics.request_id] = imgs
 
         # Extract and store lifecycle timestamps from response
         def normalize_ts(ts: Optional[float]) -> Optional[float]:
@@ -434,9 +436,17 @@ class ImagePerformanceEvaluator:
 
         for request_id, imgs in self.images.items():
             for idx, img in enumerate(imgs):
-                img_path = os.path.join(out_dir, f"request_{request_id}_img_{idx}.png")
-                with open(img_path, "wb") as f:
-                    f.write(img)
+                if isinstance(img, (bytes, bytearray)):
+
+                    img_path = os.path.join(
+                        out_dir, f"request_{request_id}_img_{idx}.png"
+                    )
+                    with open(img_path, "wb") as f:
+                        f.write(img)
+                else:
+                    logger.warning(
+                        f"Image for request {request_id}, index {idx} is not in bytes format. Skipping save."
+                    )
 
     def _plot_cdfs(self, output_dir: str) -> None:
         """Generate CDF plots for all metrics."""

@@ -258,16 +258,28 @@ class OpenAIImagesClient(OpenAIBaseClient):
         """Send a request to the OpenAI Images endpoint."""
 
         timeout = self.config.request_timeout
-        num_images = 1
-        size = "1024x1024"
-
+        num_images = self.config.num_images
+        size = self.config.size
+        quality = "auto"
         if (
             request.requested_output is not None
             and request.requested_output.image is not None
         ):
-            num_images = request.requested_output.image.num_images
-            size = request.requested_output.image.size
-
+            num_images = (
+                request.requested_output.image.num_images
+                if request.requested_output.image.num_images is not None
+                else num_images
+            )
+            size = (
+                request.requested_output.image.size
+                if request.requested_output.image.size is not None
+                else size
+            )
+            quality = (
+                request.requested_output.image.quality
+                if request.requested_output.image.quality is not None
+                else quality
+            )
         # image metrics
 
         error_msg: Optional[str] = None
@@ -288,9 +300,11 @@ class OpenAIImagesClient(OpenAIBaseClient):
             prompt, delta_prompt_len = self._build_message_content(request)
             body = {
                 "prompt": prompt,
+                "model": self.config.model,
                 "n": num_images,
                 "size": size,
                 "response_format": self.config.response_format,
+                "quality": quality,
             }
             body.update(self._get_sampling_params(request))
 

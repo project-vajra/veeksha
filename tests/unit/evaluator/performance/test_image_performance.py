@@ -43,7 +43,7 @@ class MockRequestContent:
 @pytest.fixture
 def evaluator() -> ImagePerformanceEvaluator:
     config = PerformanceEvaluatorConfig()
-    channel_config = ImageChannelPerformanceConfig()
+    channel_config = ImageChannelPerformanceConfig(save_images=True)
     return ImagePerformanceEvaluator(config, channel_config)
 
 
