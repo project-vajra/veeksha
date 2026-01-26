@@ -104,7 +104,6 @@ class OpenAICompletionsClientConfig(OpenAIChatCompletionsClientConfig):
         return ClientType.OPENAI_COMPLETIONS
 
 
-
 @frozen_dataclass
 class OpenAIRouterClientConfig(OpenAIChatCompletionsClientConfig):
     """OpenAI-compatible router client configuration.

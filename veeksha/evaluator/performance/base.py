@@ -152,7 +152,7 @@ class PerformanceEvaluator(BaseEvaluator):
                 self.start_time = dispatched_at
 
             # register with channel evaluators
-            #Input channels
+            # Input channels
             for channel, content in channels.items():
                 if self.should_evaluate_channel(channel):
                     evaluator = self._get_channel_evaluator(channel)
@@ -163,19 +163,22 @@ class PerformanceEvaluator(BaseEvaluator):
                         content=content,
                         requested_output=requested_output,
                     )
-            
+
             # Output channels
             if requested_output is not None:
                 output_channel_map = {
-                    'text': ChannelModality.TEXT,
-                    'image': ChannelModality.IMAGE,
-                    'audio': ChannelModality.AUDIO,
-                    'video': ChannelModality.VIDEO,
+                    "text": ChannelModality.TEXT,
+                    "image": ChannelModality.IMAGE,
+                    "audio": ChannelModality.AUDIO,
+                    "video": ChannelModality.VIDEO,
                 }
                 for attr_name, output_channel in output_channel_map.items():
                     output_spec = getattr(requested_output, attr_name, None)
                     if output_spec is not None:
-                        if output_channel not in channels and self.should_evaluate_channel(output_channel):
+                        if (
+                            output_channel not in channels
+                            and self.should_evaluate_channel(output_channel)
+                        ):
                             if output_channel in self._channel_evaluators:
                                 evaluator = self._get_channel_evaluator(output_channel)
                                 evaluator.register_request(
@@ -444,9 +447,9 @@ class PerformanceEvaluator(BaseEvaluator):
         for channel, evaluator in self._channel_evaluators.items():
             evaluator.save(output_dir)
             channel_config = self.config.get_channel_config(channel)
-            if channel_config and hasattr(channel_config, 'slos'):
+            if channel_config and hasattr(channel_config, "slos"):
                 slo_configs.extend(channel_config.slos)
-        
+
         # request-level metrics are persisted now
         evaluate_and_save_slos(slo_configs=slo_configs, metrics_dir=output_dir)
 

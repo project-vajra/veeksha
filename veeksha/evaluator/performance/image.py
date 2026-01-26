@@ -1,24 +1,22 @@
 import json
 import os
-
 import threading
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+
+import pandas as pd
 
 from veeksha.config.evaluator import (
     ImageChannelPerformanceConfig,
     PerformanceEvaluatorConfig,
 )
 from veeksha.evaluator.base import EvaluationResult
+from veeksha.evaluator.cdf_sketch import CDFSketch
 from veeksha.logger import init_logger
 from veeksha.types import ChannelModality
-from veeksha.evaluator.cdf_sketch import CDFSketch
-
-import numpy as np
-import pandas as pd
-
 
 logger = init_logger(__name__)
+
 
 @dataclass
 class ImageMetrics:
@@ -28,7 +26,7 @@ class ImageMetrics:
     session_id: int
     dispatched_at: float
     completed_at: float
-    num_prompt_tokens : int
+    num_prompt_tokens: int
     num_generated_images: int
     inter_chunk_times: List[float]
     is_stream: bool
@@ -39,21 +37,20 @@ class ImageMetrics:
     @property
     def end_to_end_latency(self) -> float:
         return sum(self.inter_chunk_times)
-    
-    #Latency per generated image
+
+    # Latency per generated image
     @property
     def latency_per_image(self) -> Optional[float]:
         if self.num_generated_images == 0:
             return None
         return self.end_to_end_latency / self.num_generated_images
-    
+
     @property
     def generation_rate(self) -> Optional[float]:
         """Images generated per second for this request."""
         if self.end_to_end_latency == 0:
             return None
         return self.num_generated_images / self.end_to_end_latency
-
 
 
 class ImagePerformanceEvaluator:
@@ -83,31 +80,32 @@ class ImagePerformanceEvaluator:
             {}
         )  # request_id -> dispatch info
 
-        #aggregated metrics
-        self.summaries: Dict[str,CDFSketch] = {
+        # aggregated metrics
+        self.summaries: Dict[str, CDFSketch] = {
             "num_prompt_tokens": CDFSketch(metric_name="num_prompt_tokens"),
             "num_generated_images": CDFSketch(metric_name="num_generated_images"),
-            "end_to_end_latency": CDFSketch(metric_name="end_to_end_latency",unit="s"),
-            "latency_per_image": CDFSketch(metric_name="latency_per_image",unit="s/image"),
-            "generation_rate": CDFSketch(metric_name="generation_rate",unit="images/s"),
+            "end_to_end_latency": CDFSketch(metric_name="end_to_end_latency", unit="s"),
+            "latency_per_image": CDFSketch(
+                metric_name="latency_per_image", unit="s/image"
+            ),
+            "generation_rate": CDFSketch(
+                metric_name="generation_rate", unit="images/s"
+            ),
             "session_size": CDFSketch(metric_name="Requests per session"),
-            "session_duration": CDFSketch(metric_name="Session duration",unit="s"),
-            "session_think_time": CDFSketch(metric_name="Session think time",unit="s"),
-
-
+            "session_duration": CDFSketch(metric_name="Session duration", unit="s"),
+            "session_think_time": CDFSketch(metric_name="Session think time", unit="s"),
         }
 
-        #request-level metrics
+        # request-level metrics
         self._request_level_summary_keys = {
             "num_prompt_tokens",
             "num_generated_images",
             "end_to_end_latency",
             "latency_per_image",
             "generation_rate",
-           
         }
-        self.request_dispatched_at : List[float] = []
-        self.completed_at : List[float] = []
+        self.request_dispatched_at: List[float] = []
+        self.completed_at: List[float] = []
         self.num_prompt_tokens: List[int] = []
         self.num_generated_images: List[int] = []
         self.num_requested_images: List[int] = []
@@ -119,14 +117,14 @@ class ImagePerformanceEvaluator:
         self.session_total_requests: List[Optional[int]] = []
         self.request_ids: List[int] = []
 
-        #Lifecycle timestamps
+        # Lifecycle timestamps
         self.scheduler_ready_at: List[Optional[float]] = []
         self.scheduler_dispatched_at: List[Optional[float]] = []
         self.client_picked_up_at: List[Optional[float]] = []
         self.client_completed_at: List[Optional[float]] = []
         self.result_processed_at: List[Optional[float]] = []
 
-        #Streaming
+        # Streaming
         self.is_stream: List[bool] = []
         self._request_rows_streamed: int = 0
         self._request_time_reference = self.benchmark_start_time
@@ -134,11 +132,8 @@ class ImagePerformanceEvaluator:
         # session tracking
         self._session_last_completion: Dict[int, float] = {}
 
-        #Image storage
-        self.images: Dict[int, List[Any]] = {}  
-    
-
-        
+        # Image storage
+        self.images: Dict[int, List[Any]] = {}
 
     def register_request(
         self,
@@ -152,20 +147,19 @@ class ImagePerformanceEvaluator:
         with self.lock:
             if self._request_time_reference == 0.0:
                 self._request_time_reference = dispatched_at
-            
+
             num_requested_images = 1
             if requested_output is not None and requested_output.image is not None:
                 num_requested_images = requested_output.image.num_images
-            
+
             self._pending_requests[request_id] = {
                 "session_id": session_id,
                 "dispatched_at": dispatched_at,
                 "num_requested_images": num_requested_images,
             }
-            logger.debug(f"Registered image request {request_id}, pending count: {len(self._pending_requests)}")
-    
-
-
+            logger.debug(
+                f"Registered image request {request_id}, pending count: {len(self._pending_requests)}"
+            )
 
     def record_request_completed(
         self,
@@ -176,10 +170,14 @@ class ImagePerformanceEvaluator:
     ) -> None:
         """Record that an image request completed."""
         with self.lock:
-            logger.debug(f"Completing image request {request_id}, pending count before: {len(self._pending_requests)}, pending IDs: {list(self._pending_requests.keys())}")
+            logger.debug(
+                f"Completing image request {request_id}, pending count before: {len(self._pending_requests)}, pending IDs: {list(self._pending_requests.keys())}"
+            )
             dispatch_info = self._pending_requests.pop(request_id, None)
             if dispatch_info is None:
-                logger.warning(f"Request {request_id} completed but was not registered. Current pending: {list(self._pending_requests.keys())}")
+                logger.warning(
+                    f"Request {request_id} completed but was not registered. Current pending: {list(self._pending_requests.keys())}"
+                )
                 return
 
             dispatched_at = dispatch_info["dispatched_at"]
@@ -193,7 +191,9 @@ class ImagePerformanceEvaluator:
                 num_generated_images = channel_metrics.get("num_output_images", 0)
                 inter_chunk_times = channel_metrics.get("inter_chunk_times", [])
                 is_stream = channel_metrics.get("is_stream", False)
-                num_delta_prompt_tokens = channel_metrics.get("num_delta_prompt_tokens", 0)
+                num_delta_prompt_tokens = channel_metrics.get(
+                    "num_delta_prompt_tokens", 0
+                )
             else:
                 num_prompt_tokens = 0
                 num_generated_images = 0
@@ -202,7 +202,7 @@ class ImagePerformanceEvaluator:
                 num_delta_prompt_tokens = None
             session_total_requests = getattr(response, "session_total_requests", None)
 
-            #Create metrics object
+            # Create metrics object
             metrics = ImageMetrics(
                 request_id=request_id,
                 session_id=session_id,
@@ -220,23 +220,23 @@ class ImagePerformanceEvaluator:
             prev_completion = self._session_last_completion.get(session_id)
             if prev_completion is not None:
                 think_time = dispatched_at - prev_completion
-                if think_time>=0:
+                if think_time >= 0:
                     self.summaries["session_think_time"].put(think_time)
             self._session_last_completion[session_id] = completed_at
 
-            #Update CDF sketches
+            # Update CDF sketches
             self._update_summaries(metrics)
 
-            #Store request-level metrics (including lifecycle timestamps from response)
+            # Store request-level metrics (including lifecycle timestamps from response)
             self._store_request_metrics(metrics, dispatched_at, response)
-    
+
     def _update_summaries(self, metrics: ImageMetrics) -> None:
         """Update aggregated CDF sketches with new metrics."""
         for metric_name in self._request_level_summary_keys:
             value = getattr(metrics, metric_name, None)
             if value is not None:
                 self.summaries[metric_name].put(value)
-    
+
     def _store_request_metrics(
         self,
         metrics: ImageMetrics,
@@ -244,9 +244,13 @@ class ImagePerformanceEvaluator:
         response: Any,
     ) -> None:
         """Store request-level metrics."""
-        normalized_dispatched_at = max(0.0, dispatched_at - self._request_time_reference)
+        normalized_dispatched_at = max(
+            0.0, dispatched_at - self._request_time_reference
+        )
         self.request_dispatched_at.append(normalized_dispatched_at)
-        self.completed_at.append(max(0.0,metrics.completed_at - self._request_time_reference))
+        self.completed_at.append(
+            max(0.0, metrics.completed_at - self._request_time_reference)
+        )
         self.num_prompt_tokens.append(metrics.num_prompt_tokens)
         self.num_generated_images.append(metrics.num_generated_images)
         self.num_requested_images.append(metrics.num_requested_images)
@@ -259,15 +263,19 @@ class ImagePerformanceEvaluator:
         self.session_total_requests.append(metrics.session_total_requests)
         self.request_ids.append(metrics.request_id)
 
-        imgs = response.channels.get(ChannelModality.IMAGE).content if response.channels.get(ChannelModality.IMAGE) else []
+        imgs = (
+            response.channels.get(ChannelModality.IMAGE).content
+            if response.channels.get(ChannelModality.IMAGE)
+            else []
+        )
         self.images[metrics.request_id] = imgs
 
-        #Extract and store lifecycle timestamps from response
+        # Extract and store lifecycle timestamps from response
         def normalize_ts(ts: Optional[float]) -> Optional[float]:
             if ts is None:
                 return None
             return max(0.0, ts - self._request_time_reference)
-        
+
         self.scheduler_ready_at.append(
             normalize_ts(getattr(response, "scheduler_ready_at", None))
         )
@@ -287,7 +295,6 @@ class ImagePerformanceEvaluator:
             normalize_ts(getattr(response, "result_processed_at", None))
         )
 
-
     def record_session_completed(
         self,
         session_id: int,
@@ -299,14 +306,14 @@ class ImagePerformanceEvaluator:
         with self.lock:
             self.summaries["session_size"].put(session_size)
 
-            #Session duration
+            # Session duration
             if first_dispatch_at is not None and last_completion_at is not None:
                 duration = max(0.0, last_completion_at - first_dispatch_at)
                 self.summaries["session_duration"].put(duration)
-            
+
             # Clean up session state
             self._session_last_completion.pop(session_id, None)
-    
+
     def get_summary(self) -> Dict[str, float]:
         """Get summary metrics from all CDF sketches."""
         perf_summary = {}
@@ -314,7 +321,6 @@ class ImagePerformanceEvaluator:
             perf_summary.update(cdf_sketch.get_summary())
 
         return perf_summary
-
 
     def finalize(self) -> EvaluationResult:
         """Finalize evaluation and return results."""
@@ -329,9 +335,6 @@ class ImagePerformanceEvaluator:
         """Return current metrics for streaming."""
         with self.lock:
             return self.get_summary()
-    
-
-
 
     def save(self, output_dir: str) -> None:
         """Save evaluation artifacts."""
@@ -350,11 +353,11 @@ class ImagePerformanceEvaluator:
             if rows:
                 self._append_request_level_rows(output_dir, rows)
                 self._request_rows_streamed += len(rows)
-            
+
             # Save current CDF summaries
             self._save_cdf_csvs(output_dir)
 
-    #Output saving methods 
+    # Output saving methods
     def _save_request_level_metrics(self, output_dir: str) -> None:
         """Save request-level metrics as JSONL."""
         path = os.path.join(output_dir, "request_level_metrics.jsonl")
@@ -363,7 +366,7 @@ class ImagePerformanceEvaluator:
             for row in rows:
                 f.write(json.dumps(row))
                 f.write("\n")
-    
+
     def _export_request_rows(self, start_index: int) -> List[Dict[str, Any]]:
         """Export request-level metrics as list of dicts."""
         rows = []
@@ -377,10 +380,22 @@ class ImagePerformanceEvaluator:
                 "num_prompt_tokens": self.num_prompt_tokens[i],
                 "num_generated_images": self.num_generated_images[i],
                 "num_requested_images": self.num_requested_images[i],
-                "num_delta_prompt_tokens": self.num_delta_prompt_tokens[i] if i < len(self.num_delta_prompt_tokens) else None,
+                "num_delta_prompt_tokens": (
+                    self.num_delta_prompt_tokens[i]
+                    if i < len(self.num_delta_prompt_tokens)
+                    else None
+                ),
                 "end_to_end_latency": round(self.end_to_end_latency[i], 5),
-                "latency_per_image": round(self.latency_per_image[i], 5) if self.latency_per_image[i] is not None else None,
-                "generation_rate": round(self.generation_rate[i], 5) if self.generation_rate[i] is not None else None,
+                "latency_per_image": (
+                    round(self.latency_per_image[i], 5)
+                    if self.latency_per_image[i] is not None
+                    else None
+                ),
+                "generation_rate": (
+                    round(self.generation_rate[i], 5)
+                    if self.generation_rate[i] is not None
+                    else None
+                ),
                 "session_total_requests": self.session_total_requests[i],
                 "scheduler_ready_at": self.scheduler_ready_at[i],
                 "scheduler_dispatched_at": self.scheduler_dispatched_at[i],
@@ -390,7 +405,7 @@ class ImagePerformanceEvaluator:
             }
             rows.append(row)
         return rows
-    
+
     def _append_request_level_rows(
         self, output_dir: str, rows: List[Dict[str, Any]]
     ) -> None:
@@ -400,13 +415,13 @@ class ImagePerformanceEvaluator:
             for row in rows:
                 f.write(json.dumps(row))
                 f.write("\n")
-    
+
     def _save_cdf_csvs(self, output_dir: str) -> None:
         """Save CDF data as CSV files."""
         for metric_name, cdf_sketch in self.summaries.items():
             df = cdf_sketch._to_df()
             df.to_csv(os.path.join(output_dir, f"{metric_name}.csv"), index=False)
-    
+
     def _save_images(self, output_dir: str) -> None:
         """Save generated images to output directory."""
 
@@ -421,11 +436,12 @@ class ImagePerformanceEvaluator:
                 img_path = os.path.join(out_dir, f"request_{request_id}_img_{idx}.png")
                 with open(img_path, "wb") as f:
                     f.write(img)
+
     def _plot_cdfs(self, output_dir: str) -> None:
         """Generate CDF plots for all metrics."""
         for metric_name, cdf_sketch in self.summaries.items():
             cdf_sketch.plot_cdf(output_dir, metric_name)
-    
+
     def _save_throughput_metrics(self, output_dir: str) -> None:
         """Save throughput metrics (non-streaming, E2E based only)."""
         # System-level throughput: total images / total time
@@ -435,7 +451,7 @@ class ImagePerformanceEvaluator:
             system_throughput = total_images / total_time if total_time > 0 else 0.0
         else:
             system_throughput = 0.0
-        
+
         metrics = {
             "system_throughput_images_per_sec": system_throughput,
             "total_images_generated": total_images,
@@ -443,7 +459,7 @@ class ImagePerformanceEvaluator:
         path = os.path.join(output_dir, "throughput_metrics.json")
         with open(path, "w") as f:
             json.dump(metrics, f, indent=2)
-    
+
     def _log_wandb_metrics(self, output_dir: str) -> None:
         try:
             from typing import Any, cast
@@ -476,7 +492,9 @@ class ImagePerformanceEvaluator:
                     throughput = json.load(f)
                 data = {
                     "Metric": ["System Throughput"],
-                    "Images/sec": [throughput.get("system_throughput_images_per_sec", 0.0)],
+                    "Images/sec": [
+                        throughput.get("system_throughput_images_per_sec", 0.0)
+                    ],
                 }
                 df = pd.DataFrame(data)
                 wandb.log(
@@ -489,7 +507,6 @@ class ImagePerformanceEvaluator:
                         )
                     }
                 )
-           
 
         except Exception as e:
             logger.warning(f"Failed to log WandB metrics: {e}")

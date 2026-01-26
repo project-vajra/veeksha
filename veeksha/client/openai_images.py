@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import time
 import base64
+import time
 from typing import TYPE_CHECKING, Any, List, Optional
 
 import httpx  # type: ignore
@@ -24,8 +24,9 @@ if TYPE_CHECKING:
 
 logger = init_logger(__name__)
 
+
 class OpenAIImagesClient(OpenAIBaseClient):
-    """ OpenAI-compatible Text to Image generation client.
+    """OpenAI-compatible Text to Image generation client.
     Endpoint: /v1/images/generations
     """
 
@@ -137,10 +138,9 @@ class OpenAIImagesClient(OpenAIBaseClient):
                 for block in content:
                     if isinstance(block, dict) and block.get("type") == "text":
                         prompt += block.get("text", "") + " "
-        
+
         prompt = prompt.strip()
         return prompt, text_token_count
-                        
 
     def _process_image_response(
         self,
@@ -216,16 +216,14 @@ class OpenAIImagesClient(OpenAIBaseClient):
                         yield json.loads(data_str)
                     except json.JSONDecodeError:
                         continue
-       
 
     def __build_image_response(
         self,
         success: bool,
-        imgs:List[Any],
+        imgs: List[Any],
         inter_chunk_times: List[float],
         num_total_prompt_tokens: int,
         delta_prompt_len: int,
-
     ) -> ChannelResponse:
         """Build the ChannelResponse for image data.
 
@@ -237,7 +235,7 @@ class OpenAIImagesClient(OpenAIBaseClient):
             delta_prompt_len: Change in prompt length.
         """
         metrics = {
-            "is_stream":self.is_stream,
+            "is_stream": self.is_stream,
             "inter_chunk_times": inter_chunk_times,
             "num_total_prompt_tokens": num_total_prompt_tokens,
             "num_output_images": len(imgs),
@@ -252,9 +250,8 @@ class OpenAIImagesClient(OpenAIBaseClient):
     async def send_request(
         self,
         request: Request,
-        session_id : int,
-        session_total_requests : int = 1,
-
+        session_id: int,
+        session_total_requests: int = 1,
     ) -> RequestResult:
         """Send a request to the OpenAI Images endpoint."""
 
@@ -267,34 +264,31 @@ class OpenAIImagesClient(OpenAIBaseClient):
             and request.requested_output.image is not None
         ):
             num_images = request.requested_output.image.num_images
-            size = request.requested_output.image.size 
-            
-        
-        #image metrics
-      
+            size = request.requested_output.image.size
+
+        # image metrics
+
         error_msg: Optional[str] = None
         error_code: Optional[int] = None
         chunks_received = 0
-        
+
         # multimodal response data
         image_data: Optional[Any] = None
         audio_data: Optional[Any] = None
         video_data: Optional[Any] = None
         imgs: List[Any] = []
 
-        
         prompt = ""
         start_time = time.monotonic()
         completed_at = time.monotonic()
         delta_prompt_len = 0
         try:
-            prompt,delta_prompt_len = self._build_message_content(request)
+            prompt, delta_prompt_len = self._build_message_content(request)
             body = {
                 "prompt": prompt,
                 "n": num_images,
                 "size": size,
                 "response_format": self.config.response_format,
-
             }
             body.update(self._get_sampling_params(request))
 
@@ -325,7 +319,7 @@ class OpenAIImagesClient(OpenAIBaseClient):
                     elif img.get("url"):
                         # Handle URL format if needed
                         imgs.append(img["url"])
-                    
+
         except httpx.HTTPStatusError as e:
             error_code = e.response.status_code if e.response else 500
             error_msg = error_msg or str(e)
@@ -369,9 +363,3 @@ class OpenAIImagesClient(OpenAIBaseClient):
             error_msg=error_msg,
             client_completed_at=completed_at,
         )
-                    
-            
-
-
-
-        

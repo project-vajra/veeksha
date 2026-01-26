@@ -94,7 +94,6 @@ def _default_slos() -> list[BaseSloConfig]:
     ]
 
 
-
 @frozen_dataclass
 class BaseChannelPerformanceConfig(BasePolyConfig):
     """Base config for channel-specific performance"""
@@ -111,7 +110,7 @@ class TextChannelPerformanceConfig(BaseChannelPerformanceConfig):
         default=None,
         metadata={"help": "Decode window configuration (required if enabled)"},
     )
-    
+
     slos: list[BaseSloConfig] = field(
         default_factory=_default_slos,
         metadata={
@@ -169,7 +168,6 @@ class VideoChannelPerformanceConfig(BaseChannelPerformanceConfig):
 
 
 # ---- Base evaluator config ----
-
 
 
 @frozen_dataclass(allow_from_file=True)
