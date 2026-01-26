@@ -174,9 +174,9 @@ def _run_benchmark(
     # For Image models, override tokenizer model if specified in benchmark config
     if (
         hasattr(benchmark_config.client, "tokenizer_model")
-        and benchmark_config.client.tokenizer_model is not None
+        and benchmark_config.client.tokenizer_model is not None  # type: ignore[attr-defined]
     ):
-        tokenizer_model_name = benchmark_config.client.tokenizer_model
+        tokenizer_model_name = benchmark_config.client.tokenizer_model  # type: ignore[attr-defined]
 
     tokenizer_provider = TokenizerProvider(
         {

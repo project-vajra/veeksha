@@ -31,8 +31,8 @@ class ImageMetrics:
     inter_chunk_times: List[float]
     is_stream: bool
     num_requested_images: int
+    num_delta_prompt_tokens: int
     session_total_requests: Optional[int] = None
-    num_delta_prompt_tokens: Optional[int] = None
 
     @property
     def end_to_end_latency(self) -> float:
@@ -199,7 +199,7 @@ class ImagePerformanceEvaluator:
                 num_generated_images = 0
                 inter_chunk_times = []
                 is_stream = False
-                num_delta_prompt_tokens = None
+                num_delta_prompt_tokens = 0
             session_total_requests = getattr(response, "session_total_requests", None)
 
             # Create metrics object
@@ -387,14 +387,18 @@ class ImagePerformanceEvaluator:
                     if i < len(self.num_delta_prompt_tokens)
                     else None
                 ),
-                "end_to_end_latency": round(self.end_to_end_latency[i], 5),
+                "end_to_end_latency": (
+                    round(self.end_to_end_latency[i], 5)
+                    if self.end_to_end_latency[i] is not None  # type: ignore[arg-type]
+                    else None
+                ),
                 "latency_per_image": (
-                    round(self.latency_per_image[i], 5)
+                    round(self.latency_per_image[i], 5)  # type: ignore[arg-type]
                     if self.latency_per_image[i] is not None
                     else None
                 ),
                 "generation_rate": (
-                    round(self.generation_rate[i], 5)
+                    round(self.generation_rate[i], 5)  # type: ignore[arg-type]
                     if self.generation_rate[i] is not None
                     else None
                 ),

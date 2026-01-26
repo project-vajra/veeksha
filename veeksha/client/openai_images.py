@@ -45,7 +45,7 @@ class OpenAIImagesClient(OpenAIBaseClient):
         self.image_endpoint_addr = str(self.api_base) + str(
             self.config.address_append_value
         )
-        self.is_stream = self.config.stream
+        self.is_stream = self.config.stream  # type: ignore[attr-defined]
 
     def _build_text_content_block(
         self, text_content: TextChannelRequestContent
@@ -258,8 +258,8 @@ class OpenAIImagesClient(OpenAIBaseClient):
         """Send a request to the OpenAI Images endpoint."""
 
         timeout = self.config.request_timeout
-        num_images = self.config.num_images
-        size = self.config.size
+        num_images = self.config.num_images  # type: ignore[attr-defined]
+        size = self.config.size  # type: ignore[attr-defined]
         quality = "auto"
         if (
             request.requested_output is not None
@@ -303,7 +303,7 @@ class OpenAIImagesClient(OpenAIBaseClient):
                 "model": self.config.model,
                 "n": num_images,
                 "size": size,
-                "response_format": self.config.response_format,
+                "response_format": self.config.response_format,  # type: ignore[attr-defined]
                 "quality": quality,
             }
             body.update(self._get_sampling_params(request))
