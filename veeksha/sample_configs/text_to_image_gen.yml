@@ -9,7 +9,7 @@ client:
   tokenizer_model: Qwen/Qwen2.5-3B-Instruct
   request_timeout: 600
 
-# Traffic pattern: 1 sessions per second
+# Traffic pattern: 1 session per second
 traffic_scheduler:
   type: rate
   interval_generator:
@@ -38,10 +38,9 @@ session_generator:
 # Stop conditions
 runtime:
   benchmark_timeout: 60     # Run for 60 seconds
-  max_sessions: 5        # No limit on sessions
+  max_sessions: 5           # Limit to 5 sessions
 
 # Enable metrics collection
 evaluators:
   - type: performance
     target_channels: ["image"]
-    

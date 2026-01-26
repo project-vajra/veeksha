@@ -254,14 +254,14 @@ class ImagePerformanceEvaluator:
         self.num_prompt_tokens.append(metrics.num_prompt_tokens)
         self.num_generated_images.append(metrics.num_generated_images)
         self.num_requested_images.append(metrics.num_requested_images)
-        if metrics.num_delta_prompt_tokens is not None:
-            self.num_delta_prompt_tokens.append(metrics.num_delta_prompt_tokens)
+        self.num_delta_prompt_tokens.append(metrics.num_delta_prompt_tokens)
         self.end_to_end_latency.append(metrics.end_to_end_latency)
         self.latency_per_image.append(metrics.latency_per_image)
         self.generation_rate.append(metrics.generation_rate)
         self.session_ids.append(metrics.session_id)
         self.session_total_requests.append(metrics.session_total_requests)
         self.request_ids.append(metrics.request_id)
+        self.is_stream.append(metrics.is_stream)
 
         imgs = (
             response.channels.get(ChannelModality.IMAGE).content
@@ -402,6 +402,7 @@ class ImagePerformanceEvaluator:
                 "client_picked_up_at": self.client_picked_up_at[i],
                 "client_completed_at": self.client_completed_at[i],
                 "result_processed_at": self.result_processed_at[i],
+                "is_stream": self.is_stream[i],
             }
             rows.append(row)
         return rows

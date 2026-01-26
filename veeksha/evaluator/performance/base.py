@@ -447,7 +447,7 @@ class PerformanceEvaluator(BaseEvaluator):
         for channel, evaluator in self._channel_evaluators.items():
             evaluator.save(output_dir)
             channel_config = self.config.get_channel_config(channel)
-            if channel_config and hasattr(channel_config, "slos"):
+            if channel_config and getattr(channel_config, "slos", None):
                 slo_configs.extend(channel_config.slos)
 
         # request-level metrics are persisted now

@@ -35,14 +35,16 @@ class OpenAIImagesClient(OpenAIBaseClient):
         config: OpenAIImagesClientConfig,
         tokenizer_provider: TokenizerProvider,
     ) -> None:
-        """Initialize the OpenAI Chat client.
+        """Initialize the OpenAI Images client.
 
         Args:
             config: Client configuration with model, timeout, etc.
             tokenizer_provider: Provider for tokenizers per modality.
         """
         super().__init__(config=config, tokenizer_provider=tokenizer_provider)
-        self.chat_address = str(self.api_base) + str(self.config.address_append_value)
+        self.image_endpoint_addr = str(self.api_base) + str(
+            self.config.address_append_value
+        )
         self.is_stream = self.config.stream
 
     def _build_text_content_block(
@@ -79,7 +81,7 @@ class OpenAIImagesClient(OpenAIBaseClient):
         """Build a video content block for multimodal messages."""
         return {"type": "video_url", "video_url": {"url": video_content.input_video}}
 
-    def _build_message_content(self, request: Request) -> tuple[list, int]:
+    def _build_message_content(self, request: Request) -> tuple[str, int]:
         """Build multimodal message content from request channels.
 
         Constructs a list of content blocks in OpenAI multimodal format.
@@ -88,7 +90,7 @@ class OpenAIImagesClient(OpenAIBaseClient):
             request: Request with channels dict mapping modalities to content.
 
         Returns:
-            Tuple of (content_blocks_list, text_token_count).
+            Tuple of (prompt_string, text_token_count).
         """
         content_blocks: List[dict] = []
         text_token_count = 0
@@ -297,12 +299,11 @@ class OpenAIImagesClient(OpenAIBaseClient):
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             }
-            print(f"Sending request {request.id} of session {session_id}")
             client = self._get_client()
             if not self.is_stream:
                 # Non-streaming request
                 response = await client.post(
-                    self.chat_address,
+                    self.image_endpoint_addr,
                     json=body,
                     headers=headers,
                     timeout=timeout,
@@ -319,7 +320,10 @@ class OpenAIImagesClient(OpenAIBaseClient):
                     elif img.get("url"):
                         # Handle URL format if needed
                         imgs.append(img["url"])
-
+            else:
+                raise NotImplementedError(
+                    "Streaming not implemented for image generation yet."
+                )
         except httpx.HTTPStatusError as e:
             error_code = e.response.status_code if e.response else 500
             error_msg = error_msg or str(e)

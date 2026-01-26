@@ -94,8 +94,8 @@ def test_non_streaming_metrics(evaluator: ImagePerformanceEvaluator) -> None:
     # Generation rate = 2 images / 2.0s = 1.0 images/s
     assert evaluator.generation_rate[idx] == pytest.approx(1.0)
     
-    # Verify not streaming
-    assert not evaluator.is_stream  # This is a list, but we didn't append to it yet - should be empty
+    # Check is_stream flag
+    assert evaluator.is_stream[idx] is False
     
     # Check images were stored
     assert request_id in evaluator.images
