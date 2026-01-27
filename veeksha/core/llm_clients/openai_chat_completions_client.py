@@ -10,13 +10,10 @@ import numpy as np
 from revati.client import ClientType  # type: ignore
 from revati.client.helper import (
     create_thread_local_revati_client,
-    get_send_request_cool_down_time_ms,
     get_virtual_time,
     is_revati_enabled,
     rejoin_barrier,
-    spin_sleep,
     yield_barrier,
-    disable_time_jump,
 )
 
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
@@ -146,10 +143,6 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
         try:
             async with session.post(address, json=body, headers=headers) as response:
                 response.raise_for_status()
-
-                # Initialize the most recent received token time to the time the request was dispatched
-                # This is done to remove the request dispatch and accept time from ttft calculation
-                disable_time_jump(get_send_request_cool_down_time_ms() * 1e-3)
                 most_recent_received_token_time = get_virtual_time()
 
                 async for data in self._process_stream(response):

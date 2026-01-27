@@ -10,7 +10,7 @@ from typing import List, Optional
 from tqdm import tqdm  # type: ignore
 
 from revati.client import ClientType  # type: ignore
-from revati.client.helper import create_thread_local_revati_client, get_virtual_time, advance_time, is_revati_enabled
+from revati.client.helper import create_thread_local_revati_client, get_virtual_time, advance_time, is_revati_enabled, wait_for_clock_update, yield_barrier, rejoin_barrier
 
 
 from veeksha.core.dispatch_scheduler import DispatchScheduler
@@ -202,6 +202,9 @@ def dispatch_requests(
         ready = scheduler.pop_ready()
         if ready is not None:
             _dispatch_ready_request(ready)
+            yield_barrier()
+            wait_for_clock_update(40) # in ms
+            rejoin_barrier()
             continue
 
         time_until = scheduler.time_until_next_ready()
