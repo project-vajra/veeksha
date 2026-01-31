@@ -28,6 +28,7 @@ from veeksha.config.utils import (
     to_snake_case,
 )
 from veeksha.logger import init_logger
+from veeksha.version import __version__
 
 logger = init_logger(__name__)
 
@@ -612,6 +613,12 @@ def create_from_cli_args(cls) -> Any:
         List[cls]: A list of instances of the dataclass, one for each combination of configs created.
     """
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+        help="Show version number and exit.",
+    )
     all_default_values = {}
     argnames_to_field_names = {}
 
