@@ -7,13 +7,14 @@ from typing import Dict, Optional, Tuple
 import aiohttp  # type: ignore
 import numpy as np
 
-from revati.client import ClientType  # type: ignore
+from revati.client import ClientType, ClientGroup  # type: ignore
 from revati.client.helper import (
     create_thread_local_revati_client,
     get_virtual_time,
     is_revati_enabled,
     rejoin_barrier,
     yield_barrier,
+    group_rejoin_barrier,
 )
 
 from veeksha.core.llm_clients.base_llm_client import BaseLLMClient
@@ -48,7 +49,7 @@ class OpenAIChatCompletionsClient(BaseLLMClient, StreamingMixin):
             )
 
         if is_revati_enabled():
-            create_thread_local_revati_client(f"veeksha-client-{str(uuid.uuid4())[:8]}", ClientType.OBSERVER)
+            create_thread_local_revati_client(f"veeksha-client-{str(uuid.uuid4())[:8]}", ClientType.OBSERVER, ClientGroup.DISPATCHER_GROUP)
 
         self.start_time = get_virtual_time()
 

@@ -9,8 +9,10 @@ from typing import List, Optional
 
 from tqdm import tqdm  # type: ignore
 
-from revati.client import ClientType  # type: ignore
-from revati.client.helper import create_thread_local_revati_client, get_virtual_time, advance_time, is_revati_enabled, wait_for_clock_update, yield_barrier, rejoin_barrier
+from revati.client import ClientType, ClientGroup  # type: ignore
+from revati.client.helper import create_thread_local_revati_client, get_virtual_time, \
+        advance_time, is_revati_enabled, wait_for_clock_update, yield_barrier, \
+        rejoin_barrier, get_sleep_behavior, group_rejoin_barrier
 
 
 from veeksha.core.dispatch_scheduler import DispatchScheduler
@@ -72,7 +74,7 @@ def dispatch_requests(
     total_scheduled = 0  # monotonic count of total requests added to scheduler
 
     if is_revati_enabled():
-        create_thread_local_revati_client(f"veeksha-dispatcher-{str(uuid.uuid4())[:8]}", ClientType.ACTOR)
+        create_thread_local_revati_client(f"veeksha-dispatcher-{str(uuid.uuid4())[:8]}", ClientType.ACTOR, ClientGroup.DISPATCHER_GROUP)
 
     prefetch_rate_window_start = get_virtual_time()
     next_prefetch_rate_log_time = get_virtual_time() + PREFETCH_RATE_LOG_INTERVAL_S
@@ -202,9 +204,7 @@ def dispatch_requests(
         ready = scheduler.pop_ready()
         if ready is not None:
             _dispatch_ready_request(ready)
-            yield_barrier()
-            wait_for_clock_update(40) # in ms
-            rejoin_barrier()
+            group_rejoin_barrier(ClientGroup.WORKER_GROUP)
             continue
 
         time_until = scheduler.time_until_next_ready()
