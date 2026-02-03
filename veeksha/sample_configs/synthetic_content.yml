@@ -41,7 +41,6 @@ client:
   api_base: http://localhost:30002/v1
   max_tokens_param: max_completion_tokens
   min_tokens_param: min_tokens
-  use_min_tokens_prompt_fallback: False
 
 runtime:
   max_sessions: 10
