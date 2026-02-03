@@ -77,7 +77,7 @@ def _init_output_dir(benchmark_config: BenchmarkConfig) -> str:
         config_bytes = config_file.read()
     config_hash = hashlib.sha1(config_bytes).hexdigest()[:8]
 
-    timestamp_prefix = datetime.utcnow().strftime("%d:%m:%Y-%H:%M:%S")
+    timestamp_prefix = datetime.utcnow().strftime("%d_%m_%Y-%H_%M_%S")
     base_dir_name = f"{timestamp_prefix}-{config_hash}"
     resolved_output_dir = os.path.join(base_output_dir, base_dir_name)
 

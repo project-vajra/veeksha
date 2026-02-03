@@ -349,6 +349,7 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
                 "model": self.config.model,
                 "messages": messages,
                 "stream": True,
+                "ignore_eos": self.config.ignore_eos,  # type: ignore
             }
             body.update(self._get_sampling_params(request))
 

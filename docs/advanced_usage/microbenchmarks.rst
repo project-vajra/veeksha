@@ -71,6 +71,12 @@ Isolate prefill by using fixed-length prompts, minimal outputs, and no batching:
       - type: performance
         target_channels: ["text"]
         stream_metrics: false
+        slos:
+          - name: "P99 TTFC"
+            metric: ttfc
+            percentile: 0.99
+            value: 0.5
+            type: constant
 
 The **stair length generator** creates requests with increasing prompt lengths:
 
@@ -141,6 +147,12 @@ Isolate decode by using fixed prompts, variable outputs, and controlled batching
             selection_strategy: all
             anchor_to_client_pickup: true
             require_streaming: true
+        slos:
+          - name: "P90 TBC"
+            metric: tbc
+            percentile: 0.90
+            value: 0.05
+            type: constant
 
 
 Decode window analysis
@@ -233,5 +245,11 @@ Measure decode throughput across batch sizes:
           decode_window_enabled: true
           decode_window_config:
             min_active_requests: "max_observed"
+        slos:
+          - name: "P90 TBC"
+            metric: tbc
+            percentile: 0.90
+            value: 0.05
+            type: constant
 
 Run and compare ``throughput_metrics.json`` across runs.

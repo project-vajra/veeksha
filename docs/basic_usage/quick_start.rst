@@ -55,6 +55,17 @@ Create a file named ``my_benchmark.veeksha.yml``:
     evaluators:
       - type: performance
         target_channels: ["text"]
+        slos:
+          - name: "P99 TTFC"
+            metric: ttfc
+            percentile: 0.99
+            value: 0.5
+            type: constant
+          - name: "P90 TBC"
+            metric: tbc
+            percentile: 0.90
+            value: 0.05
+            type: constant
 
 .. tip::
 

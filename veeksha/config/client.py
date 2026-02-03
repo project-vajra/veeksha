@@ -60,16 +60,22 @@ class OpenAIChatCompletionsClientConfig(BaseClientConfig):
         default="max_completion_tokens",
         metadata={"help": "Server parameter name for maximum tokens."},
     )
-    min_tokens_param: Optional[str] = field(
-        default="min_tokens",
+    ignore_eos: bool = field(
+        default=True,
         metadata={
-            "help": "Server parameter name for minimum tokens. If your server supports min tokens control via a parameter, specify its name here."
+            "help": "Sets the sampling param ignore_eos for requests to reach the desired max_tokens."
+        },
+    )
+    min_tokens_param: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Server parameter name for minimum tokens, usually set if ignore_eos is not available or does no offer enough control over output tokens (see health_check_results.txt). Note: a wrong value might cause requests to fail."
         },
     )
     use_min_tokens_prompt_fallback: bool = field(
         default=False,
         metadata={
-            "help": "If True, appends instructions to the prompt to generate at least N tokens (e.g. 'Generate at least 20 tokens'). Useful if the server does not support a min tokens parameter. Only available on synthetic content generation."
+            "help": "If True, appends instructions to the prompt to generate at least N tokens (e.g. 'Generate at least 20 tokens'). Useful if the server does not support ignore_eos or min_tokens. Only available on synthetic content generation."
         },
     )
 
