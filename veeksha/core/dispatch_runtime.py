@@ -204,7 +204,6 @@ def dispatch_requests(
         ready = scheduler.pop_ready()
         if ready is not None:
             _dispatch_ready_request(ready)
-            group_rejoin_barrier(ClientGroup.WORKER_GROUP)
             continue
 
         time_until = scheduler.time_until_next_ready()
