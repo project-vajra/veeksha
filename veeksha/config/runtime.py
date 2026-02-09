@@ -33,3 +33,10 @@ class RuntimeConfig:
             "help": "Number of async worker threads for making concurrent requests."
         },
     )
+    pregenerate_sessions: bool = field(
+        default=False,
+        metadata={
+            "help": "Pre-generate all sessions before starting benchmark timer. "
+            "Requires max_sessions > 0."
+        },
+    )
