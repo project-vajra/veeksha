@@ -32,7 +32,7 @@ class TextChannelGeneratorConfig(BaseChannelGeneratorConfig):
         },
     )
     shared_prefix_probability: float = field(
-        default=1.0,
+        default=0.0,
         metadata={
             "help": "Probability that a root request uses shared prefix (0.0-1.0)"
         },

@@ -342,6 +342,10 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
         delta_prompt_len = 0
         messages = []
 
+        # Debug: capture raw SSE events for diagnosis of empty responses
+        _debug_raw_events: List[dict] = []
+        _DEBUG_MAX_EVENTS = 10
+
         try:
             messages, delta_prompt_len = self._build_message_content(request)
 
@@ -392,6 +396,11 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
 
                 async for data in self._process_stream(response):
                     receive_time = time.monotonic()
+
+                    # Debug: capture first N raw SSE events for diagnosis
+                    if len(_debug_raw_events) < _DEBUG_MAX_EVENTS:
+                        _debug_raw_events.append(data)
+
                     if "error" in data:
                         err = data.get("error") or {}
                         error_msg = err.get("message", "Unknown error")
@@ -480,6 +489,19 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
             audio_data=audio_data,
             video_data=video_data,
         )
+
+        # Debug: Log anomalous empty response (success=True but no generated text)
+        if success and not generated_text:
+            logger.warning(
+                f"[EMPTY_RESPONSE_DEBUG] request_id={request.id} "
+                f"session_id={session_id} "
+                f"chunks_received={chunks_received} "
+                f"max_tokens_limit={max_tokens_limit} "
+                f"delta_prompt_len={delta_prompt_len} "
+                f"num_total_prompt_tokens={num_total_prompt_tokens} "
+                f"raw_events_count={len(_debug_raw_events)} "
+                f"first_raw_events={_debug_raw_events[:3]}"  # First 3 events
+            )
 
         return RequestResult(
             request_id=request.id,

@@ -47,6 +47,7 @@ def _run_main_loop(
     runtime_config,
     trace_recorder=None,
     benchmark_start_time: Optional[float] = None,
+    pregenerated_sessions: Optional[list] = None,
 ) -> None:
     """Run the main benchmark loop with all workers."""
     logger.info("Starting main loop")
@@ -77,6 +78,7 @@ def _run_main_loop(
             "session_generator": session_generator,
             "generator_lock": generator_lock,
             "session_counter": session_counter,
+            "pregenerated_sessions": pregenerated_sessions,
         },
         pool_size=1,
     )
@@ -226,6 +228,29 @@ def _run_benchmark(
     # some session generators might define a warmup phase
     maybe_run_warmup(session_generator, client)
 
+    # Pre-generate all sessions if requested (before starting timer)
+    pregenerated_sessions = None
+    if (
+        benchmark_config.runtime.pregenerate_sessions
+        and benchmark_config.runtime.max_sessions > 0
+    ):
+        logger.info(
+            "Pre-generating %d sessions...", benchmark_config.runtime.max_sessions
+        )
+        pregenerated_sessions = []
+        for i in range(benchmark_config.runtime.max_sessions):
+            try:
+                session = session_generator.generate_session()
+                pregenerated_sessions.append(session)
+            except StopIteration:
+                logger.warning(
+                    "Session generator exhausted at %d sessions", len(pregenerated_sessions)
+                )
+                break
+        logger.info(
+            "Pre-generation complete: %d sessions ready", len(pregenerated_sessions)
+        )
+
     benchmark_start_time = time.monotonic()
     traffic_scheduler.reset_reference_time()
 
@@ -260,6 +285,7 @@ def _run_benchmark(
             runtime_config=benchmark_config.runtime,
             trace_recorder=trace_recorder,
             benchmark_start_time=benchmark_start_time,
+            pregenerated_sessions=pregenerated_sessions,
         )
     finally:
         if trace_recorder:

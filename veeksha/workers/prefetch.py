@@ -2,7 +2,7 @@
 
 import threading
 import time
-from typing import Optional
+from typing import List, Optional
 
 from veeksha.core.context import WorkerContext
 from veeksha.core.session import Session
@@ -52,6 +52,7 @@ class PrefetchWorker:
         generator_lock: threading.Lock,
         worker_context: WorkerContext,
         session_counter: SharedSessionCounter,
+        pregenerated_sessions: Optional[List[Session]] = None,
     ):
         """Initialize the prefetch worker.
 
@@ -61,12 +62,15 @@ class PrefetchWorker:
             generator_lock: Lock protecting the session generator
             worker_context: Worker context with stop event
             session_counter: Shared counter for tracking sessions across workers
+            pregenerated_sessions: Optional list of pre-generated sessions to use
         """
         self.traffic_scheduler = traffic_scheduler
         self.session_generator = session_generator
         self.generator_lock = generator_lock
         self.worker_context = worker_context
         self.session_counter = session_counter
+        self._pregenerated_sessions = pregenerated_sessions
+        self._pregenerated_index = 0
 
     def _get_poll_interval(self) -> float:
         """Calculate poll interval based on runtime duration.
@@ -83,6 +87,17 @@ class PrefetchWorker:
 
     def _generate_session(self) -> Optional[Session]:
         """Generate next session in a thread-safe manner."""
+        # If we have pre-generated sessions, use those
+        if self._pregenerated_sessions is not None:
+            with self.generator_lock:
+                if self._pregenerated_index >= len(self._pregenerated_sessions):
+                    return None
+                session = self._pregenerated_sessions[self._pregenerated_index]
+                self._pregenerated_index += 1
+                self.session_counter._count += 1
+                return session
+
+        # Otherwise generate on-the-fly
         while not self.worker_context.stop_event.is_set():
             with self.generator_lock:
                 if not self.session_counter.try_increment():

@@ -97,9 +97,16 @@ def gen_prompt_from_corpus(
         return effective_suffix
 
     rng.shuffle(token_lines)
-    candidate_ids = [tok for line in token_lines for tok in line]
-    needed = int(target_body_len * 1.2) + 50
-    candidate_ids = candidate_ids[: needed + 100]
+    base_tokens = [tok for line in token_lines for tok in line]
+
+    # If corpus is smaller than needed, tile it efficiently to reach target
+    needed = int(target_body_len * 1.2) + 50 + 100
+    if len(base_tokens) < needed and base_tokens:
+        # Calculate how many full copies we need, plus one extra for safety
+        repeats = (needed // len(base_tokens)) + 2
+        candidate_ids = (base_tokens * repeats)[:needed]
+    else:
+        candidate_ids = base_tokens[:needed]
 
     # 2. binary search for best token count
     low, high, best_k = 0, len(candidate_ids), len(candidate_ids)
