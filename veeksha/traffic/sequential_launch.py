@@ -11,7 +11,7 @@ from __future__ import annotations
 import heapq
 import threading
 import time
-from typing import Dict, List, Mapping, Optional, Set, Tuple
+from typing import Mapping, Optional
 
 from veeksha.config.traffic import SequentialLaunchTrafficConfig
 from veeksha.core.request import Request
@@ -40,9 +40,9 @@ class SequentialLaunchTrafficScheduler(BaseTrafficScheduler):
         super().__init__(config, seed_manager)
         self._condition = threading.Condition()
         self._start_monotonic = time.monotonic()
-        self._ready_queue: List[ScheduledItem] = []
-        self._sessions: Dict[int, ScheduledSessionState] = {}
-        self._request_to_session: Dict[int, Tuple[int, int]] = {}
+        self._ready_queue: list[ScheduledItem] = []
+        self._sessions: dict[int, ScheduledSessionState] = {}
+        self._request_to_session: dict[int, tuple[int, int]] = {}
         self._dispatch_tracker = DispatchTracker(ordering=config.ordering)
         self._next_ticket: int = 0
 
@@ -92,7 +92,7 @@ class SequentialLaunchTrafficScheduler(BaseTrafficScheduler):
 
     def wait_for_ready(
         self, timeout: float = 0.001
-    ) -> Optional[Tuple[Request, int, int]]:
+    ) -> Optional[tuple[Request, int, int]]:
         with self._condition:
             result = self._try_pop_ready_locked()
             if result is not None:
@@ -107,7 +107,7 @@ class SequentialLaunchTrafficScheduler(BaseTrafficScheduler):
             self._condition.wait(timeout=wait_time)
             return self._try_pop_ready_locked()
 
-    def _try_pop_ready_locked(self) -> Optional[Tuple[Request, int, int]]:
+    def _try_pop_ready_locked(self) -> Optional[tuple[Request, int, int]]:
         if not self._ready_queue:
             return None
 
@@ -124,7 +124,7 @@ class SequentialLaunchTrafficScheduler(BaseTrafficScheduler):
             return (request, session_id, session_size)
         return None
 
-    def pop_ready(self) -> Optional[Tuple[Request, int, int]]:
+    def pop_ready(self) -> Optional[tuple[Request, int, int]]:
         with self._condition:
             return self._try_pop_ready_locked()
 
@@ -204,7 +204,7 @@ class SequentialLaunchTrafficScheduler(BaseTrafficScheduler):
         with self._condition:
             return bool(self._sessions or self._ready_queue)
 
-    def get_in_flight_request_ids(self) -> Set[int]:
+    def get_in_flight_request_ids(self) -> set[int]:
         with self._condition:
             return set(self._request_to_session.keys())
 

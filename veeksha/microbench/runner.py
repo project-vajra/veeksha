@@ -12,7 +12,7 @@ from rich.table import Table
 from veeksha.cli.benchmarks import BenchmarkCliRunner
 from veeksha.logger import init_logger
 from veeksha.microbench.config import MicrobenchmarkConfig
-from veeksha.microbench.expand import expand
+from veeksha.microbench.config_builder import build_benchmark_configs
 from veeksha.microbench.results import print_results_table
 from veeksha.microbench.validate import validate
 
@@ -85,14 +85,14 @@ def _print_validation_failure(result) -> None:
             style_tag = "[red bold]FAIL[/red bold]"
         table.add_row(style_tag, name, detail)
 
-    n_pass = sum(1 for s, _, _ in result.checks if s == "PASS")
-    n_warn = sum(1 for s, _, _ in result.checks if s == "WARN")
-    n_fail = sum(1 for s, _, _ in result.checks if s == "FAIL")
+    num_passed = sum(1 for status, _, _ in result.checks if status == "PASS")
+    num_warnings = sum(1 for status, _, _ in result.checks if status == "WARN")
+    num_failures = sum(1 for status, _, _ in result.checks if status == "FAIL")
 
     console.print()
     console.print(table)
     console.print(
-        f"  [green]{n_pass} passed[/green], [yellow]{n_warn} warnings[/yellow], [red]{n_fail} failures[/red]"
+        f"  [green]{num_passed} passed[/green], [yellow]{num_warnings} warnings[/yellow], [red]{num_failures} failures[/red]"
     )
     console.print()
 
@@ -104,7 +104,7 @@ def main() -> None:
         _print_banner(cfg)
 
         if not cfg.validate_only:
-            benchmark_configs = expand(cfg)
+            benchmark_configs = build_benchmark_configs(cfg)
             BenchmarkCliRunner(benchmark_configs).run_all()
 
         print_results_table(cfg)
@@ -112,8 +112,10 @@ def main() -> None:
         if not cfg.skip_validation:
             result = validate(cfg, cfg.output_dir)
             if result.ok:
-                n_pass = sum(1 for s, _, _ in result.checks if s == "PASS")
-                logger.info(f"Validation passed ({n_pass} checks)")
+                num_passed = sum(
+                    1 for status, _, _ in result.checks if status == "PASS"
+                )
+                logger.info(f"Validation passed ({num_passed} checks)")
             else:
                 _print_validation_failure(result)
                 sys.exit(1)
