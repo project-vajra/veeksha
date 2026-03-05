@@ -106,7 +106,8 @@ class MooncakeConvTraceFlavorGenerator(TraceFlavorGeneratorBase):
         requests = {}
         wait_times: List[float] = []
 
-        for i, (_, row) in enumerate(group.iterrows()):
+        for i, (_, row_series) in enumerate(group.iterrows()):
+            row = row_series.to_dict()
             if i == 0:
                 # first request uses hash_ids for deterministic sharing
                 hash_ids_list: List[int] = list(row["hash_ids"])

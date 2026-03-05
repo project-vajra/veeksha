@@ -14,12 +14,20 @@ from veeksha.config.generator.length import (
     FixedLengthGeneratorConfig,
     StairLengthGeneratorConfig,
 )
-from veeksha.config.generator.requested_output import OutputSpecConfig, TextOutputSpecConfig
+from veeksha.config.generator.requested_output import (
+    OutputSpecConfig,
+    TextOutputSpecConfig,
+)
 from veeksha.config.generator.session import SyntheticSessionGeneratorConfig
-from veeksha.config.generator.session_graph import SingleRequestSessionGraphGeneratorConfig
+from veeksha.config.generator.session_graph import (
+    SingleRequestSessionGraphGeneratorConfig,
+)
 from veeksha.config.runtime import RuntimeConfig
 from veeksha.config.trace_recorder import TraceRecorderConfig
-from veeksha.config.traffic import ConcurrentTrafficConfig, SequentialLaunchTrafficConfig
+from veeksha.config.traffic import (
+    ConcurrentTrafficConfig,
+    SequentialLaunchTrafficConfig,
+)
 from veeksha.microbench.config import MicrobenchmarkConfig
 
 _OUTPUT_TOKEN_MULTIPLIER = 2
@@ -60,9 +68,9 @@ def _prefill_iters(input_length: int, chunk_size: int, active_decodes: int) -> i
     requests consume one token each, leaving the rest for prefill.
     """
     effective_chunk = chunk_size - active_decodes
-    assert effective_chunk > 0, (
-        f"chunk_size ({chunk_size}) must exceed active_decodes ({active_decodes})"
-    )
+    assert (
+        effective_chunk > 0
+    ), f"chunk_size ({chunk_size}) must exceed active_decodes ({active_decodes})"
     return math.ceil(input_length / effective_chunk)
 
 
@@ -148,9 +156,15 @@ def _expand_decode(cfg: MicrobenchmarkConfig) -> list[BenchmarkConfig]:
     configs: list[BenchmarkConfig] = []
     for batch_size in cfg.batch_sizes:
         for input_length in cfg.input_lengths:
-            output_tokens = _decode_output_tokens(
-                cfg.samples_per_length, batch_size, input_length, cfg.engine_chunk_size,
-            ) * _OUTPUT_TOKEN_MULTIPLIER
+            output_tokens = (
+                _decode_output_tokens(
+                    cfg.samples_per_length,
+                    batch_size,
+                    input_length,
+                    cfg.engine_chunk_size,
+                )
+                * _OUTPUT_TOKEN_MULTIPLIER
+            )
             configs.append(
                 BenchmarkConfig(
                     output_dir=f"{cfg.output_dir}/bs={batch_size}_il={input_length}",
@@ -231,12 +245,16 @@ def _mixed_output_tokens(
         ramp_up = 0
     else:
         ramp_up = (batch_size - 1) * _prefill_iters(
-            decode_input_length, chunk_size, batch_size,
+            decode_input_length,
+            chunk_size,
+            batch_size,
         )
 
     # Phase 3: interference
     interference = num_prefill_requests * _prefill_iters(
-        incremental_prefill_size, chunk_size, batch_size,
+        incremental_prefill_size,
+        chunk_size,
+        batch_size,
     )
 
     return samples_per_length + ramp_up + interference
@@ -250,8 +268,12 @@ def _expand_mixed(cfg: MicrobenchmarkConfig) -> list[BenchmarkConfig]:
             for prefill_kv_length in cfg.prefill_kv_lengths:
                 for incremental_prefill_size in cfg.incremental_prefill_sizes:
                     _expand_one_mixed(
-                        configs, cfg, batch_size, decode_input_length,
-                        prefill_kv_length, incremental_prefill_size,
+                        configs,
+                        cfg,
+                        batch_size,
+                        decode_input_length,
+                        prefill_kv_length,
+                        incremental_prefill_size,
                     )
     return configs
 
@@ -266,18 +288,23 @@ def _expand_one_mixed(
 ) -> None:
     # How many TBT samples one interference prefill request produces
     samples_per_prefill = _prefill_iters(
-        incremental_prefill_size, cfg.engine_chunk_size, batch_size,
+        incremental_prefill_size,
+        cfg.engine_chunk_size,
+        batch_size,
     )
     num_prefill_requests = math.ceil(cfg.samples_per_length / samples_per_prefill)
 
-    decode_out = _mixed_output_tokens(
-        samples_per_length=cfg.samples_per_length,
-        batch_size=batch_size,
-        decode_input_length=decode_input_length,
-        chunk_size=cfg.engine_chunk_size,
-        num_prefill_requests=num_prefill_requests,
-        incremental_prefill_size=incremental_prefill_size,
-    ) * _OUTPUT_TOKEN_MULTIPLIER
+    decode_out = (
+        _mixed_output_tokens(
+            samples_per_length=cfg.samples_per_length,
+            batch_size=batch_size,
+            decode_input_length=decode_input_length,
+            chunk_size=cfg.engine_chunk_size,
+            num_prefill_requests=num_prefill_requests,
+            incremental_prefill_size=incremental_prefill_size,
+        )
+        * _OUTPUT_TOKEN_MULTIPLIER
+    )
 
     tag = f"bs={batch_size}_dil={decode_input_length}_kv={prefill_kv_length}_dp={incremental_prefill_size}"
 
@@ -321,14 +348,10 @@ def _expand_one_mixed(
     # -- Phase 1+2: decode + interference (main benchmark config) ------
     bench_sessions = batch_size + num_prefill_requests
 
-    body_values = (
-        [decode_input_length] * batch_size
-        + [prefill_kv_length + incremental_prefill_size] * num_prefill_requests
-    )
-    output_values = (
-        [decode_out] * batch_size
-        + [1] * num_prefill_requests
-    )
+    body_values = [decode_input_length] * batch_size + [
+        prefill_kv_length + incremental_prefill_size
+    ] * num_prefill_requests
+    output_values = [decode_out] * batch_size + [1] * num_prefill_requests
 
     configs.append(
         BenchmarkConfig(

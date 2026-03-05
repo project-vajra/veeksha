@@ -257,9 +257,7 @@ class SequentialLaunchTrafficScheduler(BaseTrafficScheduler):
                     {"role": "user", "content": content_blocks[0]["text"]}
                 )
             elif content_blocks:
-                current_node_history.append(
-                    {"role": "user", "content": content_blocks}
-                )
+                current_node_history.append({"role": "user", "content": content_blocks})
 
             if success and channel_responses is not None:
                 if ChannelModality.TEXT in channel_responses:

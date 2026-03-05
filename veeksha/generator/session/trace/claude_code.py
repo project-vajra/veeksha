@@ -62,7 +62,8 @@ class ClaudeCodeTraceFlavorGenerator(TraceFlavorGeneratorBase):
         requests = {}
         wait_times: List[float] = []
 
-        for i, (_, row) in enumerate(group.iterrows()):
+        for i, (_, row_series) in enumerate(group.iterrows()):
+            row = row_series.to_dict()
             prompt_tokens = int(row["new_input_length"])
             output_length = int(row["output_length"])
 
@@ -123,10 +124,11 @@ class ClaudeCodeTraceFlavorGenerator(TraceFlavorGeneratorBase):
 
         generated = 0
         session_seeds: dict[int, int] = {}
-        for idx, row in df.iterrows():
+        for idx, row_series in df.iterrows():
             if first_turn_only and not mask.loc[idx]:
                 continue
 
+            row = row_series.to_dict()
             session_id = int(row["session_id"])
             prompt_tokens = int(row["new_input_length"])
             seed: Optional[int] = session_seeds.get(session_id)

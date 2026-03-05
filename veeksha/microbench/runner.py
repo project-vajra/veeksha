@@ -59,7 +59,13 @@ def _print_banner(cfg: MicrobenchmarkConfig) -> None:
         table.add_row("Chunk size", str(cfg.engine_chunk_size))
 
     console.print()
-    console.print(Panel(table, title=f"[bold]Veeksha Microbenchmark — {cfg.type}[/bold]", border_style="blue"))
+    console.print(
+        Panel(
+            table,
+            title=f"[bold]Veeksha Microbenchmark — {cfg.type}[/bold]",
+            border_style="blue",
+        )
+    )
     console.print()
 
 
@@ -85,7 +91,9 @@ def _print_validation_failure(result) -> None:
 
     console.print()
     console.print(table)
-    console.print(f"  [green]{n_pass} passed[/green], [yellow]{n_warn} warnings[/yellow], [red]{n_fail} failures[/red]")
+    console.print(
+        f"  [green]{n_pass} passed[/green], [yellow]{n_warn} warnings[/yellow], [red]{n_fail} failures[/red]"
+    )
     console.print()
 
 

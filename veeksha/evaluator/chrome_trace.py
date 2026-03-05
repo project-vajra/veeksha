@@ -56,32 +56,36 @@ def generate_chrome_trace(rows: List[Dict[str, Any]], output_path: str) -> None:
         }
 
         # Prefill phase: pickup -> pickup + ttfc (always present)
-        events.append({
-            "name": "Prefill",
-            "cat": "prefill",
-            "ph": "X",
-            "ts": pickup_us,
-            "dur": ttfc_us,
-            "pid": pid,
-            "tid": tid,
-            "args": common_args,
-        })
+        events.append(
+            {
+                "name": "Prefill",
+                "cat": "prefill",
+                "ph": "X",
+                "ts": pickup_us,
+                "dur": ttfc_us,
+                "pid": pid,
+                "tid": tid,
+                "args": common_args,
+            }
+        )
 
         # Decode phase: individual token events from tbc (time-between-completions)
         if num_output > 1 and tbc:
             token_start = pickup_us + ttfc_us
             for token_idx, token_dur_s in enumerate(tbc):
                 token_dur_us = token_dur_s * 1_000_000
-                events.append({
-                    "name": f"T{token_idx + 1}",
-                    "cat": "decode",
-                    "ph": "X",
-                    "ts": token_start,
-                    "dur": token_dur_us,
-                    "pid": pid,
-                    "tid": tid,
-                    "args": {"token_index": token_idx + 1, "tbc_s": token_dur_s},
-                })
+                events.append(
+                    {
+                        "name": f"T{token_idx + 1}",
+                        "cat": "decode",
+                        "ph": "X",
+                        "ts": token_start,
+                        "dur": token_dur_us,
+                        "pid": pid,
+                        "tid": tid,
+                        "args": {"token_index": token_idx + 1, "tbc_s": token_dur_s},
+                    }
+                )
                 token_start += token_dur_us
         elif num_output == 1:
             # Single output token: the ttfc already covers it, nothing more
@@ -91,16 +95,18 @@ def generate_chrome_trace(rows: List[Dict[str, Any]], output_path: str) -> None:
             decode_start = pickup_us + ttfc_us
             decode_dur = completed_us - decode_start
             if decode_dur > 0:
-                events.append({
-                    "name": "Decode",
-                    "cat": "decode",
-                    "ph": "X",
-                    "ts": decode_start,
-                    "dur": decode_dur,
-                    "pid": pid,
-                    "tid": tid,
-                    "args": common_args,
-                })
+                events.append(
+                    {
+                        "name": "Decode",
+                        "cat": "decode",
+                        "ph": "X",
+                        "ts": decode_start,
+                        "dur": decode_dur,
+                        "pid": pid,
+                        "tid": tid,
+                        "args": common_args,
+                    }
+                )
 
     with open(output_path, "w") as f:
         json.dump(events, f)

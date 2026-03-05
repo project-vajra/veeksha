@@ -118,9 +118,14 @@ def _validate_prefill(cfg: MicrobenchmarkConfig, output_dir: str) -> ValidationR
     # Output tokens = expected
     bad_out = [r for r in metrics if r["num_output_tokens"] != cfg.output_tokens]
     if not bad_out:
-        v.passed("output_tokens", f"all requests produced {cfg.output_tokens} output tokens")
+        v.passed(
+            "output_tokens", f"all requests produced {cfg.output_tokens} output tokens"
+        )
     else:
-        v.warn("output_tokens", f"{len(bad_out)} requests had unexpected output token count")
+        v.warn(
+            "output_tokens",
+            f"{len(bad_out)} requests had unexpected output token count",
+        )
 
     # Sequential execution (concurrent=1): each request dispatched after prior completed
     by_session = sorted(metrics, key=lambda r: r["session_id"])
@@ -184,11 +189,16 @@ def _validate_one_decode_run(
     # For now, check the overall sweep directory.
     metrics = _load_request_metrics(f"{output_dir}/bs={batch_size}_il={input_length}")
     if metrics is None:
-        v.fail(f"metrics_found [{tag}]", "No request_level_metrics.jsonl found in decode dir")
+        v.fail(
+            f"metrics_found [{tag}]",
+            "No request_level_metrics.jsonl found in decode dir",
+        )
         return
 
     # Filter to requests matching this input_length
-    matching = [r for r in metrics if r["target_num_delta_prompt_tokens"] == input_length]
+    matching = [
+        r for r in metrics if r["target_num_delta_prompt_tokens"] == input_length
+    ]
 
     if not matching:
         v.warn(f"matching_requests [{tag}]", f"no requests with prompt={input_length}")
@@ -199,12 +209,17 @@ def _validate_one_decode_run(
     by_session = sorted(matching, key=lambda r: r["session_id"])
     first_tokens = [r["client_picked_up_at"] + r["ttfc"] for r in by_session]
     out_of_order = sum(
-        1 for i in range(1, len(first_tokens)) if first_tokens[i] < first_tokens[i - 1] - 0.005
+        1
+        for i in range(1, len(first_tokens))
+        if first_tokens[i] < first_tokens[i - 1] - 0.005
     )
     if out_of_order == 0:
         v.passed(f"fcfs_order [{tag}]", "first tokens arrived in session order")
     else:
-        v.warn(f"fcfs_order [{tag}]", f"{out_of_order} out-of-order first tokens (engine may batch prefills)")
+        v.warn(
+            f"fcfs_order [{tag}]",
+            f"{out_of_order} out-of-order first tokens (engine may batch prefills)",
+        )
 
     # Decode window overlap check
     dw = _load_decode_window_json(f"{output_dir}/bs={batch_size}_il={input_length}")
@@ -222,7 +237,10 @@ def _validate_one_decode_run(
                 f"low sample count in decode window: {tbc_count} < {cfg.samples_per_length}",
             )
         else:
-            v.passed(f"decode_window_overlap [{tag}]", f"{tbc_count} samples in decode window")
+            v.passed(
+                f"decode_window_overlap [{tag}]",
+                f"{tbc_count} samples in decode window",
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -240,9 +258,15 @@ def _validate_mixed(cfg: MicrobenchmarkConfig, output_dir: str) -> ValidationRes
                     tag = f"bs={batch_size},dil={decode_input_length},kv={prefill_kv_length},dp={incremental_prefill_size}"
                     dir_tag = f"bs={batch_size}_dil={decode_input_length}_kv={prefill_kv_length}_dp={incremental_prefill_size}"
                     _validate_one_mixed_run(
-                        v, cfg, batch_size, decode_input_length,
-                        prefill_kv_length, incremental_prefill_size,
-                        output_dir, dir_tag, tag,
+                        v,
+                        cfg,
+                        batch_size,
+                        decode_input_length,
+                        prefill_kv_length,
+                        incremental_prefill_size,
+                        output_dir,
+                        dir_tag,
+                        tag,
                     )
 
     return v
@@ -277,7 +301,9 @@ def _validate_one_mixed_run(
 
     # Identify decode vs interference by output token count
     samples_per_prefill = _prefill_iters(
-        incremental_prefill_size, cfg.engine_chunk_size, batch_size,
+        incremental_prefill_size,
+        cfg.engine_chunk_size,
+        batch_size,
     )
     num_prefill_requests = math.ceil(cfg.samples_per_length / samples_per_prefill)
     expected_bench_sessions = batch_size + num_prefill_requests
@@ -296,11 +322,15 @@ def _validate_one_mixed_run(
 
     # Check decode request prompt tokens
     bad_decode_prompts = [
-        r for r in decode_reqs
+        r
+        for r in decode_reqs
         if r["target_num_delta_prompt_tokens"] != decode_input_length
     ]
     if not bad_decode_prompts:
-        v.passed(f"decode_prompts [{tag}]", f"all decode requests have prompt={decode_input_length}")
+        v.passed(
+            f"decode_prompts [{tag}]",
+            f"all decode requests have prompt={decode_input_length}",
+        )
     else:
         v.warn(
             f"decode_prompts [{tag}]",
@@ -310,7 +340,8 @@ def _validate_one_mixed_run(
     # Check interference request prompt tokens
     expected_interf_prompt = prefill_kv_length + incremental_prefill_size
     bad_interf_prompts = [
-        r for r in interference_reqs
+        r
+        for r in interference_reqs
         if r["target_num_delta_prompt_tokens"] != expected_interf_prompt
     ]
     if not bad_interf_prompts:
@@ -326,8 +357,12 @@ def _validate_one_mixed_run(
 
     # FCFS: decode first tokens before interference first tokens
     if decode_reqs and interference_reqs:
-        decode_first_tokens = [r["client_picked_up_at"] + r["ttfc"] for r in decode_reqs]
-        interf_first_tokens = [r["client_picked_up_at"] + r["ttfc"] for r in interference_reqs]
+        decode_first_tokens = [
+            r["client_picked_up_at"] + r["ttfc"] for r in decode_reqs
+        ]
+        interf_first_tokens = [
+            r["client_picked_up_at"] + r["ttfc"] for r in interference_reqs
+        ]
         max_decode_ft = max(decode_first_tokens)
         min_interf_ft = min(interf_first_tokens)
 
@@ -353,7 +388,10 @@ def _validate_one_mixed_run(
     # Interference requests should have output_tokens=1
     bad_interf_out = [r for r in interference_reqs if r["num_output_tokens"] != 1]
     if not bad_interf_out:
-        v.passed(f"interference_output_tokens [{tag}]", "all interference requests have 1 output token")
+        v.passed(
+            f"interference_output_tokens [{tag}]",
+            "all interference requests have 1 output token",
+        )
     else:
         v.warn(
             f"interference_output_tokens [{tag}]",
@@ -376,4 +414,7 @@ def _validate_one_mixed_run(
                 f"low sample count in decode window: {tbc_count} < {cfg.samples_per_length}",
             )
         else:
-            v.passed(f"decode_window_overlap [{tag}]", f"{tbc_count} samples in decode window")
+            v.passed(
+                f"decode_window_overlap [{tag}]",
+                f"{tbc_count} samples in decode window",
+            )

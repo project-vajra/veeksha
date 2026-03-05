@@ -14,8 +14,8 @@ from veeksha.config.evaluator import (
     TextChannelPerformanceConfig,
 )
 from veeksha.evaluator.base import EvaluationResult
-from veeksha.evaluator.chrome_trace import generate_chrome_trace
 from veeksha.evaluator.cdf_sketch import CDFSketch
+from veeksha.evaluator.chrome_trace import generate_chrome_trace
 from veeksha.logger import init_logger
 from veeksha.types import ChannelModality
 
@@ -1023,8 +1023,8 @@ class TextPerformanceEvaluator:
 
             base_df = pd.DataFrame({"prompt_length": prompt_lengths, "ttfc": ttfcs})
 
-            min_len = int(base_df["prompt_length"].min())
-            max_len = int(base_df["prompt_length"].max())
+            min_len = min(prompt_lengths)
+            max_len = max(prompt_lengths)
 
             if max_len <= min_len:
                 base_df["prompt_length_bin"] = pd.Series(

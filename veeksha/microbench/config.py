@@ -141,10 +141,14 @@ class MicrobenchmarkConfig:
                 raise ValueError("incremental_prefill_sizes must be non-empty")
             for v in self.prefill_kv_lengths:
                 if v <= 0:
-                    raise ValueError(f"prefill_kv_lengths values must be positive, got {v}")
+                    raise ValueError(
+                        f"prefill_kv_lengths values must be positive, got {v}"
+                    )
             for v in self.incremental_prefill_sizes:
                 if v <= 0:
-                    raise ValueError(f"incremental_prefill_sizes values must be positive, got {v}")
+                    raise ValueError(
+                        f"incremental_prefill_sizes values must be positive, got {v}"
+                    )
             if self.engine_chunk_size <= 0:
                 raise ValueError("engine_chunk_size must be positive")
             if self.samples_per_length <= 0:
