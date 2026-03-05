@@ -58,6 +58,7 @@ class ClientType(BaseIntEnum):
     OPENAI_CHAT_COMPLETIONS = 1
     OPENAI_COMPLETIONS = 2
     OPENAI_ROUTER = 3
+    TTS = 4
 
 
 # ----- Server -----

@@ -15,17 +15,12 @@ from veeksha.client.registry import ClientRegistry
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.core.seeding import SeedManager
 from veeksha.core.thread_pool import ThreadPoolManager
-from veeksha.core.tokenizer import (
-    TokenizerProvider,
-    build_hf_tokenizer_handle_from_model,
-)
 from veeksha.core.trace_recorder import TraceRecorder
 from veeksha.generator.session.registry import SessionGeneratorRegistry
 from veeksha.health import HealthChecker
 from veeksha.logger import init_logger
 from veeksha.orchestration import managed_server
 from veeksha.traffic.registry import TrafficSchedulerRegistry
-from veeksha.types import ChannelModality
 from veeksha.wandb_integration import (
     maybe_finish_wandb_run,
     maybe_init_wandb_run,
@@ -196,11 +191,8 @@ def _run_benchmark(
     seed_manager = SeedManager(benchmark_config.seed)
 
     # get session generator
-    model_name = benchmark_config.client.model
-    tokenizer_provider = TokenizerProvider(
-        {ChannelModality.TEXT: build_hf_tokenizer_handle_from_model(model_name)},
-        model_name=model_name,
-    )
+    tokenizer_provider = benchmark_config.client.build_tokenizer_provider()
+
     append_min_tokens_instruction = False
     if (
         hasattr(benchmark_config.client, "use_min_tokens_prompt_fallback")

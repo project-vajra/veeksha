@@ -377,11 +377,15 @@ class PerformanceEvaluator(BaseEvaluator):
         }
 
     def _build_summary_stats(self) -> Dict[str, Any]:
-        """Combine aggregate stats with error code frequencies."""
+        """Combine aggregate stats, channel-level metrics, and error code frequencies."""
         summary_stats: Dict[str, Any] = {
             **self.get_aggregated_summary(),
             "error_code_freq": dict(self.error_code_freq),
         }
+        for evaluator in self._channel_evaluators.values():
+            channel_summary = evaluator.get_summary()
+            if channel_summary:
+                summary_stats.update(channel_summary)
         return summary_stats
 
     def finalize(self) -> EvaluationResult:

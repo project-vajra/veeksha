@@ -5,7 +5,15 @@ from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.types import SloType
 
-SUPPORTED_SLO_METRICS = {"ttfc", "tbc", "tpot", "e2e"}
+SUPPORTED_SLO_METRICS = {
+    "ttfc",
+    "tbc",
+    "tpot",
+    "e2e",
+    "ttfa",
+    "generated_audio_duration",
+    "rtf",
+}
 
 
 @frozen_dataclass

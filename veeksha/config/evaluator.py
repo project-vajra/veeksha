@@ -117,7 +117,14 @@ class ImageChannelPerformanceConfig(BaseChannelPerformanceConfig):
 
 @frozen_dataclass
 class AudioChannelPerformanceConfig(BaseChannelPerformanceConfig):
-    """Audio channel performance configuration"""
+    """Audio channel performance configuration for TTS benchmarking."""
+
+    save_audio_files: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to save the generated audio files to the output directory."
+        },
+    )
 
     @classmethod
     def get_type(cls) -> ChannelModality:
@@ -202,8 +209,8 @@ class PerformanceEvaluatorConfig(BaseEvaluatorConfig):
         default_factory=ImageChannelPerformanceConfig,
         metadata={"help": "Image channel performance configuration"},
     )
-    audio_channel: Optional[AudioChannelPerformanceConfig] = field(
-        default=None,
+    audio_channel: AudioChannelPerformanceConfig = field(
+        default_factory=AudioChannelPerformanceConfig,
         metadata={"help": "Audio channel performance configuration"},
     )
     video_channel: Optional[VideoChannelPerformanceConfig] = field(
