@@ -5,6 +5,7 @@ from veeksha.types.base_int_enum import BaseIntEnum
 class TrafficType(BaseIntEnum):
     RATE = 1
     CONCURRENT = 2
+    SEQUENTIAL_LAUNCH = 3
 
 
 # ----- Interval / length generators -----

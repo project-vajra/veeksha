@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
 import httpx  # type: ignore
 
@@ -315,6 +315,8 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
         request: Request,
         session_id: int,
         session_total_requests: int = 1,
+        on_request_sent: Optional[Callable[[], None]] = None,
+        on_request_dispatched: Optional[Callable[[], None]] = None,
     ) -> RequestResult:
         """Send a streaming request to the OpenAI Chat Completions API."""
 
@@ -390,6 +392,10 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
             ) as response:
                 response.raise_for_status()
 
+                if on_request_dispatched is not None:
+                    on_request_dispatched()
+
+                sent_notified = False
                 async for data in self._process_stream(response):
                     receive_time = time.monotonic()
                     if "error" in data:
@@ -425,6 +431,11 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
                             generated_text,
                             chunks_received,
                         )
+
+                        # Notify after first content chunk (prefill done).
+                        if not sent_notified and on_request_sent is not None:
+                            on_request_sent()
+                            sent_notified = True
 
                     # TODO: image deltas
                     image_data = self._process_image_response(delta, image_data)

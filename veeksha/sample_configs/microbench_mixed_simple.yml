@@ -1,0 +1,9 @@
+type: mixed
+model: meta-llama/Llama-3.1-8B-Instruct
+api_base: http://localhost:30002/v1
+batch_sizes: [4, 8]
+decode_input_lengths: [512, 1024]
+prefill_kv_lengths: [512]
+incremental_prefill_sizes: [256]
+engine_chunk_size: 512
+samples_per_length: 100

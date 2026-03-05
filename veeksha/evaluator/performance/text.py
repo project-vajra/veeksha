@@ -14,6 +14,7 @@ from veeksha.config.evaluator import (
     TextChannelPerformanceConfig,
 )
 from veeksha.evaluator.base import EvaluationResult
+from veeksha.evaluator.chrome_trace import generate_chrome_trace
 from veeksha.evaluator.cdf_sketch import CDFSketch
 from veeksha.logger import init_logger
 from veeksha.types import ChannelModality
@@ -425,6 +426,7 @@ class TextPerformanceEvaluator:
             self._plot_cdfs(output_dir)
             self._store_ttfc_violin_plots(output_dir)
 
+            self._save_chrome_trace(output_dir)
             self._log_wandb_metrics(output_dir)
 
     def flush_streaming_outputs(self, output_dir: str) -> None:
@@ -442,6 +444,12 @@ class TextPerformanceEvaluator:
     # -------------------------------------------------------------------------
     # Output methods
     # -------------------------------------------------------------------------
+
+    def _save_chrome_trace(self, output_dir: str) -> None:
+        """Save Chrome Trace Event Format JSON for timeline visualization."""
+        rows = self._export_request_rows(0)
+        path = os.path.join(output_dir, "chrome_trace.json")
+        generate_chrome_trace(rows, path)
 
     def _save_request_level_metrics(self, output_dir: str) -> None:
         """Save request-level metrics as JSONL."""

@@ -9,6 +9,7 @@ from typing import List, Optional
 from veeksha.client.base import BaseLLMClient
 from veeksha.core.response import RequestResult
 from veeksha.logger import init_logger
+from veeksha.traffic.base import BaseTrafficScheduler
 
 logger = init_logger(__name__)
 
@@ -26,12 +27,14 @@ class ClientWorker:
         input_queue: Queue,
         output_queue: Queue,
         stop_event: threading.Event,
+        traffic_scheduler: Optional[BaseTrafficScheduler] = None,
     ):
         self.worker_id = worker_id
         self.client = client
         self.input_queue = input_queue
         self.output_queue = output_queue
         self.stop_event = stop_event
+        self.traffic_scheduler = traffic_scheduler
 
     def run(self) -> None:
         """Run the async event loop for this worker."""
@@ -86,16 +89,43 @@ class ClientWorker:
 
         client_picked_up_at: float = time.monotonic()
 
+        tracker = self.traffic_scheduler.dispatch_tracker if self.traffic_scheduler else None
+        if tracker is not None:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                None, tracker.wait_for_turn, request.dispatch_ticket
+            )
+
+        ordering = tracker.ordering if tracker is not None else "dispatch"
+
+        def _on_request_sent() -> None:
+            if self.traffic_scheduler is not None:
+                self.traffic_scheduler.notify_request_sent(request.id)
+            if ordering == "prefill" and tracker is not None:
+                tracker.advance(request.dispatch_ticket)
+
+        def _on_request_dispatched() -> None:
+            if ordering == "dispatch" and tracker is not None:
+                tracker.advance(request.dispatch_ticket)
+
         try:
             result = await self.client.send_request(
                 request=request,
                 session_id=session_id,
                 session_total_requests=session_size,
+                on_request_sent=_on_request_sent,
+                on_request_dispatched=_on_request_dispatched,
             )
+            if ordering == "request" and tracker is not None:
+                tracker.advance(request.dispatch_ticket)
         except Exception as e:
             logger.exception(
                 f"Client worker {self.worker_id}: Client raised unhandled exception"
             )
+            # Ensure the tracker advances even on failure so subsequent
+            # requests are not stuck waiting forever.
+            if tracker is not None and ordering in ("prefill", "request"):
+                tracker.advance(request.dispatch_ticket)
 
             result = RequestResult(
                 request_id=request.id,
@@ -125,6 +155,7 @@ class ClientRunnerManager:
         input_queues: List[Queue],
         output_queue: Queue,
         stop_event: threading.Event,
+        traffic_scheduler: Optional[BaseTrafficScheduler] = None,
     ):
         """Initialize the client runner manager.
 
@@ -133,11 +164,13 @@ class ClientRunnerManager:
             input_queues: One input queue per worker
             output_queue: Shared output queue for results
             stop_event: Stop event for graceful shutdown
+            traffic_scheduler: Optional scheduler for request-sent notification
         """
         self.client = client
         self.input_queues = input_queues
         self.output_queue = output_queue
         self.stop_event = stop_event
+        self.traffic_scheduler = traffic_scheduler
         self.workers: List[ClientWorker] = []
         self.threads: List[threading.Thread] = []
 
@@ -150,6 +183,7 @@ class ClientRunnerManager:
                 input_queue=queue,
                 output_queue=self.output_queue,
                 stop_event=self.stop_event,
+                traffic_scheduler=self.traffic_scheduler,
             )
             self.workers.append(worker)
 

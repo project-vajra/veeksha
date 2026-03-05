@@ -275,3 +275,4 @@ traces/
 # claude
 CLAUDE.md
 benchmark_outputs/
+microbench_output*

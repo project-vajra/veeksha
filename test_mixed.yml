@@ -1,0 +1,10 @@
+type: mixed
+model: Qwen/Qwen3-4B-Thinking-2507
+api_base: http://localhost:9876/v1
+batch_sizes: [2]
+decode_input_lengths: [128]
+prefill_kv_length: 64
+incremental_prefill_size: 32
+engine_chunk_size: 512
+samples_per_length: 10
+output_dir: microbench_output_test_mixed

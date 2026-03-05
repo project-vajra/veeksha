@@ -1,0 +1,8 @@
+type: decode
+model: Qwen/Qwen3-4B-Thinking-2507
+api_base: http://localhost:9876/v1
+input_lengths: [128]
+batch_sizes: [2, 4]
+engine_chunk_size: 512
+samples_per_length: 10
+output_dir: microbench_output_test_decode
