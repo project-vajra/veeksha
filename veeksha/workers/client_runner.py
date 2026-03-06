@@ -87,8 +87,6 @@ class ClientWorker:
             scheduler_dispatched_at,
         ) = item
 
-        client_picked_up_at: float = time.monotonic()
-
         tracker = (
             self.traffic_scheduler.dispatch_tracker if self.traffic_scheduler else None
         )
@@ -97,6 +95,8 @@ class ClientWorker:
             await loop.run_in_executor(
                 None, tracker.wait_for_turn, request.dispatch_ticket
             )
+
+        client_picked_up_at: float = time.monotonic()
 
         ordering = tracker.ordering if tracker is not None else "dispatch"
 
@@ -126,7 +126,7 @@ class ClientWorker:
             )
             # Ensure the tracker advances even on failure so subsequent
             # requests are not stuck waiting forever.
-            if tracker is not None and ordering in ("prefill", "request"):
+            if tracker is not None:
                 tracker.advance(request.dispatch_ticket)
 
             result = RequestResult(
