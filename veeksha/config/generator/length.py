@@ -107,11 +107,11 @@ class ZipfLengthGeneratorConfig(BaseLengthGeneratorConfig):
 @frozen_dataclass
 class InverseGaussianLengthGeneratorConfig(BaseLengthGeneratorConfig):
     mean: float = field(
-        default=8.0,
+        default=500.0,
         metadata={"help": "Mean parameter for the inverse Gaussian distribution."},
     )
     shape: float = field(
-        default=4.0,
+        default=300.0,
         metadata={
             "help": "Shape (lambda) parameter for the inverse Gaussian distribution. Lower values mean more spread."
         },
