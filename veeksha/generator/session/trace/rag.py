@@ -99,7 +99,9 @@ class RAGTraceFlavorGenerator(TraceFlavorGeneratorBase):
     def wrap(self) -> pd.DataFrame:
         """Wrap trace for new epoch with refreshed session order."""
         df = self.trace_df.copy()
-        max_sid = int(df["session_id"].max()) if not df.empty else self._session_offset
+        max_sid = (
+            cast(int, df["session_id"].max()) if not df.empty else self._session_offset
+        )
         df["session_id"] = df["session_id"] + max_sid + 1
         return self._shuffle_sessions(df)
 
