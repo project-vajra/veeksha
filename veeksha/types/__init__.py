@@ -19,6 +19,7 @@ class LengthGeneratorType(BaseIntEnum):
     UNIFORM = 2
     FIXED = 3
     FIXED_STAIR = 4
+    INVERSE_GAUSSIAN = 5
 
 
 # ----- Content -----
