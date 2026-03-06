@@ -1,19 +1,18 @@
-"""Unified microbenchmark configuration."""
+"""Microbenchmark configuration with inheritance."""
 
+import sys
+from argparse import ArgumentParser
 from dataclasses import field
+from typing import Any
 
-from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from veeksha.config.utils import load_yaml_config
 
 
-@frozen_dataclass(allow_from_file=True)
-class MicrobenchmarkConfig:
-    """Single config for all microbenchmark types: prefill and decode."""
+@frozen_dataclass
+class BaseMicrobenchmarkConfig:
+    """Shared fields for all microbenchmark types."""
 
-    type: str = field(
-        default="prefill",
-        metadata={"help": "Benchmark type: prefill or decode"},
-    )
     model: str = field(
         default="meta-llama/Meta-Llama-3-8B-Instruct",
         metadata={"help": "Model name"},
@@ -28,23 +27,11 @@ class MicrobenchmarkConfig:
     )
     input_lengths: list[int] = field(
         default_factory=lambda: [128, 256, 512, 1024],
-        metadata={"help": "Input lengths for prefill/decode benchmarks"},
-    )
-    output_tokens: int = field(
-        default=1,
-        metadata={"help": "Output tokens per request (prefill only)"},
+        metadata={"help": "Input lengths for benchmarks"},
     )
     samples_per_length: int = field(
         default=10,
         metadata={"help": "Number of samples per input length"},
-    )
-    batch_sizes: list[int] = field(
-        default_factory=lambda: [1, 2, 4, 8],
-        metadata={"help": "Batch sizes for decode benchmarks"},
-    )
-    engine_chunk_size: int = field(
-        default=512,
-        metadata={"help": "Engine chunk size (decode)"},
     )
     output_dir: str = field(
         default="microbench_output",
@@ -79,42 +66,93 @@ class MicrobenchmarkConfig:
         metadata={"help": "Skip post-run validation"},
     )
 
-    def __post_init__(self) -> None:
-        valid_types = ("prefill", "decode")
-        if self.type not in valid_types:
-            raise ValueError(
-                f"Unknown microbenchmark type '{self.type}'. Valid types: {', '.join(sorted(valid_types))}"
-            )
+    @staticmethod
+    def create_from_cli_args() -> list["BaseMicrobenchmarkConfig"]:
+        """Parse CLI args, determine type from YAML, and construct typed configs."""
+        pre_parser = ArgumentParser(add_help=False)
+        pre_parser.add_argument("--microbenchmark-config-from-file", default=None)
+        pre_args, _ = pre_parser.parse_known_args()
 
-        if self.type == "prefill":
-            if not self.input_lengths:
-                raise ValueError("input_lengths must be non-empty")
-            if self.output_tokens <= 0:
-                raise ValueError("output_tokens must be positive")
-            if self.samples_per_length <= 0:
-                raise ValueError("samples_per_length must be positive")
+        if pre_args.microbenchmark_config_from_file is None:
+            print("error: --microbenchmark-config-from-file is required", file=sys.stderr)
+            sys.exit(1)
 
-        elif self.type == "decode":
-            if not self.input_lengths:
-                raise ValueError("input_lengths must be non-empty")
-            if not self.batch_sizes:
-                raise ValueError("batch_sizes must be non-empty")
-            if self.samples_per_length <= 0:
-                raise ValueError("samples_per_length must be positive")
-            if self.engine_chunk_size <= 0:
-                raise ValueError("engine_chunk_size must be positive")
-            for bs in self.batch_sizes:
-                if bs >= self.engine_chunk_size:
-                    raise ValueError(
-                        f"batch_size {bs} must be less than engine_chunk_size {self.engine_chunk_size}"
-                    )
+        yaml_config = load_yaml_config(pre_args.microbenchmark_config_from_file)
 
-    @classmethod
-    def create_from_cli_args(cls) -> list["MicrobenchmarkConfig"]:
-        """Create MicrobenchmarkConfig instances from CLI args or --from-file."""
-        flat_configs = create_flat_dataclass(cls).create_from_cli_args()
-        instances = []
-        for flat_config in flat_configs:
-            instance = flat_config.reconstruct_original_dataclass()
-            instances.append(instance)
+        configs: list[dict[str, Any]]
+        if isinstance(yaml_config, list):
+            configs = yaml_config
+        else:
+            configs = [yaml_config]
+
+        instances: list[BaseMicrobenchmarkConfig] = []
+        for raw in configs:
+            assert isinstance(raw, dict), f"expected dict in YAML config, got {type(raw)}"
+            type_name = raw.pop("type", None)
+            if type_name is None:
+                print("error: 'type' field is required in microbenchmark config", file=sys.stderr)
+                sys.exit(1)
+            config_cls = _TYPE_TO_CONFIG.get(type_name)
+            if config_cls is None:
+                valid = ", ".join(sorted(_TYPE_TO_CONFIG))
+                print(
+                    f"error: unknown microbenchmark type '{type_name}'. Valid types: {valid}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            instances.append(config_cls(**raw))
+
         return instances
+
+
+@frozen_dataclass
+class PrefillMicrobenchmarkConfig(BaseMicrobenchmarkConfig):
+    """Prefill microbenchmark configuration."""
+
+    output_tokens: int = field(
+        default=1,
+        metadata={"help": "Output tokens per request"},
+    )
+
+    def __post_init__(self) -> None:
+        if not self.input_lengths:
+            raise ValueError("input_lengths must be non-empty")
+        if self.output_tokens <= 0:
+            raise ValueError("output_tokens must be positive")
+        if self.samples_per_length <= 0:
+            raise ValueError("samples_per_length must be positive")
+
+
+@frozen_dataclass
+class DecodeMicrobenchmarkConfig(BaseMicrobenchmarkConfig):
+    """Decode microbenchmark configuration."""
+
+    batch_sizes: list[int] = field(
+        default_factory=lambda: [1, 2, 4, 8],
+        metadata={"help": "Batch sizes for decode benchmarks"},
+    )
+    engine_chunk_size: int = field(
+        default=512,
+        metadata={"help": "Engine chunk size"},
+    )
+
+    def __post_init__(self) -> None:
+        if not self.input_lengths:
+            raise ValueError("input_lengths must be non-empty")
+        if not self.batch_sizes:
+            raise ValueError("batch_sizes must be non-empty")
+        if self.samples_per_length <= 0:
+            raise ValueError("samples_per_length must be positive")
+        if self.engine_chunk_size <= 0:
+            raise ValueError("engine_chunk_size must be positive")
+        for bs in self.batch_sizes:
+            if bs >= self.engine_chunk_size:
+                raise ValueError(
+                    f"batch_size {bs} must be less than engine_chunk_size {self.engine_chunk_size}"
+                )
+
+
+_TYPE_TO_CONFIG: dict[str, type[BaseMicrobenchmarkConfig]] = {
+    "prefill": PrefillMicrobenchmarkConfig,
+    "decode": DecodeMicrobenchmarkConfig,
+}

@@ -11,7 +11,7 @@ from rich.console import Console
 
 from veeksha.config.client import OpenAIChatCompletionsClientConfig
 from veeksha.logger import init_logger
-from veeksha.microbench.config import MicrobenchmarkConfig
+from veeksha.microbench.config import BaseMicrobenchmarkConfig
 
 logger = init_logger(__name__)
 console = Console()
@@ -24,7 +24,7 @@ _OUTPUT_TOKEN_MULTIPLIER = 2
 # ---------------------------------------------------------------------------
 
 
-def build_client_config(cfg: MicrobenchmarkConfig) -> OpenAIChatCompletionsClientConfig:
+def build_client_config(cfg: BaseMicrobenchmarkConfig) -> OpenAIChatCompletionsClientConfig:
     return OpenAIChatCompletionsClientConfig(
         model=cfg.model,
         api_base=cfg.api_base,

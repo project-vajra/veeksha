@@ -37,7 +37,7 @@ from veeksha.microbench.common import (
     load_request_metrics,
     save_json,
 )
-from veeksha.microbench.config import MicrobenchmarkConfig
+from veeksha.microbench.config import DecodeMicrobenchmarkConfig
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +80,7 @@ def required_decode_output_tokens(
     return samples_per_length + ramp_up
 
 
-def build_benchmark_configs(cfg: MicrobenchmarkConfig) -> list[BenchmarkConfig]:
+def build_benchmark_configs(cfg: DecodeMicrobenchmarkConfig) -> list[BenchmarkConfig]:
     configs: list[BenchmarkConfig] = []
     for batch_size in cfg.batch_sizes:
         for input_length in cfg.input_lengths:
@@ -147,7 +147,7 @@ def build_benchmark_configs(cfg: MicrobenchmarkConfig) -> list[BenchmarkConfig]:
 # ---------------------------------------------------------------------------
 
 
-def validate(cfg: MicrobenchmarkConfig, output_dir: str) -> ValidationResult:
+def validate(cfg: DecodeMicrobenchmarkConfig, output_dir: str) -> ValidationResult:
     result = ValidationResult()
     for batch_size in cfg.batch_sizes:
         for input_length in cfg.input_lengths:
@@ -158,7 +158,7 @@ def validate(cfg: MicrobenchmarkConfig, output_dir: str) -> ValidationResult:
 
 def _validate_one_run(
     result: ValidationResult,
-    cfg: MicrobenchmarkConfig,
+    cfg: DecodeMicrobenchmarkConfig,
     batch_size: int,
     input_length: int,
     output_dir: str,
@@ -223,7 +223,7 @@ def _validate_one_run(
 # ---------------------------------------------------------------------------
 
 
-def print_results_table(cfg: MicrobenchmarkConfig) -> None:
+def print_results_table(cfg: DecodeMicrobenchmarkConfig) -> None:
     all_runs = find_all_run_metrics(cfg.output_dir)
     if not all_runs:
         return

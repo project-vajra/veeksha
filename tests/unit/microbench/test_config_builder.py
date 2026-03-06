@@ -4,7 +4,7 @@ from veeksha.config.evaluator import PerformanceEvaluatorConfig
 from veeksha.config.generator.length import FixedLengthGeneratorConfig, StairLengthGeneratorConfig
 from veeksha.config.generator.session_graph import SingleRequestSessionGraphGeneratorConfig
 from veeksha.config.traffic import ConcurrentTrafficConfig, SequentialLaunchTrafficConfig
-from veeksha.microbench.config import MicrobenchmarkConfig
+from veeksha.microbench.config import DecodeMicrobenchmarkConfig, PrefillMicrobenchmarkConfig
 from veeksha.microbench.decode import required_decode_output_tokens
 from veeksha.microbench.decode import build_benchmark_configs as build_decode_configs
 from veeksha.microbench.prefill import build_benchmark_configs as build_prefill_configs
@@ -17,12 +17,12 @@ from veeksha.microbench.prefill import build_benchmark_configs as build_prefill_
 
 class TestPrefillExpansion:
     def test_produces_single_config(self):
-        cfg = MicrobenchmarkConfig(type="prefill",input_lengths=[128, 256], samples_per_length=5)
+        cfg = PrefillMicrobenchmarkConfig(input_lengths=[128, 256], samples_per_length=5)
         result = build_prefill_configs(cfg)
         assert len(result) == 1
 
     def test_stair_generator(self):
-        cfg = MicrobenchmarkConfig(type="prefill",input_lengths=[128, 256, 512], samples_per_length=3)
+        cfg = PrefillMicrobenchmarkConfig(input_lengths=[128, 256, 512], samples_per_length=3)
         bc = build_prefill_configs(cfg)[0]
         body_gen = bc.session_generator.channels[0].body_length_generator
         assert isinstance(body_gen, StairLengthGeneratorConfig)
@@ -31,46 +31,46 @@ class TestPrefillExpansion:
         assert body_gen.wrap is False
 
     def test_max_sessions(self):
-        cfg = MicrobenchmarkConfig(type="prefill",input_lengths=[128, 256], samples_per_length=10)
+        cfg = PrefillMicrobenchmarkConfig(input_lengths=[128, 256], samples_per_length=10)
         bc = build_prefill_configs(cfg)[0]
         assert bc.runtime.max_sessions == 20
 
     def test_concurrent_1(self):
-        bc = build_prefill_configs(MicrobenchmarkConfig(type="prefill"))[0]
+        bc = build_prefill_configs(PrefillMicrobenchmarkConfig())[0]
         assert isinstance(bc.traffic_scheduler, ConcurrentTrafficConfig)
         assert bc.traffic_scheduler.target_concurrent_sessions == 1
 
     def test_pregenerate_sessions(self):
-        bc = build_prefill_configs(MicrobenchmarkConfig(type="prefill"))[0]
+        bc = build_prefill_configs(PrefillMicrobenchmarkConfig())[0]
         assert bc.runtime.pregenerate_sessions is True
 
     def test_single_request_session_graph(self):
-        bc = build_prefill_configs(MicrobenchmarkConfig(type="prefill"))[0]
+        bc = build_prefill_configs(PrefillMicrobenchmarkConfig())[0]
         assert isinstance(bc.session_generator.session_graph, SingleRequestSessionGraphGeneratorConfig)
 
     def test_output_tokens(self):
-        cfg = MicrobenchmarkConfig(type="prefill",output_tokens=3)
+        cfg = PrefillMicrobenchmarkConfig(output_tokens=3)
         bc = build_prefill_configs(cfg)[0]
         out_gen = bc.session_generator.output_spec.text.output_length_generator
         assert isinstance(out_gen, FixedLengthGeneratorConfig)
         assert out_gen.value == 3
 
     def test_output_dir(self):
-        cfg = MicrobenchmarkConfig(type="prefill",output_dir="my_output")
+        cfg = PrefillMicrobenchmarkConfig(output_dir="my_output")
         bc = build_prefill_configs(cfg)[0]
         assert bc.output_dir == "my_output"
 
     def test_trace_recorder_disabled(self):
-        bc = build_prefill_configs(MicrobenchmarkConfig(type="prefill"))[0]
+        bc = build_prefill_configs(PrefillMicrobenchmarkConfig())[0]
         assert bc.trace_recorder.enabled is False
 
     def test_stream_metrics_disabled(self):
-        bc = build_prefill_configs(MicrobenchmarkConfig(type="prefill"))[0]
+        bc = build_prefill_configs(PrefillMicrobenchmarkConfig())[0]
         assert isinstance(bc.evaluators[0], PerformanceEvaluatorConfig)
         assert bc.evaluators[0].stream_metrics is False
 
     def test_client_fields(self):
-        cfg = MicrobenchmarkConfig(type="prefill",model="my-model", api_base="http://x", api_key="k", max_tokens_param="mt")
+        cfg = PrefillMicrobenchmarkConfig(model="my-model", api_base="http://x", api_key="k", max_tokens_param="mt")
         bc = build_prefill_configs(cfg)[0]
         assert bc.client.model == "my-model"
         assert bc.client.api_base == "http://x"
@@ -109,18 +109,18 @@ class TestDecodeOutputTokens:
 
 class TestDecodeExpansion:
     def test_cartesian_product_count(self):
-        cfg = MicrobenchmarkConfig(type="decode",batch_sizes=[2, 4], input_lengths=[128, 256, 512])
+        cfg = DecodeMicrobenchmarkConfig(batch_sizes=[2, 4], input_lengths=[128, 256, 512])
         result = build_decode_configs(cfg)
         assert len(result) == 6
 
     def test_sequential_launch_scheduler(self):
-        cfg = MicrobenchmarkConfig(type="decode",batch_sizes=[4, 8], input_lengths=[128])
+        cfg = DecodeMicrobenchmarkConfig(batch_sizes=[4, 8], input_lengths=[128])
         result = build_decode_configs(cfg)
         assert isinstance(result[0].traffic_scheduler, SequentialLaunchTrafficConfig)
         assert isinstance(result[1].traffic_scheduler, SequentialLaunchTrafficConfig)
 
     def test_decode_window_enabled(self):
-        cfg = MicrobenchmarkConfig(type="decode",batch_sizes=[2], input_lengths=[128])
+        cfg = DecodeMicrobenchmarkConfig(batch_sizes=[2], input_lengths=[128])
         bc = build_decode_configs(cfg)[0]
         perf = bc.evaluators[0]
         assert isinstance(perf, PerformanceEvaluatorConfig)
@@ -129,7 +129,7 @@ class TestDecodeExpansion:
         assert perf.text_channel.decode_window_config.selection_strategy == "all"
 
     def test_param_named_output_dirs(self):
-        cfg = MicrobenchmarkConfig(type="decode",batch_sizes=[2, 4], input_lengths=[128, 256], output_dir="out")
+        cfg = DecodeMicrobenchmarkConfig(batch_sizes=[2, 4], input_lengths=[128, 256], output_dir="out")
         result = build_decode_configs(cfg)
         dirs = {bc.output_dir for bc in result}
         assert dirs == {
@@ -139,18 +139,18 @@ class TestDecodeExpansion:
 
     def test_output_tokens_computed(self):
         # batch_size=4, input_length=1024, chunk_size=512, samples=100 → 109
-        cfg = MicrobenchmarkConfig(type="decode",batch_sizes=[4], input_lengths=[1024], engine_chunk_size=512, samples_per_length=100)
+        cfg = DecodeMicrobenchmarkConfig(batch_sizes=[4], input_lengths=[1024], engine_chunk_size=512, samples_per_length=100)
         bc = build_decode_configs(cfg)[0]
         out_gen = bc.session_generator.output_spec.text.output_length_generator
         assert isinstance(out_gen, FixedLengthGeneratorConfig)
         assert out_gen.value == 218
 
     def test_runtime_max_sessions_equals_batch_size(self):
-        cfg = MicrobenchmarkConfig(type="decode",batch_sizes=[8], input_lengths=[128])
+        cfg = DecodeMicrobenchmarkConfig(batch_sizes=[8], input_lengths=[128])
         bc = build_decode_configs(cfg)[0]
         assert bc.runtime.max_sessions == 8
 
     def test_pregenerate_sessions(self):
-        cfg = MicrobenchmarkConfig(type="decode",batch_sizes=[1], input_lengths=[128])
+        cfg = DecodeMicrobenchmarkConfig(batch_sizes=[1], input_lengths=[128])
         bc = build_decode_configs(cfg)[0]
         assert bc.runtime.pregenerate_sessions is True

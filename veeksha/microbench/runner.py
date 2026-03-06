@@ -13,28 +13,32 @@ from rich.table import Table
 from veeksha.cli.benchmarks import BenchmarkCliRunner
 from veeksha.logger import init_logger
 from veeksha.microbench import decode, prefill
-from veeksha.microbench.config import MicrobenchmarkConfig
+from veeksha.microbench.config import (
+    BaseMicrobenchmarkConfig,
+    DecodeMicrobenchmarkConfig,
+    PrefillMicrobenchmarkConfig,
+)
 
 logger = init_logger(__name__)
 console = Console()
 
 _TIMESTAMP_FMT = "%Y-%m-%d_%H-%M-%S"
 
-_TYPE_MODULES: dict[str, ModuleType] = {
-    "prefill": prefill,
-    "decode": decode,
+_CONFIG_DISPATCH: dict[type, tuple[ModuleType, str]] = {
+    PrefillMicrobenchmarkConfig: (prefill, "prefill"),
+    DecodeMicrobenchmarkConfig: (decode, "decode"),
 }
 
 
-def _make_run_dir(cfg: MicrobenchmarkConfig) -> MicrobenchmarkConfig:
+def _make_run_dir(cfg: BaseMicrobenchmarkConfig, type_name: str) -> BaseMicrobenchmarkConfig:
     """Create a unique timestamped directory for this microbenchmark invocation."""
     timestamp = datetime.now(timezone.utc).strftime(_TIMESTAMP_FMT)
-    run_dir = os.path.join(cfg.output_dir, f"{cfg.type}_{timestamp}")
+    run_dir = os.path.join(cfg.output_dir, f"{type_name}_{timestamp}")
     os.makedirs(run_dir, exist_ok=True)
     return replace(cfg, output_dir=run_dir)
 
 
-def _print_banner(cfg: MicrobenchmarkConfig, mod: ModuleType) -> None:
+def _print_banner(cfg: BaseMicrobenchmarkConfig, mod: ModuleType, type_name: str) -> None:
     """Print a startup banner summarizing the microbenchmark configuration."""
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_column("Key", style="bold cyan")
@@ -51,7 +55,7 @@ def _print_banner(cfg: MicrobenchmarkConfig, mod: ModuleType) -> None:
     console.print(
         Panel(
             table,
-            title=f"[bold]Veeksha Microbenchmark — {cfg.type}[/bold]",
+            title=f"[bold]Veeksha Microbenchmark — {type_name}[/bold]",
             border_style="blue",
         )
     )
@@ -87,11 +91,11 @@ def _print_validation_failure(result) -> None:
 
 
 def main() -> None:
-    configs = MicrobenchmarkConfig.create_from_cli_args()
+    configs = BaseMicrobenchmarkConfig.create_from_cli_args()
     for cfg in configs:
-        mod = _TYPE_MODULES[cfg.type]
-        cfg = _make_run_dir(cfg)
-        _print_banner(cfg, mod)
+        mod, type_name = _CONFIG_DISPATCH[type(cfg)]
+        cfg = _make_run_dir(cfg, type_name)
+        _print_banner(cfg, mod, type_name)
 
         if not cfg.validate_only:
             benchmark_configs = mod.build_benchmark_configs(cfg)

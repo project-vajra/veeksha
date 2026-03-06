@@ -32,7 +32,7 @@ from veeksha.microbench.common import (
     load_request_metrics,
     save_json,
 )
-from veeksha.microbench.config import MicrobenchmarkConfig
+from veeksha.microbench.config import PrefillMicrobenchmarkConfig
 
 
 # ---------------------------------------------------------------------------
@@ -51,7 +51,7 @@ BANNER_ROWS: list[tuple[str, str]] = [
 # ---------------------------------------------------------------------------
 
 
-def build_benchmark_configs(cfg: MicrobenchmarkConfig) -> list[BenchmarkConfig]:
+def build_benchmark_configs(cfg: PrefillMicrobenchmarkConfig) -> list[BenchmarkConfig]:
     total_sessions = len(cfg.input_lengths) * cfg.samples_per_length
     return [
         BenchmarkConfig(
@@ -101,7 +101,7 @@ def build_benchmark_configs(cfg: MicrobenchmarkConfig) -> list[BenchmarkConfig]:
 # ---------------------------------------------------------------------------
 
 
-def validate(cfg: MicrobenchmarkConfig, output_dir: str) -> ValidationResult:
+def validate(cfg: PrefillMicrobenchmarkConfig, output_dir: str) -> ValidationResult:
     result = ValidationResult()
     metrics = load_request_metrics(output_dir)
     if metrics is None:
@@ -178,7 +178,7 @@ def validate(cfg: MicrobenchmarkConfig, output_dir: str) -> ValidationResult:
 # ---------------------------------------------------------------------------
 
 
-def print_results_table(cfg: MicrobenchmarkConfig) -> None:
+def print_results_table(cfg: PrefillMicrobenchmarkConfig) -> None:
     all_runs = find_all_run_metrics(cfg.output_dir)
     if not all_runs:
         return
