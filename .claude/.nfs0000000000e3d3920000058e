@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:project-vajra.github.io)",
+      "Bash(xargs ls:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(git fetch:*)",
+      "Bash(git diff-tree:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(/scratch/amey/veeksha/.venv/bin/python:*)",
+      "Bash(uv pip:*)",
+      "Bash(ls:*)",
+      "Bash(curl:*)",
+      "Bash(read f:*)",
+      "Bash(python3:*)",
+      "Bash(cat:*)",
+      "Bash(pip show:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(make lint:*)",
+      "Bash(git stash:*)",
+      "Bash(make format:*)",
+      "Bash(make:*)",
+      "Bash(black:*)",
+      "Bash(git status:*)",
+      "Read(//scratch/amey/vajra/**)",
+      "Read(//scratch/amey/vajra/.claude/**)",
+      "Bash(do echo:*)",
+      "Bash(gh pr:*)",
+      "Bash(git mv:*)"
+    ]
+  }
+}

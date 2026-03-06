@@ -65,45 +65,6 @@ class TestDecodeConfig:
             MicrobenchmarkConfig(type="decode", batch_sizes=[512], engine_chunk_size=512)
 
 
-class TestMixedBatchConfig:
-    def test_defaults(self):
-        cfg = MicrobenchmarkConfig(type="mixed")
-        assert cfg.batch_sizes == [1, 2, 4, 8]
-        assert cfg.decode_input_lengths == [512, 1024]
-        assert cfg.prefill_kv_lengths == [512]
-        assert cfg.incremental_prefill_sizes == [256]
-        assert cfg.engine_chunk_size == 512
-        assert cfg.samples_per_length == 10
-
-    def test_empty_batch_sizes(self):
-        with pytest.raises(ValueError, match="batch_sizes must be non-empty"):
-            MicrobenchmarkConfig(type="mixed", batch_sizes=[])
-
-    def test_empty_decode_input_lengths(self):
-        with pytest.raises(ValueError, match="decode_input_lengths must be non-empty"):
-            MicrobenchmarkConfig(type="mixed", decode_input_lengths=[])
-
-    def test_empty_prefill_kv_lengths(self):
-        with pytest.raises(ValueError, match="prefill_kv_lengths must be non-empty"):
-            MicrobenchmarkConfig(type="mixed", prefill_kv_lengths=[])
-
-    def test_non_positive_prefill_kv_length(self):
-        with pytest.raises(ValueError, match="prefill_kv_lengths values must be positive"):
-            MicrobenchmarkConfig(type="mixed", prefill_kv_lengths=[0])
-
-    def test_empty_incremental_prefill_sizes(self):
-        with pytest.raises(ValueError, match="incremental_prefill_sizes must be non-empty"):
-            MicrobenchmarkConfig(type="mixed", incremental_prefill_sizes=[])
-
-    def test_non_positive_incremental_prefill_size(self):
-        with pytest.raises(ValueError, match="incremental_prefill_sizes values must be positive"):
-            MicrobenchmarkConfig(type="mixed", incremental_prefill_sizes=[0])
-
-    def test_batch_size_ge_chunk_size(self):
-        with pytest.raises(ValueError, match="batch_size 512 must be less than engine_chunk_size 512"):
-            MicrobenchmarkConfig(type="mixed", batch_sizes=[512], engine_chunk_size=512)
-
-
 class TestUnknownType:
     def test_unknown_type(self):
         with pytest.raises(ValueError, match="Unknown microbenchmark type 'bogus'"):

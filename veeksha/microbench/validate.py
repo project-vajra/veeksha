@@ -7,11 +7,9 @@ session counts, token counts, decode window coverage, etc.).
 
 import json
 import logging
-import math
 from pathlib import Path
 
 from veeksha.microbench.config import MicrobenchmarkConfig
-from veeksha.microbench.config_builder import compute_prefill_iterations
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +79,6 @@ def validate(cfg: MicrobenchmarkConfig, output_dir: str) -> ValidationResult:
         return _validate_prefill(cfg, output_dir)
     elif cfg.type == "decode":
         return _validate_decode(cfg, output_dir)
-    elif cfg.type == "mixed":
-        return _validate_mixed(cfg, output_dir)
     else:
         result = ValidationResult()
         result.fail("unknown_type", f"No validator for type '{cfg.type}'")
@@ -198,9 +194,6 @@ def _validate_one_decode_run(
     output_dir: str,
     check_label: str,
 ) -> None:
-    # We can't easily map which sub-run dir belongs to which (bs, il) pair
-    # from the output_dir alone, so we validate the sweep-level metrics.
-    # For now, check the overall sweep directory.
     metrics = _load_request_metrics(f"{output_dir}/bs={batch_size}_il={input_length}")
     if metrics is None:
         result.fail(
@@ -251,208 +244,6 @@ def _validate_one_decode_run(
     # Decode window overlap check
     decode_window_data = _load_decode_window_json(
         f"{output_dir}/bs={batch_size}_il={input_length}"
-    )
-    if decode_window_data is not None:
-        num_segments = decode_window_data.get("windows", {}).get(
-            "num_selected_segments", 0
-        )
-        tbc_count = decode_window_data.get("tbc_in_window_stats", {}).get("count", 0)
-        if num_segments == 0 or tbc_count == 0:
-            result.fail(
-                f"decode_window_overlap [{check_label}]",
-                "no qualifying decode windows found — increase output tokens",
-            )
-        elif tbc_count < cfg.samples_per_length:
-            result.warn(
-                f"decode_window_overlap [{check_label}]",
-                f"low sample count in decode window: {tbc_count} < {cfg.samples_per_length}",
-            )
-        else:
-            result.passed(
-                f"decode_window_overlap [{check_label}]",
-                f"{tbc_count} samples in decode window",
-            )
-
-
-# ---------------------------------------------------------------------------
-# Mixed batch
-# ---------------------------------------------------------------------------
-
-
-def _validate_mixed(cfg: MicrobenchmarkConfig, output_dir: str) -> ValidationResult:
-    result = ValidationResult()
-
-    for batch_size in cfg.batch_sizes:
-        for decode_input_length in cfg.decode_input_lengths:
-            for prefill_kv_length in cfg.prefill_kv_lengths:
-                for incremental_prefill_size in cfg.incremental_prefill_sizes:
-                    check_label = f"bs={batch_size},dil={decode_input_length},kv={prefill_kv_length},dp={incremental_prefill_size}"
-                    output_dir_tag = f"bs={batch_size}_dil={decode_input_length}_kv={prefill_kv_length}_dp={incremental_prefill_size}"
-                    _validate_one_mixed_run(
-                        result,
-                        cfg,
-                        batch_size,
-                        decode_input_length,
-                        prefill_kv_length,
-                        incremental_prefill_size,
-                        output_dir,
-                        output_dir_tag,
-                        check_label,
-                    )
-
-    return result
-
-
-def _validate_one_mixed_run(
-    result: ValidationResult,
-    cfg: MicrobenchmarkConfig,
-    batch_size: int,
-    decode_input_length: int,
-    prefill_kv_length: int,
-    incremental_prefill_size: int,
-    output_dir: str,
-    output_dir_tag: str,
-    check_label: str,
-) -> None:
-    # -- Warmup validation --
-    warmup_metrics = _load_request_metrics(f"{output_dir}/{output_dir_tag}/warmup")
-    if warmup_metrics is None:
-        result.warn(f"warmup_found [{check_label}]", "no warmup metrics found")
-    else:
-        result.passed(
-            f"warmup_found [{check_label}]", f"{len(warmup_metrics)} warmup requests"
-        )
-
-    # -- Benchmark validation --
-    metrics = _load_request_metrics(f"{output_dir}/{output_dir_tag}/bench")
-    if metrics is None:
-        result.fail(
-            f"metrics_found [{check_label}]", "No request_level_metrics.jsonl found"
-        )
-        return
-    result.passed(f"metrics_found [{check_label}]")
-
-    sorted_by_session = sorted(metrics, key=lambda record: record["session_id"])
-
-    # Identify decode vs interference by output token count
-    samples_per_prefill = compute_prefill_iterations(
-        incremental_prefill_size,
-        cfg.engine_chunk_size,
-        batch_size,
-    )
-    num_prefill_requests = math.ceil(cfg.samples_per_length / samples_per_prefill)
-    expected_bench_sessions = batch_size + num_prefill_requests
-
-    if len(sorted_by_session) != expected_bench_sessions:
-        result.warn(
-            f"session_count [{check_label}]",
-            f"expected {expected_bench_sessions}, got {len(sorted_by_session)}",
-        )
-    else:
-        result.passed(
-            f"session_count [{check_label}]", f"{len(sorted_by_session)} sessions"
-        )
-
-    # Split into decode and interference requests based on session order
-    decode_requests = sorted_by_session[:batch_size]
-    interference_requests = sorted_by_session[batch_size:]
-
-    # Check decode request prompt tokens
-    mismatched_decode_prompts = [
-        record
-        for record in decode_requests
-        if record["target_num_delta_prompt_tokens"] != decode_input_length
-    ]
-    if not mismatched_decode_prompts:
-        result.passed(
-            f"decode_prompts [{check_label}]",
-            f"all decode requests have prompt={decode_input_length}",
-        )
-    else:
-        result.warn(
-            f"decode_prompts [{check_label}]",
-            f"{len(mismatched_decode_prompts)} decode requests had wrong prompt token count",
-        )
-
-    # Check interference request prompt tokens
-    expected_interference_prompt_tokens = prefill_kv_length + incremental_prefill_size
-    mismatched_interference_prompts = [
-        record
-        for record in interference_requests
-        if record["target_num_delta_prompt_tokens"]
-        != expected_interference_prompt_tokens
-    ]
-    if not mismatched_interference_prompts:
-        result.passed(
-            f"interference_prompts [{check_label}]",
-            f"all interference requests have prompt={expected_interference_prompt_tokens}",
-        )
-    else:
-        result.warn(
-            f"interference_prompts [{check_label}]",
-            f"{len(mismatched_interference_prompts)} interference requests had wrong prompt token count",
-        )
-
-    # FCFS: decode first tokens before interference first tokens
-    if decode_requests and interference_requests:
-        decode_first_token_times = [
-            record["client_picked_up_at"] + record["ttfc"] for record in decode_requests
-        ]
-        interference_first_token_times = [
-            record["client_picked_up_at"] + record["ttfc"]
-            for record in interference_requests
-        ]
-        latest_decode_first_token = max(decode_first_token_times)
-        earliest_interference_first_token = min(interference_first_token_times)
-
-        if latest_decode_first_token < earliest_interference_first_token:
-            result.passed(
-                f"fcfs_decode_before_interference [{check_label}]",
-                f"decode last_ft={latest_decode_first_token:.3f} < interference first_ft={earliest_interference_first_token:.3f}",
-            )
-        else:
-            # Warn rather than fail: client-side dispatch ordering is
-            # guaranteed by the ticket mechanism, but server-side continuous
-            # batching can complete interference prefills before decode
-            # prefills, causing first-token reordering.
-            result.warn(
-                f"fcfs_decode_before_interference [{check_label}]",
-                f"decode last_ft={latest_decode_first_token:.3f} >= interference first_ft={earliest_interference_first_token:.3f} "
-                f"— server-side batching may reorder first tokens",
-            )
-
-    # No errors
-    failed_requests = [
-        record
-        for record in sorted_by_session
-        if record.get("num_output_tokens", 0) == 0
-    ]
-    if not failed_requests:
-        result.passed(f"no_errors [{check_label}]", "all requests produced output")
-    else:
-        result.fail(
-            f"no_errors [{check_label}]",
-            f"{len(failed_requests)} requests produced 0 output tokens",
-        )
-
-    # Interference requests should have output_tokens=1
-    mismatched_interference_outputs = [
-        record for record in interference_requests if record["num_output_tokens"] != 1
-    ]
-    if not mismatched_interference_outputs:
-        result.passed(
-            f"interference_output_tokens [{check_label}]",
-            "all interference requests have 1 output token",
-        )
-    else:
-        result.warn(
-            f"interference_output_tokens [{check_label}]",
-            f"{len(mismatched_interference_outputs)} interference requests had output != 1",
-        )
-
-    # Decode window overlap check on bench run
-    decode_window_data = _load_decode_window_json(
-        f"{output_dir}/{output_dir_tag}/bench"
     )
     if decode_window_data is not None:
         num_segments = decode_window_data.get("windows", {}).get(

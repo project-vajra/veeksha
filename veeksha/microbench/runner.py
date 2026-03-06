@@ -50,14 +50,6 @@ def _print_banner(cfg: MicrobenchmarkConfig) -> None:
         table.add_row("Input lengths", str(cfg.input_lengths))
         table.add_row("Samples/length", str(cfg.samples_per_length))
         table.add_row("Chunk size", str(cfg.engine_chunk_size))
-    elif cfg.type == "mixed":
-        table.add_row("Batch sizes", str(cfg.batch_sizes))
-        table.add_row("Decode input lengths", str(cfg.decode_input_lengths))
-        table.add_row("Prefill KV lengths", str(cfg.prefill_kv_lengths))
-        table.add_row("Incr. prefill sizes", str(cfg.incremental_prefill_sizes))
-        table.add_row("Samples/length", str(cfg.samples_per_length))
-        table.add_row("Chunk size", str(cfg.engine_chunk_size))
-
     console.print()
     console.print(
         Panel(
