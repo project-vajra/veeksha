@@ -4,6 +4,7 @@ import os
 import sys
 from dataclasses import replace
 from datetime import datetime, timezone
+from types import ModuleType
 
 from rich.console import Console
 from rich.panel import Panel
@@ -11,16 +12,18 @@ from rich.table import Table
 
 from veeksha.cli.benchmarks import BenchmarkCliRunner
 from veeksha.logger import init_logger
+from veeksha.microbench import decode, prefill
 from veeksha.microbench.config import MicrobenchmarkConfig
-from veeksha.microbench.config_builder import build_benchmark_configs
-from veeksha.microbench.results import print_results_table
-from veeksha.microbench.validate import validate
 
 logger = init_logger(__name__)
 console = Console()
 
-# Consistent timestamp format across microbench: YYYY-MM-DD_HH-MM-SS
 _TIMESTAMP_FMT = "%Y-%m-%d_%H-%M-%S"
+
+_TYPE_MODULES: dict[str, ModuleType] = {
+    "prefill": prefill,
+    "decode": decode,
+}
 
 
 def _make_run_dir(cfg: MicrobenchmarkConfig) -> MicrobenchmarkConfig:
@@ -31,7 +34,7 @@ def _make_run_dir(cfg: MicrobenchmarkConfig) -> MicrobenchmarkConfig:
     return replace(cfg, output_dir=run_dir)
 
 
-def _print_banner(cfg: MicrobenchmarkConfig) -> None:
+def _print_banner(cfg: MicrobenchmarkConfig, mod: ModuleType) -> None:
     """Print a startup banner summarizing the microbenchmark configuration."""
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_column("Key", style="bold cyan")
@@ -41,15 +44,9 @@ def _print_banner(cfg: MicrobenchmarkConfig) -> None:
     table.add_row("API base", cfg.api_base)
     table.add_row("Output dir", cfg.output_dir)
 
-    if cfg.type == "prefill":
-        table.add_row("Input lengths", str(cfg.input_lengths))
-        table.add_row("Output tokens", str(cfg.output_tokens))
-        table.add_row("Samples/length", str(cfg.samples_per_length))
-    elif cfg.type == "decode":
-        table.add_row("Batch sizes", str(cfg.batch_sizes))
-        table.add_row("Input lengths", str(cfg.input_lengths))
-        table.add_row("Samples/length", str(cfg.samples_per_length))
-        table.add_row("Chunk size", str(cfg.engine_chunk_size))
+    for label, attr in mod.BANNER_ROWS:
+        table.add_row(label, str(getattr(cfg, attr)))
+
     console.print()
     console.print(
         Panel(
@@ -77,9 +74,9 @@ def _print_validation_failure(result) -> None:
             style_tag = "[red bold]FAIL[/red bold]"
         table.add_row(style_tag, name, detail)
 
-    num_passed = sum(1 for status, _, _ in result.checks if status == "PASS")
-    num_warnings = sum(1 for status, _, _ in result.checks if status == "WARN")
-    num_failures = sum(1 for status, _, _ in result.checks if status == "FAIL")
+    num_passed = sum(1 for s, _, _ in result.checks if s == "PASS")
+    num_warnings = sum(1 for s, _, _ in result.checks if s == "WARN")
+    num_failures = sum(1 for s, _, _ in result.checks if s == "FAIL")
 
     console.print()
     console.print(table)
@@ -92,17 +89,18 @@ def _print_validation_failure(result) -> None:
 def main() -> None:
     configs = MicrobenchmarkConfig.create_from_cli_args()
     for cfg in configs:
+        mod = _TYPE_MODULES[cfg.type]
         cfg = _make_run_dir(cfg)
-        _print_banner(cfg)
+        _print_banner(cfg, mod)
 
         if not cfg.validate_only:
-            benchmark_configs = build_benchmark_configs(cfg)
+            benchmark_configs = mod.build_benchmark_configs(cfg)
             BenchmarkCliRunner(benchmark_configs).run_all()
 
-        print_results_table(cfg)
+        mod.print_results_table(cfg)
 
         if not cfg.skip_validation:
-            result = validate(cfg, cfg.output_dir)
+            result = mod.validate(cfg, cfg.output_dir)
             if result.ok:
                 num_passed = sum(
                     1 for status, _, _ in result.checks if status == "PASS"
