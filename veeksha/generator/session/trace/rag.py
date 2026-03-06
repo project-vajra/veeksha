@@ -1,6 +1,6 @@
 """RAG trace flavor generator with warmup support."""
 
-from typing import Any, List, Optional
+from typing import Any, List, Optional, cast
 
 import pandas as pd
 
@@ -99,7 +99,9 @@ class RAGTraceFlavorGenerator(TraceFlavorGeneratorBase):
     def wrap(self) -> pd.DataFrame:
         """Wrap trace for new epoch with refreshed session order."""
         df = self.trace_df.copy()
-        max_sid = int(df["session_id"].max()) if not df.empty else self._session_offset
+        max_sid = (
+            cast(int, df["session_id"].max()) if not df.empty else self._session_offset
+        )
         df["session_id"] = df["session_id"] + max_sid + 1
         return self._shuffle_sessions(df)
 
@@ -124,10 +126,10 @@ class RAGTraceFlavorGenerator(TraceFlavorGeneratorBase):
         request = self._create_text_request(
             node_id=0,
             prompt_text=str(row["prompt_text"]),
-            target_output_tokens=int(row["output_length"]),
+            target_output_tokens=cast(int, row["output_length"]),
             wait_after_ready=wait_time,
             parent_node=None,
-            target_prompt_tokens=int(row["input_length"]),
+            target_prompt_tokens=cast(int, row["input_length"]),
         )
         session_graph = self._build_linear_session_graph(1, [wait_time])
         return Session(

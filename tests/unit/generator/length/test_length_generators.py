@@ -3,10 +3,12 @@ import pytest
 import numpy as np
 from veeksha.config.generator.length import (
     FixedLengthGeneratorConfig,
+    InverseGaussianLengthGeneratorConfig,
     UniformLengthGeneratorConfig,
     ZipfLengthGeneratorConfig,
 )
 from veeksha.generator.length.fixed import FixedLengthGenerator
+from veeksha.generator.length.inverse_gaussian import InverseGaussianLengthGenerator
 from veeksha.generator.length.uniform import UniformLengthGenerator
 from veeksha.generator.length.zipf import ZipfLengthGenerator
 
@@ -24,11 +26,8 @@ def test_uniform_length_generator(rng):
     generator = UniformLengthGenerator(config, rng)
     
     values = [generator.get_next_value() for _ in range(100)]
-    assert all(5 <= v < 10 for v in values) # numpy uniform is [low, high) for floats, but let's check exact implementation
-    # Implementation: int(rng.uniform(min, max)). So [min, max).
-    # Wait, python's random.uniform includes max, but numpy.random.uniform excludes max.
-    # The implementation uses self.rng.uniform(self.config.min, self.config.max).
-    # We should verify if max is inclusive or exclusive based on implementation details or desired behavior.
+    assert all(5 <= v < 10 for v in values)
+    # verify if max is inclusive or exclusive based on implementation details or desired behavior.
     # Assuming standard numpy behavior, it's exclusive of max.
     
     assert min(values) >= 5
@@ -49,3 +48,23 @@ def test_zipf_length_generator_scramble(rng):
     
     values = [generator.get_next_value() for _ in range(100)]
     assert all(1 <= v <= 100 for v in values)
+
+
+def test_inverse_gaussian_length_generator_reproducible():
+    config = InverseGaussianLengthGeneratorConfig(mean=12.0, shape=5.0)
+    generator = InverseGaussianLengthGenerator(config, np.random.RandomState(42))
+    generator2 = InverseGaussianLengthGenerator(config, np.random.RandomState(42))
+
+    values = [generator.get_next_value() for _ in range(20)]
+    values2 = [generator2.get_next_value() for _ in range(20)]
+
+    assert values == values2
+    assert all(v >= 1 for v in values)
+
+
+def test_inverse_gaussian_length_generator_config_validation():
+    with pytest.raises(ValueError, match="mean must be > 0"):
+        InverseGaussianLengthGeneratorConfig(mean=0.0, shape=1.0)
+
+    with pytest.raises(ValueError, match="shape must be > 0"):
+        InverseGaussianLengthGeneratorConfig(mean=1.0, shape=0.0)

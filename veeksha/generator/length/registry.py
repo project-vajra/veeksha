@@ -2,6 +2,7 @@ from veeksha.types import LengthGeneratorType
 from veeksha.types.base_registry import BaseRegistry
 
 from .fixed import FixedLengthGenerator
+from .inverse_gaussian import InverseGaussianLengthGenerator
 from .stair import StairLengthGenerator
 from .uniform import UniformLengthGenerator
 from .zipf import ZipfLengthGenerator
@@ -17,3 +18,6 @@ LengthGeneratorRegistry.register(LengthGeneratorType.ZIPF, ZipfLengthGenerator)
 LengthGeneratorRegistry.register(LengthGeneratorType.UNIFORM, UniformLengthGenerator)
 LengthGeneratorRegistry.register(LengthGeneratorType.FIXED, FixedLengthGenerator)
 LengthGeneratorRegistry.register(LengthGeneratorType.FIXED_STAIR, StairLengthGenerator)
+LengthGeneratorRegistry.register(
+    LengthGeneratorType.INVERSE_GAUSSIAN, InverseGaussianLengthGenerator
+)

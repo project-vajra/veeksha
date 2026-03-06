@@ -2,7 +2,11 @@
 import pytest
 
 from veeksha.config.generator.interval import PoissonIntervalGeneratorConfig
-from veeksha.config.generator.length import UniformLengthGeneratorConfig, FixedLengthGeneratorConfig
+from veeksha.config.generator.length import (
+    FixedLengthGeneratorConfig,
+    InverseGaussianLengthGeneratorConfig,
+    UniformLengthGeneratorConfig,
+)
 from veeksha.config.generator.requested_output import OutputSpecConfig, TextOutputSpecConfig
 from veeksha.config.generator.session import SyntheticSessionGeneratorConfig
 from veeksha.config.generator.session_graph import LinearSessionGraphGeneratorConfig
@@ -85,6 +89,22 @@ class TestSeeding:
 
         generator2 = LengthGeneratorRegistry.get(
             config.get_type(), config=config, rng=SeedManager(777).numpy_factory("length")()
+        )
+        values2 = [generator2.get_next_value() for _ in range(3)]
+
+        assert values == values2
+
+    def test_inverse_gaussian_length_generator_uses_seed_manager(self):
+        config = InverseGaussianLengthGeneratorConfig(mean=10.0, shape=3.0)
+        manager = SeedManager(888)
+
+        generator = LengthGeneratorRegistry.get(
+            config.get_type(), config=config, rng=manager.numpy_factory("length")()
+        )
+        values = [generator.get_next_value() for _ in range(3)]
+
+        generator2 = LengthGeneratorRegistry.get(
+            config.get_type(), config=config, rng=SeedManager(888).numpy_factory("length")()
         )
         values2 = [generator2.get_next_value() for _ in range(3)]
 
