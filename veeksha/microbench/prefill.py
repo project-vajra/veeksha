@@ -225,3 +225,15 @@ def print_results_table(cfg: PrefillMicrobenchmarkConfig) -> None:
         {"type": "prefill", "metric": "ttfc", "results": rows},
         os.path.join(cfg.output_dir, "prefill_results.json"),
     )
+
+
+# ---------------------------------------------------------------------------
+# CLI entrypoint
+# ---------------------------------------------------------------------------
+
+
+def main() -> None:
+    from veeksha.microbench.runner import run
+
+    for cfg in PrefillMicrobenchmarkConfig.create_from_cli_args():
+        run(cfg, "prefill", BANNER_ROWS, build_benchmark_configs, print_results_table, validate)

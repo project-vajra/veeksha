@@ -1,12 +1,9 @@
 """Microbenchmark configuration with inheritance."""
 
-import sys
-from argparse import ArgumentParser
 from dataclasses import field
-from typing import Any
 
+from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
-from veeksha.config.utils import load_yaml_config
 
 
 @frozen_dataclass
@@ -66,46 +63,8 @@ class BaseMicrobenchmarkConfig:
         metadata={"help": "Skip post-run validation"},
     )
 
-    @staticmethod
-    def create_from_cli_args() -> list["BaseMicrobenchmarkConfig"]:
-        """Parse CLI args, determine type from YAML, and construct typed configs."""
-        pre_parser = ArgumentParser(add_help=False)
-        pre_parser.add_argument("--microbenchmark-config-from-file", default=None)
-        pre_args, _ = pre_parser.parse_known_args()
 
-        if pre_args.microbenchmark_config_from_file is None:
-            print("error: --microbenchmark-config-from-file is required", file=sys.stderr)
-            sys.exit(1)
-
-        yaml_config = load_yaml_config(pre_args.microbenchmark_config_from_file)
-
-        configs: list[dict[str, Any]]
-        if isinstance(yaml_config, list):
-            configs = yaml_config
-        else:
-            configs = [yaml_config]
-
-        instances: list[BaseMicrobenchmarkConfig] = []
-        for raw in configs:
-            assert isinstance(raw, dict), f"expected dict in YAML config, got {type(raw)}"
-            type_name = raw.pop("type", None)
-            if type_name is None:
-                print("error: 'type' field is required in microbenchmark config", file=sys.stderr)
-                sys.exit(1)
-            config_cls = _TYPE_TO_CONFIG.get(type_name)
-            if config_cls is None:
-                valid = ", ".join(sorted(_TYPE_TO_CONFIG))
-                print(
-                    f"error: unknown microbenchmark type '{type_name}'. Valid types: {valid}",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            instances.append(config_cls(**raw))
-
-        return instances
-
-
-@frozen_dataclass
+@frozen_dataclass(allow_from_file=True)
 class PrefillMicrobenchmarkConfig(BaseMicrobenchmarkConfig):
     """Prefill microbenchmark configuration."""
 
@@ -122,8 +81,13 @@ class PrefillMicrobenchmarkConfig(BaseMicrobenchmarkConfig):
         if self.samples_per_length <= 0:
             raise ValueError("samples_per_length must be positive")
 
+    @classmethod
+    def create_from_cli_args(cls) -> list["PrefillMicrobenchmarkConfig"]:
+        flat_configs = create_flat_dataclass(cls).create_from_cli_args()
+        return [fc.reconstruct_original_dataclass() for fc in flat_configs]
 
-@frozen_dataclass
+
+@frozen_dataclass(allow_from_file=True)
 class DecodeMicrobenchmarkConfig(BaseMicrobenchmarkConfig):
     """Decode microbenchmark configuration."""
 
@@ -151,8 +115,8 @@ class DecodeMicrobenchmarkConfig(BaseMicrobenchmarkConfig):
                     f"batch_size {bs} must be less than engine_chunk_size {self.engine_chunk_size}"
                 )
 
+    @classmethod
+    def create_from_cli_args(cls) -> list["DecodeMicrobenchmarkConfig"]:
+        flat_configs = create_flat_dataclass(cls).create_from_cli_args()
+        return [fc.reconstruct_original_dataclass() for fc in flat_configs]
 
-_TYPE_TO_CONFIG: dict[str, type[BaseMicrobenchmarkConfig]] = {
-    "prefill": PrefillMicrobenchmarkConfig,
-    "decode": DecodeMicrobenchmarkConfig,
-}

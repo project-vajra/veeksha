@@ -276,3 +276,15 @@ def print_results_table(cfg: DecodeMicrobenchmarkConfig) -> None:
         ]},
         os.path.join(cfg.output_dir, "decode_results.json"),
     )
+
+
+# ---------------------------------------------------------------------------
+# CLI entrypoint
+# ---------------------------------------------------------------------------
+
+
+def main() -> None:
+    from veeksha.microbench.runner import run
+
+    for cfg in DecodeMicrobenchmarkConfig.create_from_cli_args():
+        run(cfg, "decode", BANNER_ROWS, build_benchmark_configs, print_results_table, validate)

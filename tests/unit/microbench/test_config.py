@@ -6,7 +6,6 @@ from veeksha.microbench.config import (
     BaseMicrobenchmarkConfig,
     DecodeMicrobenchmarkConfig,
     PrefillMicrobenchmarkConfig,
-    _TYPE_TO_CONFIG,
 )
 
 
@@ -70,15 +69,11 @@ class TestDecodeConfig:
             DecodeMicrobenchmarkConfig(batch_sizes=[512], engine_chunk_size=512)
 
 
-class TestTypeMapping:
-    def test_prefill_type(self):
-        assert _TYPE_TO_CONFIG["prefill"] is PrefillMicrobenchmarkConfig
-
-    def test_decode_type(self):
-        assert _TYPE_TO_CONFIG["decode"] is DecodeMicrobenchmarkConfig
-
-    def test_inheritance(self):
+class TestInheritance:
+    def test_prefill_inherits_base(self):
         assert issubclass(PrefillMicrobenchmarkConfig, BaseMicrobenchmarkConfig)
+
+    def test_decode_inherits_base(self):
         assert issubclass(DecodeMicrobenchmarkConfig, BaseMicrobenchmarkConfig)
 
 

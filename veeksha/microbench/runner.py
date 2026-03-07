@@ -1,33 +1,52 @@
-"""CLI runner for veeksha microbenchmarks."""
+"""Shared run logic for veeksha microbenchmarks."""
 
 import os
 import sys
 from dataclasses import replace
 from datetime import datetime, timezone
-from types import ModuleType
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
 from veeksha.cli.benchmarks import BenchmarkCliRunner
+from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.logger import init_logger
-from veeksha.microbench import decode, prefill
-from veeksha.microbench.config import (
-    BaseMicrobenchmarkConfig,
-    DecodeMicrobenchmarkConfig,
-    PrefillMicrobenchmarkConfig,
-)
+from veeksha.microbench.common import ValidationResult
+from veeksha.microbench.config import BaseMicrobenchmarkConfig
 
 logger = init_logger(__name__)
 console = Console()
 
 _TIMESTAMP_FMT = "%Y-%m-%d_%H-%M-%S"
 
-_CONFIG_DISPATCH: dict[type, tuple[ModuleType, str]] = {
-    PrefillMicrobenchmarkConfig: (prefill, "prefill"),
-    DecodeMicrobenchmarkConfig: (decode, "decode"),
-}
+
+def run(
+    cfg: BaseMicrobenchmarkConfig,
+    type_name: str,
+    banner_rows: list[tuple[str, str]],
+    build_benchmark_configs,
+    print_results_table,
+    validate,
+) -> None:
+    """Run a single microbenchmark: banner → build → execute → report → validate."""
+    cfg = _make_run_dir(cfg, type_name)
+    _print_banner(cfg, type_name, banner_rows)
+
+    if not cfg.validate_only:
+        benchmark_configs: list[BenchmarkConfig] = build_benchmark_configs(cfg)
+        BenchmarkCliRunner(benchmark_configs).run_all()
+
+    print_results_table(cfg)
+
+    if not cfg.skip_validation:
+        result: ValidationResult = validate(cfg, cfg.output_dir)
+        if result.ok:
+            num_passed = sum(1 for s, _, _ in result.checks if s == "PASS")
+            logger.info(f"Validation passed ({num_passed} checks)")
+        else:
+            _print_validation_failure(result)
+            sys.exit(1)
 
 
 def _make_run_dir(cfg: BaseMicrobenchmarkConfig, type_name: str) -> BaseMicrobenchmarkConfig:
@@ -38,7 +57,11 @@ def _make_run_dir(cfg: BaseMicrobenchmarkConfig, type_name: str) -> BaseMicroben
     return replace(cfg, output_dir=run_dir)
 
 
-def _print_banner(cfg: BaseMicrobenchmarkConfig, mod: ModuleType, type_name: str) -> None:
+def _print_banner(
+    cfg: BaseMicrobenchmarkConfig,
+    type_name: str,
+    banner_rows: list[tuple[str, str]],
+) -> None:
     """Print a startup banner summarizing the microbenchmark configuration."""
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_column("Key", style="bold cyan")
@@ -48,7 +71,7 @@ def _print_banner(cfg: BaseMicrobenchmarkConfig, mod: ModuleType, type_name: str
     table.add_row("API base", cfg.api_base)
     table.add_row("Output dir", cfg.output_dir)
 
-    for label, attr in mod.BANNER_ROWS:
+    for label, attr in banner_rows:
         table.add_row(label, str(getattr(cfg, attr)))
 
     console.print()
@@ -62,7 +85,7 @@ def _print_banner(cfg: BaseMicrobenchmarkConfig, mod: ModuleType, type_name: str
     console.print()
 
 
-def _print_validation_failure(result) -> None:
+def _print_validation_failure(result: ValidationResult) -> None:
     """Print validation results only when there are failures."""
     table = Table(title="Post-Run Validation — Failures Detected", border_style="red")
     table.add_column("Status", justify="center", width=6)
@@ -88,28 +111,3 @@ def _print_validation_failure(result) -> None:
         f"  [green]{num_passed} passed[/green], [yellow]{num_warnings} warnings[/yellow], [red]{num_failures} failures[/red]"
     )
     console.print()
-
-
-def main() -> None:
-    configs = BaseMicrobenchmarkConfig.create_from_cli_args()
-    for cfg in configs:
-        mod, type_name = _CONFIG_DISPATCH[type(cfg)]
-        cfg = _make_run_dir(cfg, type_name)
-        _print_banner(cfg, mod, type_name)
-
-        if not cfg.validate_only:
-            benchmark_configs = mod.build_benchmark_configs(cfg)
-            BenchmarkCliRunner(benchmark_configs).run_all()
-
-        mod.print_results_table(cfg)
-
-        if not cfg.skip_validation:
-            result = mod.validate(cfg, cfg.output_dir)
-            if result.ok:
-                num_passed = sum(
-                    1 for status, _, _ in result.checks if status == "PASS"
-                )
-                logger.info(f"Validation passed ({num_passed} checks)")
-            else:
-                _print_validation_failure(result)
-                sys.exit(1)
