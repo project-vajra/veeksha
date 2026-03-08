@@ -272,8 +272,6 @@ traces/
 .cursorrules
 .cursor/
 
-# claude
-
 # benchmark output
 benchmark_output/
 benchmark_outputs/
