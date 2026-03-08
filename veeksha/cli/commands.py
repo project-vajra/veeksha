@@ -9,8 +9,11 @@
 
 from __future__ import annotations
 
-import sysconfig
-import sys
+import warnings
+
+# Suppress GIL re-enable warnings from C extensions (e.g. tokenizers)
+# that haven't declared free-threaded support yet.
+warnings.filterwarnings("ignore", message=".*global interpreter lock.*", category=RuntimeWarning)
 
 from vidhi import parse_cli_sweep
 
@@ -39,11 +42,5 @@ _RUNNERS = {
 
 def main() -> None:
     """Entry point for the veeksha CLI."""
-    if not sysconfig.get_config_var("Py_GIL_DISABLED"):
-        sys.exit(
-            "veeksha requires free-threaded Python (GIL disabled).\n"
-            "Run with a free-threaded interpreter (e.g. python3.14t)."
-        )
-
     configs = parse_cli_sweep(VeekshaCommand)
     _RUNNERS[type(configs[0])](configs)
