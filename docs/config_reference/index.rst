@@ -48,7 +48,7 @@ For example, the ``traffic_scheduler`` can be either ``rate`` or ``concurrent``:
 IDE autocompletion
 ------------------
 
-See :doc:`/basic_usage/configuration` for instructions on how to set up YAML autocompletion and validation in your IDE.
+See :doc:`/user_guide/configuration` for instructions on how to set up YAML autocompletion and validation in your IDE.
 
 
 .. toctree::

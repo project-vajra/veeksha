@@ -30,7 +30,7 @@ class TracePromptBuilder:
     This utility class provides methods for:
     - Generating unique deterministic prompts from seeds
     - Sampling tokens from a corpus file
-    - Building prompts from hash IDs (for MooncakeConv traces)
+    - Building prompts from hash IDs (for shared-prefix traces)
     """
 
     def __init__(
@@ -157,7 +157,7 @@ class TracePromptBuilder:
         block_size: int = 511,
         special_block_sizes: Optional[dict[int, int]] = None,
     ) -> str:
-        """Build prompt from hash IDs (for MooncakeConv traces).
+        """Build prompt from hash IDs (for shared-prefix traces).
 
         Each hash_id maps to a deterministic block of tokens.
 

@@ -14,7 +14,7 @@ microbenchmarks. One tool, any workload.
 
 **From isolated requests to complex agentic sessions, Veeksha captures the full complexity of modern LLM workloads.**
 
-👉 **New here?** Start with :doc:`why_veeksha` to learn what
+👉 **New here?** Start with :doc:`getting_started/why_veeksha` to learn what
 sets Veeksha apart.
 
 .. note::
@@ -79,26 +79,30 @@ Documentation
 
 .. toctree::
    :maxdepth: 2
-   :caption: Getting started
+   :caption: Getting Started
 
-   why_veeksha
-   installation
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Core concepts
-
-   understanding_veeksha/index
+   getting_started/index
 
 .. toctree::
    :maxdepth: 2
-   :caption: Tutorials
+   :caption: Microbenchmarks
 
-   basic_usage/index
-   advanced_usage/index
+   microbenchmarks/index
+
+.. toctree::
+   :maxdepth: 2
+   :caption: User Guide
+
+   user_guide/index
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Design
+
+   design/index
 
 .. toctree::
    :maxdepth: 2
    :caption: Reference
 
-   config_reference/index
+   reference/index

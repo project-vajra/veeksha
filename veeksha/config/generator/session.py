@@ -98,10 +98,9 @@ class BaseTraceFlavorConfig(BasePolyConfig):
 
 
 @frozen_dataclass
-class ClaudeCodeTraceFlavorConfig(BaseTraceFlavorConfig):
-    """Context-cached trace flavor configuration."""
+class TimedSyntheticMultiTurnTraceFlavorConfig(BaseTraceFlavorConfig):
+    """Timed synthetic multi-turn trace flavor configuration with context caching."""
 
-    # TODO global corpus file
     corpus_file: str = field(
         default="traces/corpus.txt",
         metadata={"help": "Path to corpus file for prompt padding"},
@@ -113,12 +112,12 @@ class ClaudeCodeTraceFlavorConfig(BaseTraceFlavorConfig):
 
     @classmethod
     def get_type(cls):
-        return TraceFlavorType.CLAUDE_CODE
+        return TraceFlavorType.TIMED_SYNTHETIC_MULTI_TURN
 
 
 @frozen_dataclass
-class MooncakeConvTraceFlavorConfig(BaseTraceFlavorConfig):
-    """Mooncake conversation trace flavor configuration."""
+class SharedPrefixTraceFlavorConfig(BaseTraceFlavorConfig):
+    """Shared-prefix trace flavor configuration with hash-based content sharing."""
 
     corpus_file: str = field(
         default="traces/corpus.txt",
@@ -133,7 +132,7 @@ class MooncakeConvTraceFlavorConfig(BaseTraceFlavorConfig):
 
     @classmethod
     def get_type(cls):
-        return TraceFlavorType.MOONCAKE_CONV
+        return TraceFlavorType.SHARED_PREFIX
 
 
 @frozen_dataclass
@@ -150,6 +149,54 @@ class RAGTraceFlavorConfig(BaseTraceFlavorConfig):
         return TraceFlavorType.RAG
 
 
+@frozen_dataclass
+class RequestLogTraceFlavorConfig(BaseTraceFlavorConfig):
+    """Request log trace flavor: independent requests with token lengths only.
+
+    Each row is a standalone request with input_length and output_length.
+    No session structure, no corpus files, no prompt materialization.
+    Supports CSV and JSONL trace files.
+    """
+
+    @classmethod
+    def get_type(cls):
+        return TraceFlavorType.REQUEST_LOG
+
+
+@frozen_dataclass
+class UntimedContentMultiTurnTraceFlavorConfig(BaseTraceFlavorConfig):
+    """Untimed content multi-turn trace flavor: replay datasets with actual message content.
+
+    Supports datasets like ShareGPT, LMSYS-Chat, etc. where each row
+    contains a full conversation with actual text content.
+    """
+
+    conversation_column: str = field(
+        default="conversations",
+        metadata={"help": "Column containing the list of conversation messages"},
+    )
+    role_key: str = field(
+        default="from",
+        metadata={"help": "Key for the role field in each message dict"},
+    )
+    content_key: str = field(
+        default="value",
+        metadata={"help": "Key for the content field in each message dict"},
+    )
+    user_role_value: str = field(
+        default="human",
+        metadata={"help": "Role value indicating user messages"},
+    )
+    assistant_role_value: str = field(
+        default="gpt",
+        metadata={"help": "Role value indicating assistant messages"},
+    )
+
+    @classmethod
+    def get_type(cls):
+        return TraceFlavorType.UNTIMED_CONTENT_MULTI_TURN
+
+
 # ----- Trace Session Generator Config -----
 
 
@@ -159,14 +206,14 @@ class TraceSessionGeneratorConfig(BaseSessionGeneratorConfig):
 
     trace_file: str = field(
         default="",
-        metadata={"help": "Path to the JSONL trace file"},
+        metadata={"help": "Path to the trace file (JSONL or CSV)"},
     )
     wrap_mode: bool = field(
         default=True,
         metadata={"help": "Whether to wrap/loop over the trace indefinitely"},
     )
     flavor: BaseTraceFlavorConfig = field(
-        default_factory=ClaudeCodeTraceFlavorConfig,
+        default_factory=TimedSyntheticMultiTurnTraceFlavorConfig,
         metadata={"help": f"Trace flavor configuration. {TraceFlavorType.help_str()}"},
     )
 

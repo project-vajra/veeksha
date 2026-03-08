@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 import httpx
 
@@ -47,12 +47,16 @@ class OpenAICompletionsClient(OpenAIBaseClient):
         request: Request,
         session_id: int,
         session_total_requests: int = 1,
+        on_request_sent: Optional[Callable[[], None]] = None,
+        on_request_dispatched: Optional[Callable[[], None]] = None,
     ) -> RequestResult:
         """Send a request to the OpenAI `/completions` endpoint (non-streaming)."""
         return await self._send_completions_request(
             request=request,
             session_id=session_id,
             session_total_requests=session_total_requests,
+            on_request_sent=on_request_sent,
+            on_request_dispatched=on_request_dispatched,
         )
 
     async def _send_completions_request(
@@ -60,6 +64,8 @@ class OpenAICompletionsClient(OpenAIBaseClient):
         request: Request,
         session_id: int,
         session_total_requests: int,
+        on_request_sent: Optional[Callable[[], None]] = None,
+        on_request_dispatched: Optional[Callable[[], None]] = None,
     ) -> RequestResult:
         """Execute the HTTP request against `/completions` and parse the response."""
         timeout = self.config.request_timeout
@@ -119,6 +125,10 @@ class OpenAICompletionsClient(OpenAIBaseClient):
                 self.completions_address, json=body, headers=headers, timeout=timeout
             )
             response.raise_for_status()
+            if on_request_dispatched is not None:
+                on_request_dispatched()
+            if on_request_sent is not None:
+                on_request_sent()
             data = response.json()
             choices = data.get("choices") or []
             if choices:

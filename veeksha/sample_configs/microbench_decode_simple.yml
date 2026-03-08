@@ -1,0 +1,7 @@
+type: decode
+model: meta-llama/Llama-3.1-8B-Instruct
+api_base: http://localhost:30002/v1
+input_lengths: [512]
+batch_sizes: [1, 2, 4, 8]
+engine_chunk_size: 512
+samples_per_length: 100
