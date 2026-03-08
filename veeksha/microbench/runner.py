@@ -18,7 +18,6 @@ from veeksha.microbench.config import BaseMicrobenchmarkConfig
 logger = init_logger(__name__)
 console = Console()
 
-_TIMESTAMP_FMT = "%Y-%m-%d_%H-%M-%S"
 
 
 def run(
@@ -49,11 +48,22 @@ def run(
             sys.exit(1)
 
 
+_TIMESTAMP_FMT = "%Y-%m-%d_%H-%M-%S"
+
+
 def _make_run_dir(cfg: BaseMicrobenchmarkConfig, type_name: str) -> BaseMicrobenchmarkConfig:
-    """Create a unique timestamped directory for this microbenchmark invocation."""
+    """Create a timestamped run directory under output_dir/<type_name>/ and update the 'latest' symlink."""
     timestamp = datetime.now(timezone.utc).strftime(_TIMESTAMP_FMT)
-    run_dir = os.path.join(cfg.output_dir, f"{type_name}_{timestamp}")
+    type_dir = os.path.join(cfg.output_dir, type_name)
+    run_dir = os.path.join(type_dir, timestamp)
     os.makedirs(run_dir, exist_ok=True)
+
+    # Maintain a 'latest' symlink
+    latest = os.path.join(type_dir, "latest")
+    tmp_link = latest + ".tmp"
+    os.symlink(timestamp, tmp_link)
+    os.replace(tmp_link, latest)
+
     return replace(cfg, output_dir=run_dir)
 
 

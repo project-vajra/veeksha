@@ -1,6 +1,13 @@
 """Decode microbenchmark: build, validate, and report."""
 
+import csv
 import os
+from collections import defaultdict
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from rich.table import Table
 
@@ -120,6 +127,7 @@ def build_benchmark_configs(cfg: DecodeMicrobenchmarkConfig) -> list[BenchmarkCo
                     evaluators=[
                         PerformanceEvaluatorConfig(
                             stream_metrics=False,
+                            slos=[],
                             text_channel=TextChannelPerformanceConfig(
                                 decode_window_enabled=True,
                                 decode_window_config=DecodeWindowConfig(
@@ -276,6 +284,70 @@ def print_results_table(cfg: DecodeMicrobenchmarkConfig) -> None:
         ]},
         os.path.join(cfg.output_dir, "decode_results.json"),
     )
+
+    # CSV
+    csv_path = os.path.join(cfg.output_dir, "decode_results.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(
+            f, fieldnames=["batch_size", "input_length", "mean_ms", "p50_ms", "p99_ms", "min_ms", "max_ms", "samples"]
+        )
+        writer.writeheader()
+        for bs, il, s in rows:
+            writer.writerow({
+                "batch_size": bs,
+                "input_length": il,
+                "mean_ms": s.get("mean", 0) * 1000,
+                "p50_ms": s.get("median", 0) * 1000,
+                "p99_ms": s.get("p99", 0) * 1000,
+                "min_ms": s.get("min", 0) * 1000,
+                "max_ms": s.get("max", 0) * 1000,
+                "samples": s.get("count", 0),
+            })
+    console.print(f"  CSV saved to {csv_path}")
+
+    # Plots: TBT vs batch size, one line per input length
+    if len(rows) >= 2:
+        plots_dir = os.path.join(cfg.output_dir, "plots")
+        os.makedirs(plots_dir, exist_ok=True)
+
+        # Group by input_length
+        by_il: dict[int, list[tuple[int, dict]]] = defaultdict(list)
+        for bs, il, s in rows:
+            by_il[il].append((bs, s))
+
+        # TBT P50 vs batch size
+        fig, ax = plt.subplots(figsize=(8, 5))
+        for il in sorted(by_il.keys()):
+            points = sorted(by_il[il], key=lambda x: x[0])
+            ax.plot([p[0] for p in points], [p[1].get("median", 0) * 1000 for p in points],
+                    "o-", label=f"il={il}", linewidth=2)
+        ax.set_xlabel("Batch Size")
+        ax.set_ylabel("TBT P50 (ms)")
+        ax.set_title("Time Between Tokens (P50) vs Batch Size")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        fig.savefig(os.path.join(plots_dir, "tbt_p50_vs_batch_size.png"), dpi=150)
+        plt.close(fig)
+
+        # TBT P99 vs batch size
+        fig, ax = plt.subplots(figsize=(8, 5))
+        for il in sorted(by_il.keys()):
+            points = sorted(by_il[il], key=lambda x: x[0])
+            ax.plot([p[0] for p in points], [p[1].get("p99", 0) * 1000 for p in points],
+                    "s--", label=f"il={il}", linewidth=2)
+        ax.set_xlabel("Batch Size")
+        ax.set_ylabel("TBT P99 (ms)")
+        ax.set_title("Time Between Tokens (P99) vs Batch Size")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        fig.savefig(os.path.join(plots_dir, "tbt_p99_vs_batch_size.png"), dpi=150)
+        plt.close(fig)
+
+        console.print(f"  Plots saved to {plots_dir}/")
+
+    console.print()
 
 
 # ---------------------------------------------------------------------------

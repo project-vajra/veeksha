@@ -1,6 +1,12 @@
 """Prefill microbenchmark: build, validate, and report."""
 
+import csv
 import os
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from rich.table import Table
 
@@ -83,7 +89,7 @@ def build_benchmark_configs(cfg: PrefillMicrobenchmarkConfig) -> list[BenchmarkC
                 cancel_session_on_failure=False,
             ),
             evaluators=[
-                PerformanceEvaluatorConfig(stream_metrics=False),
+                PerformanceEvaluatorConfig(stream_metrics=False, slos=[]),
             ],
             client=build_client_config(cfg),
             runtime=RuntimeConfig(
@@ -225,6 +231,49 @@ def print_results_table(cfg: PrefillMicrobenchmarkConfig) -> None:
         {"type": "prefill", "metric": "ttfc", "results": rows},
         os.path.join(cfg.output_dir, "prefill_results.json"),
     )
+
+    # CSV
+    csv_path = os.path.join(cfg.output_dir, "prefill_results.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(
+            f, fieldnames=["input_length", "mean_ms", "p50_ms", "p99_ms", "min_ms", "max_ms", "count"]
+        )
+        writer.writeheader()
+        for row in rows:
+            s = row["ttfc"]
+            writer.writerow({
+                "input_length": row["input_length"],
+                "mean_ms": s["mean"] * 1000,
+                "p50_ms": s["median"] * 1000,
+                "p99_ms": s["p99"] * 1000,
+                "min_ms": s["min"] * 1000,
+                "max_ms": s["max"] * 1000,
+                "count": s["count"],
+            })
+    console.print(f"  CSV saved to {csv_path}")
+
+    # Plots
+    if len(rows) >= 2:
+        plots_dir = os.path.join(cfg.output_dir, "plots")
+        os.makedirs(plots_dir, exist_ok=True)
+        lengths = [r["input_length"] for r in rows]
+        p50s = [r["ttfc"]["median"] * 1000 for r in rows]
+        p99s = [r["ttfc"]["p99"] * 1000 for r in rows]
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.plot(lengths, p50s, "o-", label="P50", linewidth=2)
+        ax.plot(lengths, p99s, "s--", label="P99", linewidth=2)
+        ax.set_xlabel("Input Length (tokens)")
+        ax.set_ylabel("TTFC (ms)")
+        ax.set_title("Time to First Token vs Input Length")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        fig.savefig(os.path.join(plots_dir, "ttfc_vs_input_length.png"), dpi=150)
+        plt.close(fig)
+        console.print(f"  Plots saved to {plots_dir}/")
+
+    console.print()
 
 
 # ---------------------------------------------------------------------------
