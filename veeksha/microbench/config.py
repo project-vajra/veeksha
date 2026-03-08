@@ -14,6 +14,14 @@ class StressTrafficMode(StrEnum):
     FIXED_RATE = "fixed-rate"
 
 
+class StressModeType(StrEnum):
+    """Stress mode type discriminator."""
+
+    MANUAL = "manual"
+    RANGE = "range"
+    AUTO = "auto"
+
+
 @frozen_dataclass
 class BaseMicrobenchmarkConfig:
     """Shared fields for all microbenchmark types."""
@@ -115,8 +123,8 @@ class ManualStressModeConfig(BaseStressModeConfig):
     )
 
     @classmethod
-    def get_type(cls):
-        return "manual"
+    def get_type(cls) -> StressModeType:
+        return StressModeType.MANUAL
 
 
 @frozen_dataclass
@@ -128,8 +136,8 @@ class RangeStressModeConfig(BaseStressModeConfig):
     concurrency_points: int = field(8, help="Number of log-spaced points to test")
 
     @classmethod
-    def get_type(cls):
-        return "range"
+    def get_type(cls) -> StressModeType:
+        return StressModeType.RANGE
 
 
 @frozen_dataclass
@@ -146,8 +154,8 @@ class AutoStressModeConfig(BaseStressModeConfig):
     resume_dir: str = field("", help="Resume from a previous run directory")
 
     @classmethod
-    def get_type(cls):
-        return "auto"
+    def get_type(cls) -> StressModeType:
+        return StressModeType.AUTO
 
 
 @frozen_dataclass
@@ -196,8 +204,8 @@ ManualStressConfig = ManualStressModeConfig
 RangeStressConfig = RangeStressModeConfig
 AutoStressConfig = AutoStressModeConfig
 
-STRESS_MODE_TO_CONFIG: dict[str, type[BaseStressModeConfig]] = {
-    "manual": ManualStressModeConfig,
-    "range": RangeStressModeConfig,
-    "auto": AutoStressModeConfig,
+STRESS_MODE_TO_CONFIG: dict[StressModeType, type[BaseStressModeConfig]] = {
+    StressModeType.MANUAL: ManualStressModeConfig,
+    StressModeType.RANGE: RangeStressModeConfig,
+    StressModeType.AUTO: AutoStressModeConfig,
 }
