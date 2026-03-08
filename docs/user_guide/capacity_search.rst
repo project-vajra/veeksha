@@ -382,8 +382,7 @@ Find the maximum concurrency for throughput-oriented deployments:
 
 .. code-block:: bash
 
-    python -Xgil=0 -m veeksha.capacity_search \
-        --capacity-search-config-from-file capacity_concurrent.veeksha.yml
+    uvx veeksha capacity-search --config capacity_concurrent.veeksha.yml
 
 .. tip::
 

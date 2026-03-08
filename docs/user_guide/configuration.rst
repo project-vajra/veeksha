@@ -69,39 +69,18 @@ Many options have a ``type`` field that selects a variant with its own options:
         type: poisson
         arrival_rate: 10.0
 
-Each ``type`` exposes different options. Use the config explorer (next section) to discover them or take a look at the :doc:`/config_reference/index`.
-
-
-Config exploration tools
-------------------------
-
-On top of the full API reference (:doc:`/config_reference/index`), Veeksha includes CLI tools for exploring the configuration schema:
-
-**Interactive Explorer**
-
-.. code-block:: bash
-
-    uvx veeksha config explore
-
-To navigate the config tree interactively.
-
-**Show Full Schema**
-
-.. code-block:: bash
-
-    # YAML format
-    uvx veeksha config show --format yaml
-
-    # JSON format
-    uvx veeksha config show --format json
+Each ``type`` exposes different options. See the :doc:`/config_reference/index` for the full list.
 
 .. _configuration-export-json-schema:
 
-**Export JSON schema** (for YAML IDE autocompletion and linting)
+Exporting JSON schema
+---------------------
+
+Export a JSON schema for YAML IDE autocompletion and linting:
 
 .. code-block:: bash
 
-    uvx veeksha config export-schema -o veeksha-schema.json
+    uvx veeksha benchmark --export-json-schema veeksha-schema.json
 
 Configure your IDE to use this schema. In VSCode and forks:
 

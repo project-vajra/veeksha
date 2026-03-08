@@ -5,14 +5,10 @@ This section provides a comprehensive reference for all configuration options in
 Configuration can be provided via YAML files or CLI arguments.
 
 .. tip::
-   
-   Use the interactive config explorer for an easier experience::
-   
-       uvx veeksha config explore
 
-   Or generate a YAML schema template::
-   
-       uvx veeksha config show --format yaml
+   Export a JSON schema for IDE autocompletion::
+
+       uvx veeksha benchmark --export-json-schema
 
 
 Quick links
