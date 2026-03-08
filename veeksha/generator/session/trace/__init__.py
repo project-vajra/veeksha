@@ -1,17 +1,25 @@
 from veeksha.generator.session.trace.base import TraceSessionGenerator
 from veeksha.generator.session.trace.base_flavor import TraceFlavorGeneratorBase
-from veeksha.generator.session.trace.claude_code import (
-    ClaudeCodeTraceFlavorGenerator,
+from veeksha.generator.session.trace.conversation import (
+    UntimedContentMultiTurnTraceFlavorGenerator,
 )
-from veeksha.generator.session.trace.mooncake_conv import (
-    MooncakeConvTraceFlavorGenerator,
+from veeksha.generator.session.trace.multi_turn import (
+    TimedSyntheticMultiTurnTraceFlavorGenerator,
 )
 from veeksha.generator.session.trace.rag import RAGTraceFlavorGenerator
+from veeksha.generator.session.trace.request_log import (
+    RequestLogTraceFlavorGenerator,
+)
+from veeksha.generator.session.trace.shared_prefix import (
+    SharedPrefixTraceFlavorGenerator,
+)
 
 __all__ = [
     "TraceSessionGenerator",
     "TraceFlavorGeneratorBase",
-    "ClaudeCodeTraceFlavorGenerator",
-    "MooncakeConvTraceFlavorGenerator",
+    "TimedSyntheticMultiTurnTraceFlavorGenerator",
+    "SharedPrefixTraceFlavorGenerator",
     "RAGTraceFlavorGenerator",
+    "RequestLogTraceFlavorGenerator",
+    "UntimedContentMultiTurnTraceFlavorGenerator",
 ]

@@ -1,4 +1,4 @@
-"""Mooncake Conversation trace flavor generator."""
+"""Shared-prefix trace flavor generator."""
 
 import random
 from pathlib import Path
@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Set
 import pandas as pd
 
 from veeksha.config.generator.session import (
-    MooncakeConvTraceFlavorConfig,
+    SharedPrefixTraceFlavorConfig,
     TraceSessionGeneratorConfig,
 )
 from veeksha.core.seeding import SeedManager
@@ -61,8 +61,8 @@ def _remap_trace_hash_ids(
     return df
 
 
-class MooncakeConvTraceFlavorGenerator(TraceFlavorGeneratorBase):
-    """Mooncake Conversation trace flavor generator.
+class SharedPrefixTraceFlavorGenerator(TraceFlavorGeneratorBase):
+    """Shared-prefix trace flavor generator.
 
     Supports traces with explicit hash_id-based content sharing across sessions.
     Same hash_id produces identical prompt content, modeling prefix sharing.
@@ -71,7 +71,7 @@ class MooncakeConvTraceFlavorGenerator(TraceFlavorGeneratorBase):
     def __init__(
         self,
         config: TraceSessionGeneratorConfig,
-        flavor_config: MooncakeConvTraceFlavorConfig,
+        flavor_config: SharedPrefixTraceFlavorConfig,
         seed_manager: SeedManager,
         tokenizer_provider: TokenizerProvider,
     ):
@@ -87,8 +87,8 @@ class MooncakeConvTraceFlavorGenerator(TraceFlavorGeneratorBase):
                 Path(flavor_config.corpus_file) if flavor_config.corpus_file else None
             ),
         )
-        self._wrap_rng = seed_manager.random("mooncake_conv_wrapping")
-        self._corpus_rng = seed_manager.random("mooncake_conv_corpus")
+        self._wrap_rng = seed_manager.random("shared_prefix_wrapping")
+        self._corpus_rng = seed_manager.random("shared_prefix_corpus")
 
     @property
     def required_columns(self) -> List[str]:
@@ -164,7 +164,7 @@ class MooncakeConvTraceFlavorGenerator(TraceFlavorGeneratorBase):
     def wrap(self) -> pd.DataFrame:
         """Wrap trace for new epoch.
 
-        The mooncake conversation trace has sharing across sessions.
+        The shared-prefix trace has sharing across sessions.
         Only the first hash_id is shared across all sessions, so we
         keep it fixed and remap the rest.
         """

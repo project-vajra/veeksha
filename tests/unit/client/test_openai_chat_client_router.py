@@ -38,6 +38,8 @@ def test_openai_router_client_routes_per_request_api_mode() -> None:
         request: Request,
         session_id: int,
         session_total_requests: int = 1,
+        on_request_sent=None,
+        on_request_dispatched=None,
     ) -> RequestResult:
         called["chat"] += 1
         return RequestResult(
@@ -53,6 +55,8 @@ def test_openai_router_client_routes_per_request_api_mode() -> None:
         request: Request,
         session_id: int,
         session_total_requests: int = 1,
+        on_request_sent=None,
+        on_request_dispatched=None,
     ) -> RequestResult:
         called["completions"] += 1
         return RequestResult(

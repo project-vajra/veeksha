@@ -1,4 +1,4 @@
-"""Context-Cached trace flavor generator."""
+"""Timed synthetic multi-turn trace flavor generator."""
 
 from pathlib import Path
 from typing import List, Optional
@@ -6,7 +6,7 @@ from typing import List, Optional
 import pandas as pd  # type: ignore[import]
 
 from veeksha.config.generator.session import (
-    ClaudeCodeTraceFlavorConfig,
+    TimedSyntheticMultiTurnTraceFlavorConfig,
     TraceSessionGeneratorConfig,
 )
 from veeksha.core.seeding import SeedManager
@@ -19,16 +19,21 @@ from veeksha.logger import init_logger
 logger = init_logger(__name__)
 
 
-class ClaudeCodeTraceFlavorGenerator(TraceFlavorGeneratorBase):
-    """ClaudeCode trace flavor generator."""
+class TimedSyntheticMultiTurnTraceFlavorGenerator(TraceFlavorGeneratorBase):
+    """Timed synthetic multi-turn trace flavor generator.
 
-    _PROMPT_COL = "_cc_prompt_text"
-    _SEED_COL = "_cc_session_seed"
+    Supports multi-turn session traces with context caching.
+    Each session has multiple turns where later turns accumulate
+    context from earlier ones, modeling KV-cache prefix reuse.
+    """
+
+    _PROMPT_COL = "_mt_prompt_text"
+    _SEED_COL = "_mt_session_seed"
 
     def __init__(
         self,
         config: TraceSessionGeneratorConfig,
-        flavor_config: ClaudeCodeTraceFlavorConfig,
+        flavor_config: TimedSyntheticMultiTurnTraceFlavorConfig,
         seed_manager: SeedManager,
         tokenizer_provider: TokenizerProvider,
     ):
@@ -42,10 +47,10 @@ class ClaudeCodeTraceFlavorGenerator(TraceFlavorGeneratorBase):
                 Path(flavor_config.corpus_file) if flavor_config.corpus_file else None
             ),
         )
-        self._session_seed_rng = seed_manager.random("cc_session_seeds")
-        self._wrap_rng = seed_manager.random("cc_wrapping")
+        self._session_seed_rng = seed_manager.random("mt_session_seeds")
+        self._wrap_rng = seed_manager.random("mt_wrapping")
 
-        logger.info("Materializing prompts for ClaudeCode trace...")
+        logger.info("Materializing prompts for multi-turn trace...")
         self.trace_df = self._materialize_prompts(self.trace_df)
 
     @property
@@ -69,7 +74,7 @@ class ClaudeCodeTraceFlavorGenerator(TraceFlavorGeneratorBase):
 
             prompt_text = row.get(self._PROMPT_COL)
             if prompt_text is None:
-                raise ValueError("Prompt cache missing for ClaudeCode trace row.")
+                raise ValueError("Prompt cache missing for multi-turn trace row.")
 
             wait_time_val = row.get("wait_after_previous_response_s")
             if wait_time_val is None or pd.isna(wait_time_val):

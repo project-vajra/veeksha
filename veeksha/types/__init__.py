@@ -30,9 +30,11 @@ class SessionGeneratorType(BaseIntEnum):
 
 
 class TraceFlavorType(BaseIntEnum):
-    CLAUDE_CODE = 1
-    MOONCAKE_CONV = 2
+    TIMED_SYNTHETIC_MULTI_TURN = 1
+    SHARED_PREFIX = 2
     RAG = 3
+    REQUEST_LOG = 4
+    UNTIMED_CONTENT_MULTI_TURN = 5
 
 
 class ChannelModality(BaseIntEnum):

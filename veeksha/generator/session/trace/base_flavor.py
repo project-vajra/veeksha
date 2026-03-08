@@ -49,7 +49,7 @@ class TraceFlavorGeneratorBase:
         self.tokenizer = tokenizer_provider.for_modality(ChannelModality.TEXT)
 
         self._validate_trace_exists(config.trace_file)
-        self.trace_df = pd.read_json(config.trace_file, lines=True)
+        self.trace_df = self._load_trace(config.trace_file)
         self._validate_trace()
 
         # wrapping state
@@ -76,6 +76,23 @@ class TraceFlavorGeneratorBase:
     def get_warmup_sessions(self) -> List[Session]:
         """Return warmup sessions. Default empty, override for RAG."""
         return []
+
+    def _load_trace(self, trace_file: str) -> pd.DataFrame:
+        """Load trace from JSONL or CSV based on file extension."""
+        ext = os.path.splitext(trace_file)[1].lower()
+        if ext == ".csv":
+            df = pd.read_csv(trace_file)
+            # Normalize common column name variations
+            col_renames = {
+                "num_prefill_tokens": "input_length",
+                "num_decode_tokens": "output_length",
+            }
+            df = df.rename(
+                columns={k: v for k, v in col_renames.items() if k in df.columns}
+            )
+            return df
+        else:
+            return pd.read_json(trace_file, lines=True)
 
     def _validate_trace_exists(self, trace_file: str):
         """Validate that trace file exists."""
@@ -132,7 +149,10 @@ class TraceFlavorGeneratorBase:
         return len(self.trace_df.groupby("session_id"))
 
     def _build_linear_session_graph(
-        self, num_requests: int, wait_times: List[float]
+        self,
+        num_requests: int,
+        wait_times: List[float],
+        is_history_parent: bool = True,
     ) -> SessionGraph:
         """Build a linear session graph (1→2→3...)."""
         graph = SessionGraph()
@@ -140,7 +160,10 @@ class TraceFlavorGeneratorBase:
             wait = wait_times[i] if i < len(wait_times) else 0.0
             add_node(graph, SessionNode(id=i, wait_after_ready=wait))
             if i > 0:
-                add_edge(graph, SessionEdge(src=i - 1, dst=i, is_history_parent=True))
+                add_edge(
+                    graph,
+                    SessionEdge(src=i - 1, dst=i, is_history_parent=is_history_parent),
+                )
         return graph
 
     def _create_text_request(
