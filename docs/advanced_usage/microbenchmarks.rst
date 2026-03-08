@@ -1,9 +1,12 @@
 Microbenchmarks
 ===============
 
-Microbenchmarks isolate specific operations (prefill, decode) for precise
-performance measurement. This guide covers how to configure Veeksha for
-targeted microbenchmarking.
+Veeksha provides self-contained CLI microbenchmarks that isolate specific
+inference operations for precise measurement. Each microbenchmark has its own
+entrypoint, generates results tables, CSV files, JSON output, and plots.
+
+All microbenchmark output is written to ``<output_dir>/<type>/<timestamp>/``
+with a ``latest`` symlink for convenience.
 
 
 Prefill vs decode
@@ -19,237 +22,321 @@ LLM inference has two main phases:
     Generating output tokens one at a time.
     Memory-bandwidth bound, scales with batch size.
 
-Measuring these separately helps identify bottlenecks.
+Measuring these separately helps identify bottlenecks. The **stress**
+microbenchmark then characterizes the full throughput-vs-latency tradeoff
+under load.
 
 
 Prefill microbenchmark
 ----------------------
 
-Isolate prefill by using fixed-length prompts, minimal outputs, and no batching:
+Measures **Time to First Token (TTFC)** across input lengths by sending
+one request at a time with minimal output tokens.
 
-.. code-block:: yaml
+.. code-block:: bash
 
-    # prefill_benchmark.veeksha.yml
-    seed: 42
-    output_dir: microbench_prefill
+    veeksha.microbench.prefill \
+        --api-base http://localhost:8000/v1 \
+        --model meta-llama/Llama-3-8B-Instruct \
+        --input-lengths 128 256 512 1024 2048 \
+        --output-tokens 1 \
+        --samples-per-length 10 \
+        --output-dir microbench_output
 
-    traffic_scheduler:
-      type: concurrent
-      target_concurrent_sessions: 1    # No batching
-      rampup_seconds: 0
+**Key parameters:**
 
-    session_generator:
-      type: synthetic
-      session_graph:
-        type: linear
-        inherit_history: false
-        num_request_generator:
-          type: fixed
-          value: 1
-      channels:
-        - type: text
-          body_length_generator:
-            type: fixed_stair              # Sweep prompt lengths
-            values: [128, 256, 512, 1024, 2048]
-            repeat_each: 10                # 10 requests per length
-      output_spec:
-        text:
-          output_length_generator:
-            type: fixed
-            value: 1                 # Minimal output
+``--input-lengths``
+    List of prompt lengths to sweep. Requests are generated using a stair
+    pattern (``samples_per_length`` requests per length).
 
-    client:
-      type: openai_chat_completions
-      api_base: http://localhost:8000/v1
-      model: meta-llama/Llama-3-8B-Instruct
+``--output-tokens``
+    Number of output tokens per request (default: 1). Keep minimal to
+    isolate prefill.
 
-    runtime:
-      max_sessions: 50               # 5 lengths × 10 samples
-      benchmark_timeout: 600
+``--samples-per-length``
+    Repetitions per input length for statistical stability.
 
-    evaluators:
-      - type: performance
-        target_channels: ["text"]
-        stream_metrics: false
-        slos:
-          - name: "P99 TTFC"
-            metric: ttfc
-            percentile: 0.99
-            value: 0.5
-            type: constant
+**Output files:**
 
-The **stair length generator** creates requests with increasing prompt lengths:
+- ``prefill_results.json`` — structured results with TTFC stats per length
+- ``prefill_results.csv`` — tabular format for downstream analysis
+- ``plots/ttfc_vs_input_length.png`` — TTFC P50/P99 vs input length
 
-.. code-block:: text
+.. image:: /_static/assets/prefill_ttfc_vs_input_length.png
+   :alt: TTFC vs Input Length
+   :width: 600px
 
-    10 requests at 128 tokens
-    10 requests at 256 tokens
-    10 requests at 512 tokens
-    10 requests at 1024 tokens
-    10 requests at 2048 tokens
-
-Analyze ``prefill_stats.json`` to see TTFC grouped by prompt length.
+**Validation checks:** session count, output token count, sequential execution,
+prompt token stair pattern.
 
 
 Decode microbenchmark
 ---------------------
 
-Isolate decode by using fixed prompts, variable outputs, and controlled batching:
+Measures **Time Between Tokens (TBT)** across batch sizes and input lengths
+using decode window analysis to isolate steady-state decode performance.
 
-.. code-block:: yaml
+.. code-block:: bash
 
-    # decode_benchmark.veeksha.yml
-    seed: 42
-    output_dir: microbench_decode
+    veeksha.microbench.decode \
+        --api-base http://localhost:8000/v1 \
+        --model meta-llama/Llama-3-8B-Instruct \
+        --batch-sizes 1 2 4 8 16 \
+        --input-lengths 128 512 \
+        --samples-per-length 20 \
+        --engine-chunk-size 512 \
+        --output-dir microbench_output
 
-    traffic_scheduler:
-      type: concurrent
-      target_concurrent_sessions: 8   # Batch size
-      rampup_seconds: 0
+**Key parameters:**
 
-    session_generator:
-      type: synthetic
-      session_graph:
-        type: linear
-        inherit_history: false
-        num_request_generator:
-          type: fixed
-          value: 1
-      channels:
-        - type: text
-          body_length_generator:
-            type: fixed
-            value: 128              # Minimal context
-      output_spec:
-        text:
-          output_length_generator:
-            type: fixed
-            value: 512              # Focus on decode
+``--batch-sizes``
+    Concurrent request counts. Each (batch_size, input_length) pair runs as
+    a separate benchmark. Requests are launched sequentially so that the
+    first request enters decode before the last finishes prefilling.
 
-    client:
-      type: openai_chat_completions
-      api_base: http://localhost:8000/v1
-      model: meta-llama/Llama-3-8B-Instruct
-      min_tokens_param: min_tokens  # Ensure exact output length
+``--input-lengths``
+    Prompt lengths to test at each batch size.
 
-    runtime:
-      max_sessions: 100
-      benchmark_timeout: 600
+``--engine-chunk-size``
+    Engine's iteration budget (tokens per step). Used to compute how many
+    output tokens the first request needs to still be decoding when the
+    last request finishes prefilling.
 
-    evaluators:
-      - type: performance
-        target_channels: ["text"]
-        stream_metrics: false
-        text_channel:
-          decode_window_enabled: true
-          decode_window_config:
-            min_active_requests: 8         # Only measure at full batch
-            selection_strategy: all
-            anchor_to_client_pickup: true
-            require_streaming: true
-        slos:
-          - name: "P90 TBC"
-            metric: tbc
-            percentile: 0.90
-            value: 0.05
-            type: constant
+**Output files:**
 
+- ``decode_results.json`` — TBT stats per (batch_size, input_length)
+- ``decode_results.csv`` — tabular format
+- ``plots/tbt_p50_vs_batch_size.png`` — TBT P50 vs batch size (one line per input length)
+- ``plots/tbt_p99_vs_batch_size.png`` — TBT P99 vs batch size
 
-Decode window analysis
-----------------------
-
-The **decode window** isolates steady-state decode performance by filtering
-out prefill and ramp-up effects:
-
-.. code-block:: yaml
-
-    text_channel:
-      decode_window_enabled: true
-      decode_window_config:
-        min_active_requests: 8        # Minimum concurrent requests
-        selection_strategy: all       # Include all tokens in window
-        anchor_to_client_pickup: true # Start from first response
-        require_streaming: true       # Only streaming responses
-
-``min_active_requests``
-    Only measure tokens when at least this many requests are active.
-    Use ``"max_observed"`` to auto-detect peak batch size.
-
-``selection_strategy``
-    - ``all``: Include all tokens in the window
-    - ``middle``: Exclude first/last portions
-
-This produces accurate per-token decode throughput without prefill influence.
-
-
-Decode window output files
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-When decode window analysis is enabled, additional files are generated in the
-``metrics/`` directory:
-
-**decode_window_metrics.json**
-    Detailed decode window statistics including per-batch TBC measurements
-    and throughput calculations.
-
-**decode_window_plot.png**
-    Visualization showing token generation over time with the decode window
-    highlighted:
-
-.. image:: /_static/assets/decode_window_plot.png
-   :alt: Decode window analysis plot
+.. image:: /_static/assets/decode_tbt_p50_vs_batch_size.png
+   :alt: TBT P50 vs Batch Size
    :width: 600px
 
-The plot shows active requests over time, with the decode windows
-(steady-state regions) shaded. Only tokens within these windows contribute
-to the final, windowed, decode throughput metrics.
+**Validation checks:** matching requests per input length, FCFS ordering,
+decode window overlap (sufficient samples in steady-state).
 
 
-Batch size sweep
-----------------
+Stress microbenchmark
+---------------------
 
-Measure decode throughput across batch sizes:
+Measures **throughput-vs-latency tradeoff curves** by running a fixed workload
+(single input/output length) at increasing concurrency levels. Inspired by
+`InferenceX <https://inferencex.semianalysis.com/>`_.
 
-.. code-block:: yaml
+The stress microbenchmark supports three modes: **manual**, **range**, and
+**auto**.
 
-    # decode_batch_sweep.veeksha.yml
-    seed: 42
-    output_dir: microbench_decode_batch
 
-    traffic_scheduler:
-      type: concurrent
-      target_concurrent_sessions: !expand [1, 2, 4, 8, 16, 32]
-      rampup_seconds: 0
+Manual mode
+~~~~~~~~~~~
 
-    session_generator:
-      type: synthetic
-      session_graph:
-        type: linear
-        num_request_generator:
-          type: fixed
-          value: 1
-      channels:
-        - type: text
-          body_length_generator:
-            type: fixed
-            value: 128
-      output_spec:
-        text:
-          output_length_generator:
-            type: fixed
-            value: 256
+Specify exact concurrency levels:
 
-    evaluators:
-      - type: performance
-        text_channel:
-          decode_window_enabled: true
-          decode_window_config:
-            min_active_requests: "max_observed"
-        slos:
-          - name: "P90 TBC"
-            metric: tbc
-            percentile: 0.90
-            value: 0.05
-            type: constant
+.. code-block:: bash
 
-Run and compare ``throughput_metrics.json`` across runs.
+    veeksha.microbench.stress --stress-mode manual \
+        --api-base http://localhost:8000/v1 \
+        --model meta-llama/Llama-3-8B-Instruct \
+        --input-length 512 --output-length 256 \
+        --concurrency-levels 1 2 4 8 16 32 \
+        --point-duration 120 --warmup-duration 10 \
+        --output-dir microbench_output
+
+
+Range mode
+~~~~~~~~~~
+
+Automatically generate log-spaced concurrency levels:
+
+.. code-block:: bash
+
+    veeksha.microbench.stress --stress-mode range \
+        --concurrency-min 1 --concurrency-max 64 --concurrency-points 8 \
+        --input-length 512 --output-length 256 \
+        --point-duration 120 --warmup-duration 10 \
+        --output-dir microbench_output
+
+
+Auto mode
+~~~~~~~~~
+
+Automatically discovers the server's operating range using a three-phase
+approach:
+
+1. **Exponential probe** — doubles concurrency (1→2→4→8→...) until throughput
+   gain falls below ``--auto-throughput-threshold`` (default: 5%).
+2. **Interactivity lower bound** — finds the highest concurrency where
+   per-user interactivity (1/TPOT) is still within threshold of the best
+   observed. Below this, reducing concurrency yields no perceptible per-user
+   improvement.
+3. **Fill** — generates ``--auto-fill-points`` log-spaced levels between the
+   bounds. Existing probe measurements that are close enough to a fill target
+   are reused (no redundant runs).
+
+.. code-block:: bash
+
+    veeksha.microbench.stress --stress-mode auto \
+        --api-base http://localhost:8000/v1 \
+        --model meta-llama/Llama-3-8B-Instruct \
+        --input-length 512 --output-length 256 \
+        --point-duration 300 --warmup-duration 30 \
+        --auto-max-probes 10 --auto-fill-points 10 \
+        --output-dir microbench_output
+
+**Resuming a previous run:**
+
+Auto mode supports ``--resume-dir`` to reuse results from a prior run. This
+avoids re-running concurrency levels that have already been measured:
+
+.. code-block:: bash
+
+    veeksha.microbench.stress --stress-mode auto \
+        --resume-dir microbench_output/stress/2026-03-07_23-07-30 \
+        --point-duration 300 --warmup-duration 30 \
+        --output-dir microbench_output
+
+Resumed results are symlinked into the new run directory.
+
+
+Stress parameters
+~~~~~~~~~~~~~~~~~
+
+``--input-length`` / ``--output-length``
+    Fixed workload shape (single values, not lists).
+
+``--point-duration``
+    Seconds to run each concurrency level (default: 120). Use 300 for
+    production characterization.
+
+``--warmup-duration``
+    Seconds to discard at the start of each point (default: 10). Requests
+    completing before ``min(dispatched_at) + warmup`` are excluded.
+
+``--traffic-mode``
+    ``fixed-clients`` (default) — closed-loop with N concurrent clients.
+    ``fixed-rate`` — open-loop with Poisson arrivals at N req/s.
+
+
+Stress metrics
+~~~~~~~~~~~~~~
+
+Each concurrency level produces:
+
+- **Input/Output Throughput** (tok/s) — system-level token throughput
+- **E2E Latency** P50/P99 — end-to-end request latency
+- **TTFC** P50/P99 — time to first token under load
+- **Interactivity** P50/P99 — per-user decode speed (1/TPOT, tok/s/user)
+
+
+Stress output
+~~~~~~~~~~~~~
+
+**Results table** printed to console:
+
+.. code-block:: text
+
+    ┃ Conc… ┃ In Tput ┃ Out Tput ┃ E2E P50 ┃ E2E P99 ┃ TTFC P50 ┃ Intrctvty ┃ Reqs ┃
+
+**Files:**
+
+- ``stress_results.json`` — full structured results
+- ``stress_results.csv`` — all metrics in tabular format
+- ``plots/`` — seven visualization plots:
+
+**Throughput vs Load** — system throughput (input + output) as concurrency increases:
+
+.. image:: /_static/assets/stress_throughput_vs_load.png
+   :alt: Throughput vs Load
+   :width: 600px
+
+**Output Throughput vs Latency** — the classic throughput-latency tradeoff curve
+(throughput on Y-axis, latency on X-axis):
+
+.. image:: /_static/assets/stress_throughput_vs_latency.png
+   :alt: Output Throughput vs Latency
+   :width: 600px
+
+**E2E Latency vs Load** — P50/P99 latency growth:
+
+.. image:: /_static/assets/stress_e2e_latency_vs_load.png
+   :alt: E2E Latency vs Load
+   :width: 600px
+
+**Interactivity vs Load** — per-user decode speed degradation:
+
+.. image:: /_static/assets/stress_interactivity_vs_load.png
+   :alt: Interactivity vs Load
+   :width: 600px
+
+Additional plots: TTFC vs Load, Input Throughput vs Interactivity,
+Output Throughput vs Interactivity.
+
+**Validation checks:** no failed requests, sufficient post-warmup samples
+(≥10), throughput monotonicity (warn-only).
+
+
+Common options
+--------------
+
+All microbenchmarks share these options:
+
+``--api-base``
+    OpenAI-compatible API endpoint (default: ``http://localhost:8000/v1``).
+
+``--model``
+    Model name for the API.
+
+``--output-dir``
+    Base output directory. Results go to ``<output_dir>/<type>/<timestamp>/``.
+
+``--seed``
+    Random seed for reproducibility (default: 42).
+
+``--request-timeout``
+    Per-request timeout in seconds (default: 120).
+
+``--benchmark-timeout``
+    Total benchmark timeout in seconds (default: 600).
+
+``--validate-only``
+    Skip running, only validate existing results.
+
+``--skip-validation``
+    Skip post-run validation checks.
+
+
+Output directory structure
+--------------------------
+
+.. code-block:: text
+
+    microbench_output/
+    ├── prefill/
+    │   ├── 2026-03-07_21-32-19/
+    │   │   ├── prefill_results.json
+    │   │   ├── prefill_results.csv
+    │   │   └── plots/
+    │   │       └── ttfc_vs_input_length.png
+    │   └── latest -> 2026-03-07_21-32-19
+    ├── decode/
+    │   ├── 2026-03-07_21-42-21/
+    │   │   ├── bs=1_il=128/
+    │   │   ├── bs=4_il=128/
+    │   │   ├── decode_results.json
+    │   │   ├── decode_results.csv
+    │   │   └── plots/
+    │   └── latest -> 2026-03-07_21-42-21
+    └── stress/
+        ├── 2026-03-07_23-07-30/
+        │   ├── c=1/
+        │   ├── c=2/
+        │   ├── ...
+        │   ├── c=128/
+        │   ├── stress_results.json
+        │   ├── stress_results.csv
+        │   └── plots/
+        └── latest -> 2026-03-07_23-07-30
+
+Each run is timestamped (UTC) and the ``latest`` symlink always points to the
+most recent run.
