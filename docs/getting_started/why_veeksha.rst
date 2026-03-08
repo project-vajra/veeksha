@@ -102,14 +102,14 @@ Trace flavors for real workloads
 Many benchmarks treat all traces the same way. Veeksha introduces **trace flavors**
 that define how to parse and replay different trace types (coding assistants, RAG,
 conversational datasets), each with appropriate wrapping and shuffling behavior.
-See :doc:`content_generation` for details.
+See :doc:`/design/content_generation` for details.
 
 Multimodal architecture
 -----------------------
 
 Veeksha's content generation uses a **channel-based architecture** (text, image,
 audio, video). Text is fully implemented today, with the architecture ready for
-multimodal workloads. See :doc:`content_generation` for details.
+multimodal workloads. See :doc:`/design/content_generation` for details.
 
 
 Composable evaluation
@@ -169,6 +169,6 @@ Next steps
 ----------
 
 - :doc:`installation` - Get started with Veeksha
-- :doc:`understanding_veeksha/sessions_and_graphs` - Deep dive into the session graph model
-- :doc:`understanding_veeksha/scheduling` - Understand traffic scheduling in detail
-- :doc:`basic_usage/quick_start` - Run your first benchmark
+- :doc:`/design/sessions_and_graphs` - Deep dive into the session graph model
+- :doc:`/design/scheduling` - Understand traffic scheduling in detail
+- :doc:`quick_start` - Run your first benchmark

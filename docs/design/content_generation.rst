@@ -226,9 +226,9 @@ stored in JSONL files. Each trace file contains metadata matching real productio
 
     session_generator:
       type: trace
-      trace_file: traces/claude_code.jsonl
+      trace_file: traces/timed_synthetic_trace.jsonl
       flavor:
-        type: claude_code
+        type: timed_synthetic_multi_turn
 
 
 Trace flavors
@@ -242,38 +242,57 @@ implements:
 - Session/request preparation from trace rows
 - Wrapping behavior for looping through traces
 
-We provide flavors for three different use cases. You can also implement your own flavor by creating a class that 
+We provide flavors for five different use cases. You can also implement your own flavor by creating a class that
 inherits from ``TraceFlavorGeneratorBase`` and implements the methods ``required_columns``, ``prepare_session`` and ``wrap``.
+
+Trace files can be in JSONL or CSV format. CSV columns are automatically
+normalized (e.g. ``num_prefill_tokens`` → ``input_length``).
 
 Comparison table:
 
 .. list-table::
    :header-rows: 1
-   :widths: 20 20 20 40 20
+   :widths: 20 20 20 40
 
    * - Flavor
      - Turns
      - Prompt generation
      - Best for
-     - Content modalities
-   * - ``claude_code``
+   * - ``request_log``
+     - Single-turn
+     - Random tokens
+     - Simple (input, output) length distributions (e.g. ShareGPT CSVs)
+   * - ``timed_synthetic_multi_turn``
      - Multi-turn
      - Synthetic (from length)
      - Coding assistants, long-context chat, prefix caching
-     - Text
+   * - ``untimed_content_multi_turn``
+     - Multi-turn
+     - Real content (from dataset)
+     - Replaying conversation datasets (ShareGPT, LMSYS-Chat, etc.)
    * - ``rag``
      - Single-turn
      - From trace (text col)
      - RAG workloads, document caching, massive shared prefixes
-     - Text
-   * - ``mooncake_conv``
+   * - ``shared_prefix``
      - Multi-turn
      - Synthetic (from Hash IDs)
      - Replaying privacy-safe conversation structures
-     - Text
 
-**claude_code** (``type: claude_code``)
-    Context-cached coding assistant traces with these characteristics:
+**request_log** (``type: request_log``)
+    Independent requests with just token lengths. No session structure,
+    no corpus files, no prompt materialization. Each row becomes a single-request
+    session with a random-token prompt of the specified length.
+
+    Required columns: ``input_length``, ``output_length``
+
+    .. code-block:: yaml
+
+        flavor:
+          type: request_log
+
+**timed_synthetic_multi_turn** (``type: timed_synthetic_multi_turn``)
+    Multi-turn session traces with context caching:
 
     - Multi-turn conversations with history accumulation
     - The first ``page_size`` tokens are guaranteed to be unique across sessions for KV-cache diversity
@@ -284,9 +303,29 @@ Comparison table:
     .. code-block:: yaml
 
         flavor:
-          type: claude_code
+          type: timed_synthetic_multi_turn
           page_size: 16          # Token page size for prefix caching
           corpus_file: null      # Optional corpus for prompt generation
+
+**untimed_content_multi_turn** (``type: untimed_content_multi_turn``)
+    Replay datasets with actual conversation content (ShareGPT, LMSYS-Chat, etc.):
+
+    - Each row contains a full conversation with real message text
+    - Turns are split into individual requests with pre-populated history
+    - No timestamps — history is pre-populated from the dataset
+    - Configurable message schema (role/content keys, role value mappings)
+
+    Required columns: ``conversations`` (configurable via ``conversation_column``)
+
+    .. code-block:: yaml
+
+        flavor:
+          type: untimed_content_multi_turn
+          conversation_column: conversations  # Column with message list
+          role_key: from                      # Key for role in each message
+          content_key: value                  # Key for content in each message
+          user_role_value: human              # Value indicating user messages
+          assistant_role_value: gpt           # Value indicating assistant messages
 
 **rag** (``type: rag``)
     Retrieval-Augmented Generation workload traces:
@@ -304,8 +343,8 @@ Comparison table:
           type: rag
           num_documents: 10      # Use top N most frequent documents
 
-**mooncake_conv** (``type: mooncake_conv``)
-    Mooncake conversational dataset traces:
+**shared_prefix** (``type: shared_prefix``)
+    Shared-prefix conversation traces:
 
     - Multi-turn conversations with hash-based prompt generation
     - Uses ``hash_ids`` to reconstruct shared prefixes deterministically

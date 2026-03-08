@@ -300,15 +300,17 @@ Three session generator types are available:
 
         session_generator:
           type: trace
-          trace_file: traces/claude_code.jsonl
+          trace_file: traces/timed_synthetic_trace.jsonl
           flavor:
-            type: claude_code
+            type: timed_synthetic_multi_turn
           wrap_mode: true
 
     Supported trace flavors:
 
-    - ``claude_code``: Claude Code assistant traces
-    - ``mooncake_conv``: Mooncake conversation dataset
+    - ``request_log``: Independent requests with token lengths only
+    - ``timed_synthetic_multi_turn``: Timed multi-turn session traces with synthetic content and context caching
+    - ``untimed_content_multi_turn``: Replay conversation datasets with actual message content
+    - ``shared_prefix``: Shared-prefix conversation traces
     - ``rag``: RAG (Retrieval-Augmented Generation) traces
 
     Best for: Realistic workload replay, production traffic analysis.

@@ -49,14 +49,14 @@ Processing results
 
 The ``manage_benchmark_run()`` function returns an ``EvaluationResult`` object
 containing aggregated metrics and statistics. For more detailed analysis, you can read the
-output files directly. See :doc:`/basic_usage/output_files` for more details.
+output files directly. See :doc:`/user_guide/output_files` for more details.
 
 
 Using standalone generators
 ---------------------------
 
 For testing or custom pipelines, you can use Veeksha's generators directly
-without running a full benchmark. See :doc:`/understanding_veeksha/sessions_and_graphs`
+without running a full benchmark. See :doc:`/design/sessions_and_graphs`
 for details on session and graph structures.
 
 **Session graph generators** create the DAG structure:

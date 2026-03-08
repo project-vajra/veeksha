@@ -294,7 +294,7 @@ Find the maximum rate for a latency-sensitive deployment:
         type: trace
         trace_file: production_traffic.jsonl
         flavor:
-          type: claude_code
+          type: timed_synthetic_multi_turn
 
       client:
         type: openai_chat_completions
@@ -318,3 +318,74 @@ Find the maximum rate for a latency-sensitive deployment:
               value: 0.03
 
 This uses real production traces and strict SLOs for accurate capacity planning.
+
+
+Example: Concurrency capacity search
+-------------------------------------
+
+Find the maximum concurrency for throughput-oriented deployments:
+
+.. code-block:: yaml
+
+    # capacity_concurrent.veeksha.yml
+    output_dir: capacity_search_output
+
+    start_value: 4
+    max_value: 128
+    expansion_factor: 2.0
+    max_iterations: 15
+    precision: 0           # Integer concurrency values
+
+    benchmark_config:
+      traffic_scheduler:
+        type: concurrent
+        # target_concurrent_sessions set by capacity search
+        cancel_session_on_failure: false
+
+      session_generator:
+        type: synthetic
+        session_graph:
+          type: single_request
+        channels:
+          - type: text
+            body_length_generator:
+              type: fixed
+              value: 512
+        output_spec:
+          text:
+            output_length_generator:
+              type: fixed
+              value: 256
+
+      client:
+        type: openai_chat_completions
+        api_base: http://localhost:8000/v1
+        model: meta-llama/Llama-3-8B-Instruct
+
+      runtime:
+        benchmark_timeout: 60
+        max_sessions: -1
+
+      evaluators:
+        - type: performance
+          slos:
+            - name: "P99 TTFC < 5s"
+              metric: ttfc
+              percentile: 0.99
+              value: 5.0
+              type: constant
+            - name: "P99 TBC < 100ms"
+              metric: tbc
+              percentile: 0.99
+              value: 0.1
+              type: constant
+
+.. code-block:: bash
+
+    python -Xgil=0 -m veeksha.capacity_search \
+        --capacity-search-config-from-file capacity_concurrent.veeksha.yml
+
+.. tip::
+
+   Use ``precision: 0`` for concurrency searches (integer values) and
+   ``precision: 2`` for rate searches (fractional rates).

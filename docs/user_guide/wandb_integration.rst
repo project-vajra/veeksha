@@ -97,11 +97,11 @@ these workflows, see the corresponding documentation:
 
 **Parameter Sweeps**
     When running sweeps with the ``!expand`` tag, use ``group`` to organize
-    all sweep runs together. See :doc:`/advanced_usage/sweeps` for details.
+    all sweep runs together. See :doc:`/user_guide/sweeps` for details.
 
 **Capacity Search**
     Capacity search automatically creates WandB runs for each iteration and
-    tags the best configuration. See :doc:`/advanced_usage/capacity_search`
+    tags the best configuration. See :doc:`/user_guide/capacity_search`
     for details.
 
 
@@ -235,5 +235,5 @@ See also
 --------
 
 - `WandB Documentation <https://docs.wandb.ai>`_
-- :doc:`/advanced_usage/sweeps` - Running parameter sweeps
-- :doc:`/advanced_usage/capacity_search` - Capacity search with WandB
+- :doc:`/user_guide/sweeps` - Running parameter sweeps
+- :doc:`/user_guide/capacity_search` - Capacity search with WandB

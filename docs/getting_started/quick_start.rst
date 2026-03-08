@@ -75,7 +75,7 @@ Create a file named ``my_benchmark.veeksha.yml``:
 Step 2: Run the benchmark
 -------------------------
 
-Execute the benchmark using the CLI (against an already-running server; for managed servers see :doc:`/advanced_usage/server_management`):
+Execute the benchmark using the CLI (against an already-running server; for managed servers see :doc:`/user_guide/server_management`):
 
 .. code-block:: bash
 
@@ -224,7 +224,8 @@ For a detailed reference of all configuration options, see the :doc:`/config_ref
 Next steps
 ----------
 
-- :doc:`configuration` - Learn the full configuration system
-- :doc:`output_files` - Understand all output files
-- :doc:`/understanding_veeksha/scheduling` - Learn about traffic patterns
-- :doc:`/advanced_usage/capacity_search` - Find maximum sustainable throughput
+- :ref:`Workload recipes <workload-recipes>` - Trace replay, multi-turn, agentic, LM-Eval examples
+- :doc:`/user_guide/configuration` - Full configuration system guide
+- :doc:`/user_guide/output_files` - Understand all output files
+- :doc:`/microbenchmarks/index` - Isolate prefill, decode, and stress performance
+- :doc:`/user_guide/capacity_search` - Find maximum sustainable throughput

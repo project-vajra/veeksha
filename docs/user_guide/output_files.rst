@@ -394,4 +394,4 @@ If WandB is enabled:
 See also
 --------
 
-- :doc:`/understanding_veeksha/evaluation` - How metrics are computed
+- :doc:`/design/evaluation` - How metrics are computed
