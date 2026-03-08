@@ -6,22 +6,31 @@ import sys
 
 SUBCOMMANDS: dict[str, tuple[str, str]] = {
     "benchmark": ("veeksha.cli.benchmarks", "Run full benchmark suite"),
-    "microbench": ("veeksha.microbench.runner", "Run simplified microbenchmarks"),
     "config": ("veeksha.cli.config", "Configuration utilities"),
 }
 
 
 def _ensure_gil_disabled() -> None:
-    """Re-exec with the GIL disabled on free-threaded Python (3.13t+).
+    """Ensure the GIL is disabled on free-threaded Python (3.13t+).
 
-    Some C-extension modules (e.g. tokenizers) force the GIL back on at
-    import time.  Setting PYTHON_GIL=0 keeps it off for the entire process.
-    This is a no-op on regular (non-free-threaded) builds.
+    Veeksha requires GIL-free execution for concurrent dispatch/completion
+    workers. On non-free-threaded builds this is a no-op. On free-threaded
+    builds, re-execs with PYTHON_GIL=0 if needed, and fails hard if the
+    GIL cannot be disabled.
     """
-    if not hasattr(sys, "_is_gil_enabled") or not sys._is_gil_enabled():
-        return
+    if not hasattr(sys, "_is_gil_enabled"):
+        return  # non-free-threaded build — GIL is always on, nothing to do
+    if not sys._is_gil_enabled():
+        return  # GIL already disabled
     if os.environ.get("PYTHON_GIL") == "0":
-        return  # already requested; a module re-enabled it — nothing more we can do
+        # Already requested GIL=0 but a C-extension re-enabled it.
+        print(
+            "ERROR: Free-threaded Python detected but the GIL could not be "
+            "disabled (a C-extension re-enabled it). Veeksha requires "
+            "GIL-free execution. Run with: PYTHON_GIL=0 python -Xgil=0 ...",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     os.environ["PYTHON_GIL"] = "0"
     os.execvpe(sys.executable, [sys.executable] + sys.argv, os.environ)
 
