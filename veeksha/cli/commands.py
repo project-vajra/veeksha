@@ -1,19 +1,22 @@
 """Veeksha top-level CLI command group.
 
-    veeksha benchmark [options]
-    veeksha capacity-search [options]
-    veeksha prefill [options]
-    veeksha decode [options]
-    veeksha stress [options]
+veeksha benchmark [options]
+veeksha capacity-search [options]
+veeksha prefill [options]
+veeksha decode [options]
+veeksha stress [options]
 """
 
 from __future__ import annotations
 
+import sys
 import warnings
 
 # Suppress GIL re-enable warnings from C extensions (e.g. tokenizers)
 # that haven't declared free-threaded support yet.
-warnings.filterwarnings("ignore", message=".*global interpreter lock.*", category=RuntimeWarning)
+warnings.filterwarnings(
+    "ignore", message=".*global interpreter lock.*", category=RuntimeWarning
+)
 
 from vidhi import parse_cli_sweep
 
@@ -43,4 +46,9 @@ _RUNNERS = {
 def main() -> None:
     """Entry point for the veeksha CLI."""
     configs = parse_cli_sweep(VeekshaCommand)
-    _RUNNERS[type(configs[0])](configs)
+    if not configs:
+        sys.exit("No configuration resolved from CLI arguments.")
+    runner = _RUNNERS.get(type(configs[0]))
+    if runner is None:
+        sys.exit(f"Unknown command config type: {type(configs[0]).__name__}")
+    runner(configs)

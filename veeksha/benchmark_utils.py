@@ -9,9 +9,9 @@ from typing import Any, Dict, Set, Tuple
 
 import yaml
 from tqdm import tqdm
+from vidhi import dataclass_to_dict
 
 from veeksha.config.benchmark import BenchmarkConfig
-from vidhi import dataclass_to_dict
 from veeksha.core.seeding import SeedManager
 from veeksha.evaluator.base import BaseEvaluator
 from veeksha.evaluator.composite import CompositeEvaluator

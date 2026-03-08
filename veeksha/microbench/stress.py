@@ -802,7 +802,14 @@ def run_stress(cfg: StressMicrobenchmarkConfig) -> None:
     else:
         from veeksha.microbench.runner import run
 
-        run(cfg, "stress", BANNER_ROWS, build_benchmark_configs, print_results_table, validate)
+        run(
+            cfg,
+            "stress",
+            BANNER_ROWS,
+            build_benchmark_configs,
+            print_results_table,
+            validate,
+        )
 
 
 def main() -> None:

@@ -273,6 +273,11 @@ traces/
 .cursor/
 
 # claude
-CLAUDE.md
+
+# benchmark output
+benchmark_output/
 benchmark_outputs/
 microbench_output*
+
+# uv lock file
+uv.lock

@@ -69,12 +69,8 @@ class UniformLengthGeneratorConfig(BaseLengthGeneratorConfig):
 
 @frozen_dataclass
 class ZipfLengthGeneratorConfig(BaseLengthGeneratorConfig):
-    theta: float = field(
-        0.6, help="Theta parameter for the Zipf distribution."
-    )
-    scramble: bool = field(
-        False, help="Whether to scramble the Zipf distribution."
-    )
+    theta: float = field(0.6, help="Theta parameter for the Zipf distribution.")
+    scramble: bool = field(False, help="Whether to scramble the Zipf distribution.")
     min: int = field(6, help="Minimum value to generate.")
     max: int = field(12, help="Maximum value to generate.")
 

@@ -79,9 +79,7 @@ class BaseChannelPerformanceConfig(BasePolyConfig):
 class TextChannelPerformanceConfig(BaseChannelPerformanceConfig):
     """Text channel performance configuration"""
 
-    decode_window_enabled: bool = field(
-        False, help="Enable decode window analysis"
-    )
+    decode_window_enabled: bool = field(False, help="Enable decode window analysis")
     decode_window_config: Optional[DecodeWindowConfig] = field(
         None, help="Decode window configuration (required if enabled)"
     )
@@ -157,9 +155,7 @@ class BaseEvaluatorConfig(BasePolyConfig):
         help="List of SLO definitions to evaluate against request-level metrics.",
     )
 
-    stream_metrics: bool = field(
-        True, help="Enable real-time metric streaming"
-    )
+    stream_metrics: bool = field(True, help="Enable real-time metric streaming")
     stream_metrics_interval: float = field(
         5.0, help="Interval for streaming metrics in seconds"
     )

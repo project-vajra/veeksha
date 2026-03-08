@@ -25,17 +25,13 @@ class BaseServerConfig(BasePolyConfig):
 
     port: int = field(8000, help="Port number for the server")
 
-    api_key: str = field(
-        "token-abc123", help="API key for server authentication"
-    )
+    api_key: str = field("token-abc123", help="API key for server authentication")
 
     gpu_ids: Optional[List[int]] = field(
         None, help="List of GPU IDs to use (None means auto-assign)"
     )
 
-    startup_timeout: int = field(
-        300, help="Timeout in seconds for server startup"
-    )
+    startup_timeout: int = field(300, help="Timeout in seconds for server startup")
 
     health_check_interval: float = field(
         2.0, help="Interval in seconds between health checks"
@@ -48,18 +44,14 @@ class BaseServerConfig(BasePolyConfig):
 
     # engine arguments
 
-    tensor_parallel_size: int = field(
-        1, help="Number of GPUs for tensor parallelism"
-    )
+    tensor_parallel_size: int = field(1, help="Number of GPUs for tensor parallelism")
 
     dtype: str = field(
         "auto",
         help="Data type for model weights (auto, float16, bfloat16, etc.)",
     )
 
-    max_model_len: Optional[int] = field(
-        None, help="Maximum model context length"
-    )
+    max_model_len: Optional[int] = field(None, help="Maximum model context length")
 
     additional_args: Union[str, Dict[str, Any], None] = field(
         "{}",

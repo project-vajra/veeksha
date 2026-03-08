@@ -535,14 +535,10 @@ This section provides a comprehensive reference for all configuration options in
 Configuration can be provided via YAML files or CLI arguments.
 
 .. tip::
-   
-   Use the interactive config explorer for an easier experience::
-   
-       python -m veeksha.cli.config explore
 
-   Or generate a YAML schema template::
-   
-       python -m veeksha.cli.config show --format yaml
+   Export a JSON schema for IDE autocompletion::
+
+       uvx veeksha benchmark --export-json-schema
 
 
 Quick links

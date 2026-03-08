@@ -51,5 +51,3 @@ class CapacitySearchConfig(VeekshaCommand, name="capacity-search"):
     def create_from_cli_args(cls) -> List["CapacitySearchConfig"]:
         """Create one or more CapacitySearchConfig instances from CLI/YAML."""
         return parse_cli_sweep(cls)
-
-

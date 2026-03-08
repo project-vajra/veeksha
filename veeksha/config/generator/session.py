@@ -93,9 +93,7 @@ class TimedSyntheticMultiTurnTraceFlavorConfig(BaseTraceFlavorConfig):
     corpus_file: str = field(
         "traces/corpus.txt", help="Path to corpus file for prompt padding"
     )
-    page_size: int = field(
-        16, help="Number of unique tokens per session prefix"
-    )
+    page_size: int = field(16, help="Number of unique tokens per session prefix")
 
     @classmethod
     def get_type(cls):
@@ -123,9 +121,7 @@ class SharedPrefixTraceFlavorConfig(BaseTraceFlavorConfig):
 class RAGTraceFlavorConfig(BaseTraceFlavorConfig):
     """RAG trace flavor configuration."""
 
-    num_documents: int = field(
-        10, help="Number of top documents to include for warmup"
-    )
+    num_documents: int = field(10, help="Number of top documents to include for warmup")
 
     @classmethod
     def get_type(cls):
@@ -187,9 +183,7 @@ class UntimedContentMultiTurnTraceFlavorConfig(BaseTraceFlavorConfig):
 class TraceSessionGeneratorConfig(BaseSessionGeneratorConfig):
     """Trace-driven session generator configuration."""
 
-    trace_file: str = field(
-        "", help="Path to the trace file (JSONL or CSV)"
-    )
+    trace_file: str = field("", help="Path to the trace file (JSONL or CSV)")
     wrap_mode: bool = field(
         True, help="Whether to wrap/loop over the trace indefinitely"
     )

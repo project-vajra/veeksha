@@ -8,7 +8,7 @@ Configuration can be provided via YAML files or CLI arguments.
 
    Export a JSON schema for IDE autocompletion::
 
-       uvx veeksha benchmark --export-json-schema
+       uvx veeksha benchmark --export-json-schema veeksha-schema.json
 
 
 Quick links

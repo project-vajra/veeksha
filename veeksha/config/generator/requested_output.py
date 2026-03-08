@@ -39,12 +39,8 @@ class ImageOutputSpecConfig:
         quality: Image quality setting (e.g., "hd", "standard").
     """
 
-    num_images: int = field(
-        1, help="Number of images to generate per request."
-    )
-    size: Optional[str] = field(
-        None, help="Image dimensions (e.g., '1024x1024')."
-    )
+    num_images: int = field(1, help="Number of images to generate per request.")
+    size: Optional[str] = field(None, help="Image dimensions (e.g., '1024x1024').")
     quality: Optional[str] = field(
         None, help="Image quality setting (e.g., 'hd', 'standard')."
     )

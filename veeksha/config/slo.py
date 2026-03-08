@@ -14,9 +14,7 @@ class BaseSloConfig(BasePolyConfig):
     percentile: float = field(
         0.99, help="Percentile at which to evaluate the SLO (0.0-1.0)"
     )
-    name: Optional[str] = field(
-        None, help="Human-readable name for this SLO"
-    )
+    name: Optional[str] = field(None, help="Human-readable name for this SLO")
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.percentile <= 1.0:

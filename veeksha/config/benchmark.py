@@ -19,6 +19,9 @@ from veeksha.config.runtime import RuntimeConfig
 from veeksha.config.server import BaseServerConfig
 from veeksha.config.trace_recorder import TraceRecorderConfig
 from veeksha.config.traffic import BaseTrafficConfig, RateTrafficConfig
+
+# WandbConfig must be imported so vidhi registers it for polymorphic YAML
+# deserialization. Removing this import will silently break wandb config loading.
 from veeksha.config.wandb import WandbConfig  # noqa: F401
 
 
@@ -77,5 +80,3 @@ class BenchmarkConfig(VeekshaCommand, name="benchmark", default=True):
     def __post_init__(self):
         if not self.evaluators:
             raise ValueError("BenchmarkConfig.evaluators must be non-empty.")
-
-

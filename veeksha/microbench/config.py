@@ -18,27 +18,21 @@ class StressTrafficMode(StrEnum):
 class BaseMicrobenchmarkConfig:
     """Shared fields for all microbenchmark types."""
 
-    model: str = field(
-        "meta-llama/Meta-Llama-3-8B-Instruct", help="Model name"
-    )
+    model: str = field("meta-llama/Meta-Llama-3-8B-Instruct", help="Model name")
     api_base: str = field("http://localhost:8000/v1", help="API base URL")
     api_key: str = field("dummy", help="API key")
     input_lengths: list[int] = field(
         default_factory=lambda: [128, 256, 512, 1024],
         help="Input lengths for benchmarks",
     )
-    samples_per_length: int = field(
-        10, help="Number of samples per input length"
-    )
+    samples_per_length: int = field(10, help="Number of samples per input length")
     output_dir: str = field(
         "microbench_output", help="Output directory for benchmark results"
     )
     seed: int = field(42, help="Random seed")
     request_timeout: int = field(120, help="Request timeout in seconds")
     benchmark_timeout: int = field(600, help="Benchmark timeout in seconds")
-    max_tokens_param: str = field(
-        "max_tokens", help="Parameter name for max tokens"
-    )
+    max_tokens_param: str = field("max_tokens", help="Parameter name for max tokens")
     ignore_eos: bool = field(True, help="Ignore EOS token")
     validate_only: bool = field(
         False, help="Skip benchmark, only validate existing output"
@@ -106,6 +100,7 @@ def _validate_stress_base(cfg: "StressMicrobenchmarkConfig") -> None:
         raise ValueError("point_duration must exceed warmup_duration")
 
 
+@frozen_dataclass
 class BaseStressModeConfig(BasePolyConfig):
     """Base class for stress mode variants."""
 
@@ -130,9 +125,7 @@ class RangeStressModeConfig(BaseStressModeConfig):
 
     concurrency_min: int = field(1, help="Minimum concurrency level")
     concurrency_max: int = field(64, help="Maximum concurrency level")
-    concurrency_points: int = field(
-        8, help="Number of log-spaced points to test"
-    )
+    concurrency_points: int = field(8, help="Number of log-spaced points to test")
 
     @classmethod
     def get_type(cls):
@@ -150,9 +143,7 @@ class AutoStressModeConfig(BaseStressModeConfig):
     auto_fill_points: int = field(
         8, help="Number of fill points between lower and upper bounds"
     )
-    resume_dir: str = field(
-        "", help="Resume from a previous run directory"
-    )
+    resume_dir: str = field("", help="Resume from a previous run directory")
 
     @classmethod
     def get_type(cls):
@@ -167,12 +158,8 @@ class StressMicrobenchmarkConfig(
 
     input_length: int = field(512, help="Input token length (single value)")
     output_length: int = field(128, help="Output token length (single value)")
-    point_duration: int = field(
-        120, help="Seconds to run each concurrency point"
-    )
-    warmup_duration: int = field(
-        10, help="Warmup seconds to discard per point"
-    )
+    point_duration: int = field(120, help="Seconds to run each concurrency point")
+    warmup_duration: int = field(10, help="Warmup seconds to discard per point")
     traffic_mode: StressTrafficMode = field(
         StressTrafficMode.FIXED_CLIENTS,
         help="Traffic pattern: 'fixed-clients' or 'fixed-rate'",
@@ -194,9 +181,7 @@ class StressMicrobenchmarkConfig(
                 raise ValueError("all concurrency_levels must be positive")
         elif isinstance(self.mode, RangeStressModeConfig):
             if self.mode.concurrency_min >= self.mode.concurrency_max:
-                raise ValueError(
-                    "concurrency_min must be less than concurrency_max"
-                )
+                raise ValueError("concurrency_min must be less than concurrency_max")
             if self.mode.concurrency_points <= 0:
                 raise ValueError("concurrency_points must be positive")
         elif isinstance(self.mode, AutoStressModeConfig):

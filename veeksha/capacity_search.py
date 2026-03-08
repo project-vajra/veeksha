@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional, Tuple, cast
 
 import yaml
+from vidhi import dataclass_to_dict
 
 from veeksha.benchmark import manage_benchmark_run
 from veeksha.config.benchmark import BenchmarkConfig
@@ -23,7 +24,6 @@ from veeksha.config.generator.interval import (
     FixedIntervalGeneratorConfig,
 )
 from veeksha.config.traffic import ConcurrentTrafficConfig, RateTrafficConfig
-from vidhi import dataclass_to_dict
 from veeksha.logger import init_logger
 from veeksha.wandb_integration import (
     dedup_tags,

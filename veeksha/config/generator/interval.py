@@ -10,12 +10,8 @@ class BaseIntervalGeneratorConfig(BasePolyConfig):
 
 @frozen_dataclass
 class GammaIntervalGeneratorConfig(BaseIntervalGeneratorConfig):
-    arrival_rate: float = field(
-        1.0, help="Arrival rate for the Gamma distribution."
-    )
-    cv: float = field(
-        0.5, help="Coefficient of variation for the Gamma distribution."
-    )
+    arrival_rate: float = field(1.0, help="Arrival rate for the Gamma distribution.")
+    cv: float = field(0.5, help="Coefficient of variation for the Gamma distribution.")
 
     @classmethod
     def get_type(cls):
@@ -24,9 +20,7 @@ class GammaIntervalGeneratorConfig(BaseIntervalGeneratorConfig):
 
 @frozen_dataclass
 class PoissonIntervalGeneratorConfig(BaseIntervalGeneratorConfig):
-    arrival_rate: float = field(
-        1.0, help="Arrival rate for the Poisson distribution."
-    )
+    arrival_rate: float = field(1.0, help="Arrival rate for the Poisson distribution.")
 
     @classmethod
     def get_type(cls):
@@ -35,9 +29,7 @@ class PoissonIntervalGeneratorConfig(BaseIntervalGeneratorConfig):
 
 @frozen_dataclass
 class FixedIntervalGeneratorConfig(BaseIntervalGeneratorConfig):
-    interval: float = field(
-        1.0, help="Fixed interval for the fixed distribution."
-    )
+    interval: float = field(1.0, help="Fixed interval for the fixed distribution.")
 
     @classmethod
     def get_type(cls):

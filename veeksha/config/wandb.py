@@ -28,9 +28,7 @@ class WandbConfig:
     project: Optional[str] = field(
         None, help="WandB project name (or set WANDB_PROJECT)."
     )
-    entity: Optional[str] = field(
-        None, help="WandB entity (team/user). Optional."
-    )
+    entity: Optional[str] = field(None, help="WandB entity (team/user). Optional.")
     group: Optional[str] = field(
         None, help="WandB group name (for sweeps/capacity-search)."
     )
@@ -41,9 +39,7 @@ class WandbConfig:
         default_factory=list,
         help="List of WandB tags to attach to the run.",
     )
-    notes: Optional[str] = field(
-        None, help="Optional WandB notes for this run."
-    )
+    notes: Optional[str] = field(None, help="Optional WandB notes for this run.")
     mode: Optional[str] = field(
         None,
         help="Optional wandb mode override: 'online', 'offline', or 'disabled'.",
