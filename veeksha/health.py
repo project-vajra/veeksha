@@ -875,8 +875,10 @@ class HealthChecker:
 
         # first request dispatch time for each session (min for multi root sessions)
         session_starts = self.merged_df.groupby(session_col)[dispatched_col].min()
-        assert isinstance(session_starts, pd.Series)
-        start_times = np.sort(session_starts.to_numpy())
+        if isinstance(session_starts, pd.Series):
+            start_times = np.sort(session_starts.to_numpy())
+        else:
+            start_times = np.sort(np.asarray([session_starts]))
 
         if len(start_times) < 2:
             return TestResult(

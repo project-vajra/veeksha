@@ -1,6 +1,6 @@
 """RAG trace flavor generator with warmup support."""
 
-from typing import Any, List, Optional
+from typing import Any, List, Optional, cast
 
 import pandas as pd
 
@@ -100,7 +100,7 @@ class RAGTraceFlavorGenerator(TraceFlavorGeneratorBase):
         """Wrap trace for new epoch with refreshed session order."""
         df = self.trace_df.copy()
         max_sid = (
-            max(df["session_id"].to_list()) if not df.empty else self._session_offset
+            cast(int, df["session_id"].max()) if not df.empty else self._session_offset
         )
         df["session_id"] = df["session_id"] + max_sid + 1
         return self._shuffle_sessions(df)
@@ -122,15 +122,14 @@ class RAGTraceFlavorGenerator(TraceFlavorGeneratorBase):
 
     def _build_single_request_session(self, session_id: int, row: pd.Series) -> Session:
         """Convert a single trace row into a Veeksha Session."""
-        d = row.to_dict()
         wait_time = 0.0
         request = self._create_text_request(
             node_id=0,
-            prompt_text=str(d["prompt_text"]),
-            target_output_tokens=int(d["output_length"]),
+            prompt_text=str(row["prompt_text"]),
+            target_output_tokens=cast(int, row["output_length"]),
             wait_after_ready=wait_time,
             parent_node=None,
-            target_prompt_tokens=int(d["input_length"]),
+            target_prompt_tokens=cast(int, row["input_length"]),
         )
         session_graph = self._build_linear_session_graph(1, [wait_time])
         return Session(

@@ -3,7 +3,7 @@ import os
 import threading
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import numpy as np
 import pandas as pd
@@ -1023,8 +1023,8 @@ class TextPerformanceEvaluator:
 
             base_df = pd.DataFrame({"prompt_length": prompt_lengths, "ttfc": ttfcs})
 
-            min_len = min(prompt_lengths)
-            max_len = max(prompt_lengths)
+            min_len = cast(int, base_df["prompt_length"].min())
+            max_len = cast(int, base_df["prompt_length"].max())
 
             if max_len <= min_len:
                 base_df["prompt_length_bin"] = pd.Series(

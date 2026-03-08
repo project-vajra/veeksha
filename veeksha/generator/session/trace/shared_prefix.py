@@ -2,7 +2,7 @@
 
 import random
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, cast
 
 import pandas as pd
 
@@ -121,7 +121,7 @@ class SharedPrefixTraceFlavorGenerator(TraceFlavorGeneratorBase):
 
             else:
                 # subsequent requests: random generation from corpus
-                length = int(row["new_input_length"])
+                length = cast(int, row["new_input_length"])
 
                 prompt_text = gen_prompt_from_corpus(
                     num_tokens=length,
@@ -130,7 +130,7 @@ class SharedPrefixTraceFlavorGenerator(TraceFlavorGeneratorBase):
                     rng=self._corpus_rng,
                 )
 
-                calculated_len = int(row["new_input_length"])
+                calculated_len = cast(int, row["new_input_length"])
 
             # wait time
             wait_time_val = row.get("wait_after_previous_response_s")
@@ -141,7 +141,7 @@ class SharedPrefixTraceFlavorGenerator(TraceFlavorGeneratorBase):
             wait_times.append(wait_time)
 
             # output length
-            output_length = int(row["output_length"])
+            output_length = cast(int, row["output_length"])
 
             request = self._create_text_request(
                 node_id=i,

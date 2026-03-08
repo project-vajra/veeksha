@@ -1,7 +1,7 @@
 """Timed synthetic multi-turn trace flavor generator."""
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, cast
 
 import pandas as pd  # type: ignore[import]
 
@@ -67,10 +67,9 @@ class TimedSyntheticMultiTurnTraceFlavorGenerator(TraceFlavorGeneratorBase):
         requests = {}
         wait_times: List[float] = []
 
-        for i, (_, row_series) in enumerate(group.iterrows()):
-            row = row_series.to_dict()
-            prompt_tokens = int(row["new_input_length"])
-            output_length = int(row["output_length"])
+        for i, (_, row) in enumerate(group.iterrows()):
+            prompt_tokens = cast(int, row["new_input_length"])
+            output_length = cast(int, row["output_length"])
 
             prompt_text = row.get(self._PROMPT_COL)
             if prompt_text is None:
@@ -133,14 +132,13 @@ class TimedSyntheticMultiTurnTraceFlavorGenerator(TraceFlavorGeneratorBase):
             if first_turn_only and not mask.loc[idx]:
                 continue
 
-            row = row_series.to_dict()
-            session_id = int(row["session_id"])
-            prompt_tokens = int(row["new_input_length"])
+            session_id = cast(int, row_series["session_id"])
+            prompt_tokens = cast(int, row_series["new_input_length"])
             seed: Optional[int] = session_seeds.get(session_id)
             if seed is None or (first_turn_only and mask.loc[idx]):
-                existing = row[self._SEED_COL]
+                existing = row_series[self._SEED_COL]
                 if not first_turn_only and existing is not None:
-                    seed = int(existing)
+                    seed = cast(int, existing)
                 else:
                     seed = self._session_seed_rng.getrandbits(32)
                 session_seeds[session_id] = seed

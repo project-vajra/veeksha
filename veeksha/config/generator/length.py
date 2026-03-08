@@ -102,3 +102,27 @@ class ZipfLengthGeneratorConfig(BaseLengthGeneratorConfig):
             raise ValueError("max must be > 0")
         if self.min > self.max:
             raise ValueError("min must be <= max")
+
+
+@frozen_dataclass
+class InverseGaussianLengthGeneratorConfig(BaseLengthGeneratorConfig):
+    mean: float = field(
+        default=500.0,
+        metadata={"help": "Mean parameter for the inverse Gaussian distribution."},
+    )
+    shape: float = field(
+        default=300.0,
+        metadata={
+            "help": "Shape (lambda) parameter for the inverse Gaussian distribution. Lower values mean more spread."
+        },
+    )
+
+    @classmethod
+    def get_type(cls) -> LengthGeneratorType:
+        return LengthGeneratorType.INVERSE_GAUSSIAN
+
+    def __post_init__(self):
+        if self.mean <= 0:
+            raise ValueError("mean must be > 0")
+        if self.shape <= 0:
+            raise ValueError("shape must be > 0")

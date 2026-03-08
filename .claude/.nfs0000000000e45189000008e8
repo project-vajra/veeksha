@@ -31,7 +31,9 @@
       "Read(//scratch/amey/vajra/.claude/**)",
       "Bash(do echo:*)",
       "Bash(gh pr:*)",
-      "Bash(git mv:*)"
+      "Bash(git mv:*)",
+      "Bash(git branch:*)",
+      "WebFetch(domain:inferencex.semianalysis.com)"
     ]
   }
 }
