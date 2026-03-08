@@ -23,7 +23,7 @@ from veeksha.config.generator.interval import (
     FixedIntervalGeneratorConfig,
 )
 from veeksha.config.traffic import ConcurrentTrafficConfig, RateTrafficConfig
-from veeksha.config.utils import dataclass_to_dict
+from vidhi import dataclass_to_dict
 from veeksha.logger import init_logger
 from veeksha.wandb_integration import (
     dedup_tags,

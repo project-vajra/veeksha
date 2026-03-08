@@ -1,7 +1,5 @@
-from dataclasses import field
+from vidhi import BasePolyConfig, field, frozen_dataclass
 
-from veeksha.config.core.base_poly_config import BasePolyConfig
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.generator.channel import (
     BaseChannelGeneratorConfig,
     TextChannelGeneratorConfig,
@@ -12,16 +10,14 @@ from veeksha.config.generator.session_graph import (
     LinearSessionGraphGeneratorConfig,
 )
 from veeksha.types import (
-    ChannelModality,
     SessionGeneratorType,
-    SessionGraphType,
     TraceFlavorType,
 )
 
 
-@frozen_dataclass(allow_from_file=True)
+@frozen_dataclass
 class BaseSessionGeneratorConfig(BasePolyConfig):
-    pass
+    """Session generator strategy (synthetic, trace, or lm-eval)."""
 
 
 @frozen_dataclass
@@ -36,21 +32,15 @@ class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
 
     session_graph: BaseSessionGraphGeneratorConfig = field(
         default_factory=LinearSessionGraphGeneratorConfig,
-        metadata={
-            "help": f"The generator for the session graphs. {SessionGraphType.help_str()}"
-        },
+        help="The generator for the session graphs.",
     )
     channels: list[BaseChannelGeneratorConfig] = field(
         default_factory=lambda: [TextChannelGeneratorConfig()],
-        metadata={
-            "help": f"The modality channels for the input content of each request. {ChannelModality.help_str()}"
-        },
+        help="The modality channels for the input content of each request.",
     )
     output_spec: OutputSpecConfig = field(
         default_factory=OutputSpecConfig,
-        metadata={
-            "help": "Specification for expected output from the model, for supported modalities (e.g., output token length, image count)."
-        },
+        help="Specification for expected output from the model, for supported modalities (e.g., output token length, image count).",
     )
 
     @classmethod
@@ -70,11 +60,10 @@ class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
 class LmevalSessionGeneratorConfig(BaseSessionGeneratorConfig):
     tasks: list[str] = field(
         default_factory=lambda: ["hellaswag"],
-        metadata={"help": "The lm-eval tasks to evaluate the model on."},
+        help="The lm-eval tasks to evaluate the model on.",
     )
     num_fewshot: int = field(
-        default=1,
-        metadata={"help": "The number of fewshot examples to use for the tasks."},
+        1, help="The number of fewshot examples to use for the tasks."
     )
     # NOTE: We intentionally do not expose a separate `limit` knob here.
     # Control total evaluated sessions via `runtime.max_sessions` (and wall time via
@@ -102,12 +91,10 @@ class TimedSyntheticMultiTurnTraceFlavorConfig(BaseTraceFlavorConfig):
     """Timed synthetic multi-turn trace flavor configuration with context caching."""
 
     corpus_file: str = field(
-        default="traces/corpus.txt",
-        metadata={"help": "Path to corpus file for prompt padding"},
+        "traces/corpus.txt", help="Path to corpus file for prompt padding"
     )
     page_size: int = field(
-        default=16,
-        metadata={"help": "Number of unique tokens per session prefix"},
+        16, help="Number of unique tokens per session prefix"
     )
 
     @classmethod
@@ -120,14 +107,11 @@ class SharedPrefixTraceFlavorConfig(BaseTraceFlavorConfig):
     """Shared-prefix trace flavor configuration with hash-based content sharing."""
 
     corpus_file: str = field(
-        default="traces/corpus.txt",
-        metadata={"help": "Path to corpus file for prompt padding"},
+        "traces/corpus.txt", help="Path to corpus file for prompt padding"
     )
     block_size: int = field(
-        default=512,
-        metadata={
-            "help": "Number of tokens per hash id block. Only used for hash ids of first-in-session requests."
-        },
+        512,
+        help="Number of tokens per hash id block. Only used for hash ids of first-in-session requests.",
     )
 
     @classmethod
@@ -140,8 +124,7 @@ class RAGTraceFlavorConfig(BaseTraceFlavorConfig):
     """RAG trace flavor configuration."""
 
     num_documents: int = field(
-        default=10,
-        metadata={"help": "Number of top documents to include for warmup"},
+        10, help="Number of top documents to include for warmup"
     )
 
     @classmethod
@@ -205,16 +188,14 @@ class TraceSessionGeneratorConfig(BaseSessionGeneratorConfig):
     """Trace-driven session generator configuration."""
 
     trace_file: str = field(
-        default="",
-        metadata={"help": "Path to the trace file (JSONL or CSV)"},
+        "", help="Path to the trace file (JSONL or CSV)"
     )
     wrap_mode: bool = field(
-        default=True,
-        metadata={"help": "Whether to wrap/loop over the trace indefinitely"},
+        True, help="Whether to wrap/loop over the trace indefinitely"
     )
     flavor: BaseTraceFlavorConfig = field(
         default_factory=TimedSyntheticMultiTurnTraceFlavorConfig,
-        metadata={"help": f"Trace flavor configuration. {TraceFlavorType.help_str()}"},
+        help="Trace flavor configuration.",
     )
 
     @classmethod

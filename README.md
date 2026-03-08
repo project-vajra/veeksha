@@ -15,32 +15,26 @@ microbenchmarks. One tool, any workload.
 
 ## Quick start
 
-In a fresh environment (Python 3.14t recommended for true parallelism):
-
-Install from PyPI:
+No install needed — run directly with [uvx](https://docs.astral.sh/uv/):
 
 ```bash
-pip install veeksha
-```
-
-Run a benchmark against an OpenAI-compatible endpoint:
-
-```bash
-python -Xgil=0 -m veeksha.benchmark \
-    --client-type openai_chat_completions \
-    --openai-chat-completions-client-api-base http://localhost:8000/v1 \
-    --openai-chat-completions-client-model meta-llama/Llama-3.2-1B-Instruct \
-    --traffic-scheduler-type rate \
-    --rate-traffic-scheduler-interval-generator-type poisson \
-    --rate-traffic-scheduler-poisson-interval-generator-arrival-rate 5.0 \
-    --runtime-benchmark-timeout 60
+uvx veeksha benchmark \
+    --client.type openai_chat_completions \
+    --client.api_base http://localhost:8000/v1 \
+    --client.model meta-llama/Llama-3.2-1B-Instruct \
+    --traffic_scheduler.type rate \
+    --traffic_scheduler.interval_generator.type poisson \
+    --traffic_scheduler.interval_generator.arrival_rate 5.0 \
+    --runtime.benchmark_timeout 60
 ```
 
 Or use a YAML configuration file:
 
 ```bash
-python -Xgil=0 -m veeksha.benchmark --benchmark-config-from-file my_benchmark.veeksha.yml
+uvx veeksha benchmark --config my_benchmark.veeksha.yml
 ```
+
+Or install with `uv pip install veeksha` / `pip install veeksha` and use `veeksha` directly.
 
 ## Installation from source
 

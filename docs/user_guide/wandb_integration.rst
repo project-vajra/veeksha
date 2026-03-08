@@ -21,7 +21,7 @@ Run the benchmark as usual:
 
 .. code-block:: bash
 
-    python -Xgil=0 -m veeksha.benchmark --benchmark-config-from-file my_benchmark.veeksha.yml
+    uvx veeksha benchmark --config my_benchmark.veeksha.yml
 
 Veeksha will:
 

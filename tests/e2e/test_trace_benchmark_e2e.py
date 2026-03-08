@@ -12,7 +12,7 @@ import yaml
 
 from veeksha.benchmark import manage_benchmark_run
 from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.config.utils import create_class_from_dict
+from vidhi import create_class_from_dict
 from veeksha.generator.session.trace.prompt_builder import TracePromptBuilder
 from veeksha.core.request_content import TextChannelRequestContent
 

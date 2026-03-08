@@ -40,9 +40,9 @@ from veeksha.microbench.common import (
     save_json,
 )
 from veeksha.microbench.config import (
-    AutoStressConfig,
-    ManualStressConfig,
-    RangeStressConfig,
+    AutoStressModeConfig,
+    ManualStressModeConfig,
+    RangeStressModeConfig,
     StressMicrobenchmarkConfig,
     StressTrafficMode,
 )
@@ -67,13 +67,14 @@ BANNER_ROWS: list[tuple[str, str]] = [
 
 def resolve_levels(cfg: StressMicrobenchmarkConfig) -> list[int]:
     """Resolve load levels for manual/range modes."""
-    if isinstance(cfg, ManualStressConfig):
-        return sorted(set(cfg.concurrency_levels))
-    if isinstance(cfg, RangeStressConfig):
+    mode = cfg.mode
+    if isinstance(mode, ManualStressModeConfig):
+        return sorted(set(mode.concurrency_levels))
+    if isinstance(mode, RangeStressModeConfig):
         return _log_spaced_levels(
-            cfg.concurrency_min, cfg.concurrency_max, cfg.concurrency_points
+            mode.concurrency_min, mode.concurrency_max, mode.concurrency_points
         )
-    raise ValueError(f"Cannot resolve levels for {type(cfg).__name__}")
+    raise ValueError(f"Cannot resolve levels for {type(mode).__name__}")
 
 
 def _log_spaced_levels(lo: int, hi: int, n: int) -> list[int]:
@@ -627,11 +628,11 @@ def _run_and_measure(
 
 
 def _resume_existing_results(
-    cfg: AutoStressConfig,
+    cfg: StressMicrobenchmarkConfig,
 ) -> dict[int, StressPointResult]:
     """Load results from a previous run directory (--resume-dir) by copying c=N dirs."""
     measured: dict[int, StressPointResult] = {}
-    resume_dir = cfg.resume_dir
+    resume_dir = cfg.mode.resume_dir
     if not resume_dir or not os.path.isdir(resume_dir):
         return measured
 
@@ -679,7 +680,7 @@ def _find_close_enough(
     return best
 
 
-def _run_auto_sweep(cfg: AutoStressConfig) -> list[StressPointResult]:
+def _run_auto_sweep(cfg: StressMicrobenchmarkConfig) -> list[StressPointResult]:
     """Three-phase auto sweep: probe, refine, fill.
 
     - Reuses results from --resume-dir if provided
@@ -706,7 +707,7 @@ def _run_auto_sweep(cfg: AutoStressConfig) -> list[StressPointResult]:
     c = 1
     prev_throughput = 0.0
     probes = 0
-    while probes < cfg.auto_max_probes:
+    while probes < cfg.mode.auto_max_probes:
         point = _probe(c)
         probes += 1
         if point is None:
@@ -714,7 +715,7 @@ def _run_auto_sweep(cfg: AutoStressConfig) -> list[StressPointResult]:
         if (
             prev_throughput > 0
             and (point.output_throughput - prev_throughput) / prev_throughput
-            < cfg.auto_throughput_threshold
+            < cfg.mode.auto_throughput_threshold
         ):
             break
         prev_throughput = point.output_throughput
@@ -729,7 +730,7 @@ def _run_auto_sweep(cfg: AutoStressConfig) -> list[StressPointResult]:
     # Walk from lowest concurrency upward; the lower bound is the highest c
     # where interactivity_p50 is still within threshold of the best observed.
     max_interactivity = max(p.interactivity_p50 for p in measured.values())
-    interactivity_floor = max_interactivity * (1 - cfg.auto_throughput_threshold)
+    interactivity_floor = max_interactivity * (1 - cfg.mode.auto_throughput_threshold)
     sorted_points = sorted(measured.items(), key=lambda kv: kv[0])
     lower = sorted_points[0][0]  # fallback to lowest probed
     for c, p in sorted_points:
@@ -743,7 +744,7 @@ def _run_auto_sweep(cfg: AutoStressConfig) -> list[StressPointResult]:
 
     # Phase 3: Fill log-spaced levels between lower and upper.
     # Reuse existing measurements that are close enough to a fill target.
-    fill_levels = _log_spaced_levels(lower, upper, cfg.auto_fill_points)
+    fill_levels = _log_spaced_levels(lower, upper, cfg.mode.auto_fill_points)
     for target_c in fill_levels:
         if target_c in measured:
             continue
@@ -759,11 +760,11 @@ def _run_auto_sweep(cfg: AutoStressConfig) -> list[StressPointResult]:
     return sorted(measured.values(), key=lambda p: p.level)
 
 
-def _run_auto_main(cfg: AutoStressConfig) -> None:
+def _run_auto_main(cfg: StressMicrobenchmarkConfig) -> None:
     """Full auto mode entrypoint."""
     from veeksha.microbench.runner import _make_run_dir, _print_banner
 
-    if cfg.resume_dir:
+    if cfg.mode.resume_dir:
         # When resuming, still create a new timestamped run dir
         # (results get copied in from the resume dir)
         pass
@@ -794,36 +795,18 @@ def _run_auto_main(cfg: AutoStressConfig) -> None:
 # ---------------------------------------------------------------------------
 
 
+def run_stress(cfg: StressMicrobenchmarkConfig) -> None:
+    """Run a single stress microbenchmark."""
+    if isinstance(cfg.mode, AutoStressModeConfig):
+        _run_auto_main(cfg)
+    else:
+        from veeksha.microbench.runner import run
+
+        run(cfg, "stress", BANNER_ROWS, build_benchmark_configs, print_results_table, validate)
+
+
 def main() -> None:
-    from argparse import ArgumentParser
+    from vidhi import parse_cli_sweep
 
-    from veeksha.microbench.config import STRESS_MODE_TO_CONFIG
-
-    # Pre-parse --stress-mode to select the right config class
-    pre_parser = ArgumentParser(add_help=False)
-    pre_parser.add_argument(
-        "--stress-mode",
-        default="manual",
-        choices=list(STRESS_MODE_TO_CONFIG.keys()),
-    )
-    known, remaining = pre_parser.parse_known_args()
-
-    config_cls = STRESS_MODE_TO_CONFIG[known.stress_mode]
-
-    # Replace sys.argv so create_from_cli_args doesn't see --stress-mode
-    sys.argv = [sys.argv[0]] + remaining
-
-    for cfg in config_cls.create_from_cli_args():
-        if isinstance(cfg, AutoStressConfig):
-            _run_auto_main(cfg)
-        else:
-            from veeksha.microbench.runner import run
-
-            run(
-                cfg,
-                "stress",
-                BANNER_ROWS,
-                build_benchmark_configs,
-                print_results_table,
-                validate,
-            )
+    for cfg in parse_cli_sweep(StressMicrobenchmarkConfig):
+        run_stress(cfg)

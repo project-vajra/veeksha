@@ -386,15 +386,13 @@ def print_results_table(cfg: DecodeMicrobenchmarkConfig) -> None:
 # ---------------------------------------------------------------------------
 
 
-def main() -> None:
+def run_decode(cfg: DecodeMicrobenchmarkConfig) -> None:
+    """Run a single decode microbenchmark."""
     from veeksha.microbench.runner import run
 
+    run(cfg, "decode", BANNER_ROWS, build_benchmark_configs, print_results_table, validate)
+
+
+def main() -> None:
     for cfg in DecodeMicrobenchmarkConfig.create_from_cli_args():
-        run(
-            cfg,
-            "decode",
-            BANNER_ROWS,
-            build_benchmark_configs,
-            print_results_table,
-            validate,
-        )
+        run_decode(cfg)

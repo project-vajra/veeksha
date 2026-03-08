@@ -12,7 +12,7 @@ import yaml
 
 from veeksha.capacity_search import run_capacity_search
 from veeksha.config.capacity_search import CapacitySearchConfig
-from veeksha.config.utils import create_class_from_dict
+from vidhi import create_class_from_dict
 from veeksha.core.request_content import TextChannelRequestContent
 
 SAMPLE_CONFIG_URL = "veeksha/sample_configs/capacity_search_rate.yml"

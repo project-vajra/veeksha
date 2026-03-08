@@ -24,4 +24,4 @@ class TestCLI:
         assert result.returncode == 0, "Help command failed"
         assert "usage:" in result.stdout.lower(), "Help output missing usage"
         # assert "--slos" in result.stdout, "Help missing SLOs argument"
-        assert "--max-iterations" in result.stdout, "Help missing max iterations argument"
+        assert "--max_iterations" in result.stdout, "Help missing max iterations argument"

@@ -1,18 +1,16 @@
-from dataclasses import field
+from vidhi import BasePolyConfig, field, frozen_dataclass
 
-from veeksha.config.core.base_poly_config import BasePolyConfig
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.generator.length import (
     BaseLengthGeneratorConfig,
     UniformLengthGeneratorConfig,
 )
-from veeksha.types import ChannelModality, LengthGeneratorType
+from veeksha.types import ChannelModality
 from veeksha.types.base_registry import BaseRegistry
 
 
 @frozen_dataclass
 class BaseChannelGeneratorConfig(BasePolyConfig):
-    pass
+    """Input channel modality (text, image, audio, or video)."""
 
 
 @frozen_dataclass
@@ -21,21 +19,15 @@ class TextChannelGeneratorConfig(BaseChannelGeneratorConfig):
 
     body_length_generator: BaseLengthGeneratorConfig = field(
         default_factory=UniformLengthGeneratorConfig,
-        metadata={
-            "help": f"The generator for the body (prompt) length. {LengthGeneratorType.help_str()}"
-        },
+        help="The generator for the body (prompt) length.",
     )
     shared_prefix_ratio: float = field(
-        default=0.0,
-        metadata={
-            "help": "Fraction of prompt tokens to use as shared prefix for root requests (0.0-1.0)"
-        },
+        0.0,
+        help="Fraction of prompt tokens to use as shared prefix for root requests (0.0-1.0)",
     )
     shared_prefix_probability: float = field(
-        default=1.0,
-        metadata={
-            "help": "Probability that a root request uses shared prefix (0.0-1.0)"
-        },
+        1.0,
+        help="Probability that a root request uses shared prefix (0.0-1.0)",
     )
 
     @classmethod

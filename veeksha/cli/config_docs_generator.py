@@ -11,8 +11,8 @@ from dataclasses import MISSING, fields, is_dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Type, get_args, get_origin
 
-from veeksha.config.core.base_poly_config import BasePolyConfig
-from veeksha.config.utils import get_all_subclasses, is_optional
+from vidhi import BasePolyConfig
+from vidhi.utils import get_all_subclasses, is_optional
 
 
 def _to_human_readable(class_name: str) -> str:

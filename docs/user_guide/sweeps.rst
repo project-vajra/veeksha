@@ -98,7 +98,7 @@ Run it:
 
 .. code-block:: bash
 
-    python -Xgil=0 -m veeksha.benchmark --benchmark-config-from-file sweep.veeksha.yml
+    uvx veeksha benchmark --config sweep.veeksha.yml
 
 Veeksha automatically runs 4 benchmarks with rates 5, 10, 20, and 30.
 
@@ -157,9 +157,9 @@ spreadsheet analysis.
 Cross-file expansion
 --------------------
 
-When using :ref:`multiple config files <configuration-splitting>`, ``!expand`` tags
-work across file boundaries. Veeksha collects **all** ``!expand`` markers from all
-config files and computes the Cartesian product.
+When using :ref:`!include <configuration-splitting>` to split config across files,
+``!expand`` tags work across file boundaries. Veeksha collects **all** ``!expand``
+markers from all included files and computes the Cartesian product.
 
 **Example: Sweep across client endpoints and traffic rates**
 
@@ -177,19 +177,36 @@ Create ``traffic.yml`` with multiple arrival rates:
 .. code-block:: yaml
 
     # traffic.yml - sweep across 3 rates
-    traffic_scheduler:
-      type: rate
-      interval_generator:
-        type: poisson
-        arrival_rate: !expand [5, 10, 20]
+    type: rate
+    interval_generator:
+      type: poisson
+      arrival_rate: !expand [5, 10, 20]
 
-Run combining both files:
+Create a main config using ``!include``:
+
+.. code-block:: yaml
+
+    # main.yml
+    client: !include client.yml
+    traffic_scheduler: !include traffic.yml
+
+    session_generator:
+      type: synthetic
+      channels:
+        - type: text
+          body_length_generator:
+            type: uniform
+            min: 100
+            max: 500
+
+    runtime:
+      benchmark_timeout: 60
+
+Run with a single ``--config``:
 
 .. code-block:: bash
 
-    python -Xgil=0 -m veeksha.benchmark \
-        --benchmark-config-from-file traffic.yml \
-        --client-from-file client.yml
+    uvx veeksha benchmark --config main.yml
 
 This creates **6 runs** (2 servers × 3 rates):
 
@@ -200,19 +217,11 @@ This creates **6 runs** (2 servers × 3 rates):
 5. api_base=server-b, rate=10
 6. api_base=server-b, rate=20
 
-**Three-file example**
+**Multi-file example**
 
-You can split configuration across as many files as needed:
-
-.. code-block:: bash
-
-    python -Xgil=0 -m veeksha.benchmark \
-        --benchmark-config-from-file base.yml \
-        --client-from-file client.yml \               # 2 !expand values
-        --traffic-scheduler-from-file traffic.yml     # 3 !expand values
-
-If ``base.yml`` contains ``!expand [256, 512]`` for prompt length,
-this creates **12 runs** (2 × 3 × 2).
+You can split across as many included files as needed. If ``client.yml`` has 2
+``!expand`` values, ``traffic.yml`` has 3, and the main config has
+``!expand [256, 512]`` for prompt length, this creates **12 runs** (2 × 3 × 2).
 
 .. hint::
     Cross-file expansion is particularly useful for:

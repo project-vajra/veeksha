@@ -9,13 +9,12 @@ The hierarchy follows the BasePolyConfig pattern used elsewhere in veeksha:
   - LMEvalAccuracyEvaluatorConfig (task-specific correctness - lm-eval)
 """
 
-from dataclasses import field
 from typing import Optional, Union
 
-from veeksha.config.core.base_poly_config import BasePolyConfig
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from vidhi import BasePolyConfig, field, frozen_dataclass
+
 from veeksha.config.slo import BaseSloConfig, ConstantSloConfig
-from veeksha.types import ChannelModality, EvaluationType, SloType
+from veeksha.types import ChannelModality, EvaluationType
 
 
 @frozen_dataclass
@@ -27,33 +26,25 @@ class DecodeWindowConfig:
     """
 
     min_active_requests: Union[int, str] = field(
-        default=1,
-        metadata={
-            "help": "Minimum number of simultaneously generating (decoding) requests "
-            "required for a time interval to be considered inside the decode window. "
-            "Use 'max_observed' to auto-detect the peak concurrent decoding count."
-        },
+        1,
+        help="Minimum number of simultaneously generating (decoding) requests "
+        "required for a time interval to be considered inside the decode window. "
+        "Use 'max_observed' to auto-detect the peak concurrent decoding count.",
     )
     selection_strategy: str = field(
-        default="longest",
-        metadata={
-            "help": "Which window(s) to analyze when multiple windows exist. "
-            "Supported: 'longest' (single longest), 'first' (single first), "
-            "'all' (aggregate all qualifying windows)."
-        },
+        "longest",
+        help="Which window(s) to analyze when multiple windows exist. "
+        "Supported: 'longest' (single longest), 'first' (single first), "
+        "'all' (aggregate all qualifying windows).",
     )
     anchor_to_client_pickup: bool = field(
-        default=True,
-        metadata={
-            "help": "If True, anchor per-request token times to client_picked_up_at "
-            "when available; otherwise use scheduler_dispatched_at."
-        },
+        True,
+        help="If True, anchor per-request token times to client_picked_up_at "
+        "when available; otherwise use scheduler_dispatched_at.",
     )
     require_streaming: bool = field(
-        default=True,
-        metadata={
-            "help": "If True, only streaming requests contribute to decode window analysis."
-        },
+        True,
+        help="If True, only streaming requests contribute to decode window analysis.",
     )
 
     def __post_init__(self):
@@ -89,11 +80,10 @@ class TextChannelPerformanceConfig(BaseChannelPerformanceConfig):
     """Text channel performance configuration"""
 
     decode_window_enabled: bool = field(
-        default=False, metadata={"help": "Enable decode window analysis"}
+        False, help="Enable decode window analysis"
     )
     decode_window_config: Optional[DecodeWindowConfig] = field(
-        default=None,
-        metadata={"help": "Decode window configuration (required if enabled)"},
+        None, help="Decode window configuration (required if enabled)"
     )
 
     @classmethod
@@ -153,27 +143,25 @@ def _default_slos() -> list[BaseSloConfig]:
     ]
 
 
-@frozen_dataclass(allow_from_file=True)
+@frozen_dataclass
 class BaseEvaluatorConfig(BasePolyConfig):
     """Base configuration for all evaluators (performance, accuracy)"""
 
     target_channels: list = field(
         default_factory=lambda: ["text"],
-        metadata={"help": "List of ChannelModality values to evaluate."},
+        help="List of ChannelModality values to evaluate.",
     )
 
     slos: list[BaseSloConfig] = field(
         default_factory=_default_slos,
-        metadata={
-            "help": f"List of SLO definitions to evaluate against request-level metrics. {SloType.help_str()}"
-        },
+        help="List of SLO definitions to evaluate against request-level metrics.",
     )
 
     stream_metrics: bool = field(
-        default=True, metadata={"help": "Enable real-time metric streaming"}
+        True, help="Enable real-time metric streaming"
     )
     stream_metrics_interval: float = field(
-        default=5.0, metadata={"help": "Interval for streaming metrics in seconds"}
+        5.0, help="Interval for streaming metrics in seconds"
     )
 
     def __post_init__(self):
@@ -196,19 +184,17 @@ class PerformanceEvaluatorConfig(BaseEvaluatorConfig):
 
     text_channel: TextChannelPerformanceConfig = field(
         default_factory=TextChannelPerformanceConfig,
-        metadata={"help": "Text channel performance configuration"},
+        help="Text channel performance configuration",
     )
     image_channel: ImageChannelPerformanceConfig = field(
         default_factory=ImageChannelPerformanceConfig,
-        metadata={"help": "Image channel performance configuration"},
+        help="Image channel performance configuration",
     )
     audio_channel: Optional[AudioChannelPerformanceConfig] = field(
-        default=None,
-        metadata={"help": "Audio channel performance configuration"},
+        None, help="Audio channel performance configuration"
     )
     video_channel: Optional[VideoChannelPerformanceConfig] = field(
-        default=None,
-        metadata={"help": "Video channel performance configuration"},
+        None, help="Video channel performance configuration"
     )
 
     @classmethod
@@ -243,8 +229,7 @@ class LMEvalAccuracyEvaluatorConfig(BaseEvaluatorConfig):
     """
 
     bootstrap_iters: int = field(
-        default=100000,
-        metadata={"help": "Bootstrap iterations for confidence intervals"},
+        100000, help="Bootstrap iterations for confidence intervals"
     )
 
     @classmethod

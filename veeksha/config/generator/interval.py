@@ -1,23 +1,20 @@
-from dataclasses import field
+from vidhi import BasePolyConfig, field, frozen_dataclass
 
-from veeksha.config.core.base_poly_config import BasePolyConfig
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.types import IntervalGeneratorType
 
 
 @frozen_dataclass
 class BaseIntervalGeneratorConfig(BasePolyConfig):
-    pass
+    """Wait-time sampling strategy (poisson, gamma, or fixed)."""
 
 
 @frozen_dataclass
 class GammaIntervalGeneratorConfig(BaseIntervalGeneratorConfig):
     arrival_rate: float = field(
-        default=1.0, metadata={"help": "Arrival rate for the Gamma distribution."}
+        1.0, help="Arrival rate for the Gamma distribution."
     )
     cv: float = field(
-        default=0.5,
-        metadata={"help": "Coefficient of variation for the Gamma distribution."},
+        0.5, help="Coefficient of variation for the Gamma distribution."
     )
 
     @classmethod
@@ -28,8 +25,7 @@ class GammaIntervalGeneratorConfig(BaseIntervalGeneratorConfig):
 @frozen_dataclass
 class PoissonIntervalGeneratorConfig(BaseIntervalGeneratorConfig):
     arrival_rate: float = field(
-        default=1.0,
-        metadata={"help": "Arrival rate for the Poisson distribution."},
+        1.0, help="Arrival rate for the Poisson distribution."
     )
 
     @classmethod
@@ -40,8 +36,7 @@ class PoissonIntervalGeneratorConfig(BaseIntervalGeneratorConfig):
 @frozen_dataclass
 class FixedIntervalGeneratorConfig(BaseIntervalGeneratorConfig):
     interval: float = field(
-        default=1.0,
-        metadata={"help": "Fixed interval for the fixed distribution."},
+        1.0, help="Fixed interval for the fixed distribution."
     )
 
     @classmethod

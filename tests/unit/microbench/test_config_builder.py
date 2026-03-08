@@ -4,7 +4,14 @@ from veeksha.config.evaluator import PerformanceEvaluatorConfig
 from veeksha.config.generator.length import FixedLengthGeneratorConfig, StairLengthGeneratorConfig
 from veeksha.config.generator.session_graph import SingleRequestSessionGraphGeneratorConfig
 from veeksha.config.traffic import ConcurrentTrafficConfig, RateTrafficConfig, SequentialLaunchTrafficConfig
-from veeksha.microbench.config import DecodeMicrobenchmarkConfig, ManualStressConfig, PrefillMicrobenchmarkConfig, RangeStressConfig, StressTrafficMode
+from veeksha.microbench.config import (
+    DecodeMicrobenchmarkConfig,
+    ManualStressModeConfig,
+    PrefillMicrobenchmarkConfig,
+    RangeStressModeConfig,
+    StressMicrobenchmarkConfig,
+    StressTrafficMode,
+)
 from veeksha.microbench.decode import required_decode_output_tokens
 from veeksha.microbench.decode import build_benchmark_configs as build_decode_configs
 from veeksha.microbench.prefill import build_benchmark_configs as build_prefill_configs
@@ -170,11 +177,11 @@ class TestDecodeExpansion:
 
 class TestResolveLevels:
     def test_manual_sorted_deduped(self):
-        cfg = ManualStressConfig(concurrency_levels=[8, 2, 4, 2])
+        cfg = StressMicrobenchmarkConfig(mode=ManualStressModeConfig(concurrency_levels=[8, 2, 4, 2]))
         assert resolve_levels(cfg) == [2, 4, 8]
 
     def test_range_basic(self):
-        cfg = RangeStressConfig(concurrency_min=1, concurrency_max=16, concurrency_points=5)
+        cfg = StressMicrobenchmarkConfig(mode=RangeStressModeConfig(concurrency_min=1, concurrency_max=16, concurrency_points=5))
         levels = resolve_levels(cfg)
         assert levels[0] == 1
         assert levels[-1] == 16
@@ -225,30 +232,40 @@ class TestEstimateMaxSessions:
 
 class TestStressExpansion:
     def test_config_count_matches_levels(self):
-        cfg = ManualStressConfig(concurrency_levels=[1, 4, 16])
+        cfg = StressMicrobenchmarkConfig(mode=ManualStressModeConfig(concurrency_levels=[1, 4, 16]))
         result = build_stress_configs(cfg)
         assert len(result) == 3
 
     def test_concurrency_traffic(self):
-        cfg = ManualStressConfig(concurrency_levels=[8])
+        cfg = StressMicrobenchmarkConfig(mode=ManualStressModeConfig(concurrency_levels=[8]))
         bc = build_stress_configs(cfg)[0]
         assert isinstance(bc.traffic_scheduler, ConcurrentTrafficConfig)
         assert bc.traffic_scheduler.target_concurrent_sessions == 8
 
     def test_fixed_rate_traffic(self):
-        cfg = ManualStressConfig(concurrency_levels=[10], traffic_mode=StressTrafficMode.FIXED_RATE)
+        cfg = StressMicrobenchmarkConfig(
+            mode=ManualStressModeConfig(concurrency_levels=[10]),
+            traffic_mode=StressTrafficMode.FIXED_RATE,
+        )
         bc = build_stress_configs(cfg)[0]
         assert isinstance(bc.traffic_scheduler, RateTrafficConfig)
         assert bc.traffic_scheduler.interval_generator.arrival_rate == 10.0
 
     def test_output_dirs_parameterized(self):
-        cfg = ManualStressConfig(concurrency_levels=[1, 4, 16], output_dir="out")
+        cfg = StressMicrobenchmarkConfig(
+            mode=ManualStressModeConfig(concurrency_levels=[1, 4, 16]),
+            output_dir="out",
+        )
         result = build_stress_configs(cfg)
         dirs = {bc.output_dir for bc in result}
         assert dirs == {"out/c=1", "out/c=4", "out/c=16"}
 
     def test_fixed_length_generators(self):
-        cfg = ManualStressConfig(input_length=256, output_length=64, concurrency_levels=[1])
+        cfg = StressMicrobenchmarkConfig(
+            input_length=256,
+            output_length=64,
+            mode=ManualStressModeConfig(concurrency_levels=[1]),
+        )
         bc = build_stress_configs(cfg)[0]
         body = bc.session_generator.channels[0].body_length_generator
         assert isinstance(body, FixedLengthGeneratorConfig)
@@ -258,17 +275,17 @@ class TestStressExpansion:
         assert out.value == 64
 
     def test_num_client_threads_ge_concurrency(self):
-        cfg = ManualStressConfig(concurrency_levels=[32])
+        cfg = StressMicrobenchmarkConfig(mode=ManualStressModeConfig(concurrency_levels=[32]))
         bc = build_stress_configs(cfg)[0]
         assert bc.runtime.num_client_threads >= 32
 
     def test_pregenerate_sessions(self):
-        cfg = ManualStressConfig(concurrency_levels=[1])
+        cfg = StressMicrobenchmarkConfig(mode=ManualStressModeConfig(concurrency_levels=[1]))
         bc = build_stress_configs(cfg)[0]
         assert bc.runtime.pregenerate_sessions is True
 
     def test_trace_recorder_disabled(self):
-        cfg = ManualStressConfig(concurrency_levels=[1])
+        cfg = StressMicrobenchmarkConfig(mode=ManualStressModeConfig(concurrency_levels=[1]))
         bc = build_stress_configs(cfg)[0]
         assert bc.trace_recorder.enabled is False
 

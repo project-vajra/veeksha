@@ -8,11 +8,11 @@ Configuration can be provided via YAML files or CLI arguments.
    
    Use the interactive config explorer for an easier experience::
    
-       python -m veeksha.cli.config explore
+       uvx veeksha config explore
 
    Or generate a YAML schema template::
    
-       python -m veeksha.cli.config show --format yaml
+       uvx veeksha config show --format yaml
 
 
 Quick links
