@@ -7,7 +7,6 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
 from rich.table import Table
 
 from veeksha.config.benchmark import BenchmarkConfig
@@ -39,7 +38,6 @@ from veeksha.microbench.common import (
     save_json,
 )
 from veeksha.microbench.config import PrefillMicrobenchmarkConfig
-
 
 # ---------------------------------------------------------------------------
 # Banner
@@ -122,9 +120,7 @@ def validate(cfg: PrefillMicrobenchmarkConfig, output_dir: str) -> ValidationRes
     else:
         result.fail("session_count", f"expected {expected_count}, got {len(metrics)}")
 
-    failed_requests = [
-        r for r in metrics if r.get("num_output_tokens", 0) == 0
-    ]
+    failed_requests = [r for r in metrics if r.get("num_output_tokens", 0) == 0]
     if not failed_requests:
         result.passed("no_errors", "all requests produced output")
     else:
@@ -132,9 +128,7 @@ def validate(cfg: PrefillMicrobenchmarkConfig, output_dir: str) -> ValidationRes
             "no_errors", f"{len(failed_requests)} requests produced 0 output tokens"
         )
 
-    mismatched = [
-        r for r in metrics if r["num_output_tokens"] != cfg.output_tokens
-    ]
+    mismatched = [r for r in metrics if r["num_output_tokens"] != cfg.output_tokens]
     if not mismatched:
         result.passed(
             "output_tokens", f"all requests produced {cfg.output_tokens} output tokens"
@@ -219,8 +213,12 @@ def print_results_table(cfg: PrefillMicrobenchmarkConfig) -> None:
         s = row["ttfc"]
         table.add_row(
             str(row["input_length"]),
-            fmt_ms(s["mean"]), fmt_ms(s["median"]), fmt_ms(s["p99"]),
-            fmt_ms(s["min"]), fmt_ms(s["max"]), str(s["count"]),
+            fmt_ms(s["mean"]),
+            fmt_ms(s["median"]),
+            fmt_ms(s["p99"]),
+            fmt_ms(s["min"]),
+            fmt_ms(s["max"]),
+            str(s["count"]),
         )
 
     console.print()
@@ -236,20 +234,31 @@ def print_results_table(cfg: PrefillMicrobenchmarkConfig) -> None:
     csv_path = os.path.join(cfg.output_dir, "prefill_results.csv")
     with open(csv_path, "w", newline="") as f:
         writer = csv.DictWriter(
-            f, fieldnames=["input_length", "mean_ms", "p50_ms", "p99_ms", "min_ms", "max_ms", "count"]
+            f,
+            fieldnames=[
+                "input_length",
+                "mean_ms",
+                "p50_ms",
+                "p99_ms",
+                "min_ms",
+                "max_ms",
+                "count",
+            ],
         )
         writer.writeheader()
         for row in rows:
             s = row["ttfc"]
-            writer.writerow({
-                "input_length": row["input_length"],
-                "mean_ms": s["mean"] * 1000,
-                "p50_ms": s["median"] * 1000,
-                "p99_ms": s["p99"] * 1000,
-                "min_ms": s["min"] * 1000,
-                "max_ms": s["max"] * 1000,
-                "count": s["count"],
-            })
+            writer.writerow(
+                {
+                    "input_length": row["input_length"],
+                    "mean_ms": s["mean"] * 1000,
+                    "p50_ms": s["median"] * 1000,
+                    "p99_ms": s["p99"] * 1000,
+                    "min_ms": s["min"] * 1000,
+                    "max_ms": s["max"] * 1000,
+                    "count": s["count"],
+                }
+            )
     console.print(f"  CSV saved to {csv_path}")
 
     # Plots
@@ -285,4 +294,11 @@ def main() -> None:
     from veeksha.microbench.runner import run
 
     for cfg in PrefillMicrobenchmarkConfig.create_from_cli_args():
-        run(cfg, "prefill", BANNER_ROWS, build_benchmark_configs, print_results_table, validate)
+        run(
+            cfg,
+            "prefill",
+            BANNER_ROWS,
+            build_benchmark_configs,
+            print_results_table,
+            validate,
+        )

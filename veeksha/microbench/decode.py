@@ -8,7 +8,6 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
 from rich.table import Table
 
 from veeksha.config.benchmark import BenchmarkConfig
@@ -45,7 +44,6 @@ from veeksha.microbench.common import (
     save_json,
 )
 from veeksha.microbench.config import DecodeMicrobenchmarkConfig
-
 
 # ---------------------------------------------------------------------------
 # Banner
@@ -181,11 +179,12 @@ def _validate_one_run(
         return
 
     matching = [
-        r for r in metrics
-        if r["target_num_delta_prompt_tokens"] == input_length
+        r for r in metrics if r["target_num_delta_prompt_tokens"] == input_length
     ]
     if not matching:
-        result.warn(f"matching_requests [{label}]", f"no requests with prompt={input_length}")
+        result.warn(
+            f"matching_requests [{label}]", f"no requests with prompt={input_length}"
+        )
         return
     result.passed(f"matching_requests [{label}]", f"{len(matching)} requests")
 
@@ -194,7 +193,8 @@ def _validate_one_run(
         r["client_picked_up_at"] + r["ttfc"] for r in sorted_by_session
     ]
     out_of_order = sum(
-        1 for i in range(1, len(first_token_times))
+        1
+        for i in range(1, len(first_token_times))
         if first_token_times[i] < first_token_times[i - 1] - 0.005
     )
     if out_of_order == 0:
@@ -269,9 +269,14 @@ def print_results_table(cfg: DecodeMicrobenchmarkConfig) -> None:
 
     for bs, il, stats in rows:
         table.add_row(
-            str(bs), str(il),
-            fmt_ms(stats.get("mean")), fmt_ms(stats.get("median")), fmt_ms(stats.get("p99")),
-            fmt_ms(stats.get("min")), fmt_ms(stats.get("max")), str(stats.get("count", "—")),
+            str(bs),
+            str(il),
+            fmt_ms(stats.get("mean")),
+            fmt_ms(stats.get("median")),
+            fmt_ms(stats.get("p99")),
+            fmt_ms(stats.get("min")),
+            fmt_ms(stats.get("max")),
+            str(stats.get("count", "—")),
         )
 
     console.print()
@@ -279,9 +284,13 @@ def print_results_table(cfg: DecodeMicrobenchmarkConfig) -> None:
     console.print()
 
     save_json(
-        {"type": "decode", "metric": "tbt", "results": [
-            {"batch_size": bs, "input_length": il, "tbt": s} for bs, il, s in rows
-        ]},
+        {
+            "type": "decode",
+            "metric": "tbt",
+            "results": [
+                {"batch_size": bs, "input_length": il, "tbt": s} for bs, il, s in rows
+            ],
+        },
         os.path.join(cfg.output_dir, "decode_results.json"),
     )
 
@@ -289,20 +298,32 @@ def print_results_table(cfg: DecodeMicrobenchmarkConfig) -> None:
     csv_path = os.path.join(cfg.output_dir, "decode_results.csv")
     with open(csv_path, "w", newline="") as f:
         writer = csv.DictWriter(
-            f, fieldnames=["batch_size", "input_length", "mean_ms", "p50_ms", "p99_ms", "min_ms", "max_ms", "samples"]
+            f,
+            fieldnames=[
+                "batch_size",
+                "input_length",
+                "mean_ms",
+                "p50_ms",
+                "p99_ms",
+                "min_ms",
+                "max_ms",
+                "samples",
+            ],
         )
         writer.writeheader()
         for bs, il, s in rows:
-            writer.writerow({
-                "batch_size": bs,
-                "input_length": il,
-                "mean_ms": s.get("mean", 0) * 1000,
-                "p50_ms": s.get("median", 0) * 1000,
-                "p99_ms": s.get("p99", 0) * 1000,
-                "min_ms": s.get("min", 0) * 1000,
-                "max_ms": s.get("max", 0) * 1000,
-                "samples": s.get("count", 0),
-            })
+            writer.writerow(
+                {
+                    "batch_size": bs,
+                    "input_length": il,
+                    "mean_ms": s.get("mean", 0) * 1000,
+                    "p50_ms": s.get("median", 0) * 1000,
+                    "p99_ms": s.get("p99", 0) * 1000,
+                    "min_ms": s.get("min", 0) * 1000,
+                    "max_ms": s.get("max", 0) * 1000,
+                    "samples": s.get("count", 0),
+                }
+            )
     console.print(f"  CSV saved to {csv_path}")
 
     # Plots: TBT vs batch size, one line per input length
@@ -319,8 +340,13 @@ def print_results_table(cfg: DecodeMicrobenchmarkConfig) -> None:
         fig, ax = plt.subplots(figsize=(8, 5))
         for il in sorted(by_il.keys()):
             points = sorted(by_il[il], key=lambda x: x[0])
-            ax.plot([p[0] for p in points], [p[1].get("median", 0) * 1000 for p in points],
-                    "o-", label=f"il={il}", linewidth=2)
+            ax.plot(
+                [p[0] for p in points],
+                [p[1].get("median", 0) * 1000 for p in points],
+                "o-",
+                label=f"il={il}",
+                linewidth=2,
+            )
         ax.set_xlabel("Batch Size")
         ax.set_ylabel("TBT P50 (ms)")
         ax.set_title("Time Between Tokens (P50) vs Batch Size")
@@ -334,8 +360,13 @@ def print_results_table(cfg: DecodeMicrobenchmarkConfig) -> None:
         fig, ax = plt.subplots(figsize=(8, 5))
         for il in sorted(by_il.keys()):
             points = sorted(by_il[il], key=lambda x: x[0])
-            ax.plot([p[0] for p in points], [p[1].get("p99", 0) * 1000 for p in points],
-                    "s--", label=f"il={il}", linewidth=2)
+            ax.plot(
+                [p[0] for p in points],
+                [p[1].get("p99", 0) * 1000 for p in points],
+                "s--",
+                label=f"il={il}",
+                linewidth=2,
+            )
         ax.set_xlabel("Batch Size")
         ax.set_ylabel("TBT P99 (ms)")
         ax.set_title("Time Between Tokens (P99) vs Batch Size")
@@ -359,4 +390,11 @@ def main() -> None:
     from veeksha.microbench.runner import run
 
     for cfg in DecodeMicrobenchmarkConfig.create_from_cli_args():
-        run(cfg, "decode", BANNER_ROWS, build_benchmark_configs, print_results_table, validate)
+        run(
+            cfg,
+            "decode",
+            BANNER_ROWS,
+            build_benchmark_configs,
+            print_results_table,
+            validate,
+        )

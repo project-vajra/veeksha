@@ -269,7 +269,9 @@ class AutoStressConfig(StressMicrobenchmarkConfig):
     )
     resume_dir: str = field(
         default="",
-        metadata={"help": "Resume from a previous run directory (reuse existing c=N results)"},
+        metadata={
+            "help": "Resume from a previous run directory (reuse existing c=N results)"
+        },
     )
 
     def __post_init__(self) -> None:
@@ -290,4 +292,3 @@ STRESS_MODE_TO_CONFIG: dict[str, type["StressMicrobenchmarkConfig"]] = {
     "range": RangeStressConfig,
     "auto": AutoStressConfig,
 }
-

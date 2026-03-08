@@ -19,7 +19,6 @@ logger = init_logger(__name__)
 console = Console()
 
 
-
 def run(
     cfg: BaseMicrobenchmarkConfig,
     type_name: str,
@@ -51,7 +50,9 @@ def run(
 _TIMESTAMP_FMT = "%Y-%m-%d_%H-%M-%S"
 
 
-def _make_run_dir(cfg: BaseMicrobenchmarkConfig, type_name: str) -> BaseMicrobenchmarkConfig:
+def _make_run_dir(
+    cfg: BaseMicrobenchmarkConfig, type_name: str
+) -> BaseMicrobenchmarkConfig:
     """Create a timestamped run directory under output_dir/<type_name>/ and update the 'latest' symlink."""
     timestamp = datetime.now(timezone.utc).strftime(_TIMESTAMP_FMT)
     type_dir = os.path.join(cfg.output_dir, type_name)

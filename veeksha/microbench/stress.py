@@ -11,7 +11,6 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
 from rich.table import Table
 
 from veeksha.config.benchmark import BenchmarkConfig
@@ -118,7 +117,9 @@ def _build_traffic_config(
     """Build traffic config based on traffic_mode."""
     if cfg.traffic_mode == StressTrafficMode.FIXED_RATE:
         return RateTrafficConfig(
-            interval_generator=PoissonIntervalGeneratorConfig(arrival_rate=float(level)),
+            interval_generator=PoissonIntervalGeneratorConfig(
+                arrival_rate=float(level)
+            ),
             cancel_session_on_failure=False,
         )
     return ConcurrentTrafficConfig(
@@ -128,9 +129,7 @@ def _build_traffic_config(
     )
 
 
-def _build_one_config(
-    cfg: StressMicrobenchmarkConfig, level: int
-) -> BenchmarkConfig:
+def _build_one_config(cfg: StressMicrobenchmarkConfig, level: int) -> BenchmarkConfig:
     """Build a BenchmarkConfig for a single load level."""
     max_sessions = estimate_max_sessions(
         level,
@@ -336,8 +335,20 @@ def _save_plots(
 
     # 2. E2E Latency vs Load Level (P50 + P99)
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(levels, [r.e2e_latency_p50 * 1000 for r in results], "o-", label="P50", linewidth=2)
-    ax.plot(levels, [r.e2e_latency_p99 * 1000 for r in results], "s--", label="P99", linewidth=2)
+    ax.plot(
+        levels,
+        [r.e2e_latency_p50 * 1000 for r in results],
+        "o-",
+        label="P50",
+        linewidth=2,
+    )
+    ax.plot(
+        levels,
+        [r.e2e_latency_p99 * 1000 for r in results],
+        "s--",
+        label="P99",
+        linewidth=2,
+    )
     ax.set_xlabel(level_label)
     ax.set_ylabel("E2E Latency (ms)")
     ax.set_title("E2E Latency vs Load")
@@ -349,8 +360,20 @@ def _save_plots(
 
     # 3. E2E Latency vs Output Throughput (the tradeoff curve)
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot([r.e2e_latency_p50 * 1000 for r in results], out_tputs, "o-", label="P50", linewidth=2)
-    ax.plot([r.e2e_latency_p99 * 1000 for r in results], out_tputs, "s--", label="P99", linewidth=2)
+    ax.plot(
+        [r.e2e_latency_p50 * 1000 for r in results],
+        out_tputs,
+        "o-",
+        label="P50",
+        linewidth=2,
+    )
+    ax.plot(
+        [r.e2e_latency_p99 * 1000 for r in results],
+        out_tputs,
+        "s--",
+        label="P99",
+        linewidth=2,
+    )
     ax.set_xlabel("E2E Latency (ms)")
     ax.set_ylabel("Output Throughput (tok/s)")
     ax.set_title("Output Throughput vs Latency")
@@ -362,8 +385,12 @@ def _save_plots(
 
     # 4. TTFC vs Load Level (P50 + P99)
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(levels, [r.ttfc_p50 * 1000 for r in results], "o-", label="P50", linewidth=2)
-    ax.plot(levels, [r.ttfc_p99 * 1000 for r in results], "s--", label="P99", linewidth=2)
+    ax.plot(
+        levels, [r.ttfc_p50 * 1000 for r in results], "o-", label="P50", linewidth=2
+    )
+    ax.plot(
+        levels, [r.ttfc_p99 * 1000 for r in results], "s--", label="P99", linewidth=2
+    )
     ax.set_xlabel(level_label)
     ax.set_ylabel("TTFC (ms)")
     ax.set_title("Time to First Token vs Load")
@@ -375,8 +402,12 @@ def _save_plots(
 
     # 5. Interactivity vs Load Level (P50 + P99)
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(levels, [r.interactivity_p50 for r in results], "o-", label="P50", linewidth=2)
-    ax.plot(levels, [r.interactivity_p99 for r in results], "s--", label="P99", linewidth=2)
+    ax.plot(
+        levels, [r.interactivity_p50 for r in results], "o-", label="P50", linewidth=2
+    )
+    ax.plot(
+        levels, [r.interactivity_p99 for r in results], "s--", label="P99", linewidth=2
+    )
     ax.set_xlabel(level_label)
     ax.set_ylabel("Interactivity (tok/s/user)")
     ax.set_title("Interactivity vs Load")
@@ -388,28 +419,52 @@ def _save_plots(
 
     # 6. Interactivity vs Input Throughput (P50 + P99)
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot([r.interactivity_p50 for r in results], in_tputs, "o-", label="P50", linewidth=2)
-    ax.plot([r.interactivity_p99 for r in results], in_tputs, "s--", label="P99", linewidth=2)
+    ax.plot(
+        [r.interactivity_p50 for r in results], in_tputs, "o-", label="P50", linewidth=2
+    )
+    ax.plot(
+        [r.interactivity_p99 for r in results],
+        in_tputs,
+        "s--",
+        label="P99",
+        linewidth=2,
+    )
     ax.set_xlabel("Interactivity (tok/s/user)")
     ax.set_ylabel("Input Throughput (tok/s)")
     ax.set_title("Input Throughput vs Interactivity")
     ax.legend()
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
-    fig.savefig(os.path.join(plots_dir, "input_throughput_vs_interactivity.png"), dpi=150)
+    fig.savefig(
+        os.path.join(plots_dir, "input_throughput_vs_interactivity.png"), dpi=150
+    )
     plt.close(fig)
 
     # 7. Interactivity vs Output Throughput (P50 + P99)
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot([r.interactivity_p50 for r in results], out_tputs, "o-", label="P50", linewidth=2)
-    ax.plot([r.interactivity_p99 for r in results], out_tputs, "s--", label="P99", linewidth=2)
+    ax.plot(
+        [r.interactivity_p50 for r in results],
+        out_tputs,
+        "o-",
+        label="P50",
+        linewidth=2,
+    )
+    ax.plot(
+        [r.interactivity_p99 for r in results],
+        out_tputs,
+        "s--",
+        label="P99",
+        linewidth=2,
+    )
     ax.set_xlabel("Interactivity (tok/s/user)")
     ax.set_ylabel("Output Throughput (tok/s)")
     ax.set_title("Output Throughput vs Interactivity")
     ax.legend()
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
-    fig.savefig(os.path.join(plots_dir, "output_throughput_vs_interactivity.png"), dpi=150)
+    fig.savefig(
+        os.path.join(plots_dir, "output_throughput_vs_interactivity.png"), dpi=150
+    )
     plt.close(fig)
 
 
@@ -419,7 +474,9 @@ def print_results_table(cfg: StressMicrobenchmarkConfig) -> None:
     if not results:
         return
 
-    level_label = "QPS" if cfg.traffic_mode == StressTrafficMode.FIXED_RATE else "Concurrency"
+    level_label = (
+        "QPS" if cfg.traffic_mode == StressTrafficMode.FIXED_RATE else "Concurrency"
+    )
 
     table = Table(title="Stress Results (Throughput vs Latency)")
     table.add_column(level_label, justify="right", style="cyan")
@@ -517,9 +574,7 @@ def validate(cfg: StressMicrobenchmarkConfig, output_dir: str) -> ValidationResu
                 f"only {count} requests after warmup (need >= 10)",
             )
         else:
-            result.passed(
-                f"sample_count [{label}]", f"{point.num_requests} requests"
-            )
+            result.passed(f"sample_count [{label}]", f"{point.num_requests} requests")
             points.append(point)
 
     # Throughput monotonicity check (warn only)

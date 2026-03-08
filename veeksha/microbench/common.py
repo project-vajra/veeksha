@@ -24,7 +24,9 @@ _OUTPUT_TOKEN_MULTIPLIER = 2
 # ---------------------------------------------------------------------------
 
 
-def build_client_config(cfg: BaseMicrobenchmarkConfig) -> OpenAIChatCompletionsClientConfig:
+def build_client_config(
+    cfg: BaseMicrobenchmarkConfig,
+) -> OpenAIChatCompletionsClientConfig:
     return OpenAIChatCompletionsClientConfig(
         model=cfg.model,
         api_base=cfg.api_base,
