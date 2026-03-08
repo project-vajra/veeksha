@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from abc import abstractmethod
-from typing import Mapping, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Mapping, Optional, Set, Tuple
 
 from veeksha.config.traffic import BaseTrafficConfig
 from veeksha.core.request import Request
@@ -7,6 +9,9 @@ from veeksha.core.response import ChannelResponse
 from veeksha.core.seeding import SeedManager
 from veeksha.core.session import Session
 from veeksha.types import ChannelModality
+
+if TYPE_CHECKING:
+    from veeksha.traffic.dispatch_tracker import DispatchTracker
 
 
 class BaseTrafficScheduler:
@@ -79,6 +84,20 @@ class BaseTrafficScheduler:
     def get_in_flight_request_ids(self) -> Set[int]:
         """Return the set of request IDs currently in-flight."""
         raise NotImplementedError
+
+    @property
+    def dispatch_tracker(self) -> Optional[DispatchTracker]:
+        """Optional dispatch tracker for ticket-based ordering."""
+        return None
+
+    def notify_request_sent(self, request_id: int) -> None:
+        """Called when the server acknowledges a request (HTTP 200 received).
+
+        The default implementation is a no-op.  Subclasses (e.g.
+        :class:`SequentialLaunchTrafficScheduler`) may use this to gate
+        activation of pending sessions.
+        """
+        return
 
     def reset_reference_time(self) -> None:
         """Optional hook invoked before the benchmark starts dispatching."""

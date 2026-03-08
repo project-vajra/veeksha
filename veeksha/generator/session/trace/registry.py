@@ -10,17 +10,17 @@ class TraceFlavorGeneratorRegistry(BaseRegistry):
 
 
 TraceFlavorGeneratorRegistry.register(
-    TraceFlavorType.CLAUDE_CODE,
+    TraceFlavorType.TIMED_SYNTHETIC_MULTI_TURN,
     _LazyLoader(
-        "veeksha.generator.session.trace.claude_code",
-        "ClaudeCodeTraceFlavorGenerator",
+        "veeksha.generator.session.trace.multi_turn",
+        "TimedSyntheticMultiTurnTraceFlavorGenerator",
     ),
 )
 TraceFlavorGeneratorRegistry.register(
-    TraceFlavorType.MOONCAKE_CONV,
+    TraceFlavorType.SHARED_PREFIX,
     _LazyLoader(
-        "veeksha.generator.session.trace.mooncake_conv",
-        "MooncakeConvTraceFlavorGenerator",
+        "veeksha.generator.session.trace.shared_prefix",
+        "SharedPrefixTraceFlavorGenerator",
     ),
 )
 TraceFlavorGeneratorRegistry.register(
@@ -28,5 +28,19 @@ TraceFlavorGeneratorRegistry.register(
     _LazyLoader(
         "veeksha.generator.session.trace.rag",
         "RAGTraceFlavorGenerator",
+    ),
+)
+TraceFlavorGeneratorRegistry.register(
+    TraceFlavorType.REQUEST_LOG,
+    _LazyLoader(
+        "veeksha.generator.session.trace.request_log",
+        "RequestLogTraceFlavorGenerator",
+    ),
+)
+TraceFlavorGeneratorRegistry.register(
+    TraceFlavorType.UNTIMED_CONTENT_MULTI_TURN,
+    _LazyLoader(
+        "veeksha.generator.session.trace.conversation",
+        "UntimedContentMultiTurnTraceFlavorGenerator",
     ),
 )

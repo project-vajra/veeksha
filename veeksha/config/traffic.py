@@ -47,3 +47,37 @@ class ConcurrentTrafficConfig(BaseTrafficConfig):
     @classmethod
     def get_type(cls) -> TrafficType:
         return TrafficType.CONCURRENT
+
+
+@frozen_dataclass
+class SequentialLaunchTrafficConfig(BaseTrafficConfig):
+    """Launch sessions one at a time: the next session is activated only after
+    the previous session's request has been dispatched.
+
+    All sessions remain concurrently active on the server — only the *launch
+    order* is sequential.  This guarantees engine-level FCFS ordering because
+    requests arrive at the server one at a time.
+    """
+
+    ordering: str = field(
+        default="dispatch",
+        metadata={
+            "help": (
+                "When to advance the dispatch ticket and unblock the next request. "
+                "dispatch: after HTTP 200 (before streaming); "
+                "prefill: after first content chunk (TTFC); "
+                "request: after full completion."
+            ),
+        },
+    )
+
+    def __post_init__(self) -> None:
+        allowed = ("dispatch", "prefill", "request")
+        if self.ordering not in allowed:
+            raise ValueError(
+                f"Invalid ordering {self.ordering!r}; must be one of {allowed}"
+            )
+
+    @classmethod
+    def get_type(cls) -> TrafficType:
+        return TrafficType.SEQUENTIAL_LAUNCH

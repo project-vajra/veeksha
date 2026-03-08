@@ -24,3 +24,11 @@ TrafficSchedulerRegistry.register(
         "ConcurrentTrafficScheduler",
     ),
 )
+
+TrafficSchedulerRegistry.register(
+    TrafficType.SEQUENTIAL_LAUNCH,
+    _LazyLoader(
+        "veeksha.traffic.sequential_launch",
+        "SequentialLaunchTrafficScheduler",
+    ),
+)

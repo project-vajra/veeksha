@@ -38,6 +38,8 @@ def test_openai_completions_client_sends_all_requests_to_completions() -> None:
         request: Request,
         session_id: int,
         session_total_requests: int,
+        on_request_sent=None,
+        on_request_dispatched=None,
     ) -> RequestResult:
         called["count"] += 1
         return RequestResult(

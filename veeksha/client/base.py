@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Optional
 
 from veeksha.core.request import Request
 from veeksha.core.response import RequestResult
@@ -55,6 +55,8 @@ class BaseLLMClient(ABC):
         request: Request,
         session_id: int,
         session_total_requests: int = 1,
+        on_request_sent: Optional[Callable[[], None]] = None,
+        on_request_dispatched: Optional[Callable[[], None]] = None,
     ) -> RequestResult:
         """Send a request to the LLM API.
 
@@ -62,6 +64,11 @@ class BaseLLMClient(ABC):
             request: The request to send (with channels)
             session_id: Session this request belongs to
             session_total_requests: Total number of requests in this session
+            on_request_sent: Optional callback invoked once the server
+                acknowledges the request (HTTP 200 received).
+            on_request_dispatched: Optional callback invoked once the HTTP
+                request is sent and the server returns HTTP 200, before any
+                response chunks are processed.
 
         Returns:
             RequestResult containing response data and timing

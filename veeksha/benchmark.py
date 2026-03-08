@@ -92,6 +92,7 @@ def _run_main_loop(
         input_queues=client_queues,
         output_queue=output_queue,
         stop_event=stop_event,
+        traffic_scheduler=traffic_scheduler,
     )
 
     pool_manager = ThreadPoolManager(stop_event=stop_event)

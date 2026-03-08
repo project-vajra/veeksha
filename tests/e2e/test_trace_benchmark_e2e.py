@@ -1,4 +1,4 @@
-"""E2E Test for Trace-based Benchmark (Mooncake Flavor)."""
+"""E2E Test for Trace-based Benchmark (SharedPrefix Flavor)."""
 
 import json
 import os
@@ -64,7 +64,7 @@ def mock_openai_server():
     server.shutdown()
 
 # @pytest.mark.e2e
-def test_trace_benchmark_mooncake(mock_openai_server, tmp_path) -> None:
+def test_trace_benchmark_shared_prefix(mock_openai_server, tmp_path) -> None:
     # 1. Create dummy corpus
     corpus_file = tmp_path / "corpus.txt"
     corpus_file.write_text("Hello world this is a test corpus line one.\nLine two for corpus content generation.\n")
@@ -98,7 +98,7 @@ def test_trace_benchmark_mooncake(mock_openai_server, tmp_path) -> None:
         "trace_file": str(trace_file),
         "wrap_mode": False,
         "flavor": {
-            "type": "mooncake_conv",
+            "type": "shared_prefix",
             "block_size": 4, # Small block size
             "corpus_file": str(corpus_file),
         }

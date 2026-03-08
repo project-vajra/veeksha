@@ -39,13 +39,17 @@ dependencies = [
     "requests",
     "uvloop",
     "httpx",
-    "nvidia-ml-py"
+    "nvidia-ml-py",
+    "rich",
 ]
 
 [project.scripts]
 veeksha = "veeksha.__main__:main"
 "veeksha.benchmark" = "veeksha.cli.benchmarks:main"
 "veeksha.config" = "veeksha.cli.config:main"
+"veeksha.microbench.prefill" = "veeksha.microbench.prefill:main"
+"veeksha.microbench.decode" = "veeksha.microbench.decode:main"
+"veeksha.microbench.stress" = "veeksha.microbench.stress:main"
 
 [project.urls]
 Homepage = "https://github.com/project-vajra/veeksha"

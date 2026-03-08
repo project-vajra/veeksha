@@ -12,7 +12,7 @@ Routing is controlled by `request.metadata["api_mode"]`:
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Optional
 
 from veeksha.client.base import BaseLLMClient
 from veeksha.client.openai_chat import OpenAIChatCompletionsClient
@@ -55,6 +55,8 @@ class OpenAIRouterClient(BaseLLMClient):
         request: Request,
         session_id: int,
         session_total_requests: int = 1,
+        on_request_sent: Optional[Callable[[], None]] = None,
+        on_request_dispatched: Optional[Callable[[], None]] = None,
     ) -> RequestResult:
         if isinstance(request.metadata, dict) and request.metadata.get("api_mode") == (
             "completions"
@@ -63,9 +65,13 @@ class OpenAIRouterClient(BaseLLMClient):
                 request=request,
                 session_id=session_id,
                 session_total_requests=session_total_requests,
+                on_request_sent=on_request_sent,
+                on_request_dispatched=on_request_dispatched,
             )
         return await self._chat_client.send_request(
             request=request,
             session_id=session_id,
             session_total_requests=session_total_requests,
+            on_request_sent=on_request_sent,
+            on_request_dispatched=on_request_dispatched,
         )
