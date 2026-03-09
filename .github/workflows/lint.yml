@@ -12,17 +12,16 @@ defaults:
 jobs:
   sanity_check:
     runs-on: [self-hosted, cpu]
+    container:
+      image: ghcr.io/astral-sh/uv:bookworm
     steps:
       - name: "Checkout Repository"
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: "Build base image"
-        run: docker build -t veeksha-base .
-      - name: "Run lint"
+      - name: "Install and lint"
         run: |
-          docker run --rm \
-          -v "${GITHUB_WORKSPACE}:/repo" \
-          -w /repo \
-          veeksha-base \
-          bash -lc "make test/setup/314 && source .venv314/bin/activate && make lint"
+          uv venv --python 3.14t .venv
+          source .venv/bin/activate
+          uv pip install -e . --group dev
+          make lint
