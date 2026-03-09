@@ -16,13 +16,14 @@ jobs:
     steps:
       - name: "Checkout Repository"
         uses: actions/checkout@v3
+      - name: "Install uv"
+        uses: astral-sh/setup-uv@v6
       - uses: actions/setup-python@v6
         with:
           python-version: '3.14t'
-          cache: 'pip' # caching pip dependencies
       - name: "Install dependencies"
         run: |
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install -e .[dev]
+          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install -e . --group dev
       - name: "Run all lint checks"
         run: make lint
