@@ -14,14 +14,14 @@ if [[ ! -f "${VENV314}/bin/activate" ]]; then
     uv venv --python "${PY314}" "${VENV314}"
     # shellcheck source=/dev/null
     source "${VENV314}/bin/activate"
-    uv pip install -e ".[dev]"
+    uv pip install -e . --group dev
   elif command -v "python${PY314}" >/dev/null 2>&1; then
     echo "Using python${PY314} venv for ${VENV314}"
     "python${PY314}" -m venv "${VENV314}"
     # shellcheck source=/dev/null
     source "${VENV314}/bin/activate"
-    pip install -U pip
-    pip install -e ".[dev]"
+    pip install -U pip uv
+    uv pip install -e . --group dev
   else
     echo "ERROR: Neither 'uv' nor 'python${PY314}' found. Please install one." >&2
     exit 1
