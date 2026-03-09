@@ -6,22 +6,37 @@ on:
     branches: [main]
 permissions:
   contents: read
-  packages: write
 defaults:
   run:
     shell: bash -l {0}
 jobs:
   sanity_check:
-    runs-on: "ubuntu-latest"
+    runs-on: [self-hosted, cpu]
     steps:
       - name: "Checkout Repository"
-        uses: actions/checkout@v3
-      - name: "Install uv"
-        uses: astral-sh/setup-uv@v6
-      - uses: actions/setup-python@v6
+        uses: actions/checkout@v4
         with:
-          python-version: '3.14t'
+          fetch-depth: 0
+      - name: "Build CI image"
+        run: docker build -t veeksha-lint .
+      - name: "Run lint container"
+        run: |
+          docker run -d \
+          -w /repo \
+          --name veeksha-lint-${{ github.run_id }} \
+          veeksha-lint sleep infinity
       - name: "Install dependencies"
-        run: uv pip install -e . --group dev --system
+        run: |
+          docker exec \
+          veeksha-lint-${{ github.run_id }} \
+          bash -lc "make test/setup/314"
       - name: "Run all lint checks"
-        run: make lint
+        run: |
+          docker exec \
+          veeksha-lint-${{ github.run_id }} \
+          bash -lc "source .venv314/bin/activate && make lint"
+      - name: "Stop Docker container"
+        if: always()
+        run: |
+          docker stop veeksha-lint-${{ github.run_id }}
+          docker rm veeksha-lint-${{ github.run_id }}
