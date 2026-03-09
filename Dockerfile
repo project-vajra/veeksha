@@ -5,7 +5,9 @@ RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
     git \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+ENV PATH="/root/.cargo/bin:${PATH}"
 # Copy the repository
 COPY . /repo
 
