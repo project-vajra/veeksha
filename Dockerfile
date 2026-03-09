@@ -8,11 +8,5 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 ENV PATH="/root/.cargo/bin:${PATH}"
-# Copy the repository
-COPY . /repo
-
-# Set working directory
 WORKDIR /repo
 SHELL ["/bin/bash", "-c"]
-
-RUN chmod +x scripts/*.sh

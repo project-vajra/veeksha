@@ -17,26 +17,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: "Build CI image"
-        run: docker build -t veeksha-lint .
-      - name: "Run lint container"
+      - name: "Build base image"
+        run: docker build -t veeksha-base .
+      - name: "Run lint"
         run: |
-          docker run -d \
+          docker run --rm \
+          -v "${GITHUB_WORKSPACE}:/repo" \
           -w /repo \
-          --name veeksha-lint-${{ github.run_id }} \
-          veeksha-lint sleep infinity
-      - name: "Install dependencies"
-        run: |
-          docker exec \
-          veeksha-lint-${{ github.run_id }} \
-          bash -lc "make test/setup/314"
-      - name: "Run all lint checks"
-        run: |
-          docker exec \
-          veeksha-lint-${{ github.run_id }} \
-          bash -lc "source .venv314/bin/activate && make lint"
-      - name: "Stop Docker container"
-        if: always()
-        run: |
-          docker stop veeksha-lint-${{ github.run_id }}
-          docker rm veeksha-lint-${{ github.run_id }}
+          veeksha-base \
+          bash -lc "make test/setup/314 && source .venv314/bin/activate && make lint"
