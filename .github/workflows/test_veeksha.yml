@@ -33,7 +33,16 @@ jobs:
           -v "${GITHUB_WORKSPACE}:/repo" \
           -w /repo \
           ghcr.io/astral-sh/uv:bookworm \
-          bash -c "mkdir -p test_output && uv venv --python 3.14t .venv && source .venv/bin/activate && uv pip install -e . --group dev && pytest tests/unit tests/e2e --junitxml=test_output/veeksha-results.xml"
+          bash -c "
+            apt-get update && apt-get install -y -qq build-essential curl ca-certificates > /dev/null 2>&1 &&
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal > /dev/null 2>&1 &&
+            export PATH=/root/.cargo/bin:\$PATH &&
+            mkdir -p test_output &&
+            uv venv --python 3.14t .venv &&
+            source .venv/bin/activate &&
+            uv pip install -e . --group dev &&
+            pytest tests/unit tests/e2e --junitxml=test_output/veeksha-results.xml
+          "
       - name: "Publish Test Report"
         uses: mikepenz/action-junit-report@v5
         if: always()

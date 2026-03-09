@@ -3,7 +3,7 @@ Microbenchmarks
 
 Veeksha provides self-contained CLI microbenchmarks that isolate specific
 inference operations for precise measurement. Each microbenchmark has its own
-entrypoint, generates results tables, CSV files, JSON output, and plots.
+subcommand, generates results tables, CSV files, JSON output, and plots.
 
 All microbenchmark output is written to ``<output_dir>/<type>/<timestamp>/``
 with a ``latest`` symlink for convenience.
@@ -35,25 +35,25 @@ one request at a time with minimal output tokens.
 
 .. code-block:: bash
 
-    veeksha.microbench.prefill \
-        --api-base http://localhost:8000/v1 \
+    uvx veeksha prefill \
+        --api_base http://localhost:8000/v1 \
         --model meta-llama/Llama-3-8B-Instruct \
-        --input-lengths 128 256 512 1024 2048 \
-        --output-tokens 1 \
-        --samples-per-length 10 \
-        --output-dir microbench_output
+        --input_lengths 128 256 512 1024 2048 \
+        --output_tokens 1 \
+        --samples_per_length 10 \
+        --output_dir microbench_output
 
 **Key parameters:**
 
-``--input-lengths``
+``--input_lengths``
     List of prompt lengths to sweep. Requests are generated using a stair
     pattern (``samples_per_length`` requests per length).
 
-``--output-tokens``
+``--output_tokens``
     Number of output tokens per request (default: 1). Keep minimal to
     isolate prefill.
 
-``--samples-per-length``
+``--samples_per_length``
     Repetitions per input length for statistical stability.
 
 **Output files:**
@@ -78,26 +78,26 @@ using decode window analysis to isolate steady-state decode performance.
 
 .. code-block:: bash
 
-    veeksha.microbench.decode \
-        --api-base http://localhost:8000/v1 \
+    uvx veeksha decode \
+        --api_base http://localhost:8000/v1 \
         --model meta-llama/Llama-3-8B-Instruct \
-        --batch-sizes 1 2 4 8 16 \
-        --input-lengths 128 512 \
-        --samples-per-length 20 \
-        --engine-chunk-size 512 \
-        --output-dir microbench_output
+        --batch_sizes 1 2 4 8 16 \
+        --input_lengths 128 512 \
+        --samples_per_length 20 \
+        --engine_chunk_size 512 \
+        --output_dir microbench_output
 
 **Key parameters:**
 
-``--batch-sizes``
+``--batch_sizes``
     Concurrent request counts. Each (batch_size, input_length) pair runs as
     a separate benchmark. Requests are launched sequentially so that the
     first request enters decode before the last finishes prefilling.
 
-``--input-lengths``
+``--input_lengths``
     Prompt lengths to test at each batch size.
 
-``--engine-chunk-size``
+``--engine_chunk_size``
     Engine's iteration budget (tokens per step). Used to compute how many
     output tokens the first request needs to still be decoding when the
     last request finishes prefilling.
@@ -135,13 +135,14 @@ Specify exact concurrency levels:
 
 .. code-block:: bash
 
-    veeksha.microbench.stress --stress-mode manual \
-        --api-base http://localhost:8000/v1 \
+    uvx veeksha stress \
+        --api_base http://localhost:8000/v1 \
         --model meta-llama/Llama-3-8B-Instruct \
-        --input-length 512 --output-length 256 \
-        --concurrency-levels 1 2 4 8 16 32 \
-        --point-duration 120 --warmup-duration 10 \
-        --output-dir microbench_output
+        --input_length 512 --output_length 256 \
+        --mode.type manual \
+        --mode.concurrency_levels 1 2 4 8 16 32 \
+        --point_duration 120 --warmup_duration 10 \
+        --output_dir microbench_output
 
 
 Range mode
@@ -151,11 +152,12 @@ Automatically generate log-spaced concurrency levels:
 
 .. code-block:: bash
 
-    veeksha.microbench.stress --stress-mode range \
-        --concurrency-min 1 --concurrency-max 64 --concurrency-points 8 \
-        --input-length 512 --output-length 256 \
-        --point-duration 120 --warmup-duration 10 \
-        --output-dir microbench_output
+    uvx veeksha stress \
+        --mode.type range \
+        --mode.concurrency_min 1 --mode.concurrency_max 64 --mode.concurrency_points 8 \
+        --input_length 512 --output_length 256 \
+        --point_duration 120 --warmup_duration 10 \
+        --output_dir microbench_output
 
 
 Auto mode
@@ -165,36 +167,38 @@ Automatically discovers the server's operating range using a three-phase
 approach:
 
 1. **Exponential probe** — doubles concurrency (1→2→4→8→...) until throughput
-   gain falls below ``--auto-throughput-threshold`` (default: 5%).
+   gain falls below ``--mode.auto_throughput_threshold`` (default: 5%).
 2. **Interactivity lower bound** — finds the highest concurrency where
    per-user interactivity (1/TPOT) is still within threshold of the best
    observed. Below this, reducing concurrency yields no perceptible per-user
    improvement.
-3. **Fill** — generates ``--auto-fill-points`` log-spaced levels between the
+3. **Fill** — generates ``--mode.auto_fill_points`` log-spaced levels between the
    bounds. Existing probe measurements that are close enough to a fill target
    are reused (no redundant runs).
 
 .. code-block:: bash
 
-    veeksha.microbench.stress --stress-mode auto \
-        --api-base http://localhost:8000/v1 \
+    uvx veeksha stress \
+        --api_base http://localhost:8000/v1 \
         --model meta-llama/Llama-3-8B-Instruct \
-        --input-length 512 --output-length 256 \
-        --point-duration 300 --warmup-duration 30 \
-        --auto-max-probes 10 --auto-fill-points 10 \
-        --output-dir microbench_output
+        --input_length 512 --output_length 256 \
+        --mode.type auto \
+        --mode.auto_max_probes 10 --mode.auto_fill_points 10 \
+        --point_duration 300 --warmup_duration 30 \
+        --output_dir microbench_output
 
 **Resuming a previous run:**
 
-Auto mode supports ``--resume-dir`` to reuse results from a prior run. This
+Auto mode supports ``--mode.resume_dir`` to reuse results from a prior run. This
 avoids re-running concurrency levels that have already been measured:
 
 .. code-block:: bash
 
-    veeksha.microbench.stress --stress-mode auto \
-        --resume-dir microbench_output/stress/2026-03-07_23-07-30 \
-        --point-duration 300 --warmup-duration 30 \
-        --output-dir microbench_output
+    uvx veeksha stress \
+        --mode.type auto \
+        --mode.resume_dir microbench_output/stress/2026-03-07_23-07-30 \
+        --point_duration 300 --warmup_duration 30 \
+        --output_dir microbench_output
 
 Resumed results are symlinked into the new run directory.
 
@@ -202,18 +206,18 @@ Resumed results are symlinked into the new run directory.
 Stress parameters
 ~~~~~~~~~~~~~~~~~
 
-``--input-length`` / ``--output-length``
+``--input_length`` / ``--output_length``
     Fixed workload shape (single values, not lists).
 
-``--point-duration``
+``--point_duration``
     Seconds to run each concurrency level (default: 120). Use 300 for
     production characterization.
 
-``--warmup-duration``
+``--warmup_duration``
     Seconds to discard at the start of each point (default: 10). Requests
     completing before ``min(dispatched_at) + warmup`` are excluded.
 
-``--traffic-mode``
+``--traffic_mode``
     ``fixed-clients`` (default) — closed-loop with N concurrent clients.
     ``fixed-rate`` — open-loop with Poisson arrivals at N req/s.
 
@@ -281,28 +285,28 @@ Common options
 
 All microbenchmarks share these options:
 
-``--api-base``
+``--api_base``
     OpenAI-compatible API endpoint (default: ``http://localhost:8000/v1``).
 
 ``--model``
     Model name for the API.
 
-``--output-dir``
+``--output_dir``
     Base output directory. Results go to ``<output_dir>/<type>/<timestamp>/``.
 
 ``--seed``
     Random seed for reproducibility (default: 42).
 
-``--request-timeout``
+``--request_timeout``
     Per-request timeout in seconds (default: 120).
 
-``--benchmark-timeout``
+``--benchmark_timeout``
     Total benchmark timeout in seconds (default: 600).
 
-``--validate-only``
+``--validate_only``
     Skip running, only validate existing results.
 
-``--skip-validation``
+``--skip_validation``
     Skip post-run validation checks.
 
 
