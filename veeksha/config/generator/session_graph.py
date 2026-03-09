@@ -1,7 +1,5 @@
-from dataclasses import field
+from vidhi import BasePolyConfig, field, frozen_dataclass
 
-from veeksha.config.core.base_poly_config import BasePolyConfig
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.generator.interval import (
     BaseIntervalGeneratorConfig,
     PoissonIntervalGeneratorConfig,
@@ -11,16 +9,12 @@ from veeksha.config.generator.length import (
     FixedLengthGeneratorConfig,
     UniformLengthGeneratorConfig,
 )
-from veeksha.types import (
-    IntervalGeneratorType,
-    LengthGeneratorType,
-    SessionGraphType,
-)
+from veeksha.types import SessionGraphType
 
 
 @frozen_dataclass
 class BaseSessionGraphGeneratorConfig(BasePolyConfig):
-    pass
+    """Session graph topology (linear, single-request, or branching)."""
 
 
 @frozen_dataclass
@@ -30,22 +24,16 @@ class LinearSessionGraphGeneratorConfig(BaseSessionGraphGeneratorConfig):
     """
 
     inherit_history: bool = field(
-        default=True,
-        metadata={
-            "help": "Whether subsequent requests can inherit history from previous ones."
-        },
+        True,
+        help="Whether subsequent requests can inherit history from previous ones.",
     )
     num_request_generator: BaseLengthGeneratorConfig = field(
         default_factory=UniformLengthGeneratorConfig,
-        metadata={
-            "help": f"The generator for the number of requests. {LengthGeneratorType.help_str()}"
-        },
+        help="The generator for the number of requests.",
     )
     request_wait_generator: BaseIntervalGeneratorConfig = field(
         default_factory=PoissonIntervalGeneratorConfig,
-        metadata={
-            "help": f"The generator for the wait time between requests. {IntervalGeneratorType.help_str()}"
-        },
+        help="The generator for the wait time between requests.",
     )
 
     @classmethod
@@ -99,51 +87,35 @@ class BranchingSessionGraphGeneratorConfig(BaseSessionGraphGeneratorConfig):
 
     num_layers_generator: BaseLengthGeneratorConfig = field(
         default_factory=lambda: UniformLengthGeneratorConfig(min=2, max=5),
-        metadata={
-            "help": f"Generator for the number of layers (depth). {LengthGeneratorType.help_str()}"
-        },
+        help="Generator for the number of layers (depth).",
     )
     layer_width_generator: BaseLengthGeneratorConfig = field(
         default_factory=lambda: UniformLengthGeneratorConfig(min=1, max=3),
-        metadata={
-            "help": f"Generator for width per layer (sampled independently for each layer). {LengthGeneratorType.help_str()}"
-        },
+        help="Generator for width per layer (sampled independently for each layer).",
     )
     fan_out_generator: BaseLengthGeneratorConfig = field(
         default_factory=lambda: UniformLengthGeneratorConfig(min=1, max=2),
-        metadata={
-            "help": f"Generator for number of outgoing edges per node. {LengthGeneratorType.help_str()}"
-        },
+        help="Generator for number of outgoing edges per node.",
     )
     fan_in_generator: BaseLengthGeneratorConfig = field(
         default_factory=lambda: UniformLengthGeneratorConfig(min=1, max=2),
-        metadata={
-            "help": f"Generator for minimum incoming edges per node. Capped to available parent nodes. {LengthGeneratorType.help_str()}"
-        },
+        help="Generator for minimum incoming edges per node. Capped to available parent nodes.",
     )
     connection_dist_generator: BaseLengthGeneratorConfig = field(
         default_factory=lambda: FixedLengthGeneratorConfig(value=1),
-        metadata={
-            "help": f"Generator for forward skip distance (1 = next layer, 2 = skip one layer, etc.). Capped to last layer. {LengthGeneratorType.help_str()}"
-        },
+        help="Generator for forward skip distance (1 = next layer, 2 = skip one layer, etc.). Capped to last layer.",
     )
     request_wait_generator: BaseIntervalGeneratorConfig = field(
         default_factory=PoissonIntervalGeneratorConfig,
-        metadata={
-            "help": f"Generator for wait time after all parents complete. {IntervalGeneratorType.help_str()}"
-        },
+        help="Generator for wait time after all parents complete.",
     )
     inherit_history: bool = field(
-        default=True,
-        metadata={
-            "help": "When true, one parent per node is randomly selected as history provider."
-        },
+        True,
+        help="When true, one parent per node is randomly selected as history provider.",
     )
     single_root: bool = field(
-        default=True,
-        metadata={
-            "help": "Force layer 0 to have exactly 1 node (typical for chat sessions)."
-        },
+        True,
+        help="Force layer 0 to have exactly 1 node (typical for chat sessions).",
     )
 
     @classmethod

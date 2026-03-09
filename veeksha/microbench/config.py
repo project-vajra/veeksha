@@ -1,11 +1,10 @@
 """Microbenchmark configuration with inheritance."""
 
-from dataclasses import field
 from enum import StrEnum
-from typing import ClassVar
 
-from veeksha.config.core.flat_dataclass import create_flat_dataclass
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from vidhi import BasePolyConfig, field, frozen_dataclass
+
+from veeksha.cli.base import VeekshaCommand
 
 
 class StressTrafficMode(StrEnum):
@@ -15,72 +14,47 @@ class StressTrafficMode(StrEnum):
     FIXED_RATE = "fixed-rate"
 
 
+class StressModeType(StrEnum):
+    """Stress mode type discriminator."""
+
+    MANUAL = "manual"
+    RANGE = "range"
+    AUTO = "auto"
+
+
 @frozen_dataclass
 class BaseMicrobenchmarkConfig:
     """Shared fields for all microbenchmark types."""
 
-    model: str = field(
-        default="meta-llama/Meta-Llama-3-8B-Instruct",
-        metadata={"help": "Model name"},
-    )
-    api_base: str = field(
-        default="http://localhost:8000/v1",
-        metadata={"help": "API base URL"},
-    )
-    api_key: str = field(
-        default="dummy",
-        metadata={"help": "API key"},
-    )
+    model: str = field("meta-llama/Meta-Llama-3-8B-Instruct", help="Model name")
+    api_base: str = field("http://localhost:8000/v1", help="API base URL")
+    api_key: str = field("dummy", help="API key")
     input_lengths: list[int] = field(
         default_factory=lambda: [128, 256, 512, 1024],
-        metadata={"help": "Input lengths for benchmarks"},
+        help="Input lengths for benchmarks",
     )
-    samples_per_length: int = field(
-        default=10,
-        metadata={"help": "Number of samples per input length"},
-    )
+    samples_per_length: int = field(10, help="Number of samples per input length")
     output_dir: str = field(
-        default="microbench_output",
-        metadata={"help": "Output directory for benchmark results"},
+        "microbench_output", help="Output directory for benchmark results"
     )
-    seed: int = field(
-        default=42,
-        metadata={"help": "Random seed"},
-    )
-    request_timeout: int = field(
-        default=120,
-        metadata={"help": "Request timeout in seconds"},
-    )
-    benchmark_timeout: int = field(
-        default=600,
-        metadata={"help": "Benchmark timeout in seconds"},
-    )
-    max_tokens_param: str = field(
-        default="max_tokens",
-        metadata={"help": "Parameter name for max tokens"},
-    )
-    ignore_eos: bool = field(
-        default=True,
-        metadata={"help": "Ignore EOS token"},
-    )
+    seed: int = field(42, help="Random seed")
+    request_timeout: int = field(120, help="Request timeout in seconds")
+    benchmark_timeout: int = field(600, help="Benchmark timeout in seconds")
+    max_tokens_param: str = field("max_tokens", help="Parameter name for max tokens")
+    ignore_eos: bool = field(True, help="Ignore EOS token")
     validate_only: bool = field(
-        default=False,
-        metadata={"help": "Skip benchmark, only validate existing output"},
+        False, help="Skip benchmark, only validate existing output"
     )
-    skip_validation: bool = field(
-        default=False,
-        metadata={"help": "Skip post-run validation"},
-    )
+    skip_validation: bool = field(False, help="Skip post-run validation")
 
 
-@frozen_dataclass(allow_from_file=True)
-class PrefillMicrobenchmarkConfig(BaseMicrobenchmarkConfig):
-    """Prefill microbenchmark configuration."""
+@frozen_dataclass
+class PrefillMicrobenchmarkConfig(
+    BaseMicrobenchmarkConfig, VeekshaCommand, name="prefill"
+):
+    """Run prefill (prompt processing) microbenchmark."""
 
-    output_tokens: int = field(
-        default=1,
-        metadata={"help": "Output tokens per request"},
-    )
+    output_tokens: int = field(1, help="Output tokens per request")
 
     def __post_init__(self) -> None:
         if not self.input_lengths:
@@ -90,24 +64,18 @@ class PrefillMicrobenchmarkConfig(BaseMicrobenchmarkConfig):
         if self.samples_per_length <= 0:
             raise ValueError("samples_per_length must be positive")
 
-    @classmethod
-    def create_from_cli_args(cls) -> list["PrefillMicrobenchmarkConfig"]:
-        flat_configs = create_flat_dataclass(cls).create_from_cli_args()
-        return [fc.reconstruct_original_dataclass() for fc in flat_configs]
 
-
-@frozen_dataclass(allow_from_file=True)
-class DecodeMicrobenchmarkConfig(BaseMicrobenchmarkConfig):
-    """Decode microbenchmark configuration."""
+@frozen_dataclass
+class DecodeMicrobenchmarkConfig(
+    BaseMicrobenchmarkConfig, VeekshaCommand, name="decode"
+):
+    """Run decode (token generation) microbenchmark."""
 
     batch_sizes: list[int] = field(
         default_factory=lambda: [1, 2, 4, 8],
-        metadata={"help": "Batch sizes for decode benchmarks"},
+        help="Batch sizes for decode benchmarks",
     )
-    engine_chunk_size: int = field(
-        default=512,
-        metadata={"help": "Engine chunk size"},
-    )
+    engine_chunk_size: int = field(512, help="Engine chunk size")
 
     def __post_init__(self) -> None:
         if not self.input_lengths:
@@ -124,11 +92,6 @@ class DecodeMicrobenchmarkConfig(BaseMicrobenchmarkConfig):
                     f"batch_size {bs} must be less than engine_chunk_size {self.engine_chunk_size}"
                 )
 
-    @classmethod
-    def create_from_cli_args(cls) -> list["DecodeMicrobenchmarkConfig"]:
-        flat_configs = create_flat_dataclass(cls).create_from_cli_args()
-        return [fc.reconstruct_original_dataclass() for fc in flat_configs]
-
 
 # ---------------------------------------------------------------------------
 # Stress microbenchmark configs (polymorphic by mode)
@@ -143,152 +106,106 @@ def _validate_stress_base(cfg: "StressMicrobenchmarkConfig") -> None:
         raise ValueError("output_length must be positive")
     if cfg.point_duration <= cfg.warmup_duration:
         raise ValueError("point_duration must exceed warmup_duration")
-    if not isinstance(cfg.traffic_mode, StressTrafficMode):
-        try:
-            StressTrafficMode(cfg.traffic_mode)
-        except ValueError:
-            raise ValueError(
-                f"traffic_mode must be one of {[m.value for m in StressTrafficMode]}, "
-                f"got {cfg.traffic_mode!r}"
-            )
 
 
 @frozen_dataclass
-class StressMicrobenchmarkConfig(BaseMicrobenchmarkConfig):
-    """Base config for stress microbenchmarks (throughput-vs-latency curves)."""
-
-    STRESS_MODE: ClassVar[str]  # set by each subclass
-
-    input_length: int = field(
-        default=512,
-        metadata={"help": "Input token length (single value)"},
-    )
-    output_length: int = field(
-        default=128,
-        metadata={"help": "Output token length (single value)"},
-    )
-    point_duration: int = field(
-        default=120,
-        metadata={"help": "Seconds to run each concurrency point"},
-    )
-    warmup_duration: int = field(
-        default=10,
-        metadata={"help": "Warmup seconds to discard per point"},
-    )
-    traffic_mode: StressTrafficMode = field(
-        default=StressTrafficMode.FIXED_CLIENTS,
-        metadata={
-            "help": "Traffic pattern: 'fixed-clients' (N clients sending back-to-back) "
-            "or 'fixed-rate' (Poisson arrivals at N req/s)"
-        },
-    )
-    max_tokens_per_second_estimate: float = field(
-        default=500.0,
-        metadata={"help": "Estimated max output tok/s (for session budget)"},
-    )
-
-    @classmethod
-    def create_from_cli_args(cls) -> list["StressMicrobenchmarkConfig"]:
-        flat_configs = create_flat_dataclass(cls).create_from_cli_args()
-        return [fc.reconstruct_original_dataclass() for fc in flat_configs]
+class BaseStressModeConfig(BasePolyConfig):
+    """Base class for stress mode variants."""
 
 
-@frozen_dataclass(allow_from_file=True)
-class ManualStressConfig(StressMicrobenchmarkConfig):
-    """Stress config with explicit concurrency levels."""
-
-    STRESS_MODE: ClassVar[str] = "manual"
+@frozen_dataclass
+class ManualStressModeConfig(BaseStressModeConfig):
+    """Explicit concurrency levels."""
 
     concurrency_levels: list[int] = field(
         default_factory=lambda: [1, 2, 4, 8, 16, 32],
-        metadata={"help": "Concurrency levels to test"},
+        help="Concurrency levels to test",
     )
-
-    def __post_init__(self) -> None:
-        _validate_stress_base(self)
-        if not self.concurrency_levels:
-            raise ValueError("concurrency_levels must be non-empty")
-        if any(c <= 0 for c in self.concurrency_levels):
-            raise ValueError("all concurrency_levels must be positive")
 
     @classmethod
-    def create_from_cli_args(cls) -> list["StressMicrobenchmarkConfig"]:
-        flat_configs = create_flat_dataclass(cls).create_from_cli_args()
-        return [fc.reconstruct_original_dataclass() for fc in flat_configs]
+    def get_type(cls) -> StressModeType:
+        return StressModeType.MANUAL
 
 
-@frozen_dataclass(allow_from_file=True)
-class RangeStressConfig(StressMicrobenchmarkConfig):
-    """Stress config with log-spaced concurrency range."""
+@frozen_dataclass
+class RangeStressModeConfig(BaseStressModeConfig):
+    """Log-spaced concurrency range."""
 
-    STRESS_MODE: ClassVar[str] = "range"
-
-    concurrency_min: int = field(
-        default=1,
-        metadata={"help": "Minimum concurrency level"},
-    )
-    concurrency_max: int = field(
-        default=64,
-        metadata={"help": "Maximum concurrency level"},
-    )
-    concurrency_points: int = field(
-        default=8,
-        metadata={"help": "Number of log-spaced points to test"},
-    )
-
-    def __post_init__(self) -> None:
-        _validate_stress_base(self)
-        if self.concurrency_min >= self.concurrency_max:
-            raise ValueError("concurrency_min must be less than concurrency_max")
-        if self.concurrency_points <= 0:
-            raise ValueError("concurrency_points must be positive")
+    concurrency_min: int = field(1, help="Minimum concurrency level")
+    concurrency_max: int = field(64, help="Maximum concurrency level")
+    concurrency_points: int = field(8, help="Number of log-spaced points to test")
 
     @classmethod
-    def create_from_cli_args(cls) -> list["StressMicrobenchmarkConfig"]:
-        flat_configs = create_flat_dataclass(cls).create_from_cli_args()
-        return [fc.reconstruct_original_dataclass() for fc in flat_configs]
+    def get_type(cls) -> StressModeType:
+        return StressModeType.RANGE
 
 
-@frozen_dataclass(allow_from_file=True)
-class AutoStressConfig(StressMicrobenchmarkConfig):
-    """Stress config with automatic concurrency discovery."""
-
-    STRESS_MODE: ClassVar[str] = "auto"
+@frozen_dataclass
+class AutoStressModeConfig(BaseStressModeConfig):
+    """Automatic concurrency discovery."""
 
     auto_throughput_threshold: float = field(
-        default=0.05,
-        metadata={"help": "Stop probing when throughput gain < this fraction"},
+        0.05, help="Stop probing when throughput gain < this fraction"
     )
-    auto_max_probes: int = field(
-        default=20,
-        metadata={"help": "Maximum number of probe points"},
-    )
+    auto_max_probes: int = field(20, help="Maximum number of probe points")
     auto_fill_points: int = field(
-        default=8,
-        metadata={"help": "Number of fill points between lower and upper bounds"},
+        8, help="Number of fill points between lower and upper bounds"
     )
-    resume_dir: str = field(
-        default="",
-        metadata={
-            "help": "Resume from a previous run directory (reuse existing c=N results)"
-        },
+    resume_dir: str = field("", help="Resume from a previous run directory")
+
+    @classmethod
+    def get_type(cls) -> StressModeType:
+        return StressModeType.AUTO
+
+
+@frozen_dataclass
+class StressMicrobenchmarkConfig(
+    BaseMicrobenchmarkConfig, VeekshaCommand, name="stress"
+):
+    """Run stress (throughput-vs-latency) microbenchmark."""
+
+    input_length: int = field(512, help="Input token length (single value)")
+    output_length: int = field(128, help="Output token length (single value)")
+    point_duration: int = field(120, help="Seconds to run each concurrency point")
+    warmup_duration: int = field(10, help="Warmup seconds to discard per point")
+    traffic_mode: StressTrafficMode = field(
+        StressTrafficMode.FIXED_CLIENTS,
+        help="Traffic pattern: 'fixed-clients' or 'fixed-rate'",
+    )
+    max_tokens_per_second_estimate: float = field(
+        500.0, help="Estimated max output tok/s (for session budget)"
+    )
+    mode: BaseStressModeConfig = field(
+        default_factory=ManualStressModeConfig,
+        help="Stress mode configuration",
     )
 
     def __post_init__(self) -> None:
         _validate_stress_base(self)
-        if self.auto_max_probes <= 0:
-            raise ValueError("auto_max_probes must be positive")
-        if self.auto_fill_points <= 0:
-            raise ValueError("auto_fill_points must be positive")
+        if isinstance(self.mode, ManualStressModeConfig):
+            if not self.mode.concurrency_levels:
+                raise ValueError("concurrency_levels must be non-empty")
+            if any(c <= 0 for c in self.mode.concurrency_levels):
+                raise ValueError("all concurrency_levels must be positive")
+        elif isinstance(self.mode, RangeStressModeConfig):
+            if self.mode.concurrency_min >= self.mode.concurrency_max:
+                raise ValueError("concurrency_min must be less than concurrency_max")
+            if self.mode.concurrency_points <= 0:
+                raise ValueError("concurrency_points must be positive")
+        elif isinstance(self.mode, AutoStressModeConfig):
+            if self.mode.auto_max_probes <= 0:
+                raise ValueError("auto_max_probes must be positive")
+            if self.mode.auto_fill_points <= 0:
+                raise ValueError("auto_fill_points must be positive")
 
-    @classmethod
-    def create_from_cli_args(cls) -> list["StressMicrobenchmarkConfig"]:
-        flat_configs = create_flat_dataclass(cls).create_from_cli_args()
-        return [fc.reconstruct_original_dataclass() for fc in flat_configs]
 
+# Backwards compat aliases used by stress.py
+ManualStressConfig = ManualStressModeConfig
+RangeStressConfig = RangeStressModeConfig
+AutoStressConfig = AutoStressModeConfig
 
-STRESS_MODE_TO_CONFIG: dict[str, type["StressMicrobenchmarkConfig"]] = {
-    "manual": ManualStressConfig,
-    "range": RangeStressConfig,
-    "auto": AutoStressConfig,
+STRESS_MODE_TO_CONFIG: dict[StressModeType, type[BaseStressModeConfig]] = {
+    StressModeType.MANUAL: ManualStressModeConfig,
+    StressModeType.RANGE: RangeStressModeConfig,
+    StressModeType.AUTO: AutoStressModeConfig,
 }

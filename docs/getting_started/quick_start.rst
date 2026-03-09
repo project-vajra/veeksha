@@ -79,7 +79,7 @@ Execute the benchmark using the CLI (against an already-running server; for mana
 
 .. code-block:: bash
 
-    python -Xgil=0 -m veeksha.benchmark --benchmark-config-from-file my_benchmark.veeksha.yml
+    uvx veeksha benchmark --config my_benchmark.veeksha.yml
 
 Step 3: View results
 --------------------
@@ -170,10 +170,10 @@ Override configuration values without editing the file:
 
 .. code-block:: bash
 
-    python -Xgil=0 -m veeksha.benchmark \
-        --benchmark-config-from-file my_benchmark.veeksha.yml \
-        --rate-traffic-scheduler-poisson-interval-generator-arrival-rate 20.0 \
-        --runtime-benchmark-timeout 120
+    uvx veeksha benchmark \
+        --config my_benchmark.veeksha.yml \
+        --traffic_scheduler.interval_generator.arrival_rate 20.0 \
+        --runtime.benchmark_timeout 120
 
 This runs at 20 sessions/second for 120 seconds instead of the file's values.
 
@@ -185,10 +185,10 @@ Common patterns
 
 .. code-block:: bash
 
-    python -Xgil=0 -m veeksha.benchmark \
-        --benchmark-config-from-file my_benchmark.veeksha.yml \
-        --rate-traffic-scheduler-poisson-interval-generator-arrival-rate 1.0 \
-        --runtime-max-sessions 50
+    uvx veeksha benchmark \
+        --config my_benchmark.veeksha.yml \
+        --traffic_scheduler.interval_generator.arrival_rate 1.0 \
+        --runtime.max_sessions 50
 
 **Throughput saturation test:**
 

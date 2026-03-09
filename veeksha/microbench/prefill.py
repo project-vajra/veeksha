@@ -290,15 +290,22 @@ def print_results_table(cfg: PrefillMicrobenchmarkConfig) -> None:
 # ---------------------------------------------------------------------------
 
 
-def main() -> None:
+def run_prefill(cfg: PrefillMicrobenchmarkConfig) -> None:
+    """Run a single prefill microbenchmark."""
     from veeksha.microbench.runner import run
 
-    for cfg in PrefillMicrobenchmarkConfig.create_from_cli_args():
-        run(
-            cfg,
-            "prefill",
-            BANNER_ROWS,
-            build_benchmark_configs,
-            print_results_table,
-            validate,
-        )
+    run(
+        cfg,
+        "prefill",
+        BANNER_ROWS,
+        build_benchmark_configs,
+        print_results_table,
+        validate,
+    )
+
+
+def main() -> None:
+    from vidhi import parse_cli_sweep
+
+    for cfg in parse_cli_sweep(PrefillMicrobenchmarkConfig):
+        run_prefill(cfg)

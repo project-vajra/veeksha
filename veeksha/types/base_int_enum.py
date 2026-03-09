@@ -8,7 +8,3 @@ class BaseIntEnum(IntEnum):
     @classmethod
     def from_str(cls, string):
         return cls[string.upper()]
-
-    @classmethod
-    def help_str(cls):
-        return f"Available: {', '.join([m.name.lower() for m in cls])}."

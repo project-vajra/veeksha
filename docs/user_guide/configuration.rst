@@ -26,15 +26,15 @@ Configuration methods
             arrival_rate: 10.0
 
 **CLI Arguments**
-    Override any option using dash notation:
+    Override any option using dot notation:
 
     .. code-block:: bash
 
-        python -Xgil=0 -m veeksha.benchmark \
-            --openai-chat-completions-client-api-base http://localhost:8000/v1 \
-            --rate-traffic-scheduler-poisson-interval-generator-arrival-rate 20.0
+        uvx veeksha benchmark \
+            --client.api_base http://localhost:8000/v1 \
+            --traffic_scheduler.interval_generator.arrival_rate 20.0
 
-Note how argument names contain their type.      
+Argument names mirror the YAML hierarchy with dots.
 
 **Combined** (YAML + CLI)
     CLI arguments override YAML values:
@@ -42,9 +42,9 @@ Note how argument names contain their type.
     .. code-block:: bash
 
         # Base config from file, override arrival rate
-        python -Xgil=0 -m veeksha.benchmark \
-            --benchmark-config-from-file base.veeksha.yml \
-            --rate-traffic-scheduler-poisson-interval-generator-arrival-rate 30.0
+        uvx veeksha benchmark \
+            --config base.veeksha.yml \
+            --traffic_scheduler.interval_generator.arrival_rate 30.0
 
 
 Polymorphic options
@@ -69,39 +69,18 @@ Many options have a ``type`` field that selects a variant with its own options:
         type: poisson
         arrival_rate: 10.0
 
-Each ``type`` exposes different options. Use the config explorer (next section) to discover them or take a look at the :doc:`/config_reference/index`.
-
-
-Config exploration tools
-------------------------
-
-On top of the full API reference (:doc:`/config_reference/index`), Veeksha includes CLI tools for exploring the configuration schema:
-
-**Interactive Explorer**
-
-.. code-block:: bash
-
-    python -m veeksha.cli.config explore
-
-To navigate the config tree interactively.
-
-**Show Full Schema**
-
-.. code-block:: bash
-
-    # YAML format
-    python -m veeksha.cli.config show --format yaml
-
-    # JSON format
-    python -m veeksha.cli.config show --format json
+Each ``type`` exposes different options. See the :doc:`/config_reference/index` for the full list.
 
 .. _configuration-export-json-schema:
 
-**Export JSON schema** (for YAML IDE autocompletion and linting)
+Exporting JSON schema
+---------------------
+
+Export a JSON schema for YAML IDE autocompletion and linting:
 
 .. code-block:: bash
 
-    python -m veeksha.cli.config export-schema -o veeksha-schema.json
+    uvx veeksha benchmark --export-json-schema veeksha-schema.json
 
 Configure your IDE to use this schema. In VSCode and forks:
 
@@ -343,13 +322,13 @@ Splitting configuration across files
 -------------------------------------
 
 For better organization and reusability, you can split your configuration across
-multiple YAML files. This is useful when you want to:
+multiple YAML files using the ``!include`` tag. This is useful when you want to:
 
 - Reuse client configuration across different benchmarks
 - Keep environment-specific settings (e.g., API endpoints) separate
 - Share traffic patterns across experiments
 
-**Example: Separate client and content configs**
+**Example: Separate client and traffic configs**
 
 Create ``client.yml`` with just client settings:
 
@@ -360,17 +339,26 @@ Create ``client.yml`` with just client settings:
     api_base: http://localhost:8000/v1
     model: meta-llama/Llama-3-8B-Instruct
 
-Create ``synthetic_content.yml`` with benchmark settings:
+Create ``traffic.yml`` with traffic settings:
 
 .. code-block:: yaml
 
-    # synthetic_content.yml
+    # traffic.yml
+    type: rate
+    interval_generator:
+      type: poisson
+      arrival_rate: 5.0
+
+Create a main config that includes both:
+
+.. code-block:: yaml
+
+    # main_config.yml
     seed: 42
-    traffic_scheduler:
-      type: rate
-      interval_generator:
-        type: poisson
-        arrival_rate: 5.0
+
+    client: !include client.yml
+    traffic_scheduler: !include traffic.yml
+
     session_generator:
       type: synthetic
       channels:
@@ -379,65 +367,25 @@ Create ``synthetic_content.yml`` with benchmark settings:
             type: uniform
             min: 50
             max: 200
+
     runtime:
       benchmark_timeout: 60
 
-Run the benchmark combining both:
+Run the benchmark with a single ``--config`` flag:
 
 .. code-block:: bash
 
-    python -Xgil=0 -m veeksha.benchmark \
-        --benchmark-config-from-file synthetic_content.yml \
-        --client-from-file client.yml
-
-**Available from-file arguments**
-
-The ``--*-from-file`` argument pattern follows the config class hierarchy. Currently
-supported for root-level dataclass fields:
-
-For ``veeksha.benchmark``:
-
-- ``--benchmark-config-from-file`` - Load ``BenchmarkConfig`` from file
-- ``--client-from-file`` - Load ``client`` from file
-- ``--session-generator-from-file`` - Load ``session_generator`` from file
-- ``--traffic-scheduler-from-file`` - Load ``traffic_scheduler`` from file
-- ``--runtime-from-file`` - Load ``runtime`` from file
-
-For ``veeksha.capacity_search``:
-
-- ``--capacity-search-config-from-file`` - Load ``CapacitySearchConfig`` from file
-- ``--benchmark-config-client-from-file`` - Load ``benchmark_config.client`` from file
-
-.. note::
-    The argument names follow the field names in the config classes. You can
-    discover them via the config explorer (``python -m veeksha.cli.config explore``)
-    or by checking the config class definitions in ``veeksha/config/``.
+    uvx veeksha benchmark --config main_config.yml
 
 **CLI overrides still work**
 
-You can override any value from the files using CLI arguments:
+You can override any value from the included files using CLI arguments:
 
 .. code-block:: bash
 
-    python -Xgil=0 -m veeksha.benchmark \
-        --benchmark-config-from-file synthetic_content.yml \
-        --client-from-file client.yml \
-        --openai-chat-completions-client-model llama-70b  # Override model
-
-**Collision behavior**
-
-Each configuration section can only be defined once. If the same section appears
-in multiple files, an error is raised:
-
-.. code-block:: text
-
-    # ERROR: client defined in both files
-    python -Xgil=0 -m veeksha.benchmark \
-        --benchmark-config-from-file full_config.yml \  # Contains client section
-        --client-from-file client.yml                   # Also defines client
-
-To avoid collisions, ensure each config file defines **disjoint** sections of the
-configuration tree.
+    uvx veeksha benchmark \
+        --config main_config.yml \
+        --client.model llama-70b  # Override model from client.yml
 
 
 .. _workload-recipes:

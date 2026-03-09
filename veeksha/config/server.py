@@ -2,80 +2,60 @@
 Server configuration for LLM inference systems.
 """
 
-from dataclasses import field
 from typing import Any, Dict, List, Optional, Union
 
-from veeksha.config.core.base_poly_config import BasePolyConfig
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from vidhi import BasePolyConfig, field, frozen_dataclass
+
 from veeksha.types import ServerType
 
 
-@frozen_dataclass(allow_from_file=True)
+@frozen_dataclass
 class BaseServerConfig(BasePolyConfig):
     """Base configuration for server launch and management."""
 
     env_path: Optional[str] = field(
-        default=None,
-        metadata={"help": "Path to a Python environment directory (virtualenv/conda)."},
+        None, help="Path to a Python environment directory (virtualenv/conda)."
     )
 
     model: str = field(
-        default="meta-llama/Meta-Llama-3-8B-Instruct",
-        metadata={"help": "Model name or path."},
+        "meta-llama/Meta-Llama-3-8B-Instruct", help="Model name or path."
     )
 
-    host: str = field(
-        default="localhost", metadata={"help": "Host address for the server"}
-    )
+    host: str = field("localhost", help="Host address for the server")
 
-    port: int = field(default=8000, metadata={"help": "Port number for the server"})
+    port: int = field(8000, help="Port number for the server")
 
-    api_key: str = field(
-        default="token-abc123", metadata={"help": "API key for server authentication"}
-    )
+    api_key: str = field("token-abc123", help="API key for server authentication")
 
     gpu_ids: Optional[List[int]] = field(
-        default=None,
-        metadata={"help": "List of GPU IDs to use (None means auto-assign)"},
+        None, help="List of GPU IDs to use (None means auto-assign)"
     )
 
-    startup_timeout: int = field(
-        default=300, metadata={"help": "Timeout in seconds for server startup"}
-    )
+    startup_timeout: int = field(300, help="Timeout in seconds for server startup")
 
     health_check_interval: float = field(
-        default=2.0, metadata={"help": "Interval in seconds between health checks"}
+        2.0, help="Interval in seconds between health checks"
     )
 
     require_contiguous_gpus: bool = field(
-        default=True,
-        metadata={
-            "help": "Require contiguous GPU allocation (e.g., GPUs 0,1,2 instead of 0,2,5)"
-        },
+        True,
+        help="Require contiguous GPU allocation (e.g., GPUs 0,1,2 instead of 0,2,5)",
     )
 
     # engine arguments
 
-    tensor_parallel_size: int = field(
-        default=1, metadata={"help": "Number of GPUs for tensor parallelism"}
-    )
+    tensor_parallel_size: int = field(1, help="Number of GPUs for tensor parallelism")
 
     dtype: str = field(
-        default="auto",
-        metadata={
-            "help": "Data type for model weights (auto, float16, bfloat16, etc.)"
-        },
+        "auto",
+        help="Data type for model weights (auto, float16, bfloat16, etc.)",
     )
 
-    max_model_len: Optional[int] = field(
-        default=None, metadata={"help": "Maximum model context length"}
-    )
+    max_model_len: Optional[int] = field(None, help="Maximum model context length")
 
     additional_args: Union[str, Dict[str, Any], None] = field(
-        default="{}",
-        metadata={
-            "help": "Additional engine-specific arguments as JSON string, dict, or None."
-        },
+        "{}",
+        help="Additional engine-specific arguments as JSON string, dict, or None.",
     )
 
     def get_api_base_url(self) -> str:

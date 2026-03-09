@@ -60,18 +60,18 @@ Quick example
 
 Run a simple benchmark against a running OpenAI-compatible endpoint::
 
-    python -Xgil=0 -m veeksha.benchmark \
-        --client-type openai_chat_completions \
-        --openai-chat-completions-client-api-base http://localhost:8000/v1 \
-        --openai-chat-completions-client-model meta-llama/Llama-3.2-1B-Instruct \
-        --traffic-scheduler-type rate \
-        --rate-traffic-scheduler-interval-generator-type poisson \
-        --rate-traffic-scheduler-poisson-interval-generator-arrival-rate 2.0 \
-        --runtime-benchmark-timeout 30
+    uvx veeksha benchmark \
+        --client.type openai_chat_completions \
+        --client.api_base http://localhost:8000/v1 \
+        --client.model meta-llama/Llama-3.2-1B-Instruct \
+        --traffic_scheduler.type rate \
+        --traffic_scheduler.interval_generator.type poisson \
+        --traffic_scheduler.interval_generator.arrival_rate 2.0 \
+        --runtime.benchmark_timeout 30
 
 Or use a YAML configuration file::
 
-    python -Xgil=0 -m veeksha.benchmark --benchmark-config-from-file my_benchmark.veeksha.yml
+    uvx veeksha benchmark --config my_benchmark.veeksha.yml
 
 
 Documentation

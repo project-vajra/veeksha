@@ -4,7 +4,7 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, Tuple, cast
+from typing import List, Optional, Tuple
 
 import pytest
 from pytest import Config, Item, TestReport
@@ -14,26 +14,8 @@ from rich.markup import escape
 from rich.table import Table
 from rich.theme import Theme
 
-# heavy deps for functional/GPU tests
-try:
-    import torch  # type: ignore
-    _TORCH_AVAILABLE = True
-except Exception:
-    torch = None  # type: ignore
-    _TORCH_AVAILABLE = False
-
 # Regex to extract parameters from a test nodeid
 PARAM_PATTERN = re.compile(r"\[(.*?)\]$")
-
-
-@pytest.fixture
-def gpu_test_sync_cuda():
-    """Synchronize CUDA before and after GPU tests."""
-    if _TORCH_AVAILABLE and getattr(torch, "cuda", None) and torch.cuda.is_available():  # type: ignore[attr-defined]
-        torch.cuda.synchronize()  # type: ignore[union-attr]
-    yield
-    if _TORCH_AVAILABLE and getattr(torch, "cuda", None) and torch.cuda.is_available():  # type: ignore[attr-defined]
-        torch.cuda.synchronize()  # type: ignore[union-attr]
 
 
 @dataclass
@@ -148,13 +130,6 @@ def pytest_collection_modifyitems(config: Config, items: List[Item]) -> None:
         _test_progress_task = _current_progress.add_task(
             "Running tests", total=_collected_items_count, passed=0, failed=0, skipped=0
         )
-
-    # Auto-add GPU sync fixture to GPU tests
-    for item in items:
-        if "gpu" in item.keywords:
-            item_any = cast(Any, item)
-            if "gpu_test_sync_cuda" not in getattr(item_any, "fixturenames", []):
-                item_any.fixturenames.append("gpu_test_sync_cuda")
 
 
 def pytest_deselected(items):

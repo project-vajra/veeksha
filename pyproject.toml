@@ -7,14 +7,12 @@ name = "veeksha"
 dynamic = ["version"]
 description = "A framework for holistic evaluation of LLM Inference Systems"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 license = {text = "Apache-2.0"}
 authors = [
     {name = "Vajra Team"},
 ]
 classifiers = [
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "License :: OSI Approved :: Apache Software License",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -41,21 +39,17 @@ dependencies = [
     "httpx",
     "nvidia-ml-py",
     "rich",
+    "vidhi",
 ]
 
 [project.scripts]
-veeksha = "veeksha.__main__:main"
-"veeksha.benchmark" = "veeksha.cli.benchmarks:main"
-"veeksha.config" = "veeksha.cli.config:main"
-"veeksha.microbench.prefill" = "veeksha.microbench.prefill:main"
-"veeksha.microbench.decode" = "veeksha.microbench.decode:main"
-"veeksha.microbench.stress" = "veeksha.microbench.stress:main"
+veeksha = "veeksha.cli.commands:main"
 
 [project.urls]
 Homepage = "https://github.com/project-vajra/veeksha"
 Documentation = "https://project-vajra.github.io/veeksha"
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "autoflake",
     "black==25.9.0",
@@ -67,13 +61,9 @@ dev = [
     "requests",
 ]
 test = [
-    "pytest>=8.0",
-    "pytest-cov",
-    "requests",
-    "vllm",  # For functional testing with real inference
-    "rich",  # For enhanced test reporting
-    "torch",  # For GPU test synchronization
-    "jinja2",  # For test config templates
+    {include-group = "dev"},
+    "rich",
+    "jinja2",
 ]
 
 [tool.setuptools]
@@ -108,8 +98,10 @@ include = ["veeksha"]
 exclude = [
     "**/__pycache__",
     "veeksha/cli/config_docs_generator.py",
-    "veeksha/config/schema.py",
 ]
+
+[tool.uv]
+default-groups = ["dev", "test"]
 
 [tool.black]
 extend-exclude = 'veeksha/_version\.py'

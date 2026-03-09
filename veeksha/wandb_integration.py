@@ -17,8 +17,9 @@ from csv import DictReader, DictWriter
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, cast
 
+from vidhi import dataclass_to_dict
+
 from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.config.utils import dataclass_to_dict
 from veeksha.config.wandb import WandbConfig
 from veeksha.logger import init_logger
 
