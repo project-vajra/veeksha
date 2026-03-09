@@ -631,6 +631,7 @@ def _resume_existing_results(
     cfg: StressMicrobenchmarkConfig,
 ) -> dict[int, StressPointResult]:
     """Load results from a previous run directory (--resume-dir) by copying c=N dirs."""
+    assert isinstance(cfg.mode, AutoStressModeConfig)
     measured: dict[int, StressPointResult] = {}
     resume_dir = cfg.mode.resume_dir
     if not resume_dir or not os.path.isdir(resume_dir):
@@ -686,6 +687,7 @@ def _run_auto_sweep(cfg: StressMicrobenchmarkConfig) -> list[StressPointResult]:
     - Reuses results from --resume-dir if provided
     - During fill, skips levels where an existing measurement is close enough
     """
+    assert isinstance(cfg.mode, AutoStressModeConfig)
     from veeksha.logger import init_logger
 
     logger = init_logger(__name__)
@@ -764,6 +766,7 @@ def _run_auto_main(cfg: StressMicrobenchmarkConfig) -> None:
     """Full auto mode entrypoint."""
     from veeksha.microbench.runner import _make_run_dir, _print_banner
 
+    assert isinstance(cfg.mode, AutoStressModeConfig)
     if cfg.mode.resume_dir:
         # When resuming, still create a new timestamped run dir
         # (results get copied in from the resume dir)

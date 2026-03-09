@@ -305,5 +305,7 @@ def run_prefill(cfg: PrefillMicrobenchmarkConfig) -> None:
 
 
 def main() -> None:
-    for cfg in PrefillMicrobenchmarkConfig.create_from_cli_args():
+    from vidhi import parse_cli_sweep
+
+    for cfg in parse_cli_sweep(PrefillMicrobenchmarkConfig):
         run_prefill(cfg)

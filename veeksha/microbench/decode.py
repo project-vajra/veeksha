@@ -401,5 +401,7 @@ def run_decode(cfg: DecodeMicrobenchmarkConfig) -> None:
 
 
 def main() -> None:
-    for cfg in DecodeMicrobenchmarkConfig.create_from_cli_args():
+    from vidhi import parse_cli_sweep
+
+    for cfg in parse_cli_sweep(DecodeMicrobenchmarkConfig):
         run_decode(cfg)
