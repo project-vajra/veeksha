@@ -22,8 +22,6 @@ jobs:
         with:
           python-version: '3.14t'
       - name: "Install dependencies"
-        run: |
-          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
-          uv pip install -e . --group dev
+        run: uv pip install -e . --group dev
       - name: "Run all lint checks"
         run: make lint
