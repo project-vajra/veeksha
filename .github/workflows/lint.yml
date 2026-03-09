@@ -12,16 +12,15 @@ defaults:
 jobs:
   sanity_check:
     runs-on: [self-hosted, cpu]
-    container:
-      image: ghcr.io/astral-sh/uv:bookworm
     steps:
       - name: "Checkout Repository"
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: "Install and lint"
+      - name: "Run lint"
         run: |
-          uv venv --python 3.14t .venv
-          source .venv/bin/activate
-          uv pip install -e . --group dev
-          make lint
+          docker run --rm \
+          -v "${GITHUB_WORKSPACE}:/repo" \
+          -w /repo \
+          ghcr.io/astral-sh/uv:bookworm \
+          bash -c "uv venv --python 3.14t .venv && source .venv/bin/activate && uv pip install -e . --group dev && make lint"

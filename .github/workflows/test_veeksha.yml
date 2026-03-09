@@ -21,20 +21,19 @@ jobs:
   test_veeksha:
     if: ${{ github.event_name != 'pull_request' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ready')) }}
     runs-on: [self-hosted, cpu]
-    container:
-      image: ghcr.io/astral-sh/uv:bookworm
     steps:
       - name: "Checkout repository"
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: "recursive"
-      - name: "Install and test"
+      - name: "Run tests"
         run: |
-          uv venv --python 3.14t .venv
-          source .venv/bin/activate
-          uv pip install -e . --group dev
-          pytest tests/unit tests/e2e --junitxml=test_output/veeksha-results.xml
+          docker run --rm \
+          -v "${GITHUB_WORKSPACE}:/repo" \
+          -w /repo \
+          ghcr.io/astral-sh/uv:bookworm \
+          bash -c "mkdir -p test_output && uv venv --python 3.14t .venv && source .venv/bin/activate && uv pip install -e . --group dev && pytest tests/unit tests/e2e --junitxml=test_output/veeksha-results.xml"
       - name: "Publish Test Report"
         uses: mikepenz/action-junit-report@v5
         if: always()
