@@ -1,0 +1,45 @@
+output_dir: benchmark_output/workload_shape_case_study/search
+
+linear_benchmark_config: linear.managed.yml
+dag_benchmark_config: dag.managed.yml
+
+trace_bundle:
+  output_dir: traces/workload_shape
+  generator_script: scripts/generate_workload_shape_traces.py
+  generate_if_missing: true
+  linear_sessions: 30
+  linear_requests: 5
+  dag_sessions: 10
+  fresh_input_tokens: 500
+  output_tokens: 300
+  wait_after_ready_s: 0.0
+  dag_final_history_parent: 13
+
+rate_search:
+  start_value: 1.0
+  max_value: 64.0
+  expansion_factor: 2.0
+  precision: 2
+  refinement_rounds: 4
+  stop_after_consecutive_unhealthy: 2
+  alternate_order: true
+
+guardrails:
+  min_completed_requests: 150
+  min_completion_ratio: 0.97
+  max_error_rate: 0.02
+  max_ttfc_p99_s: 3.0
+  max_e2e_p95_s: 20.0
+  require_all_slos_met: true
+
+objective:
+  ttfc_p99_weight: 0.45
+  e2e_p95_weight: 0.25
+  throughput_weight: 0.15
+  cache_reuse_weight: 0.15
+  max_relative_gap: 3.0
+
+vllm_metrics:
+  enabled: true
+  require_metrics: true
+  scrape_timeout_s: 10.0

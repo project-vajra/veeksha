@@ -3,7 +3,7 @@ import threading
 import time
 from dataclasses import replace
 from queue import Queue
-from typing import Optional, Set
+from typing import Any, Callable, Optional, Set
 
 from veeksha.benchmark_utils import (
     _init_output_dir,
@@ -37,6 +37,11 @@ from veeksha.workers.client_runner import ClientRunnerManager
 from veeksha.workers.prefetch import SharedSessionCounter
 
 logger = init_logger(__name__)
+
+ServerPostRunHook = Callable[
+    [BenchmarkConfig, dict[str, Any], Optional[Any]],
+    None,
+]
 
 
 def _maybe_pregenerate_sessions(benchmark_config, session_generator) -> Optional[list]:
@@ -322,6 +327,8 @@ def _run_benchmark(
 
 def manage_benchmark_run(
     benchmark_config: BenchmarkConfig,
+    *,
+    server_post_run_hook: Optional[ServerPostRunHook] = None,
 ):
     """Run a benchmark, handling optional server orchestration.
 
@@ -360,14 +367,39 @@ def manage_benchmark_run(
             )
 
             maybe_init_wandb_run(updated_benchmark_config, run_kind="benchmark")
+            result = None
+            run_error: Optional[BaseException] = None
+            hook_error: Optional[Exception] = None
             try:
                 result = _run_benchmark(updated_benchmark_config)
                 maybe_log_benchmark_scalars(updated_benchmark_config.output_dir)
                 maybe_log_benchmark_artifacts(updated_benchmark_config)
                 return result
+            except BaseException as exc:
+                run_error = exc
+                raise
             finally:
+                if server_post_run_hook is not None:
+                    try:
+                        server_post_run_hook(
+                            updated_benchmark_config,
+                            server_info,
+                            result,
+                        )
+                    except Exception as exc:
+                        logger.exception(
+                            "Server post-run hook failed for %s",
+                            updated_benchmark_config.output_dir,
+                        )
+                        hook_error = RuntimeError(
+                            "Server post-run hook failed for "
+                            f"{updated_benchmark_config.output_dir}"
+                        )
+                        hook_error.__cause__ = exc
                 maybe_finish_wandb_run(updated_benchmark_config.output_dir)
                 logger.info("Server shutting down...")
+                if hook_error is not None and run_error is None:
+                    raise hook_error
     else:
         maybe_init_wandb_run(benchmark_config, run_kind="benchmark")
         try:

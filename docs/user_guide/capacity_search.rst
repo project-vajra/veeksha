@@ -294,7 +294,7 @@ Find the maximum rate for a latency-sensitive deployment:
         type: trace
         trace_file: production_traffic.jsonl
         flavor:
-          type: timed_synthetic_multi_turn
+          type: timed_synthetic_session
 
       client:
         type: openai_chat_completions

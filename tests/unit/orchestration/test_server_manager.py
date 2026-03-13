@@ -88,6 +88,32 @@ class TestBaseServerManager:
         assert "already in use" in error
         mock_popen.assert_not_called()
 
+    @patch("subprocess.Popen")
+    def test_launch_auto_selects_free_port_when_config_port_is_zero(
+        self, mock_popen, manager
+    ):
+        """port=0 should resolve to a free port before the server launches."""
+        manager.config = VllmServerConfig(
+            host="localhost",
+            port=0,
+            gpu_ids=[0],
+            startup_timeout=1,
+            health_check_interval=0.1,
+        )
+        manager._find_free_port = MagicMock(return_value=8123)
+
+        mock_process = MagicMock()
+        mock_process.poll.return_value = None
+        mock_process.pid = 12345
+        mock_popen.return_value = mock_process
+
+        success, error = manager.launch()
+
+        assert success
+        assert error is None
+        assert manager.config.port == 8123
+        manager._find_free_port.assert_called_once_with()
+
     @patch("requests.get")
     def test_health_check_success(self, mock_get, manager):
         """Test successful health check."""
@@ -225,6 +251,7 @@ class TestBaseServerManager:
         # Config without explicit GPU IDs
         config = VllmServerConfig(gpu_ids=None, tensor_parallel_size=2)
         manager = TestServerManager(config)
+        manager._is_port_in_use = MagicMock(return_value=False)
         
         # Mock resource manager
         manager.resource_manager = MagicMock()
@@ -260,6 +287,7 @@ class TestBaseServerManager:
             require_contiguous_gpus=False,
         )
         manager = TestServerManager(config)
+        manager._is_port_in_use = MagicMock(return_value=False)
 
         manager.resource_manager = MagicMock()
         manager.resource_manager.wait_for_resources.return_value = [
@@ -341,4 +369,3 @@ class TestBaseServerManager:
         assert log_path.exists()
 
         monkeypatch.delenv("VEEKSHA_OUTPUT_DIR", raising=False)
-

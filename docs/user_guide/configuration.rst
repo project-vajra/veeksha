@@ -446,10 +446,10 @@ auto-normalized). Each row becomes an independent single-request session.
     no corpus files. Supports CSV and JSONL. Best for replaying public
     benchmarking datasets (ShareGPT, etc.).
 
-``timed_synthetic_multi_turn``
-    Timed multi-turn coding sessions with synthetic content. Supports context
-    caching via ``page_size`` (unique prefix tokens per session). Best for
-    testing KV-cache reuse.
+``timed_synthetic_session``
+    Timed session traces with synthetic content. Supports DAG replay through
+    ``session_context`` and context caching via ``page_size``. Best for testing
+    KV-cache reuse across linear and non-linear sessions.
 
 ``untimed_content_multi_turn``
     Replay conversation datasets with actual message content (ShareGPT,
@@ -521,7 +521,7 @@ Replay timed multi-turn coding assistant traces with context caching:
 
 .. code-block:: yaml
 
-    # trace_timed_synthetic_multi_turn.veeksha.yml
+    # trace_timed_synthetic_session.veeksha.yml
     seed: 42
 
     session_generator:
@@ -529,7 +529,7 @@ Replay timed multi-turn coding assistant traces with context caching:
       trace_file: traces/timed_synthetic_trace.jsonl
       wrap_mode: true
       flavor:
-        type: timed_synthetic_multi_turn
+        type: timed_synthetic_session
         corpus_file: traces/corpus.txt
         page_size: 16
 

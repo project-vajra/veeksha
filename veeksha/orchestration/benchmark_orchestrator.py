@@ -60,15 +60,18 @@ def managed_server(
         if not server_manager.wait_for_ready():
             raise RuntimeError("Server failed to become ready")
 
-        api_base = config.get_api_base_url()
+        resolved_config = server_manager.config
+        api_base = resolved_config.get_api_base_url()
 
         # Set environment variables for clients
-        os.environ["OPENAI_API_KEY"] = config.api_key or "EMPTY"
+        os.environ["OPENAI_API_KEY"] = resolved_config.api_key or "EMPTY"
         os.environ["OPENAI_API_BASE"] = api_base
 
         yield {
             "api_base": api_base,
-            "api_key": config.api_key,
+            "api_key": resolved_config.api_key,
+            "metrics_url": resolved_config.get_metrics_url(),
+            "config": resolved_config,
             "server_manager": server_manager,
         }
 

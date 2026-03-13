@@ -109,6 +109,17 @@ class BaseServerManager(abc.ABC):
             )
             return True, None
 
+        if self.config.port == 0:
+            self.config = replace(
+                self.config,
+                port=self._find_free_port(),
+            )
+            logger.info(
+                "Auto-selected free port %s for %s server",
+                self.config.port,
+                self.config.engine,
+            )
+
         if self._is_port_in_use():
             error_msg = (
                 f"Port {self.config.port} on host '{self.config.host}' is already in use. "
@@ -192,6 +203,39 @@ class BaseServerManager(abc.ABC):
                 self._log_file_path = None
                 self._delete_log_file_on_cleanup = True
             return False, str(e)
+
+    def _find_free_port(self) -> int:
+        """Find an available local TCP port for the configured host."""
+        host = self.config.host
+        bind_host = "127.0.0.1" if host in {"localhost", ""} else host
+
+        addr_info = socket.getaddrinfo(
+            bind_host,
+            0,
+            family=socket.AF_UNSPEC,
+            type=socket.SOCK_STREAM,
+            flags=socket.AI_PASSIVE,
+        )
+        last_error: Optional[Exception] = None
+
+        for family, socktype, proto, _, sockaddr in addr_info:
+            try:
+                with socket.socket(family, socktype, proto) as sock:
+                    sock.bind(sockaddr)
+                    return int(sock.getsockname()[1])
+            except OSError as exc:
+                last_error = exc
+                logger.debug(
+                    "Free-port probe failed for host '%s' with %s",
+                    bind_host,
+                    exc,
+                )
+
+        if last_error is not None:
+            raise RuntimeError(
+                f"Unable to allocate a free port for host '{host}': {last_error}"
+            ) from last_error
+        raise RuntimeError(f"Unable to allocate a free port for host '{host}'")
 
     def _is_port_in_use(self) -> bool:
         """Return True if the configured host:port already has an active listener."""

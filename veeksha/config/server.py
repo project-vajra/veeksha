@@ -23,7 +23,10 @@ class BaseServerConfig(BasePolyConfig):
 
     host: str = field("localhost", help="Host address for the server")
 
-    port: int = field(8000, help="Port number for the server")
+    port: int = field(
+        8000,
+        help="Port number for the server. Use 0 to auto-select a free local port.",
+    )
 
     api_key: str = field("token-abc123", help="API key for server authentication")
 
@@ -63,6 +66,9 @@ class BaseServerConfig(BasePolyConfig):
 
     def get_health_check_url(self) -> str:
         return f"http://{self.host}:{self.port}/health"
+
+    def get_metrics_url(self) -> str:
+        return f"http://{self.host}:{self.port}/metrics"
 
     def get_gpu_env_var(self) -> Optional[str]:
         """Get CUDA_VISIBLE_DEVICES value if gpu_ids is specified."""
