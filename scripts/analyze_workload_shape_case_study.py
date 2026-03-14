@@ -384,7 +384,8 @@ def main() -> None:
     trace_metadata_payload = read_json(trace_metadata) if trace_metadata.exists() else None
 
     latency_plot = output_dir / "latency_comparison.png"
-    cache_plot = output_dir / "cache_comparison.png"
+    prompt_context_plot = output_dir / "prompt_context_comparison.png"
+    cache_ratio_plot = output_dir / "cache_ratio_comparison.png"
     fresh_prompt_plot = output_dir / "fresh_prompt_ecdf.png"
     total_prompt_plot = output_dir / "total_prompt_ecdf.png"
 
@@ -415,24 +416,36 @@ def main() -> None:
     )
 
     bar_plot(
-        path=cache_plot,
-        title=f"{args.title}: cache and context at {selected_rate:.2f} sessions/s",
-        labels=["Total prompt mean", "Cacheable mean", "Prefix hit", "Prompt cache", "KV usage"],
+        path=prompt_context_plot,
+        title=f"{args.title}: prompt context at {selected_rate:.2f} sessions/s",
+        labels=["Total prompt mean", "Cacheable mean"],
         linear_values=[
             linear_summary.mean_total_prompt_tokens,
             linear_summary.mean_cacheable_prompt_tokens,
+        ],
+        dag_values=[
+            dag_summary.mean_total_prompt_tokens,
+            dag_summary.mean_cacheable_prompt_tokens,
+        ],
+        ylabel="Tokens",
+        value_formatter=".0f",
+    )
+
+    bar_plot(
+        path=cache_ratio_plot,
+        title=f"{args.title}: cache efficiency at {selected_rate:.2f} sessions/s",
+        labels=["Prefix hit", "Prompt cache", "KV usage"],
+        linear_values=[
             linear_summary.vllm_prefix_cache_hit_rate,
             linear_summary.vllm_prompt_cache_token_ratio,
             linear_summary.vllm_kv_cache_usage_perc,
         ],
         dag_values=[
-            dag_summary.mean_total_prompt_tokens,
-            dag_summary.mean_cacheable_prompt_tokens,
             dag_summary.vllm_prefix_cache_hit_rate,
             dag_summary.vllm_prompt_cache_token_ratio,
             dag_summary.vllm_kv_cache_usage_perc,
         ],
-        ylabel="Value",
+        ylabel="Ratio",
         value_formatter=".2f",
     )
 
@@ -521,13 +534,26 @@ def main() -> None:
         dag_summary=dag_summary,
         linear_rows=linear_rows,
         dag_rows=dag_rows,
-        plots=[latency_plot, cache_plot, fresh_prompt_plot, total_prompt_plot],
+        plots=[
+            latency_plot,
+            prompt_context_plot,
+            cache_ratio_plot,
+            fresh_prompt_plot,
+            total_prompt_plot,
+        ],
     )
 
     print("Wrote workload-shape comparison artifacts to", output_dir)
     print("  summary:", summary_path)
     print("  report: ", report_path)
-    print("  plots:  ", latency_plot, cache_plot, fresh_prompt_plot, total_prompt_plot)
+    print(
+        "  plots:  ",
+        latency_plot,
+        prompt_context_plot,
+        cache_ratio_plot,
+        fresh_prompt_plot,
+        total_prompt_plot,
+    )
 
 
 if __name__ == "__main__":
