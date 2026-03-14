@@ -1,5 +1,7 @@
 type: vllm
 env_path: ../vllm_env
+env_vars:
+  VLLM_ATTENTION_BACKEND: FLASH_ATTN
 model: Qwen/Qwen3.5-35B-A3B
 host: localhost
 port: 0
@@ -12,4 +14,4 @@ require_contiguous_gpus: true
 additional_args:
   enable-prefix-caching: true
   language-model-only: true
-  attention-config: '{"backend":"FLASH_ATTN","flash_attn_version":3,"disable_flashinfer_prefill":true}'
+  attention-config: '{"backend":"FLASH_ATTN","flash_attn_version":3}'

@@ -190,6 +190,8 @@ class BaseServerManager(abc.ABC):
                         os.pathsep.join(lib_dirs),
                     )
 
+            env.update(self.get_env_vars_dict())
+
             gpu_env = self.config.get_gpu_env_var()
             if gpu_env is not None:
                 env["CUDA_VISIBLE_DEVICES"] = gpu_env
@@ -529,6 +531,33 @@ class BaseServerManager(abc.ABC):
         else:
             raise TypeError(
                 f"additional_args must be None, dict, or str (JSON), got {type(additional_args).__name__}: {additional_args!r}"
+            )
+
+    def get_env_vars_dict(self) -> Dict[str, str]:
+        """Parse env_vars into a dictionary of string environment variables."""
+        import copy
+        import json
+
+        env_vars = self.config.env_vars
+        if env_vars is None:
+            return {}
+        elif isinstance(env_vars, dict):
+            return {str(key): str(value) for key, value in copy.copy(env_vars).items()}
+        elif isinstance(env_vars, str):
+            try:
+                parsed = json.loads(env_vars)
+            except json.JSONDecodeError as e:
+                raise ValueError(
+                    f"Invalid JSON in env_vars: {env_vars!r}. Error: {e}"
+                )
+            if not isinstance(parsed, dict):
+                raise TypeError(
+                    f"env_vars JSON must decode to an object, got {type(parsed).__name__}: {parsed!r}"
+                )
+            return {str(key): str(value) for key, value in parsed.items()}
+        else:
+            raise TypeError(
+                f"env_vars must be None, dict, or str (JSON), got {type(env_vars).__name__}: {env_vars!r}"
             )
 
     def __enter__(self):

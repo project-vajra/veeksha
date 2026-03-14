@@ -17,6 +17,11 @@ class BaseServerConfig(BasePolyConfig):
         None, help="Path to a Python environment directory (virtualenv/conda)."
     )
 
+    env_vars: Union[str, Dict[str, str], None] = field(
+        "{}",
+        help="Additional environment variables for the server process as JSON string, dict, or None.",
+    )
+
     model: str = field(
         "meta-llama/Meta-Llama-3-8B-Instruct", help="Model name or path."
     )

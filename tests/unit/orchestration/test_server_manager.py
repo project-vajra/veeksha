@@ -95,6 +95,32 @@ class TestBaseServerManager:
         )
 
     @patch("subprocess.Popen")
+    def test_launch_includes_configured_env_vars(self, mock_popen, manager):
+        """Config-provided server env vars should be passed to the subprocess."""
+        manager.config = VllmServerConfig(
+            host="localhost",
+            port=8125,
+            gpu_ids=[0],
+            startup_timeout=1,
+            health_check_interval=0.1,
+            env_vars={"VLLM_ATTENTION_BACKEND": "FLASH_ATTN", "FOO": "1"},
+        )
+        manager._is_port_in_use = MagicMock(return_value=False)
+
+        mock_process = MagicMock()
+        mock_process.poll.return_value = None
+        mock_process.pid = 12347
+        mock_popen.return_value = mock_process
+
+        success, error = manager.launch()
+
+        assert success
+        assert error is None
+        env = mock_popen.call_args[1]["env"]
+        assert env["VLLM_ATTENTION_BACKEND"] == "FLASH_ATTN"
+        assert env["FOO"] == "1"
+
+    @patch("subprocess.Popen")
     def test_launch_already_running(self, mock_popen, manager):
         """Test launch when already running."""
         manager._is_running = True
