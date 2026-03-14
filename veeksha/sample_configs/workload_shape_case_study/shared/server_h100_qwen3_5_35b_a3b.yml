@@ -6,7 +6,7 @@ port: 0
 tensor_parallel_size: 1
 dtype: bfloat16
 max_model_len: 8192
-startup_timeout: 300
+startup_timeout: 600
 health_check_interval: 2.0
 require_contiguous_gpus: true
 additional_args:
