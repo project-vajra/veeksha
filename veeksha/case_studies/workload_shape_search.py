@@ -823,8 +823,57 @@ def _benchmark_output_base(
     return str(Path(search_output_dir) / "runs" / f"rate_{safe_rate}" / workload)
 
 
-def _parse_prometheus_samples(text: str) -> dict[str, list[float]]:
+def _parse_prometheus_labels(raw_labels: str) -> dict[str, str]:
+    labels: dict[str, str] = {}
+    if not raw_labels:
+        return labels
+
+    items: list[str] = []
+    current: list[str] = []
+    in_quotes = False
+    escape = False
+    for char in raw_labels:
+        if escape:
+            current.append(char)
+            escape = False
+            continue
+        if char == "\\":
+            current.append(char)
+            escape = True
+            continue
+        if char == '"':
+            current.append(char)
+            in_quotes = not in_quotes
+            continue
+        if char == "," and not in_quotes:
+            items.append("".join(current))
+            current = []
+            continue
+        current.append(char)
+
+    if current:
+        items.append("".join(current))
+
+    for item in items:
+        if "=" not in item:
+            continue
+        key, value = item.split("=", 1)
+        labels[key.strip()] = value.strip().strip('"')
+    return labels
+
+
+def _split_metric_and_labels(metric_with_labels: str) -> tuple[str, dict[str, str]]:
+    if "{" not in metric_with_labels:
+        return metric_with_labels, {}
+    metric_name, remainder = metric_with_labels.split("{", 1)
+    return metric_name, _parse_prometheus_labels(remainder.rstrip("}"))
+
+
+def _parse_prometheus_samples(
+    text: str,
+) -> tuple[dict[str, list[float]], dict[str, list[tuple[dict[str, str], float]]]]:
     samples: dict[str, list[float]] = {}
+    labeled_samples: dict[str, list[tuple[dict[str, str], float]]] = {}
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
@@ -839,10 +888,11 @@ def _parse_prometheus_samples(text: str) -> dict[str, list[float]]:
         if not math.isfinite(value):
             continue
 
-        metric_name = metric_with_labels.split("{", 1)[0]
+        metric_name, labels = _split_metric_and_labels(metric_with_labels)
         samples.setdefault(metric_name, []).append(value)
+        labeled_samples.setdefault(metric_name, []).append((labels, value))
 
-    return samples
+    return samples, labeled_samples
 
 
 def _metric_sum(
@@ -863,6 +913,68 @@ def _metric_max(
     if not values:
         return None
     return float(np.max(np.asarray(values, dtype=float)))
+
+
+def _metric_sum_any(
+    samples: dict[str, list[float]],
+    *metric_names: str,
+) -> Optional[float]:
+    for metric_name in metric_names:
+        value = _metric_sum(samples, metric_name)
+        if value is not None:
+            return value
+    return None
+
+
+def _metric_max_any(
+    samples: dict[str, list[float]],
+    *metric_names: str,
+) -> Optional[float]:
+    for metric_name in metric_names:
+        value = _metric_max(samples, metric_name)
+        if value is not None:
+            return value
+    return None
+
+
+def _metric_sum_for_label(
+    labeled_samples: dict[str, list[tuple[dict[str, str], float]]],
+    metric_name: str,
+    *,
+    label_name: str,
+    label_value: str,
+) -> Optional[float]:
+    samples = labeled_samples.get(metric_name)
+    if not samples:
+        return None
+
+    values = [
+        value
+        for labels, value in samples
+        if labels.get(label_name) == label_value and math.isfinite(value)
+    ]
+    if not values:
+        return None
+    return float(np.sum(np.asarray(values, dtype=float)))
+
+
+def _metric_sum_for_label_any(
+    labeled_samples: dict[str, list[tuple[dict[str, str], float]]],
+    metric_names: Sequence[str],
+    *,
+    label_name: str,
+    label_value: str,
+) -> Optional[float]:
+    for metric_name in metric_names:
+        value = _metric_sum_for_label(
+            labeled_samples,
+            metric_name,
+            label_name=label_name,
+            label_value=label_value,
+        )
+        if value is not None:
+            return value
+    return None
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -887,13 +999,45 @@ def _scrape_vllm_metrics(
     raw_metrics = response.text
     (metrics_dir / "vllm_metrics.prom").write_text(raw_metrics, encoding="utf-8")
 
-    samples = _parse_prometheus_samples(raw_metrics)
-    prefix_cache_hits = _metric_sum(samples, "vllm:prefix_cache_hits")
-    prefix_cache_queries = _metric_sum(samples, "vllm:prefix_cache_queries")
-    prompt_tokens_cached = _metric_sum(samples, "vllm:prompt_tokens_cached")
-    prompt_tokens_recomputed = _metric_sum(
-        samples, "vllm:prompt_tokens_recomputed"
+    samples, labeled_samples = _parse_prometheus_samples(raw_metrics)
+    prefix_cache_hits = _metric_sum_any(
+        samples,
+        "vllm:prefix_cache_hits_total",
+        "vllm:prefix_cache_hits",
+        "vllm:gpu_prefix_cache_hits_total",
+        "vllm:gpu_prefix_cache_hits",
     )
+    prefix_cache_queries = _metric_sum_any(
+        samples,
+        "vllm:prefix_cache_queries_total",
+        "vllm:prefix_cache_queries",
+        "vllm:gpu_prefix_cache_queries_total",
+        "vllm:gpu_prefix_cache_queries",
+    )
+    prompt_tokens_cached = _metric_sum_any(
+        samples,
+        "vllm:prompt_tokens_cached_total",
+        "vllm:prompt_tokens_cached",
+    )
+    if prompt_tokens_cached is None:
+        prompt_tokens_cached = _metric_sum_for_label_any(
+            labeled_samples,
+            ("vllm:prompt_tokens_by_source_total", "vllm:prompt_tokens_by_source"),
+            label_name="source",
+            label_value="cached",
+        )
+    prompt_tokens_recomputed = _metric_sum_any(
+        samples,
+        "vllm:prompt_tokens_recomputed_total",
+        "vllm:prompt_tokens_recomputed",
+    )
+    if prompt_tokens_recomputed is None:
+        prompt_tokens_recomputed = _metric_sum_for_label_any(
+            labeled_samples,
+            ("vllm:prompt_tokens_by_source_total", "vllm:prompt_tokens_by_source"),
+            label_name="source",
+            label_value="recomputed",
+        )
     prompt_cache_denominator = (prompt_tokens_cached or 0.0) + (
         prompt_tokens_recomputed or 0.0
     )
@@ -902,7 +1046,12 @@ def _scrape_vllm_metrics(
         "metrics_scraped": True,
         "metrics_url": metrics_url,
         "scraped_at_utc": scraped_at,
-        "kv_cache_usage_perc": _metric_max(samples, "vllm:kv_cache_usage_perc"),
+        "available_metrics": sorted(samples.keys()),
+        "kv_cache_usage_perc": _metric_max_any(
+            samples,
+            "vllm:kv_cache_usage_perc",
+            "vllm:gpu_cache_usage_perc",
+        ),
         "prompt_tokens_cached": prompt_tokens_cached,
         "prompt_tokens_recomputed": prompt_tokens_recomputed,
         "prompt_cache_token_ratio": (
@@ -917,7 +1066,21 @@ def _scrape_vllm_metrics(
             if prefix_cache_queries and prefix_cache_queries > 0
             else None
         ),
-        "num_preemptions": _metric_sum(samples, "vllm:num_preemptions"),
+        "num_preemptions": _metric_sum_any(
+            samples,
+            "vllm:num_preemptions_total",
+            "vllm:num_preemptions",
+        ),
+        "prompt_tokens_total": _metric_sum_any(
+            samples,
+            "vllm:prompt_tokens_total",
+            "vllm:prompt_tokens",
+        ),
+        "generation_tokens_total": _metric_sum_any(
+            samples,
+            "vllm:generation_tokens_total",
+            "vllm:generation_tokens",
+        ),
     }
     _write_json(metrics_dir / "vllm_metrics_summary.json", summary)
     return summary
@@ -1211,6 +1374,45 @@ def run_workload_shape_search(config: WorkloadShapeSearchConfig) -> dict[str, An
     }
 
 
+def run_single_workload_shape_rate(
+    config: WorkloadShapeSearchConfig,
+    *,
+    rate: float,
+    output_dir: Optional[str] = None,
+) -> dict[str, Any]:
+    effective_config = replace(
+        config,
+        output_dir=_resolve_output_path(output_dir) if output_dir else config.output_dir,
+    )
+    Path(effective_config.output_dir).mkdir(parents=True, exist_ok=True)
+    _ensure_trace_bundle(effective_config)
+
+    linear_cfg = _load_benchmark_config(effective_config.linear_benchmark_config)
+    dag_cfg = _load_benchmark_config(effective_config.dag_benchmark_config)
+
+    result = _run_paired_rate(
+        rate=effective_config.rate_search.round_value(rate),
+        phase="single",
+        search_index=0,
+        config=effective_config,
+        linear_cfg=linear_cfg,
+        dag_cfg=dag_cfg,
+    )
+    _persist_search_state(config=effective_config, results=[result])
+
+    logger.info(
+        "Single paired run complete at rate=%s. Healthy=%s, status=%s",
+        result.rate,
+        result.healthy,
+        result.status,
+    )
+    return {
+        "rate": result.rate,
+        "result": result.to_flat_dict(),
+        "output_dir": effective_config.output_dir,
+    }
+
+
 def rescore_existing_workload_shape_search(
     config: WorkloadShapeSearchConfig,
     *,
@@ -1300,14 +1502,37 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "Defaults to <source-output-dir>/rescored."
         ),
     )
+    parser.add_argument(
+        "--single-rate",
+        type=float,
+        help=(
+            "Run exactly one paired rate with fresh managed servers, instead of "
+            "performing a search."
+        ),
+    )
+    parser.add_argument(
+        "--single-rate-output-dir",
+        help=(
+            "Output directory for --single-rate runs. Defaults to the config "
+            "output_dir."
+        ),
+    )
     args = parser.parse_args(argv)
 
     config = _load_search_config(args.config)
+    if args.rescore_only and args.single_rate is not None:
+        raise ValueError("--rescore-only and --single-rate cannot be used together.")
     if args.rescore_only:
         rescore_existing_workload_shape_search(
             config,
             source_output_dir=args.source_output_dir,
             output_dir=args.rescore_output_dir,
+        )
+    elif args.single_rate is not None:
+        run_single_workload_shape_rate(
+            config,
+            rate=args.single_rate,
+            output_dir=args.single_rate_output_dir,
         )
     else:
         run_workload_shape_search(config)

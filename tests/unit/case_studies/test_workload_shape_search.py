@@ -250,12 +250,12 @@ def test_cache_divergence_uses_vllm_cache_metrics_when_available() -> None:
 def test_scrape_vllm_metrics_persists_summary(tmp_path) -> None:
     metrics_text = """
 # HELP vllm metrics
-vllm:kv_cache_usage_perc 0.625
-vllm:prefix_cache_hits 9
-vllm:prefix_cache_queries 12
-vllm:prompt_tokens_cached 360
-vllm:prompt_tokens_recomputed 90
-vllm:num_preemptions 1
+vllm:gpu_cache_usage_perc 0.625
+vllm:prefix_cache_hits_total 9
+vllm:prefix_cache_queries_total 12
+vllm:prompt_tokens_cached_total 360
+vllm:prompt_tokens_recomputed_total 90
+vllm:num_preemptions_total 1
 """.strip()
 
     class _Response:
@@ -282,6 +282,7 @@ vllm:num_preemptions 1
     assert summary["prefix_cache_hit_rate"] == pytest.approx(0.75)
     assert summary["prompt_cache_token_ratio"] == pytest.approx(0.80)
     assert summary["num_preemptions"] == pytest.approx(1.0)
+    assert "vllm:prefix_cache_hits_total" in summary["available_metrics"]
     assert (tmp_path / "metrics" / "vllm_metrics.prom").exists()
     assert (tmp_path / "metrics" / "vllm_metrics_summary.json").exists()
 
