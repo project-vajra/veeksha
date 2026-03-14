@@ -56,6 +56,45 @@ class TestBaseServerManager:
         assert env['CUDA_VISIBLE_DEVICES'] == "0"
 
     @patch("subprocess.Popen")
+    def test_launch_prepends_env_lib_dirs_to_ld_library_path(self, mock_popen, tmp_path):
+        """Managed env launches should expose env lib directories to the subprocess."""
+        env_root = tmp_path / "venv"
+        (env_root / "bin").mkdir(parents=True)
+        (env_root / "lib").mkdir()
+        (env_root / "lib64").mkdir()
+
+        config = VllmServerConfig(
+            host="localhost",
+            port=8124,
+            gpu_ids=[0],
+            startup_timeout=1,
+            health_check_interval=0.1,
+            env_path=str(env_root),
+        )
+        manager = TestServerManager(config)
+        manager._is_port_in_use = MagicMock(return_value=False)
+
+        mock_process = MagicMock()
+        mock_process.poll.return_value = None
+        mock_process.pid = 12346
+        mock_popen.return_value = mock_process
+
+        with patch.dict(os.environ, {"LD_LIBRARY_PATH": "/system/lib"}, clear=False):
+            success, error = manager.launch()
+
+        assert success
+        assert error is None
+
+        env = mock_popen.call_args[1]["env"]
+        assert env["LD_LIBRARY_PATH"] == os.pathsep.join(
+            [
+                str(env_root / "lib"),
+                str(env_root / "lib64"),
+                "/system/lib",
+            ]
+        )
+
+    @patch("subprocess.Popen")
     def test_launch_already_running(self, mock_popen, manager):
         """Test launch when already running."""
         manager._is_running = True

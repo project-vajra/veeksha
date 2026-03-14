@@ -170,6 +170,26 @@ class BaseServerManager(abc.ABC):
                         f"Configured environment_path '{env_path}' does not contain {scripts_dir} at {bin_dir}"
                     )
 
+                # Also expose the environment's shared libraries so JIT-loaded
+                # extensions (for example FlashInfer kernels) do not fall back
+                # to an older system libstdc++.
+                lib_dirs = [
+                    lib_dir
+                    for lib_dir in (
+                        os.path.join(env_path, "lib"),
+                        os.path.join(env_path, "lib64"),
+                    )
+                    if os.path.isdir(lib_dir)
+                ]
+                if lib_dirs:
+                    old_ld_path = env.get("LD_LIBRARY_PATH", "")
+                    ld_parts = lib_dirs + ([old_ld_path] if old_ld_path else [])
+                    env["LD_LIBRARY_PATH"] = os.pathsep.join(ld_parts)
+                    logger.info(
+                        "Prepended %s to LD_LIBRARY_PATH for subprocess",
+                        os.pathsep.join(lib_dirs),
+                    )
+
             gpu_env = self.config.get_gpu_env_var()
             if gpu_env is not None:
                 env["CUDA_VISIBLE_DEVICES"] = gpu_env

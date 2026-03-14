@@ -12,4 +12,4 @@ require_contiguous_gpus: true
 additional_args:
   enable-prefix-caching: true
   language-model-only: true
-
+  attention-config: '{"backend":"FLASH_ATTN","flash_attn_version":3,"disable_flashinfer_prefill":true}'
