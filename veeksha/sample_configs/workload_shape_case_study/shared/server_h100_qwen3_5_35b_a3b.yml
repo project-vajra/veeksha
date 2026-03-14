@@ -1,5 +1,5 @@
 type: vllm
-env_path: vllm_env
+env_path: ../vllm_env
 model: Qwen/Qwen3.5-35B-A3B
 host: localhost
 port: 0
