@@ -6,8 +6,16 @@ from veeksha.case_studies.workload_shape_search import (
     BenchmarkRunSummary,
     Guardrails,
     ObjectiveWeights,
+    PairedRateResult,
+    RateSearchParams,
+    TraceBundleConfig,
+    VllmMetricsConfig,
+    WorkloadShapeSearchConfig,
     _cache_divergence,
+    _initial_rates,
+    _lower_rates,
     _scrape_vllm_metrics,
+    run_workload_shape_search,
     score_paired_candidate,
 )
 
@@ -218,3 +226,91 @@ vllm:num_preemptions 1
     assert summary["num_preemptions"] == pytest.approx(1.0)
     assert (tmp_path / "metrics" / "vllm_metrics.prom").exists()
     assert (tmp_path / "metrics" / "vllm_metrics_summary.json").exists()
+
+
+def test_rate_sequences_include_lower_backoff_range() -> None:
+    params = RateSearchParams(
+        min_value=0.15,
+        start_value=0.30,
+        max_value=4.8,
+        expansion_factor=2.0,
+        precision=2,
+    )
+
+    assert _initial_rates(params) == [0.3, 0.6, 1.2, 2.4, 4.8]
+    assert _lower_rates(params) == [0.15]
+
+
+def test_search_backs_off_when_initial_rate_is_already_unhealthy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    config = WorkloadShapeSearchConfig(
+        output_dir=str(tmp_path / "search"),
+        linear_benchmark_config="linear.yml",
+        dag_benchmark_config="dag.yml",
+        trace_bundle=TraceBundleConfig(
+            output_dir=str(tmp_path / "traces"),
+            generator_script=str(tmp_path / "generate.py"),
+        ),
+        rate_search=RateSearchParams(
+            min_value=0.15,
+            start_value=0.30,
+            max_value=1.2,
+            expansion_factor=2.0,
+            precision=2,
+            refinement_rounds=0,
+        ),
+        guardrails=Guardrails(),
+        objective=ObjectiveWeights(),
+        vllm_metrics=VllmMetricsConfig(enabled=False, require_metrics=False),
+    )
+
+    evaluated_rates: list[float] = []
+
+    def _fake_run_paired_rate(**kwargs) -> PairedRateResult:
+        rate = float(kwargs["rate"])
+        evaluated_rates.append(rate)
+        summary = _summary(
+            workload="linear",
+            rate=rate,
+            ttfc_p99_s=1.0,
+            e2e_p95_s=5.0,
+            throughput=100.0,
+            prompt_reuse=0.5,
+        )
+        healthy = rate <= 0.15
+        return PairedRateResult(
+            rate=rate,
+            phase=str(kwargs["phase"]),
+            run_order=["linear", "dag"],
+            linear=summary,
+            dag=replace(summary, workload="dag"),
+            healthy=healthy,
+            status="healthy" if healthy else "guardrail_failed",
+            divergence_score=1.0 if healthy else 0.0,
+            load_factor=rate if healthy else 0.0,
+            overall_score=rate if healthy else 0.0,
+            notes=[],
+        )
+
+    monkeypatch.setattr(
+        "veeksha.case_studies.workload_shape_search._ensure_trace_bundle",
+        lambda _config: None,
+    )
+    monkeypatch.setattr(
+        "veeksha.case_studies.workload_shape_search._load_benchmark_config",
+        lambda _path: None,
+    )
+    monkeypatch.setattr(
+        "veeksha.case_studies.workload_shape_search._persist_search_state",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "veeksha.case_studies.workload_shape_search._run_paired_rate",
+        _fake_run_paired_rate,
+    )
+
+    result = run_workload_shape_search(config)
+
+    assert evaluated_rates == [0.3, 0.6, 1.2, 0.15]
+    assert result["best_rate"] == pytest.approx(0.15)

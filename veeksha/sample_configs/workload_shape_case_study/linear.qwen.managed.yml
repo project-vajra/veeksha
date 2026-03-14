@@ -16,9 +16,8 @@ session_generator:
 
 client: !include shared/client_qwen3_5_nonthinking.yml
 
-runtime: !include shared/runtime.yml
+runtime: !include shared/runtime_qwen.yml
 
 evaluators: !include shared/evaluators.yml
 
 trace_recorder: !include shared/trace_recorder.yml
-

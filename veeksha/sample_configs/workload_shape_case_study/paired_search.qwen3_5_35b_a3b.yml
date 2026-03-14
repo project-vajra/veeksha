@@ -16,8 +16,9 @@ trace_bundle:
   dag_final_history_parent: 13
 
 rate_search:
-  start_value: 1.0
-  max_value: 64.0
+  min_value: 0.15
+  start_value: 0.30
+  max_value: 10.0
   expansion_factor: 2.0
   precision: 2
   refinement_rounds: 4

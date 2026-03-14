@@ -1,5 +1,6 @@
 """Utilities used by the benchmark runner."""
 
+import asyncio
 import hashlib
 import os
 import shutil
@@ -12,11 +13,15 @@ from tqdm import tqdm
 from vidhi import dataclass_to_dict
 
 from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.core.request import Request
+from veeksha.core.request_content import TextChannelRequestContent
+from veeksha.core.requested_output import RequestedOutputSpec, TextOutputSpec
 from veeksha.core.seeding import SeedManager
 from veeksha.evaluator.base import BaseEvaluator
 from veeksha.evaluator.composite import CompositeEvaluator
 from veeksha.evaluator.registry import EvaluatorRegistry
 from veeksha.logger import init_logger
+from veeksha.types import ChannelModality
 from veeksha.types import EvaluationType
 
 logger = init_logger(__name__)
@@ -25,6 +30,7 @@ __all__ = [
     "_persist_config_yaml",
     "_init_output_dir",
     "build_evaluator",
+    "maybe_run_server_warmup",
     "maybe_run_warmup",
     "_monitor_for_completion",
 ]
@@ -117,6 +123,65 @@ def maybe_run_warmup(session_generator, client) -> None:
             logger.info(f"Running warmup with {len(warmup_sessions)} sessions")
             asyncio.run(run_all(warmup_sessions))
             logger.info("Warmup completed")
+
+
+def maybe_run_server_warmup(runtime_config, client) -> None:
+    """Optionally send one small warmup request before benchmark timing starts."""
+
+    warmup_config = getattr(runtime_config, "warmup_request", None)
+    if warmup_config is None or not getattr(warmup_config, "enabled", False):
+        return
+
+    prompt = str(getattr(warmup_config, "prompt", "")).strip()
+    if not prompt:
+        raise ValueError("runtime.warmup_request.prompt must be non-empty when enabled")
+
+    output_tokens = int(getattr(warmup_config, "output_tokens", 0))
+    if output_tokens <= 0:
+        raise ValueError(
+            "runtime.warmup_request.output_tokens must be positive when enabled"
+        )
+
+    target_prompt_tokens = None
+    if hasattr(client, "text_tokenizer_handle"):
+        target_prompt_tokens = len(client.text_tokenizer_handle.encode(prompt))
+
+    warmup_request = Request(
+        id=-1,
+        channels={
+            ChannelModality.TEXT: TextChannelRequestContent(
+                input_text=prompt,
+                target_prompt_tokens=target_prompt_tokens,
+            )
+        },
+        requested_output=RequestedOutputSpec(
+            text=TextOutputSpec(target_tokens=output_tokens)
+        ),
+    )
+
+    logger.info(
+        "Sending warmup request with %s prompt tokens and %s target output tokens",
+        target_prompt_tokens if target_prompt_tokens is not None else "unknown",
+        output_tokens,
+    )
+
+    result = asyncio.run(client.send_request(warmup_request, session_id=-1))
+    if not result.success:
+        raise RuntimeError(
+            "Warmup request failed"
+            + (
+                f" with status={result.error_code}"
+                if result.error_code is not None
+                else ""
+            )
+            + (
+                f": {result.error_msg}"
+                if result.error_msg
+                else ""
+            )
+        )
+
+    logger.info("Warmup request completed successfully")
 
 
 def build_evaluator(

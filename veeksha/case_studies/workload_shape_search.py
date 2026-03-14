@@ -61,6 +61,7 @@ class TraceBundleConfig:
 
 @dataclass(frozen=True)
 class RateSearchParams:
+    min_value: float = 0.1
     start_value: float = 1.0
     max_value: float = 64.0
     expansion_factor: float = 2.0
@@ -314,6 +315,7 @@ def _load_search_config(config_path: str) -> WorkloadShapeSearchConfig:
         ),
         trace_bundle=trace_cfg,
         rate_search=RateSearchParams(
+            min_value=float(rate_raw.get("min_value", 0.1)),
             start_value=float(rate_raw.get("start_value", 1.0)),
             max_value=float(rate_raw.get("max_value", 64.0)),
             expansion_factor=float(rate_raw.get("expansion_factor", 2.0)),
@@ -1018,6 +1020,19 @@ def _initial_rates(params: RateSearchParams) -> list[float]:
     return rates
 
 
+def _lower_rates(params: RateSearchParams) -> list[float]:
+    rates: list[float] = []
+    floor = params.round_value(params.min_value)
+    rate = params.round_value(params.start_value / params.expansion_factor)
+    while rate >= floor:
+        rates.append(rate)
+        next_rate = params.round_value(rate / params.expansion_factor)
+        if next_rate >= rate:
+            next_rate = params.round_value(rate - (1 / (10**params.precision)))
+        rate = next_rate
+    return rates
+
+
 def run_workload_shape_search(config: WorkloadShapeSearchConfig) -> dict[str, Any]:
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)
     _ensure_trace_bundle(config)
@@ -1054,6 +1069,32 @@ def run_workload_shape_search(config: WorkloadShapeSearchConfig) -> dict[str, An
                 consecutive_unhealthy
                 >= config.rate_search.stop_after_consecutive_unhealthy
             ):
+                break
+
+    if not seen_healthy:
+        for rate in _lower_rates(config.rate_search):
+            if rate in results_by_rate:
+                continue
+            result = _run_paired_rate(
+                rate=rate,
+                phase="coarse",
+                search_index=evaluation_index,
+                config=config,
+                linear_cfg=linear_cfg,
+                dag_cfg=dag_cfg,
+            )
+            results_by_rate[rate] = result
+            evaluation_index += 1
+            _persist_search_state(
+                config=config, results=list(results_by_rate.values())
+            )
+
+            if result.healthy:
+                seen_healthy = True
+                logger.info(
+                    "Recovered a healthy starting point by backing off to rate=%s",
+                    rate,
+                )
                 break
 
     for _ in range(config.rate_search.refinement_rounds):

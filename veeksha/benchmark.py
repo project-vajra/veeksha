@@ -9,6 +9,7 @@ from veeksha.benchmark_utils import (
     _init_output_dir,
     _monitor_for_completion,
     build_evaluator,
+    maybe_run_server_warmup,
     maybe_run_warmup,
 )
 from veeksha.client.registry import ClientRegistry
@@ -256,6 +257,8 @@ def _run_benchmark(
         config=benchmark_config.client,
         tokenizer_provider=tokenizer_provider,
     )
+
+    maybe_run_server_warmup(benchmark_config.runtime, client)
 
     # some session generators might define a warmup phase
     maybe_run_warmup(session_generator, client)
