@@ -1,4 +1,6 @@
+import json
 from dataclasses import replace
+from pathlib import Path
 
 import pytest  # type: ignore[import]
 
@@ -15,6 +17,7 @@ from veeksha.case_studies.workload_shape_search import (
     _initial_rates,
     _lower_rates,
     _scrape_vllm_metrics,
+    rescore_existing_workload_shape_search,
     run_workload_shape_search,
     score_paired_candidate,
 )
@@ -59,6 +62,61 @@ def _summary(
         mean_prompt_reuse_ratio=prompt_reuse,
         decode_window_tbc_p99_s=0.03,
         decode_window_duration_s=30.0,
+    )
+
+
+def _write_run_metrics(
+    run_dir: Path,
+    *,
+    ttfc_values: list[float],
+    e2e_values: list[float],
+    throughput: float,
+    all_slos_met: bool,
+) -> None:
+    metrics_dir = run_dir / "metrics"
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+    total_requests = len(ttfc_values)
+
+    (metrics_dir / "summary_stats.json").write_text(
+        json.dumps(
+            {
+                "Number of Requests": total_requests,
+                "Number of Completed Requests": total_requests,
+                "Number of Errored Requests": 0,
+                "Error Rate": 0.0,
+                "Observed Session Dispatch Rate": 0.3,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (metrics_dir / "throughput_metrics.json").write_text(
+        json.dumps(
+            {
+                "tpot_based_throughput": throughput,
+                "tbc_based_throughput": throughput,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (metrics_dir / "slo_results.json").write_text(
+        json.dumps({"all_slos_met": all_slos_met}),
+        encoding="utf-8",
+    )
+
+    rows = []
+    for ttfc, e2e in zip(ttfc_values, e2e_values, strict=True):
+        rows.append(
+            {
+                "ttfc": ttfc,
+                "end_to_end_latency": e2e,
+                "tpot": 0.02,
+                "num_total_prompt_tokens": 2000,
+                "num_delta_prompt_tokens": 500,
+            }
+        )
+    (metrics_dir / "request_level_metrics.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
     )
 
 
@@ -314,3 +372,67 @@ def test_search_backs_off_when_initial_rate_is_already_unhealthy(
 
     assert evaluated_rates == [0.3, 0.6, 1.2, 0.15]
     assert result["best_rate"] == pytest.approx(0.15)
+
+
+def test_rescore_existing_runs_can_relax_all_slos_requirement(
+    tmp_path: Path,
+) -> None:
+    source_dir = tmp_path / "search"
+    linear_run_dir = source_dir / "runs" / "rate_0_3" / "linear" / "resolved"
+    dag_run_dir = source_dir / "runs" / "rate_0_3" / "dag" / "resolved"
+
+    _write_run_metrics(
+        linear_run_dir,
+        ttfc_values=[2.2] * 200,
+        e2e_values=[17.0] * 200,
+        throughput=120.0,
+        all_slos_met=False,
+    )
+    _write_run_metrics(
+        dag_run_dir,
+        ttfc_values=[2.6] * 200,
+        e2e_values=[18.5] * 200,
+        throughput=90.0,
+        all_slos_met=False,
+    )
+
+    (source_dir / "workload_shape_search_results.json").write_text(
+        json.dumps(
+            {
+                "results": [
+                    {
+                        "rate": 0.3,
+                        "phase": "coarse",
+                        "run_order": ["linear", "dag"],
+                        "linear_run_dir": str(linear_run_dir),
+                        "dag_run_dir": str(dag_run_dir),
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = WorkloadShapeSearchConfig(
+        output_dir=str(source_dir),
+        linear_benchmark_config="linear.yml",
+        dag_benchmark_config="dag.yml",
+        trace_bundle=TraceBundleConfig(
+            output_dir=str(tmp_path / "traces"),
+            generator_script=str(tmp_path / "generate.py"),
+        ),
+        rate_search=RateSearchParams(),
+        guardrails=Guardrails(require_all_slos_met=False),
+        objective=ObjectiveWeights(),
+        vllm_metrics=VllmMetricsConfig(enabled=False, require_metrics=False),
+    )
+
+    result = rescore_existing_workload_shape_search(config)
+
+    assert result["best_rate"] == pytest.approx(0.3)
+    rescored_json = (
+        source_dir / "rescored" / "workload_shape_search_results.json"
+    )
+    payload = json.loads(rescored_json.read_text(encoding="utf-8"))
+    assert payload["best_rate"] == pytest.approx(0.3)
+    assert payload["results"][0]["healthy"] is True

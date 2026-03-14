@@ -765,6 +765,54 @@ def _persist_search_state(
         yaml.safe_dump(asdict(config), handle, sort_keys=False, default_flow_style=False)
 
 
+def _normalize_run_order(raw: Any) -> list[str]:
+    if isinstance(raw, list):
+        return [str(item) for item in raw]
+    if isinstance(raw, str):
+        return [part.strip() for part in raw.split("->") if part.strip()]
+    return []
+
+
+def _load_existing_paired_runs(
+    source_output_dir: str,
+) -> list[dict[str, Any]]:
+    results_path = Path(source_output_dir) / "workload_shape_search_results.json"
+    payload = _read_json(results_path)
+    rows = payload.get("results")
+    if not isinstance(rows, list):
+        raise ValueError(
+            f"Expected a results list in {results_path}, found {type(rows).__name__}"
+        )
+
+    paired_runs: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        rate = row.get("rate")
+        linear_run_dir = row.get("linear_run_dir")
+        dag_run_dir = row.get("dag_run_dir")
+        if rate is None or not linear_run_dir or not dag_run_dir:
+            continue
+        paired_runs.append(
+            {
+                "rate": float(rate),
+                "phase": str(row.get("phase", "")),
+                "run_order": _normalize_run_order(row.get("run_order")),
+                "linear_run_dir": str(linear_run_dir),
+                "dag_run_dir": str(dag_run_dir),
+            }
+        )
+
+    if not paired_runs:
+        raise ValueError(
+            f"No paired run directories were found in {results_path}. "
+            "Expected linear_run_dir and dag_run_dir entries."
+        )
+
+    paired_runs.sort(key=lambda item: item["rate"])
+    return paired_runs
+
+
 def _benchmark_output_base(
     search_output_dir: str,
     *,
@@ -1163,6 +1211,64 @@ def run_workload_shape_search(config: WorkloadShapeSearchConfig) -> dict[str, An
     }
 
 
+def rescore_existing_workload_shape_search(
+    config: WorkloadShapeSearchConfig,
+    *,
+    source_output_dir: Optional[str] = None,
+    output_dir: Optional[str] = None,
+) -> dict[str, Any]:
+    source_dir = source_output_dir or config.output_dir
+    rescored_output_dir = output_dir or str(Path(source_dir) / "rescored")
+    paired_runs = _load_existing_paired_runs(source_dir)
+
+    rescored_results: list[PairedRateResult] = []
+    for paired_run in paired_runs:
+        rate = float(paired_run["rate"])
+        linear_summary = summarize_run(
+            workload="linear",
+            rate=rate,
+            run_dir=str(paired_run["linear_run_dir"]),
+        )
+        dag_summary = summarize_run(
+            workload="dag",
+            rate=rate,
+            run_dir=str(paired_run["dag_run_dir"]),
+        )
+        rescored = score_paired_candidate(
+            linear=linear_summary,
+            dag=dag_summary,
+            guardrails=config.guardrails,
+            objective=config.objective,
+        )
+        rescored_results.append(
+            replace(
+                rescored,
+                phase=str(paired_run.get("phase", "")),
+                run_order=list(paired_run.get("run_order", [])),
+            )
+        )
+
+    rescored_results.sort(key=lambda item: item.rate)
+    persist_config = replace(config, output_dir=rescored_output_dir)
+    _persist_search_state(config=persist_config, results=rescored_results)
+    best = _best_candidate(rescored_results)
+
+    logger.info(
+        "Rescored %s existing rates from %s. Best healthy rate: %s",
+        len(rescored_results),
+        source_dir,
+        best.rate if best is not None else "none",
+    )
+    return {
+        "source_output_dir": source_dir,
+        "rescored_output_dir": rescored_output_dir,
+        "best_rate": best.rate if best is not None else None,
+        "best_result": best.to_flat_dict() if best is not None else None,
+        "num_results": len(rescored_results),
+        "results": [result.to_flat_dict() for result in rescored_results],
+    }
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
@@ -1175,10 +1281,36 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         required=True,
         help="Path to the paired search YAML config.",
     )
+    parser.add_argument(
+        "--rescore-only",
+        action="store_true",
+        help="Re-score existing benchmark runs without launching new servers.",
+    )
+    parser.add_argument(
+        "--source-output-dir",
+        help=(
+            "Existing search output directory to rescore. "
+            "Defaults to the config output_dir."
+        ),
+    )
+    parser.add_argument(
+        "--rescore-output-dir",
+        help=(
+            "Directory where rescored summary files should be written. "
+            "Defaults to <source-output-dir>/rescored."
+        ),
+    )
     args = parser.parse_args(argv)
 
     config = _load_search_config(args.config)
-    run_workload_shape_search(config)
+    if args.rescore_only:
+        rescore_existing_workload_shape_search(
+            config,
+            source_output_dir=args.source_output_dir,
+            output_dir=args.rescore_output_dir,
+        )
+    else:
+        run_workload_shape_search(config)
     return 0
 
 
