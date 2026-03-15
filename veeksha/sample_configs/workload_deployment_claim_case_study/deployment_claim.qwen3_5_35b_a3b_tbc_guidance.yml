@@ -5,7 +5,7 @@ dag_benchmark_config: dag.veeksha.yml
 trace_metadata_path: traces/workload_deployment_claim_case_study/workload_metadata.json
 
 rate_basis: request_rate
-start_value: 4.0
+start_value: 2.0
 max_value: 16.0
 expansion_factor: 2.0
 max_iterations: 16
@@ -17,7 +17,7 @@ guardrails:
   max_error_rate: 0.02
   max_ttfc_p95_s: 0.75
   max_e2e_p95_s: 10.0
-  max_tbc_p95_s: 0.05
+  max_tbc_p95_s: 0.075
   require_all_slos_met: true
 
 vllm_metrics:
