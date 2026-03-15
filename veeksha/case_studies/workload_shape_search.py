@@ -138,6 +138,7 @@ class BenchmarkRunSummary:
     mean_delta_prompt_tokens: Optional[float]
     mean_cacheable_prompt_tokens: Optional[float]
     mean_prompt_reuse_ratio: Optional[float]
+    decode_window_tbc_p95_s: Optional[float]
     decode_window_tbc_p99_s: Optional[float]
     decode_window_duration_s: Optional[float]
     vllm_metrics_scraped: Optional[bool] = None
@@ -521,6 +522,12 @@ def summarize_run(
         mean_delta_prompt_tokens=_mean(delta_prompt_values),
         mean_cacheable_prompt_tokens=_mean(cacheable_prompt_values),
         mean_prompt_reuse_ratio=_mean(prompt_reuse_values),
+        decode_window_tbc_p95_s=(
+            float(decode_tbc_stats["p95"])
+            if isinstance(decode_tbc_stats, dict)
+            and decode_tbc_stats.get("p95") is not None
+            else None
+        ),
         decode_window_tbc_p99_s=(
             float(decode_tbc_stats["p99"])
             if isinstance(decode_tbc_stats, dict)

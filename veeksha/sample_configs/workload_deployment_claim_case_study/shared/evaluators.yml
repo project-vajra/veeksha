@@ -3,20 +3,20 @@
   stream_metrics: false
   slos:
     - type: constant
-      name: "P99 TTFC <= 3s"
+      name: "P95 TTFC <= 750ms"
       metric: ttfc
-      percentile: 0.99
-      value: 3.0
+      percentile: 0.95
+      value: 0.75
     - type: constant
-      name: "P95 E2E <= 20s"
+      name: "P95 E2E <= 10s"
       metric: e2e
       percentile: 0.95
-      value: 20.0
+      value: 10.0
     - type: constant
-      name: "P99 TBC <= 150ms"
+      name: "P95 TBC <= 50ms"
       metric: tbc
-      percentile: 0.99
-      value: 0.15
+      percentile: 0.95
+      value: 0.05
   text_channel:
     decode_window_enabled: true
     decode_window_config:
@@ -24,4 +24,3 @@
       selection_strategy: all
       anchor_to_client_pickup: true
       require_streaming: true
-

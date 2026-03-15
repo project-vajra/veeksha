@@ -252,13 +252,13 @@ def build_markdown_report(
         f"- Replay guardrail notes: `{replay_note_text}`"
     )
     lines.append(
-        f"- TTFC p99: linear `{fmt(maybe_float(linear_best.get('run_ttfc_p99_s')), '.3f')}s`, DAG replay `{fmt(maybe_float(dag_replay.get('run_ttfc_p99_s')), '.3f')}s`"
+        f"- TTFC p95: linear `{fmt(maybe_float(linear_best.get('run_ttfc_p95_s')), '.3f')}s`, DAG replay `{fmt(maybe_float(dag_replay.get('run_ttfc_p95_s')), '.3f')}s`"
     )
     lines.append(
         f"- E2E p95: linear `{fmt(maybe_float(linear_best.get('run_e2e_p95_s')), '.3f')}s`, DAG replay `{fmt(maybe_float(dag_replay.get('run_e2e_p95_s')), '.3f')}s`"
     )
     lines.append(
-        f"- Decode-window TBC p99: linear `{fmt(maybe_float(linear_best.get('run_decode_window_tbc_p99_s')) * 1000.0 if linear_best.get('run_decode_window_tbc_p99_s') is not None else None, '.1f')} ms`, DAG replay `{fmt(maybe_float(dag_replay.get('run_decode_window_tbc_p99_s')) * 1000.0 if dag_replay.get('run_decode_window_tbc_p99_s') is not None else None, '.1f')} ms`"
+        f"- Decode-window TBC p95: linear `{fmt(maybe_float(linear_best.get('run_decode_window_tbc_p95_s')) * 1000.0 if linear_best.get('run_decode_window_tbc_p95_s') is not None else None, '.1f')} ms`, DAG replay `{fmt(maybe_float(dag_replay.get('run_decode_window_tbc_p95_s')) * 1000.0 if dag_replay.get('run_decode_window_tbc_p95_s') is not None else None, '.1f')} ms`"
     )
     lines.append("")
 
@@ -374,17 +374,17 @@ def main() -> None:
             "requested_output_tokens_per_s": requested_output_uplift,
         },
         "replay_relative_deltas": {
-            "ttfc_p99_pct": percent_delta(
-                maybe_float(dag_replay.get("run_ttfc_p99_s")),
-                maybe_float(linear_best.get("run_ttfc_p99_s")),
+            "ttfc_p95_pct": percent_delta(
+                maybe_float(dag_replay.get("run_ttfc_p95_s")),
+                maybe_float(linear_best.get("run_ttfc_p95_s")),
             ),
             "e2e_p95_pct": percent_delta(
                 maybe_float(dag_replay.get("run_e2e_p95_s")),
                 maybe_float(linear_best.get("run_e2e_p95_s")),
             ),
-            "tbc_p99_pct": percent_delta(
-                maybe_float(dag_replay.get("run_decode_window_tbc_p99_s")),
-                maybe_float(linear_best.get("run_decode_window_tbc_p99_s")),
+            "tbc_p95_pct": percent_delta(
+                maybe_float(dag_replay.get("run_decode_window_tbc_p95_s")),
+                maybe_float(linear_best.get("run_decode_window_tbc_p95_s")),
             ),
             "tpot_based_throughput_pct": percent_delta(
                 maybe_float(dag_replay.get("run_tpot_based_throughput")),
@@ -402,22 +402,22 @@ def main() -> None:
     bar_plot(
         path=slo_plot,
         title=f"{args.title}: SLO metrics at rho_A*",
-        labels=["TTFC p99 (s)", "E2E p95 (s)", "TBC p99 (ms)"],
+        labels=["TTFC p95 (s)", "E2E p95 (s)", "TBC p95 (ms)"],
         linear_values=[
-            maybe_float(linear_best.get("run_ttfc_p99_s")),
+            maybe_float(linear_best.get("run_ttfc_p95_s")),
             maybe_float(linear_best.get("run_e2e_p95_s")),
             (
-                maybe_float(linear_best.get("run_decode_window_tbc_p99_s")) * 1000.0
-                if linear_best.get("run_decode_window_tbc_p99_s") is not None
+                maybe_float(linear_best.get("run_decode_window_tbc_p95_s")) * 1000.0
+                if linear_best.get("run_decode_window_tbc_p95_s") is not None
                 else None
             ),
         ],
         dag_values=[
-            maybe_float(dag_replay.get("run_ttfc_p99_s")),
+            maybe_float(dag_replay.get("run_ttfc_p95_s")),
             maybe_float(dag_replay.get("run_e2e_p95_s")),
             (
-                maybe_float(dag_replay.get("run_decode_window_tbc_p99_s")) * 1000.0
-                if dag_replay.get("run_decode_window_tbc_p99_s") is not None
+                maybe_float(dag_replay.get("run_decode_window_tbc_p95_s")) * 1000.0
+                if dag_replay.get("run_decode_window_tbc_p95_s") is not None
                 else None
             ),
         ],

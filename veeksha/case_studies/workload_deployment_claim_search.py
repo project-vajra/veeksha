@@ -37,10 +37,10 @@ class Guardrails:
     min_completed_requests: int = 150
     min_completion_ratio: float = 0.97
     max_error_rate: float = 0.02
-    max_ttfc_p99_s: float = 3.0
-    max_e2e_p95_s: float = 20.0
-    max_tbc_p99_s: float = 0.15
-    require_all_slos_met: bool = False
+    max_ttfc_p95_s: float = 0.75
+    max_e2e_p95_s: float = 10.0
+    max_tbc_p95_s: float = 0.05
+    require_all_slos_met: bool = True
 
 
 @dataclass(frozen=True)
@@ -143,10 +143,14 @@ def _load_config(config_path: str) -> WorkloadDeploymentClaimConfig:
             min_completed_requests=int(guardrails_raw.get("min_completed_requests", 150)),
             min_completion_ratio=float(guardrails_raw.get("min_completion_ratio", 0.97)),
             max_error_rate=float(guardrails_raw.get("max_error_rate", 0.02)),
-            max_ttfc_p99_s=float(guardrails_raw.get("max_ttfc_p99_s", 3.0)),
-            max_e2e_p95_s=float(guardrails_raw.get("max_e2e_p95_s", 20.0)),
-            max_tbc_p99_s=float(guardrails_raw.get("max_tbc_p99_s", 0.15)),
-            require_all_slos_met=bool(guardrails_raw.get("require_all_slos_met", False)),
+            max_ttfc_p95_s=float(
+                guardrails_raw.get("max_ttfc_p95_s", guardrails_raw.get("max_ttfc_p99_s", 0.75))
+            ),
+            max_e2e_p95_s=float(guardrails_raw.get("max_e2e_p95_s", 10.0)),
+            max_tbc_p95_s=float(
+                guardrails_raw.get("max_tbc_p95_s", guardrails_raw.get("max_tbc_p99_s", 0.05))
+            ),
+            require_all_slos_met=bool(guardrails_raw.get("require_all_slos_met", True)),
         ),
         vllm_metrics=VllmMetricsConfig(
             enabled=bool(vllm_metrics_raw.get("enabled", True)),
@@ -234,17 +238,17 @@ def _evaluate_guardrails(
     if summary.error_rate > guardrails.max_error_rate:
         notes.append(f"error_rate>{guardrails.max_error_rate:.3f}")
         healthy = False
-    if summary.ttfc_p99_s is None or summary.ttfc_p99_s > guardrails.max_ttfc_p99_s:
-        notes.append(f"ttfc_p99>{guardrails.max_ttfc_p99_s:.3f}s")
+    if summary.ttfc_p95_s is None or summary.ttfc_p95_s > guardrails.max_ttfc_p95_s:
+        notes.append(f"ttfc_p95>{guardrails.max_ttfc_p95_s:.3f}s")
         healthy = False
     if summary.e2e_p95_s is None or summary.e2e_p95_s > guardrails.max_e2e_p95_s:
         notes.append(f"e2e_p95>{guardrails.max_e2e_p95_s:.3f}s")
         healthy = False
     if (
-        summary.decode_window_tbc_p99_s is None
-        or summary.decode_window_tbc_p99_s > guardrails.max_tbc_p99_s
+        summary.decode_window_tbc_p95_s is None
+        or summary.decode_window_tbc_p95_s > guardrails.max_tbc_p95_s
     ):
-        notes.append(f"tbc_p99>{guardrails.max_tbc_p99_s:.3f}s")
+        notes.append(f"tbc_p95>{guardrails.max_tbc_p95_s:.3f}s")
         healthy = False
     if guardrails.require_all_slos_met and summary.all_slos_met is not True:
         notes.append("benchmark_slos_not_met")

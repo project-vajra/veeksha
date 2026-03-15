@@ -41,6 +41,7 @@ def make_summary(**overrides) -> BenchmarkRunSummary:
         "mean_delta_prompt_tokens": 500.0,
         "mean_cacheable_prompt_tokens": 1500.0,
         "mean_prompt_reuse_ratio": 0.75,
+        "decode_window_tbc_p95_s": 0.08,
         "decode_window_tbc_p99_s": 0.1,
         "decode_window_duration_s": 5.0,
         "vllm_metrics_scraped": True,
@@ -100,12 +101,12 @@ def test_load_rate_model_and_conversion(tmp_path: Path) -> None:
 
 def test_evaluate_guardrails_checks_decode_window_tbc() -> None:
     healthy, notes = _evaluate_guardrails(
-        make_summary(decode_window_tbc_p99_s=0.2),
-        Guardrails(max_tbc_p99_s=0.15),
+        make_summary(decode_window_tbc_p95_s=0.06),
+        Guardrails(max_tbc_p95_s=0.05),
     )
 
     assert not healthy
-    assert any("tbc_p99" in note for note in notes)
+    assert any("tbc_p95" in note for note in notes)
 
 
 def test_persist_results_records_normalized_rate_fields(tmp_path: Path) -> None:
