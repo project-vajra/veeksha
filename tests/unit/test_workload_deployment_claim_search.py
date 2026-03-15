@@ -14,6 +14,7 @@ from veeksha.case_studies.workload_deployment_claim_search import (
     _rate_summary_for_workload,
 )
 from veeksha.case_studies.workload_shape_search import BenchmarkRunSummary
+from veeksha.case_studies.workload_shape_search import summarize_run
 
 
 def make_summary(**overrides) -> BenchmarkRunSummary:
@@ -174,3 +175,80 @@ def test_persist_results_records_normalized_rate_fields(tmp_path: Path) -> None:
     assert payload["results"][0]["derived_session_rate"] == 0.2
     assert payload["results"][0]["fresh_input_tokens_per_s"] == 500.0
     assert payload["results"][0]["requested_output_tokens_per_s"] == 300.0
+
+
+def test_summarize_run_falls_back_to_slo_tbc_p95(tmp_path: Path) -> None:
+    metrics_dir = tmp_path / "run" / "metrics"
+    metrics_dir.mkdir(parents=True)
+
+    (metrics_dir / "summary_stats.json").write_text(
+        json.dumps(
+            {
+                "Number of Requests": 10,
+                "Number of Completed Requests": 10,
+                "Number of Errored Requests": 0,
+                "Error Rate": 0.0,
+                "Observed Session Dispatch Rate": 0.5,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (metrics_dir / "throughput_metrics.json").write_text(
+        json.dumps(
+            {
+                "tpot_based_throughput": 10.0,
+                "tbc_based_throughput": 5.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (metrics_dir / "slo_results.json").write_text(
+        json.dumps(
+            {
+                "all_slos_met": True,
+                "results": [
+                    {
+                        "slo_metric_key": "tbc_p95",
+                        "observed_value": 0.01498,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (metrics_dir / "request_level_metrics.jsonl").write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "ttfc": 0.1,
+                    "end_to_end_latency": 1.0,
+                    "tpot": 0.01,
+                    "num_total_prompt_tokens": 1000,
+                    "num_delta_prompt_tokens": 500,
+                }
+            )
+            for _ in range(10)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (metrics_dir / "decode_window_metrics.json").write_text(
+        json.dumps(
+            {
+                "windows": {"total_duration_s": 1.0},
+                "tbc_in_window_stats": {
+                    "count": 10,
+                    "mean": 0.012,
+                    "median": 0.012,
+                    "p90": 0.014,
+                    "p99": 0.02,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = summarize_run(workload="linear", rate=0.5, run_dir=str(tmp_path / "run"))
+
+    assert summary.decode_window_tbc_p95_s == 0.01498
+    assert summary.decode_window_tbc_p99_s == 0.02

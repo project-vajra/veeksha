@@ -256,6 +256,20 @@ def _optional_float(value: Any) -> Optional[float]:
     return float(value)
 
 
+def _slo_observed_value(slo_results: dict[str, Any], slo_metric_key: str) -> Optional[float]:
+    results = slo_results.get("results")
+    if not isinstance(results, list):
+        return None
+    for row in results:
+        if not isinstance(row, dict):
+            continue
+        if row.get("slo_metric_key") != slo_metric_key:
+            continue
+        observed = row.get("observed_value")
+        return _optional_float(observed)
+    return None
+
+
 def _relative_gap(lhs: Optional[float], rhs: Optional[float], *, cap: float) -> float:
     if lhs is None or rhs is None or lhs <= 0 or rhs <= 0:
         return 0.0
@@ -526,7 +540,7 @@ def summarize_run(
             float(decode_tbc_stats["p95"])
             if isinstance(decode_tbc_stats, dict)
             and decode_tbc_stats.get("p95") is not None
-            else None
+            else _slo_observed_value(slo_results, "tbc_p95")
         ),
         decode_window_tbc_p99_s=(
             float(decode_tbc_stats["p99"])
