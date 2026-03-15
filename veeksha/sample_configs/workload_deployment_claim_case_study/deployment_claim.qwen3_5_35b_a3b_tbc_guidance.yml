@@ -6,9 +6,9 @@ trace_metadata_path: traces/workload_deployment_claim_case_study/workload_metada
 
 rate_basis: request_rate
 start_value: 1.0
-max_value: 4.0
+max_value: 8.0
 expansion_factor: 2.0
-max_iterations: 10
+max_iterations: 12
 precision: 2
 
 guardrails:
