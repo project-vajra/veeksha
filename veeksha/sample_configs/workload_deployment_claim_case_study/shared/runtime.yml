@@ -1,0 +1,7 @@
+benchmark_timeout: 180
+post_timeout_grace_seconds: 30
+max_sessions: -1
+num_dispatcher_threads: 4
+num_completion_threads: 4
+num_client_threads: 8
+
