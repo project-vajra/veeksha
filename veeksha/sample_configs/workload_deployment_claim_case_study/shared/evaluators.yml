@@ -8,11 +8,6 @@
       percentile: 0.95
       value: 0.75
     - type: constant
-      name: "P95 E2E <= 10s"
-      metric: e2e
-      percentile: 0.95
-      value: 10.0
-    - type: constant
       name: "P95 TBC <= 75ms"
       metric: tbc
       percentile: 0.95

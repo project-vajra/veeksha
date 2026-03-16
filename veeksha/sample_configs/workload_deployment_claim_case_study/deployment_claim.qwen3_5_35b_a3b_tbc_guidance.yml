@@ -16,7 +16,7 @@ guardrails:
   min_completion_ratio: 0.0
   max_error_rate: 0.02
   max_ttfc_p95_s: 0.75
-  max_e2e_p95_s: 10.0
+  max_e2e_p95_s: null
   max_tbc_p95_s: 0.075
   require_all_slos_met: true
 

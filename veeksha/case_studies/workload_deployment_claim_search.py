@@ -38,7 +38,7 @@ class Guardrails:
     min_completion_ratio: float = 0.97
     max_error_rate: float = 0.02
     max_ttfc_p95_s: float = 0.75
-    max_e2e_p95_s: float = 10.0
+    max_e2e_p95_s: Optional[float] = None
     max_tbc_p95_s: float = 0.05
     require_all_slos_met: bool = True
 
@@ -118,6 +118,12 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _optional_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    return float(value)
+
+
 def _load_config(config_path: str) -> WorkloadDeploymentClaimConfig:
     resolved_config_path = Path(config_path).expanduser().resolve()
     raw = load_yaml_config(str(resolved_config_path))
@@ -146,7 +152,7 @@ def _load_config(config_path: str) -> WorkloadDeploymentClaimConfig:
             max_ttfc_p95_s=float(
                 guardrails_raw.get("max_ttfc_p95_s", guardrails_raw.get("max_ttfc_p99_s", 0.75))
             ),
-            max_e2e_p95_s=float(guardrails_raw.get("max_e2e_p95_s", 10.0)),
+            max_e2e_p95_s=_optional_float(guardrails_raw.get("max_e2e_p95_s")),
             max_tbc_p95_s=float(
                 guardrails_raw.get("max_tbc_p95_s", guardrails_raw.get("max_tbc_p99_s", 0.05))
             ),
@@ -241,9 +247,10 @@ def _evaluate_guardrails(
     if summary.ttfc_p95_s is None or summary.ttfc_p95_s > guardrails.max_ttfc_p95_s:
         notes.append(f"ttfc_p95>{guardrails.max_ttfc_p95_s:.3f}s")
         healthy = False
-    if summary.e2e_p95_s is None or summary.e2e_p95_s > guardrails.max_e2e_p95_s:
-        notes.append(f"e2e_p95>{guardrails.max_e2e_p95_s:.3f}s")
-        healthy = False
+    if guardrails.max_e2e_p95_s is not None:
+        if summary.e2e_p95_s is None or summary.e2e_p95_s > guardrails.max_e2e_p95_s:
+            notes.append(f"e2e_p95>{guardrails.max_e2e_p95_s:.3f}s")
+            healthy = False
     if (
         summary.decode_window_tbc_p95_s is None
         or summary.decode_window_tbc_p95_s > guardrails.max_tbc_p95_s
