@@ -3,6 +3,8 @@ set -euo pipefail
 
 VENV314="${VENV314:-.venv314}"
 
+bash scripts/test_setup_314.sh
+
 if [[ -f "${VENV314}/bin/activate" ]]; then
   # shellcheck source=/dev/null
   source "${VENV314}/bin/activate"
