@@ -13,3 +13,4 @@ integrating with external tools.
    sweeps
    server_management
    wandb_integration
+   microbenchmarks
