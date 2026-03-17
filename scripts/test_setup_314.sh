@@ -8,8 +8,7 @@ VENV314="${VENV314:-.venv314}"
 PY314="${PY314:-3.14t}"
 STAMP_FILE="${VENV314}/.veeksha-test-deps.sha256"
 
-echo "Ensuring ${VENV314} (Python ${PY314}) exists..."
-if [[ ! -f "${VENV314}/bin/activate" ]]; then
+create_env() {
   if command -v uv >/dev/null 2>&1; then
     echo "Using uv to create ${VENV314}"
     uv venv --python "${PY314}" "${VENV314}"
@@ -20,8 +19,23 @@ if [[ ! -f "${VENV314}/bin/activate" ]]; then
     echo "ERROR: Neither 'uv' nor 'python${PY314}' found. Please install one." >&2
     exit 1
   fi
+}
+
+echo "Ensuring ${VENV314} (Python ${PY314}) exists..."
+if [[ -f "${VENV314}/bin/activate" ]]; then
+  if [[ -x "${VENV314}/bin/python" && -f "${VENV314}/pyvenv.cfg" ]]; then
+    echo "${VENV314} already present."
+  else
+    echo "${VENV314} exists but is invalid; recreating it."
+    if [[ -z "${VENV314}" || "${VENV314}" == "/" ]]; then
+      echo "ERROR: Refusing to delete unsafe VENV314 path '${VENV314}'." >&2
+      exit 1
+    fi
+    rm -rf "${VENV314}"
+    create_env
+  fi
 else
-  echo "${VENV314} already present."
+  create_env
 fi
 
 if [[ -f "uv.lock" ]]; then

@@ -1,6 +1,7 @@
 """Timed synthetic session trace flavor generator."""
 
 import json
+from collections.abc import Hashable
 from pathlib import Path
 from typing import Any, Dict, List, cast
 
@@ -119,8 +120,8 @@ class TimedSyntheticSessionTraceFlavorGenerator(TraceFlavorGeneratorBase):
             df["session_context"] = None
 
         for _, group in df.groupby("session_id", sort=False):
-            present_contexts: List[tuple[int, TraceNodeContext]] = []
-            missing_context_rows: List[int] = []
+            present_contexts: List[tuple[Hashable, TraceNodeContext]] = []
+            missing_context_rows: List[Hashable] = []
 
             for idx, row in group.iterrows():
                 raw = row.get("session_context")
@@ -205,9 +206,9 @@ class TimedSyntheticSessionTraceFlavorGenerator(TraceFlavorGeneratorBase):
 
     def _infer_linear_session_contexts(
         self, group: pd.DataFrame
-    ) -> Dict[int, Dict[str, object]]:
+    ) -> Dict[Hashable, Dict[str, object]]:
         """Backfill legacy linear traces that predate ``session_context``."""
-        contexts: Dict[int, Dict[str, object]] = {}
+        contexts: Dict[Hashable, Dict[str, object]] = {}
         ordered = group
         use_turn_idx = "turn_idx" in group.columns
         if use_turn_idx:
