@@ -2,7 +2,8 @@
 
 import os
 from abc import abstractmethod
-from typing import Iterator, List, Optional, cast
+from dataclasses import dataclass
+from typing import Dict, Iterator, List, Optional, cast
 
 import pandas as pd
 
@@ -21,9 +22,18 @@ from veeksha.core.session_graph import (
     SessionNode,
     add_edge,
     add_node,
+    topological_order,
 )
 from veeksha.core.tokenizer import TokenizerProvider
 from veeksha.types import ChannelModality
+
+
+@dataclass(frozen=True)
+class TraceNodeContext:
+    node_id: int
+    parent_nodes: List[int]
+    history_parent: Optional[int]
+    wait_after_ready: float
 
 
 class TraceFlavorGeneratorBase:
@@ -110,7 +120,7 @@ class TraceFlavorGeneratorBase:
 
     def _get_session_groups(self) -> Iterator:
         """Get iterator over session groups."""
-        return iter(self.trace_df.groupby("session_id"))
+        return iter(self.trace_df.groupby("session_id", sort=False))
 
     def _next_session_id(self) -> int:
         """Get next global session ID."""
@@ -166,13 +176,77 @@ class TraceFlavorGeneratorBase:
                 )
         return graph
 
+    def _build_session_graph_from_contexts(
+        self, node_contexts: List[TraceNodeContext]
+    ) -> SessionGraph:
+        """Build a session graph from normalized trace node contexts."""
+        graph = SessionGraph()
+        seen_nodes = set()
+
+        for ctx in node_contexts:
+            if ctx.node_id in seen_nodes:
+                raise ValueError(f"Duplicate node_id {ctx.node_id} in session trace.")
+            seen_nodes.add(ctx.node_id)
+
+            if len(set(ctx.parent_nodes)) != len(ctx.parent_nodes):
+                raise ValueError(
+                    f"node_id {ctx.node_id} contains duplicate parent_nodes."
+                )
+            if (
+                ctx.history_parent is not None
+                and ctx.history_parent not in ctx.parent_nodes
+            ):
+                raise ValueError(
+                    f"node_id {ctx.node_id} has history_parent={ctx.history_parent} "
+                    "which is not present in parent_nodes."
+                )
+
+            add_node(
+                graph,
+                SessionNode(id=ctx.node_id, wait_after_ready=ctx.wait_after_ready),
+            )
+
+        for ctx in node_contexts:
+            for parent_node in ctx.parent_nodes:
+                add_edge(
+                    graph,
+                    SessionEdge(
+                        src=parent_node,
+                        dst=ctx.node_id,
+                        is_history_parent=parent_node == ctx.history_parent,
+                    ),
+                )
+
+        topological_order(graph)
+        return graph
+
+    @staticmethod
+    def _create_session_context(
+        node_id: int,
+        wait_after_ready: float,
+        parent_nodes: Optional[List[int]] = None,
+        history_parent: Optional[int] = None,
+    ) -> Dict[str, object]:
+        parent_nodes = list(parent_nodes or [])
+        if history_parent is not None and history_parent not in parent_nodes:
+            raise ValueError(
+                f"history_parent={history_parent} is not in parent_nodes={parent_nodes}"
+            )
+        return {
+            "node_id": node_id,
+            "wait_after_ready": wait_after_ready,
+            "parent_nodes": parent_nodes,
+            "history_parent": history_parent,
+        }
+
     def _create_text_request(
         self,
         node_id: int,
         prompt_text: str,
         target_output_tokens: int,
         wait_after_ready: float,
-        parent_node: Optional[int] = None,
+        parent_nodes: Optional[List[int]] = None,
+        history_parent: Optional[int] = None,
         target_prompt_tokens: Optional[int] = None,
     ) -> Request:
         """Create a text-only Request and attach output spec."""
@@ -183,12 +257,12 @@ class TraceFlavorGeneratorBase:
                 target_prompt_tokens=target_prompt_tokens,
             )
         }
-        session_context = {
-            "node_id": node_id,
-            "wait_after_ready": wait_after_ready,
-            "parent_nodes": [parent_node] if parent_node is not None else [],
-            "history_parent": parent_node,
-        }
+        session_context = self._create_session_context(
+            node_id=node_id,
+            wait_after_ready=wait_after_ready,
+            parent_nodes=parent_nodes,
+            history_parent=history_parent,
+        )
         requested_output = RequestedOutputSpec(
             text=TextOutputSpec(target_tokens=target_output_tokens)
         )

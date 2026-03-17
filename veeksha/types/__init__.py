@@ -31,7 +31,7 @@ class SessionGeneratorType(BaseIntEnum):
 
 
 class TraceFlavorType(BaseIntEnum):
-    TIMED_SYNTHETIC_MULTI_TURN = 1
+    TIMED_SYNTHETIC_SESSION = 1
     SHARED_PREFIX = 2
     RAG = 3
     REQUEST_LOG = 4

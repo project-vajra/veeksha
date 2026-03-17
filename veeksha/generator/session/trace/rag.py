@@ -128,7 +128,8 @@ class RAGTraceFlavorGenerator(TraceFlavorGeneratorBase):
             prompt_text=str(row["prompt_text"]),
             target_output_tokens=cast(int, row["output_length"]),
             wait_after_ready=wait_time,
-            parent_node=None,
+            parent_nodes=[],
+            history_parent=None,
             target_prompt_tokens=cast(int, row["input_length"]),
         )
         session_graph = self._build_linear_session_graph(1, [wait_time])

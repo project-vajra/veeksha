@@ -87,17 +87,19 @@ class BaseTraceFlavorConfig(BasePolyConfig):
 
 
 @frozen_dataclass
-class TimedSyntheticMultiTurnTraceFlavorConfig(BaseTraceFlavorConfig):
-    """Timed synthetic multi-turn trace flavor configuration with context caching."""
+class TimedSyntheticSessionTraceFlavorConfig(BaseTraceFlavorConfig):
+    """Timed synthetic session trace flavor configuration with context caching."""
 
     corpus_file: str = field(
         "traces/corpus.txt", help="Path to corpus file for prompt padding"
     )
-    page_size: int = field(16, help="Number of unique tokens per session prefix")
+    page_size: int = field(
+        16, help="Number of unique tokens per history-lineage prefix"
+    )
 
     @classmethod
     def get_type(cls):
-        return TraceFlavorType.TIMED_SYNTHETIC_MULTI_TURN
+        return TraceFlavorType.TIMED_SYNTHETIC_SESSION
 
 
 @frozen_dataclass
@@ -188,7 +190,7 @@ class TraceSessionGeneratorConfig(BaseSessionGeneratorConfig):
         True, help="Whether to wrap/loop over the trace indefinitely"
     )
     flavor: BaseTraceFlavorConfig = field(
-        default_factory=TimedSyntheticMultiTurnTraceFlavorConfig,
+        default_factory=TimedSyntheticSessionTraceFlavorConfig,
         help="Trace flavor configuration.",
     )
 

@@ -85,12 +85,6 @@ Documentation
 
 .. toctree::
    :maxdepth: 2
-   :caption: Microbenchmarks
-
-   microbenchmarks/index
-
-.. toctree::
-   :maxdepth: 2
    :caption: User Guide
 
    user_guide/index
