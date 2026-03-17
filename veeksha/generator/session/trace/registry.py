@@ -10,10 +10,10 @@ class TraceFlavorGeneratorRegistry(BaseRegistry):
 
 
 TraceFlavorGeneratorRegistry.register(
-    TraceFlavorType.TIMED_SYNTHETIC_MULTI_TURN,
+    TraceFlavorType.TIMED_SYNTHETIC_SESSION,
     _LazyLoader(
-        "veeksha.generator.session.trace.multi_turn",
-        "TimedSyntheticMultiTurnTraceFlavorGenerator",
+        "veeksha.generator.session.trace.timed_synthetic_session",
+        "TimedSyntheticSessionTraceFlavorGenerator",
     ),
 )
 TraceFlavorGeneratorRegistry.register(

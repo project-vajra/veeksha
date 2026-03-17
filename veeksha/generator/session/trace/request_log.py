@@ -77,7 +77,8 @@ class RequestLogTraceFlavorGenerator(TraceFlavorGeneratorBase):
                 prompt_text=prompt_text,
                 target_output_tokens=output_length,
                 wait_after_ready=0.0,
-                parent_node=i - 1 if i > 0 else None,
+                parent_nodes=[i - 1] if i > 0 else [],
+                history_parent=i - 1 if i > 0 else None,
                 target_prompt_tokens=input_length,
             )
             requests[i] = request

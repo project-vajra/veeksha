@@ -147,6 +147,8 @@ class UntimedContentMultiTurnTraceFlavorGenerator(TraceFlavorGeneratorBase):
                 prompt_text="",
                 target_output_tokens=1,
                 wait_after_ready=0.0,
+                parent_nodes=[],
+                history_parent=None,
             )
             session_graph = self._build_linear_session_graph(1, [0.0])
             return Session(
@@ -175,7 +177,8 @@ class UntimedContentMultiTurnTraceFlavorGenerator(TraceFlavorGeneratorBase):
                 prompt_text=user_text,
                 target_output_tokens=assistant_tokens,
                 wait_after_ready=0.0,
-                parent_node=i - 1 if i > 0 else None,
+                parent_nodes=[i - 1] if i > 0 else [],
+                history_parent=None,
                 target_prompt_tokens=target_prompt_tokens,
             )
             # Pre-populate history from the dataset
