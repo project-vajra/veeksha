@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, cast
 
 import pandas as pd  # type: ignore[import]
 
@@ -253,7 +253,12 @@ class TimedSyntheticSessionTraceFlavorGenerator(TraceFlavorGeneratorBase):
                 f"{type(raw).__name__}."
             )
 
-        required_keys = {"node_id", "parent_nodes", "history_parent", "wait_after_ready"}
+        required_keys = {
+            "node_id",
+            "parent_nodes",
+            "history_parent",
+            "wait_after_ready",
+        }
         missing_keys = required_keys - set(raw.keys())
         if missing_keys:
             missing = ", ".join(sorted(missing_keys))

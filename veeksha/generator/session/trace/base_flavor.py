@@ -192,7 +192,10 @@ class TraceFlavorGeneratorBase:
                 raise ValueError(
                     f"node_id {ctx.node_id} contains duplicate parent_nodes."
                 )
-            if ctx.history_parent is not None and ctx.history_parent not in ctx.parent_nodes:
+            if (
+                ctx.history_parent is not None
+                and ctx.history_parent not in ctx.parent_nodes
+            ):
                 raise ValueError(
                     f"node_id {ctx.node_id} has history_parent={ctx.history_parent} "
                     "which is not present in parent_nodes."
