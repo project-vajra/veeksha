@@ -13,7 +13,7 @@ session_generator:
   type: trace
   trace_file: traces/claude-code/claude_code_trace-filtered-ctxt_len_8k.jsonl
   flavor:
-    type: timed_synthetic_multi_turn
+    type: timed_synthetic_session
 
 client:
   type: openai_chat_completions

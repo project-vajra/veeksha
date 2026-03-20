@@ -228,7 +228,7 @@ stored in JSONL files. Each trace file contains metadata matching real productio
       type: trace
       trace_file: traces/timed_synthetic_trace.jsonl
       flavor:
-        type: timed_synthetic_multi_turn
+        type: timed_synthetic_session
 
 
 Trace flavors
@@ -262,7 +262,7 @@ Comparison table:
      - Single-turn
      - Random tokens
      - Simple (input, output) length distributions (e.g. ShareGPT CSVs)
-   * - ``timed_synthetic_multi_turn``
+   * - ``timed_synthetic_session``
      - Multi-turn
      - Synthetic (from length)
      - Coding assistants, long-context chat, prefix caching
@@ -291,19 +291,22 @@ Comparison table:
         flavor:
           type: request_log
 
-**timed_synthetic_multi_turn** (``type: timed_synthetic_multi_turn``)
-    Multi-turn session traces with context caching:
+**timed_synthetic_session** (``type: timed_synthetic_session``)
+    Timed session traces with context caching:
 
-    - Multi-turn conversations with history accumulation
-    - The first ``page_size`` tokens are guaranteed to be unique across sessions for KV-cache diversity
-    - Wait times between turns preserved from trace
+    - Replays linear or DAG sessions using ``session_context``
+    - The first ``page_size`` tokens are guaranteed to be unique across history lineages for KV-cache diversity
+    - Wait times between nodes preserved from trace
 
     Required columns: ``session_id``, ``input_length``, ``new_input_length``, ``output_length``
+    Topology contract: ``session_context`` with ``node_id``, ``parent_nodes``,
+    ``history_parent``, and ``wait_after_ready``. Legacy traces without
+    ``session_context`` are interpreted as linear sessions by row order.
 
     .. code-block:: yaml
 
         flavor:
-          type: timed_synthetic_multi_turn
+          type: timed_synthetic_session
           page_size: 16          # Token page size for prefix caching
           corpus_file: null      # Optional corpus for prompt generation
 

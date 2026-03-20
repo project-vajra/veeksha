@@ -302,13 +302,13 @@ Three session generator types are available:
           type: trace
           trace_file: traces/timed_synthetic_trace.jsonl
           flavor:
-            type: timed_synthetic_multi_turn
+            type: timed_synthetic_session
           wrap_mode: true
 
     Supported trace flavors:
 
     - ``request_log``: Independent requests with token lengths only
-    - ``timed_synthetic_multi_turn``: Timed multi-turn session traces with synthetic content and context caching
+    - ``timed_synthetic_session``: Timed session traces with synthetic content and context caching
     - ``untimed_content_multi_turn``: Replay conversation datasets with actual message content
     - ``shared_prefix``: Shared-prefix conversation traces
     - ``rag``: RAG (Retrieval-Augmented Generation) traces
