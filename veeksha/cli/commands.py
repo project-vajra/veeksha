@@ -31,6 +31,7 @@ from veeksha.microbench.config import (
     StressMicrobenchmarkConfig,
 )
 from veeksha.microbench.decode import run_decode
+from veeksha.microbench.diff import DiffConfig, run_diff
 from veeksha.microbench.prefill import run_prefill
 from veeksha.microbench.stress import run_stress
 
@@ -40,6 +41,7 @@ _RUNNERS = {
     PrefillMicrobenchmarkConfig: lambda configs: [run_prefill(c) for c in configs],
     DecodeMicrobenchmarkConfig: lambda configs: [run_decode(c) for c in configs],
     StressMicrobenchmarkConfig: lambda configs: [run_stress(c) for c in configs],
+    DiffConfig: lambda configs: [run_diff(c) for c in configs],
 }
 
 
