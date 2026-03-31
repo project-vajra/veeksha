@@ -404,7 +404,7 @@ class LMEvalAccuracyEvaluator(BaseAccuracyEvaluator):
         os.makedirs(output_dir, exist_ok=True)
         path = os.path.join(output_dir, "lmeval_results.json")
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(self._results_dict, f, indent=2)
+            json.dump(self._results_dict, f, indent=2, default=str)
 
     # ---------------------------------------------------------------------
     # Progress tracking
