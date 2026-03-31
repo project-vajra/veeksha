@@ -8,12 +8,18 @@ from datetime import datetime, timezone
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from vidhi import dataclass_to_dict
 
 from veeksha.cli.benchmarks import BenchmarkCliRunner
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.logger import init_logger
 from veeksha.microbench.common import ValidationResult
 from veeksha.microbench.config import BaseMicrobenchmarkConfig
+from veeksha.wandb_integration import (
+    maybe_finish_microbench_wandb_run,
+    maybe_init_microbench_wandb_run,
+    maybe_log_microbench_results,
+)
 
 logger = init_logger(__name__)
 console = Console()
@@ -31,11 +37,28 @@ def run(
     cfg = _make_run_dir(cfg, type_name)
     _print_banner(cfg, type_name, banner_rows)
 
-    if not cfg.validate_only:
-        benchmark_configs: list[BenchmarkConfig] = build_benchmark_configs(cfg)
-        BenchmarkCliRunner(benchmark_configs).run_all()
+    maybe_init_microbench_wandb_run(
+        cfg.wandb,
+        microbench_type=type_name,
+        output_dir=cfg.output_dir,
+        config_dict=dataclass_to_dict(cfg),
+    )
 
-    print_results_table(cfg)
+    try:
+        if not cfg.validate_only:
+            benchmark_configs: list[BenchmarkConfig] = build_benchmark_configs(cfg)
+            BenchmarkCliRunner(benchmark_configs).run_all()
+
+        print_results_table(cfg)
+
+        maybe_log_microbench_results(
+            cfg.wandb,
+            microbench_type=type_name,
+            results_json_path=os.path.join(cfg.output_dir, f"{type_name}_results.json"),
+            output_dir=cfg.output_dir,
+        )
+    finally:
+        maybe_finish_microbench_wandb_run(cfg.wandb, cfg.output_dir)
 
     if not cfg.skip_validation:
         result: ValidationResult = validate(cfg, cfg.output_dir)

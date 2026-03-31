@@ -57,6 +57,7 @@ BANNER_ROWS: list[tuple[str, str]] = [
     ("Traffic mode", "traffic_mode"),
     ("Point duration", "point_duration"),
     ("Warmup duration", "warmup_duration"),
+    ("Num GPUs", "num_gpus"),
 ]
 
 
@@ -203,6 +204,8 @@ class StressPointResult:
     interactivity_p50: float  # 1 / tpot_p50 (tok/s/user)
     interactivity_p99: float  # 1 / tpot_p99 (tok/s/user)
     num_requests: int
+    output_tps_per_gpu: float = 0.0  # output_throughput / num_gpus (0 = unknown)
+    input_tps_per_gpu: float = 0.0  # input_throughput / num_gpus (0 = unknown)
 
 
 def _extract_stress_point(
@@ -289,6 +292,12 @@ def _collect_results(
             results.append(point)
 
     results.sort(key=lambda r: r.level)
+
+    if cfg.num_gpus > 0:
+        for r in results:
+            r.output_tps_per_gpu = r.output_throughput / cfg.num_gpus
+            r.input_tps_per_gpu = r.input_throughput / cfg.num_gpus
+
     return results
 
 
@@ -468,6 +477,45 @@ def _save_plots(
     )
     plt.close(fig)
 
+    # 8. TPS/GPU vs Load Level (only when num_gpus is known)
+    if any(r.output_tps_per_gpu > 0 for r in results):
+        tps_per_gpu = [r.output_tps_per_gpu for r in results]
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.plot(levels, tps_per_gpu, "o-", label="Output TPS/GPU", linewidth=2)
+        ax.plot(
+            levels,
+            [r.input_tps_per_gpu for r in results],
+            "s--",
+            label="Input TPS/GPU",
+            linewidth=2,
+        )
+        ax.set_xlabel(level_label)
+        ax.set_ylabel("TPS / GPU (tok/s/gpu)")
+        ax.set_title("Throughput per GPU vs Load")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        fig.savefig(os.path.join(plots_dir, "tps_per_gpu_vs_load.png"), dpi=150)
+        plt.close(fig)
+
+        # 9. TPS/GPU vs TPS/User (the Sarvam-style throughput curve)
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.plot(
+            [r.interactivity_p50 for r in results],
+            tps_per_gpu,
+            "o-",
+            linewidth=2,
+            markersize=8,
+        )
+        ax.set_xlabel("TPS / User (tok/s/user)")
+        ax.set_ylabel("TPS / GPU (tok/s/gpu)")
+        ax.set_title("Throughput Curve: TPS/GPU vs TPS/User")
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        fig.savefig(os.path.join(plots_dir, "tps_per_gpu_vs_tps_per_user.png"), dpi=150)
+        plt.close(fig)
+
 
 def print_results_table(cfg: StressMicrobenchmarkConfig) -> None:
     """Print stress results table and save JSON, CSV, and plots."""
@@ -479,10 +527,14 @@ def print_results_table(cfg: StressMicrobenchmarkConfig) -> None:
         "QPS" if cfg.traffic_mode == StressTrafficMode.FIXED_RATE else "Concurrency"
     )
 
+    show_tps_per_gpu = cfg.num_gpus > 0
+
     table = Table(title="Stress Results (Throughput vs Latency)")
     table.add_column(level_label, justify="right", style="cyan")
     table.add_column("In Tput\n(tok/s)", justify="right")
     table.add_column("Out Tput\n(tok/s)", justify="right")
+    if show_tps_per_gpu:
+        table.add_column("Out TPS\n/GPU", justify="right")
     table.add_column("E2E P50\n(ms)", justify="right")
     table.add_column("E2E P99\n(ms)", justify="right")
     table.add_column("TTFC P50\n(ms)", justify="right")
@@ -492,18 +544,25 @@ def print_results_table(cfg: StressMicrobenchmarkConfig) -> None:
     table.add_column("Reqs", justify="right", style="dim")
 
     for r in results:
-        table.add_row(
+        row = [
             str(r.level),
             f"{r.input_throughput:.1f}",
             f"{r.output_throughput:.1f}",
-            fmt_ms(r.e2e_latency_p50),
-            fmt_ms(r.e2e_latency_p99),
-            fmt_ms(r.ttfc_p50),
-            fmt_ms(r.ttfc_p99),
-            f"{r.interactivity_p50:.1f}",
-            f"{r.interactivity_p99:.1f}",
-            str(r.num_requests),
+        ]
+        if show_tps_per_gpu:
+            row.append(f"{r.output_tps_per_gpu:.1f}")
+        row.extend(
+            [
+                fmt_ms(r.e2e_latency_p50),
+                fmt_ms(r.e2e_latency_p99),
+                fmt_ms(r.ttfc_p50),
+                fmt_ms(r.ttfc_p99),
+                f"{r.interactivity_p50:.1f}",
+                f"{r.interactivity_p99:.1f}",
+                str(r.num_requests),
+            ]
         )
+        table.add_row(*row)
 
     console.print()
     console.print(table)
@@ -516,6 +575,7 @@ def print_results_table(cfg: StressMicrobenchmarkConfig) -> None:
             "traffic_mode": str(cfg.traffic_mode),
             "input_length": cfg.input_length,
             "output_length": cfg.output_length,
+            "num_gpus": cfg.num_gpus,
             "results": [asdict(r) for r in results],
         },
         os.path.join(cfg.output_dir, "stress_results.json"),
@@ -764,7 +824,14 @@ def _run_auto_sweep(cfg: StressMicrobenchmarkConfig) -> list[StressPointResult]:
 
 def _run_auto_main(cfg: StressMicrobenchmarkConfig) -> None:
     """Full auto mode entrypoint."""
+    from vidhi import dataclass_to_dict
+
     from veeksha.microbench.runner import _make_run_dir, _print_banner
+    from veeksha.wandb_integration import (
+        maybe_finish_microbench_wandb_run,
+        maybe_init_microbench_wandb_run,
+        maybe_log_microbench_results,
+    )
 
     assert isinstance(cfg.mode, AutoStressModeConfig)
     if cfg.mode.resume_dir:
@@ -774,9 +841,27 @@ def _run_auto_main(cfg: StressMicrobenchmarkConfig) -> None:
     cfg = _make_run_dir(cfg, "stress")  # type: ignore[assignment]
     _print_banner(cfg, "stress (auto)", BANNER_ROWS)
 
-    _run_auto_sweep(cfg)
+    maybe_init_microbench_wandb_run(
+        cfg.wandb,
+        microbench_type="stress",
+        output_dir=cfg.output_dir,
+        config_dict=dataclass_to_dict(cfg),
+        extra_tags=["auto-mode"],
+    )
 
-    print_results_table(cfg)
+    try:
+        _run_auto_sweep(cfg)
+
+        print_results_table(cfg)
+
+        maybe_log_microbench_results(
+            cfg.wandb,
+            microbench_type="stress",
+            results_json_path=os.path.join(cfg.output_dir, "stress_results.json"),
+            output_dir=cfg.output_dir,
+        )
+    finally:
+        maybe_finish_microbench_wandb_run(cfg.wandb, cfg.output_dir)
 
     if not cfg.skip_validation:
         result = validate(cfg, cfg.output_dir)

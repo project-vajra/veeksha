@@ -610,3 +610,361 @@ def update_run_tags(output_dir: str, tags: Iterable[str]) -> None:
         logger.info("Updated tags for run %s: %s", run_path, tags)
     except Exception as exc:
         logger.warning("Failed to update tags for run %s: %s", run_path, exc)
+
+
+# ---------------------------------------------------------------------------
+# Microbenchmark wandb helpers
+# ---------------------------------------------------------------------------
+
+
+def maybe_init_microbench_wandb_run(
+    wandb_cfg: "WandbConfig",
+    *,
+    microbench_type: str,
+    output_dir: str,
+    config_dict: Dict[str, Any],
+    extra_tags: Optional[Iterable[str]] = None,
+) -> None:
+    """Initialize a wandb run for a microbenchmark (prefill/decode/stress).
+
+    Safe no-op when wandb is disabled or unavailable.
+    """
+    if not wandb_cfg.enabled:
+        return
+
+    try:
+        from typing import Any as _Any
+
+        import wandb  # type: ignore[import-not-found]
+
+        wandb = cast(_Any, wandb)
+    except Exception as exc:
+        raise ImportError(
+            "Weights & Biases logging is enabled, but `wandb` could not be imported. "
+            "Install wandb (e.g. `pip install wandb`) or disable `wandb.enabled`."
+        ) from exc
+
+    if getattr(wandb, "run", None):
+        logger.info("wandb.run already initialized; skipping wandb.init()")
+        return
+
+    config_dict = cast(Dict[str, Any], _scrub_secrets(config_dict))
+    wandb_cfg_dict: Dict[str, Any] = {
+        "run_kind": f"microbench-{microbench_type}",
+        **config_dict,
+    }
+
+    run_name = wandb_cfg.run_name or os.path.basename(output_dir.rstrip("/"))
+    tags = dedup_tags(
+        [*wandb_cfg.tags, "microbench", microbench_type, *(extra_tags or [])]
+    )
+
+    logger.info(
+        "Initializing wandb run for microbench-%s (project=%s name=%s)",
+        microbench_type,
+        wandb_cfg.project,
+        run_name,
+    )
+
+    wandb.init(
+        project=wandb_cfg.project,
+        entity=wandb_cfg.entity,
+        group=wandb_cfg.group,
+        name=run_name,
+        tags=tags or None,
+        notes=wandb_cfg.notes,
+        dir=output_dir,
+        config=wandb_cfg_dict,
+        reinit="finish_previous",
+        mode=wandb_cfg.mode,
+    )
+
+
+def _log_microbench_prefill(results: Dict[str, Any], wandb: Any) -> None:
+    """Log prefill microbenchmark results to wandb."""
+    rows = results.get("results", [])
+    if not rows:
+        return
+
+    # Scalars per input length
+    for row in rows:
+        il = row["input_length"]
+        ttfc = row.get("ttfc", {})
+        wandb.log(
+            {
+                "prefill/input_length": il,
+                "prefill/ttfc_p50_ms": ttfc.get("median", 0) * 1000,
+                "prefill/ttfc_p99_ms": ttfc.get("p99", 0) * 1000,
+                "prefill/ttfc_mean_ms": ttfc.get("mean", 0) * 1000,
+            }
+        )
+
+    # Table
+    columns = [
+        "input_length",
+        "mean_ms",
+        "p50_ms",
+        "p99_ms",
+        "min_ms",
+        "max_ms",
+        "count",
+    ]
+    data = []
+    for row in rows:
+        s = row.get("ttfc", {})
+        data.append(
+            [
+                row["input_length"],
+                round(s.get("mean", 0) * 1000, 2),
+                round(s.get("median", 0) * 1000, 2),
+                round(s.get("p99", 0) * 1000, 2),
+                round(s.get("min", 0) * 1000, 2),
+                round(s.get("max", 0) * 1000, 2),
+                s.get("count", 0),
+            ]
+        )
+    wandb.log({"prefill_results": wandb.Table(columns=columns, data=data)})
+
+
+def _log_microbench_decode(results: Dict[str, Any], wandb: Any) -> None:
+    """Log decode microbenchmark results to wandb."""
+    rows = results.get("results", [])
+    if not rows:
+        return
+
+    # Scalars per (batch_size, input_length)
+    for row in rows:
+        bs = row["batch_size"]
+        il = row["input_length"]
+        tbt = row.get("tbt", {})
+        wandb.log(
+            {
+                "decode/batch_size": bs,
+                "decode/input_length": il,
+                "decode/tbt_p50_ms": tbt.get("median", 0) * 1000,
+                "decode/tbt_p99_ms": tbt.get("p99", 0) * 1000,
+                "decode/tbt_mean_ms": tbt.get("mean", 0) * 1000,
+            }
+        )
+
+    # Table
+    columns = [
+        "batch_size",
+        "input_length",
+        "mean_ms",
+        "p50_ms",
+        "p99_ms",
+        "min_ms",
+        "max_ms",
+        "samples",
+    ]
+    data = []
+    for row in rows:
+        s = row.get("tbt", {})
+        data.append(
+            [
+                row["batch_size"],
+                row["input_length"],
+                round(s.get("mean", 0) * 1000, 2),
+                round(s.get("median", 0) * 1000, 2),
+                round(s.get("p99", 0) * 1000, 2),
+                round(s.get("min", 0) * 1000, 2),
+                round(s.get("max", 0) * 1000, 2),
+                s.get("count", 0),
+            ]
+        )
+    wandb.log({"decode_results": wandb.Table(columns=columns, data=data)})
+
+
+def _log_microbench_stress(results: Dict[str, Any], wandb: Any) -> None:
+    """Log stress microbenchmark results to wandb."""
+    rows = results.get("results", [])
+    if not rows:
+        return
+
+    num_gpus = results.get("num_gpus", 0)
+
+    # Step-indexed scalars (one wandb.log per concurrency level)
+    for r in rows:
+        metrics: Dict[str, Any] = {
+            "stress/level": r["level"],
+            "stress/output_throughput": r["output_throughput"],
+            "stress/input_throughput": r["input_throughput"],
+            "stress/e2e_latency_p50_ms": r["e2e_latency_p50"] * 1000,
+            "stress/e2e_latency_p99_ms": r["e2e_latency_p99"] * 1000,
+            "stress/ttfc_p50_ms": r["ttfc_p50"] * 1000,
+            "stress/ttfc_p99_ms": r["ttfc_p99"] * 1000,
+            "stress/interactivity_p50": r["interactivity_p50"],
+            "stress/interactivity_p99": r["interactivity_p99"],
+            "stress/num_requests": r["num_requests"],
+        }
+        if num_gpus > 0:
+            metrics["stress/output_tps_per_gpu"] = r.get(
+                "output_tps_per_gpu", r["output_throughput"] / num_gpus
+            )
+            metrics["stress/input_tps_per_gpu"] = r.get(
+                "input_tps_per_gpu", r["input_throughput"] / num_gpus
+            )
+        wandb.log(metrics, step=r["level"])
+
+    # Table
+    columns = [
+        "level",
+        "output_throughput",
+        "input_throughput",
+        "e2e_p50_ms",
+        "e2e_p99_ms",
+        "ttfc_p50_ms",
+        "ttfc_p99_ms",
+        "interactivity_p50",
+        "interactivity_p99",
+        "num_requests",
+    ]
+    if num_gpus > 0:
+        columns.extend(["output_tps_per_gpu", "input_tps_per_gpu"])
+
+    data = []
+    for r in rows:
+        row = [
+            r["level"],
+            round(r["output_throughput"], 1),
+            round(r["input_throughput"], 1),
+            round(r["e2e_latency_p50"] * 1000, 1),
+            round(r["e2e_latency_p99"] * 1000, 1),
+            round(r["ttfc_p50"] * 1000, 1),
+            round(r["ttfc_p99"] * 1000, 1),
+            round(r["interactivity_p50"], 1),
+            round(r["interactivity_p99"], 1),
+            r["num_requests"],
+        ]
+        if num_gpus > 0:
+            row.extend(
+                [
+                    round(
+                        r.get("output_tps_per_gpu", r["output_throughput"] / num_gpus),
+                        1,
+                    ),
+                    round(
+                        r.get("input_tps_per_gpu", r["input_throughput"] / num_gpus), 1
+                    ),
+                ]
+            )
+        data.append(row)
+    wandb.log({"stress_results": wandb.Table(columns=columns, data=data)})
+
+    # Summary
+    if rows:
+        peak = max(rows, key=lambda r: r["output_throughput"])
+        wandb.run.summary["peak_output_throughput"] = peak["output_throughput"]
+        wandb.run.summary["interactivity_at_peak"] = peak["interactivity_p50"]
+        wandb.run.summary["peak_concurrency"] = peak["level"]
+        if num_gpus > 0:
+            wandb.run.summary["peak_tps_per_gpu"] = peak["output_throughput"] / num_gpus
+
+
+_MICROBENCH_LOGGERS = {
+    "prefill": _log_microbench_prefill,
+    "decode": _log_microbench_decode,
+    "stress": _log_microbench_stress,
+}
+
+
+def maybe_log_microbench_results(
+    wandb_cfg: "WandbConfig",
+    *,
+    microbench_type: str,
+    results_json_path: str,
+    output_dir: str,
+) -> None:
+    """Log microbenchmark results (tables, scalars, plots, artifacts) to wandb.
+
+    Safe no-op when wandb is disabled or no active run.
+    """
+    if not wandb_cfg.enabled:
+        return
+
+    try:
+        from typing import Any as _Any
+
+        import wandb  # type: ignore[import-not-found]
+
+        wandb = cast(_Any, wandb)
+        if not getattr(wandb, "run", None):
+            return
+    except Exception:
+        return
+
+    # Log type-specific metrics
+    if os.path.exists(results_json_path):
+        with open(results_json_path, "r", encoding="utf-8") as f:
+            results = json.load(f)
+
+        log_fn = _MICROBENCH_LOGGERS.get(microbench_type)
+        if log_fn:
+            try:
+                log_fn(results, wandb)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to log %s results to wandb: %s", microbench_type, exc
+                )
+
+    # Log plot images
+    plots_dir = os.path.join(output_dir, "plots")
+    if os.path.isdir(plots_dir):
+        for fname in sorted(os.listdir(plots_dir)):
+            if fname.endswith(".png"):
+                try:
+                    wandb.log({fname[:-4]: wandb.Image(os.path.join(plots_dir, fname))})
+                except Exception:
+                    pass
+
+    # Upload artifacts
+    if wandb_cfg.log_artifacts:
+        artifact = wandb.Artifact(
+            name=f"microbench-{microbench_type}-{wandb.run.id}",
+            type=f"veeksha-microbench-{microbench_type}",
+        )
+        has_entries = False
+        for fname in sorted(os.listdir(output_dir)):
+            fpath = os.path.join(output_dir, fname)
+            if os.path.isfile(fpath) and any(
+                fname.endswith(ext) for ext in (".json", ".csv")
+            ):
+                artifact.add_file(fpath, name=fname)
+                has_entries = True
+        if os.path.isdir(plots_dir):
+            for fname in sorted(os.listdir(plots_dir)):
+                fpath = os.path.join(plots_dir, fname)
+                if os.path.isfile(fpath):
+                    artifact.add_file(fpath, name=f"plots/{fname}")
+                    has_entries = True
+        if has_entries:
+            wandb.log_artifact(artifact)
+
+
+def maybe_finish_microbench_wandb_run(
+    wandb_cfg: "WandbConfig",
+    output_dir: str,
+) -> None:
+    """Finish a microbenchmark wandb run.
+
+    Safe no-op when wandb is disabled or no active run.
+    """
+    if not wandb_cfg.enabled:
+        return
+
+    try:
+        from typing import Any as _Any
+
+        import wandb  # type: ignore[import-not-found]
+
+        wandb = cast(_Any, wandb)
+        if not getattr(wandb, "run", None):
+            return
+        maybe_persist_wandb_run_info(output_dir)
+        try:
+            wandb.finish()
+        except Exception as exc:
+            logger.warning("wandb.finish() failed: %s", exc)
+    except Exception:
+        return
