@@ -471,6 +471,65 @@ def _plot_stress(data1: dict, data2: dict, label1: str, label2: str, out: str) -
     fig.savefig(os.path.join(out, "output_throughput_vs_interactivity.png"), dpi=150)
     plt.close(fig)
 
+    # 8. TPS/GPU vs Load (if either run has per-GPU data)
+    has_tps1 = any(r.get("output_tps_per_gpu", 0) > 0 for r in results1)
+    has_tps2 = any(r.get("output_tps_per_gpu", 0) > 0 for r in results2)
+    if has_tps1 or has_tps2:
+        fig, ax = plt.subplots(figsize=(8, 5))
+        if has_tps1:
+            ax.plot(
+                levels1,
+                [r.get("output_tps_per_gpu", 0) for r in results1],
+                "o-",
+                label=f"{label1}",
+                linewidth=2,
+            )
+        if has_tps2:
+            ax.plot(
+                levels2,
+                [r.get("output_tps_per_gpu", 0) for r in results2],
+                "s--",
+                label=f"{label2}",
+                linewidth=2,
+            )
+        ax.set_xlabel(level_label)
+        ax.set_ylabel("TPS / GPU (tok/s/gpu)")
+        ax.set_title("Output Throughput per GPU vs Load")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        fig.savefig(os.path.join(out, "tps_per_gpu_vs_load.png"), dpi=150)
+        plt.close(fig)
+
+        # 9. TPS/GPU vs TPS/User comparison
+        fig, ax = plt.subplots(figsize=(8, 5))
+        if has_tps1:
+            ax.plot(
+                [r["interactivity_p50"] for r in results1],
+                [r.get("output_tps_per_gpu", 0) for r in results1],
+                "o-",
+                label=f"{label1}",
+                linewidth=2,
+                markersize=8,
+            )
+        if has_tps2:
+            ax.plot(
+                [r["interactivity_p50"] for r in results2],
+                [r.get("output_tps_per_gpu", 0) for r in results2],
+                "s--",
+                label=f"{label2}",
+                linewidth=2,
+                markersize=8,
+            )
+        ax.set_xlabel("TPS / User (tok/s/user)")
+        ax.set_ylabel("TPS / GPU (tok/s/gpu)")
+        ax.set_title("Throughput Curve: TPS/GPU vs TPS/User")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        fig.savefig(os.path.join(out, "tps_per_gpu_vs_tps_per_user.png"), dpi=150)
+        plt.close(fig)
+
 
 # ---------------------------------------------------------------------------
 # Dispatcher

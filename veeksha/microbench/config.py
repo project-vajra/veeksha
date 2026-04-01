@@ -5,6 +5,7 @@ from enum import StrEnum
 from vidhi import BasePolyConfig, field, frozen_dataclass
 
 from veeksha.cli.base import VeekshaCommand
+from veeksha.config.wandb import WandbConfig  # noqa: F401
 
 
 class StressTrafficMode(StrEnum):
@@ -46,6 +47,10 @@ class BaseMicrobenchmarkConfig:
         False, help="Skip benchmark, only validate existing output"
     )
     skip_validation: bool = field(False, help="Skip post-run validation")
+    wandb: WandbConfig = field(
+        default_factory=WandbConfig,
+        help="Weights & Biases logging configuration.",
+    )
 
 
 @frozen_dataclass
@@ -174,6 +179,9 @@ class StressMicrobenchmarkConfig(
     )
     max_tokens_per_second_estimate: float = field(
         500.0, help="Estimated max output tok/s (for session budget)"
+    )
+    num_gpus: int = field(
+        0, help="Number of GPUs serving the model (0 = unknown, TPS/GPU not computed)"
     )
     mode: BaseStressModeConfig = field(
         default_factory=ManualStressModeConfig,
