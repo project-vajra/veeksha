@@ -7,8 +7,8 @@ class ProfilingConfig:
         "", help="Shell command to execute for profiling (e.g., curl to trigger nsys)"
     )
     trigger: str = field(
-        "all_in_flight",
-        help="Trigger mode: 'all_in_flight', 'elapsed', 'any_in_flight'",
+        "all_decoding",
+        help="Trigger mode: 'all_decoding', 'elapsed', 'any_in_flight'",
     )
     trigger_value: int = field(
         0,

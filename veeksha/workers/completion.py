@@ -49,6 +49,7 @@ class CompletionWorker:
         """Process a single request result."""
         result.result_processed_at = time.monotonic()
 
+        self.traffic_scheduler.notify_request_done_decoding(result.request_id)
         self.traffic_scheduler.notify_completion(
             request_id=result.request_id,
             completed_at_monotonic=result.client_completed_at,  # type: ignore

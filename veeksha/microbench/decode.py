@@ -144,7 +144,7 @@ def build_benchmark_configs(cfg: DecodeMicrobenchmarkConfig) -> list[BenchmarkCo
                         pregenerate_sessions=True,
                         profiling=ProfilingConfig(
                             command=cfg.profile_command,
-                            trigger="all_in_flight",
+                            trigger="all_decoding",
                             trigger_value=batch_size,
                         ),
                     ),

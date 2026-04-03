@@ -237,9 +237,8 @@ def _check_profiling_trigger(
 ) -> bool:
     """Evaluate whether the profiling trigger condition is met."""
     trigger = profiling.trigger
-    if trigger == "all_in_flight":
-        in_flight = traffic_scheduler.get_in_flight_request_ids()
-        return len(in_flight) >= profiling.trigger_value
+    if trigger == "all_decoding":
+        return traffic_scheduler.get_decoding_count() >= profiling.trigger_value
     elif trigger == "any_in_flight":
         in_flight = traffic_scheduler.get_in_flight_request_ids()
         return len(in_flight) >= 1

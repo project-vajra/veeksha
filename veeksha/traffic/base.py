@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Mapping, Optional, Set, Tuple
 
@@ -18,6 +19,8 @@ class BaseTrafficScheduler:
     def __init__(self, config: BaseTrafficConfig, seed_manager: SeedManager):
         self.config = config
         self.seed_manager = seed_manager
+        self._decoding_ids: Set[int] = set()
+        self._decoding_lock = threading.Lock()
 
     @abstractmethod
     def schedule_session(self, session: Session) -> None:
@@ -91,13 +94,23 @@ class BaseTrafficScheduler:
         return None
 
     def notify_request_sent(self, request_id: int) -> None:
-        """Called when the server acknowledges a request (HTTP 200 received).
+        """Called when the first content chunk is received (prefill complete).
 
-        The default implementation is a no-op.  Subclasses (e.g.
-        :class:`SequentialLaunchTrafficScheduler`) may use this to gate
-        activation of pending sessions.
+        Tracks the request as actively decoding. Subclasses (e.g.
+        :class:`SequentialLaunchTrafficScheduler`) may add further logic.
         """
-        return
+        with self._decoding_lock:
+            self._decoding_ids.add(request_id)
+
+    def notify_request_done_decoding(self, request_id: int) -> None:
+        """Remove a request from the actively-decoding set."""
+        with self._decoding_lock:
+            self._decoding_ids.discard(request_id)
+
+    def get_decoding_count(self) -> int:
+        """Return the number of requests currently in the decode phase."""
+        with self._decoding_lock:
+            return len(self._decoding_ids)
 
     def reset_reference_time(self) -> None:
         """Optional hook invoked before the benchmark starts dispatching."""
