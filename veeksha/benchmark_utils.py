@@ -3,15 +3,18 @@
 import hashlib
 import os
 import shutil
+import subprocess
+import threading
 import time
 from datetime import datetime
-from typing import Any, Dict, Set, Tuple
+from typing import Any, Dict, Optional, Set, Tuple
 
 import yaml
 from tqdm import tqdm
 from vidhi import dataclass_to_dict
 
 from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.runtime import ProfilingConfig
 from veeksha.core.seeding import SeedManager
 from veeksha.evaluator.base import BaseEvaluator
 from veeksha.evaluator.composite import CompositeEvaluator
@@ -217,6 +220,34 @@ def _update_pbar(
         state["last_completed"] = total_done
 
 
+def _run_profiling_command(command: str) -> None:
+    """Execute profiling command in a background thread."""
+    try:
+        logger.info("Executing profiling command: %s", command)
+        subprocess.run(command, shell=True, check=False)
+        logger.info("Profiling command completed")
+    except Exception as e:
+        logger.error("Profiling command failed: %s", e)
+
+
+def _check_profiling_trigger(
+    profiling: ProfilingConfig,
+    traffic_scheduler,
+    elapsed: float,
+) -> bool:
+    """Evaluate whether the profiling trigger condition is met."""
+    trigger = profiling.trigger
+    if trigger == "all_in_flight":
+        in_flight = traffic_scheduler.get_in_flight_request_ids()
+        return len(in_flight) >= profiling.trigger_value
+    elif trigger == "any_in_flight":
+        in_flight = traffic_scheduler.get_in_flight_request_ids()
+        return len(in_flight) >= 1
+    elif trigger == "elapsed":
+        return elapsed >= profiling.trigger_value
+    return False
+
+
 def _monitor_for_completion(
     traffic_scheduler,
     evaluator,
@@ -227,6 +258,7 @@ def _monitor_for_completion(
     pre_timeout_request_ids: Set[str],
     max_sessions: int,
     post_timeout_grace_seconds: int = -1,
+    profiling: Optional[ProfilingConfig] = None,
 ) -> Set[str]:
     """Observe worker progress and exit once requests settle.
 
@@ -237,6 +269,7 @@ def _monitor_for_completion(
     pbar_state = {"last_completed": 0, "last_time_update": 0}
     timeout_start: float = 0.0
     in_flight_remaining: Set[str] = set()
+    profiling_fired = False
 
     try:
         while True:
@@ -247,6 +280,24 @@ def _monitor_for_completion(
             elapsed = time.monotonic() - benchmark_start
 
             _update_pbar(pbar, time_based_progress, elapsed, total_done, pbar_state)
+
+            if (
+                profiling
+                and profiling.command
+                and not profiling_fired
+                and _check_profiling_trigger(profiling, traffic_scheduler, elapsed)
+            ):
+                profiling_fired = True
+                logger.info(
+                    "Profiling trigger '%s' met at %.1fs — launching command",
+                    profiling.trigger,
+                    elapsed,
+                )
+                threading.Thread(
+                    target=_run_profiling_command,
+                    args=(profiling.command,),
+                    daemon=True,
+                ).start()
 
             if (
                 not timeout_triggered

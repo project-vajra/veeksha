@@ -2,6 +2,21 @@ from vidhi import field, frozen_dataclass
 
 
 @frozen_dataclass
+class ProfilingConfig:
+    command: str = field(
+        "", help="Shell command to execute for profiling (e.g., curl to trigger nsys)"
+    )
+    trigger: str = field(
+        "all_in_flight",
+        help="Trigger mode: 'all_in_flight', 'elapsed', 'any_in_flight'",
+    )
+    trigger_value: int = field(
+        0,
+        help="Threshold: in-flight count for 'all_in_flight', seconds for 'elapsed'",
+    )
+
+
+@frozen_dataclass
 class RuntimeConfig:
     max_sessions: int = field(
         25, help="Maximum number of sessions to generate. -1 for unlimited."
@@ -24,4 +39,7 @@ class RuntimeConfig:
         False,
         help="Pre-generate all sessions before starting benchmark timer. "
         "Requires max_sessions > 0.",
+    )
+    profiling: ProfilingConfig = field(
+        default_factory=ProfilingConfig, help="Profiling command config"
     )

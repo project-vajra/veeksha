@@ -26,7 +26,7 @@ from veeksha.config.generator.session import SyntheticSessionGeneratorConfig
 from veeksha.config.generator.session_graph import (
     SingleRequestSessionGraphGeneratorConfig,
 )
-from veeksha.config.runtime import RuntimeConfig
+from veeksha.config.runtime import ProfilingConfig, RuntimeConfig
 from veeksha.config.trace_recorder import TraceRecorderConfig
 from veeksha.config.traffic import SequentialLaunchTrafficConfig
 from veeksha.microbench.common import (
@@ -54,6 +54,7 @@ BANNER_ROWS: list[tuple[str, str]] = [
     ("Input lengths", "input_lengths"),
     ("Samples/length", "samples_per_length"),
     ("Chunk size", "engine_chunk_size"),
+    ("Profile command", "profile_command"),
 ]
 
 
@@ -141,6 +142,11 @@ def build_benchmark_configs(cfg: DecodeMicrobenchmarkConfig) -> list[BenchmarkCo
                         num_client_threads=batch_size,
                         benchmark_timeout=cfg.benchmark_timeout,
                         pregenerate_sessions=True,
+                        profiling=ProfilingConfig(
+                            command=cfg.profile_command,
+                            trigger="all_in_flight",
+                            trigger_value=batch_size,
+                        ),
                     ),
                     trace_recorder=TraceRecorderConfig(enabled=False),
                 )

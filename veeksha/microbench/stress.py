@@ -26,7 +26,7 @@ from veeksha.config.generator.session import SyntheticSessionGeneratorConfig
 from veeksha.config.generator.session_graph import (
     SingleRequestSessionGraphGeneratorConfig,
 )
-from veeksha.config.runtime import RuntimeConfig
+from veeksha.config.runtime import ProfilingConfig, RuntimeConfig
 from veeksha.config.trace_recorder import TraceRecorderConfig
 from veeksha.config.traffic import ConcurrentTrafficConfig, RateTrafficConfig
 from veeksha.microbench.common import (
@@ -57,6 +57,7 @@ BANNER_ROWS: list[tuple[str, str]] = [
     ("Traffic mode", "traffic_mode"),
     ("Point duration", "point_duration"),
     ("Warmup duration", "warmup_duration"),
+    ("Profile command", "profile_command"),
 ]
 
 
@@ -169,6 +170,11 @@ def _build_one_config(cfg: StressMicrobenchmarkConfig, level: int) -> BenchmarkC
             benchmark_timeout=cfg.point_duration,
             num_client_threads=max(level, 3),
             pregenerate_sessions=True,
+            profiling=ProfilingConfig(
+                command=cfg.profile_command,
+                trigger="elapsed",
+                trigger_value=cfg.warmup_duration,
+            ),
         ),
         trace_recorder=TraceRecorderConfig(enabled=False),
     )

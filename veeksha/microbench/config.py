@@ -46,6 +46,10 @@ class BaseMicrobenchmarkConfig:
         False, help="Skip benchmark, only validate existing output"
     )
     skip_validation: bool = field(False, help="Skip post-run validation")
+    profile_command: str = field(
+        "",
+        help="Shell command to trigger server-side profiling at the appropriate moment",
+    )
 
 
 @frozen_dataclass

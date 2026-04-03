@@ -149,6 +149,8 @@ def _run_main_loop(
     timeout_triggered = False
     pre_timeout_request_ids: Set[str] = set()
 
+    profiling = runtime_config.profiling if runtime_config.profiling.command else None
+
     try:
         pending_in_flight = _monitor_for_completion(
             traffic_scheduler,
@@ -160,6 +162,7 @@ def _run_main_loop(
             pre_timeout_request_ids,
             max_sessions=runtime_config.max_sessions,
             post_timeout_grace_seconds=runtime_config.post_timeout_grace_seconds,
+            profiling=profiling,
         )
     except KeyboardInterrupt:
         logger.info("Interrupted, stopping")
