@@ -1,8 +1,10 @@
-Common Benchmarks
-=================
+Benchmark Types
+===============
 
-If you are coming from another benchmarking framework, start here. Pick the benchmark
-you want, copy the example, and run it. You can tune details later.
+This page maps common benchmark shapes to their canonical Veeksha patterns so
+you can quickly see how Veeksha fits the way you benchmark today. It is not
+exhaustive; Veeksha is composable, so the same building blocks can be combined
+into many other valid configurations.
 
 
 Pick the benchmark
@@ -32,6 +34,10 @@ Pick the benchmark
 For most request-level benchmarks, ``benchmark`` is the right command. Veeksha
 models traffic as sessions, but ``single_request`` sessions make it behave like
 a traditional request dispatcher.
+
+The examples below show canonical starting points rather than the only possible
+configurations.
+More specialized workload patterns appear later on this page.
 
 
 Open-loop request-rate latency test
@@ -299,11 +305,11 @@ shared-prefix trace, or a RAG trace, see :doc:`/user_guide/trace_flavors` for a
 flavor-by-flavor comparison and minimal trace examples.
 
 
-When you need chat, not just requests
--------------------------------------
+Multi-turn conversations (synthetic)
+------------------------------------
 
-Many competing tools stop at independent requests. To benchmark multi-turn chat
-in Veeksha, keep using ``benchmark`` and change the session graph:
+Use this when you want generated multi-turn chat rather than independent
+requests:
 
 .. code-block:: yaml
 
@@ -321,10 +327,149 @@ Everything else stays the same. This turns a request benchmark into a real
 conversation benchmark.
 
 
+.. _workload-recipes:
+
+Advanced workload patterns
+--------------------------
+
+These examples cover more specialized benchmark types. Treat them as canonical
+starting points, not as an exhaustive list of every supported configuration.
+
+Unless noted otherwise, run them with:
+
+.. code-block:: bash
+
+    uvx veeksha benchmark --config <file>.veeksha.yml
+
+For trace-based workloads beyond simple request-log replay, including
+conversation datasets, timed multi-turn traces, and shared-prefix traces, see
+:doc:`/user_guide/trace_flavors`.
+
+
+Agentic workloads (branching sessions)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Simulate agentic tool-calling patterns with fan-out/fan-in DAG structure:
+
+.. code-block:: yaml
+
+    # agentic.veeksha.yml
+    seed: 42
+
+    session_generator:
+      type: synthetic
+      session_graph:
+        type: branching
+        num_layers_generator:
+          type: uniform
+          min: 3
+          max: 5
+        layer_width_generator:
+          type: uniform
+          min: 2
+          max: 6
+        fan_out_generator:
+          type: uniform
+          min: 1
+          max: 5
+        fan_in_generator:
+          type: uniform
+          min: 1
+          max: 4
+        connection_dist_generator:
+          type: uniform
+          min: 1
+          max: 2          # Allow skip connections
+        single_root: true
+        inherit_history: true
+        request_wait_generator:
+          type: poisson
+          arrival_rate: 3
+      channels:
+        - type: text
+          body_length_generator:
+            type: uniform
+            min: 50
+            max: 200
+      output_spec:
+        text:
+          output_length_generator:
+            type: uniform
+            min: 100
+            max: 300
+
+    traffic_scheduler:
+      type: rate
+      interval_generator:
+        type: poisson
+        arrival_rate: 5.0
+
+    client:
+      type: openai_chat_completions
+      api_base: http://localhost:8000/v1
+      model: meta-llama/Llama-3-8B-Instruct
+
+    runtime:
+      max_sessions: 100
+      benchmark_timeout: 120
+
+    evaluators:
+      - type: performance
+        target_channels: ["text"]
+
+
+LM-Eval accuracy benchmarks
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Run standardized evaluation tasks from the `lm-evaluation-harness
+<https://github.com/EleutherAI/lm-evaluation-harness>`_:
+
+.. code-block:: yaml
+
+    # lmeval.veeksha.yml
+    seed: 42
+
+    session_generator:
+      type: lmeval
+      tasks: ["triviaqa", "truthfulqa_gen"]
+      num_fewshot: 0
+
+    traffic_scheduler:
+      type: concurrent
+      target_concurrent_sessions: 4
+      rampup_seconds: 0
+      cancel_session_on_failure: false
+
+    evaluators:
+      - type: performance
+        target_channels: ["text"]
+      - type: accuracy_lmeval
+        bootstrap_iters: 200
+
+    client:
+      type: openai_completions            # Note: completions, not chat
+      api_base: http://localhost:8000/v1
+      model: meta-llama/Llama-3-8B-Instruct
+      request_timeout: 240
+      max_tokens_param: max_tokens
+      additional_sampling_params: '{"temperature": 0}'
+
+    runtime:
+      max_sessions: 40
+      benchmark_timeout: 1200
+
+.. note::
+
+   LM-Eval uses ``openai_completions`` (not ``openai_chat_completions``) for
+   generation tasks. The ``accuracy_lmeval`` evaluator computes task-specific
+   metrics alongside the standard performance evaluator.
+
+
 See also
 --------
 
 - :doc:`quick_start` for a first end-to-end benchmark run
 - :doc:`/user_guide/configuration` for the full config model
+- :doc:`/user_guide/trace_flavors` for trace flavor details and input formats
 - :doc:`/user_guide/microbenchmarks` for full prefill, decode, and stress details
 - :doc:`/user_guide/capacity_search` for full capacity-search behavior
