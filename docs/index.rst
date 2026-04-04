@@ -59,7 +59,7 @@ Key features
 Quick example
 -------------
 
-Run a simple benchmark against a running OpenAI-compatible endpoint::
+Run a simple benchmark with `uvx <https://docs.astral.sh/uv/>`_ against a running OpenAI-compatible endpoint::
 
     uvx -p 3.14t veeksha benchmark \
         --client.type openai_chat_completions \
@@ -74,6 +74,7 @@ Or use a YAML configuration file::
 
     uvx -p 3.14t veeksha benchmark --config my_benchmark.veeksha.yml
 
+We recommend free-threaded Python builds, such as 3.14t.
 
 Documentation
 -------------

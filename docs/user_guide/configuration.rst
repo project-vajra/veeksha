@@ -80,7 +80,7 @@ Export a JSON schema for YAML IDE autocompletion and linting:
 
 .. code-block:: bash
 
-    uvx -p 3.14t veeksha benchmark --export-json-schema veeksha-schema.json
+    uvx veeksha benchmark --export-json-schema veeksha-schema.json
 
 Configure your IDE to use this schema. In VSCode and forks:
 

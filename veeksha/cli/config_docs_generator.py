@@ -545,7 +545,7 @@ Configuration can be provided via YAML files or CLI arguments.
 
    Export a JSON schema for IDE autocompletion::
 
-       uvx -p 3.14t veeksha benchmark --export-json-schema
+       uvx veeksha benchmark --export-json-schema
 
 
 Quick links
