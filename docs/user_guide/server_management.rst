@@ -231,7 +231,7 @@ Create a base config and run with different servers:
 .. code-block:: bash
 
     # Run with vLLM
-    uvx veeksha benchmark \
+    uvx -p 3.14t veeksha benchmark \
         --config base_config.yml \
         --server.type vllm \
         --server.env_path vllm_env \
@@ -239,7 +239,7 @@ Create a base config and run with different servers:
         --output_dir results/vllm
 
     # Run with SGLang
-    uvx veeksha benchmark \
+    uvx -p 3.14t veeksha benchmark \
         --config base_config.yml \
         --server.type sglang \
         --server.env_path sglang_env \

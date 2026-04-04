@@ -104,7 +104,7 @@ Run the search:
 
 .. code-block:: bash
 
-    uvx veeksha capacity-search --config capacity_search.veeksha.yml
+    uvx -p 3.14t veeksha capacity-search --config capacity_search.veeksha.yml
 
 
 Rate-based vs concurrency-based searches
@@ -382,7 +382,7 @@ Find the maximum concurrency for throughput-oriented deployments:
 
 .. code-block:: bash
 
-    uvx veeksha capacity-search --config capacity_concurrent.veeksha.yml
+    uvx -p 3.14t veeksha capacity-search --config capacity_concurrent.veeksha.yml
 
 .. tip::
 

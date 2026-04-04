@@ -84,7 +84,7 @@ Use this when you would normally run a fixed-QPS or Poisson-arrival benchmark.
 
 .. code-block:: bash
 
-    uvx veeksha benchmark --config rate_single_request.veeksha.yml
+    uvx -p 3.14t veeksha benchmark --config rate_single_request.veeksha.yml
 
 
 Closed-loop fixed-concurrency throughput test
@@ -130,7 +130,7 @@ Use this when you want to hold a target concurrency and push for throughput.
 
 .. code-block:: bash
 
-    uvx veeksha benchmark --config concurrent_single_request.veeksha.yml
+    uvx -p 3.14t veeksha benchmark --config concurrent_single_request.veeksha.yml
 
 
 TTFC vs prompt length
@@ -140,7 +140,7 @@ Use this when you want isolated prefill measurements.
 
 .. code-block:: bash
 
-    uvx veeksha prefill \
+    uvx -p 3.14t veeksha prefill \
         --api_base http://localhost:8000/v1 \
         --model meta-llama/Llama-3-8B-Instruct \
         --input_lengths 128 256 512 1024 2048 \
@@ -159,7 +159,7 @@ Use this when you want isolated decode measurements.
 
 .. code-block:: bash
 
-    uvx veeksha decode \
+    uvx -p 3.14t veeksha decode \
         --api_base http://localhost:8000/v1 \
         --model meta-llama/Llama-3-8B-Instruct \
         --batch_sizes 1 2 4 8 16 \
@@ -178,7 +178,7 @@ Use this when you want the classic operating curve for one fixed request shape.
 
 .. code-block:: bash
 
-    uvx veeksha stress \
+    uvx -p 3.14t veeksha stress \
         --api_base http://localhost:8000/v1 \
         --model meta-llama/Llama-3-8B-Instruct \
         --input_length 512 \
@@ -255,7 +255,7 @@ automatically.
 
 .. code-block:: bash
 
-    uvx veeksha capacity-search --config capacity_search.veeksha.yml
+    uvx -p 3.14t veeksha capacity-search --config capacity_search.veeksha.yml
 
 For concurrency instead of rate, change ``benchmark_config.traffic_scheduler.type``
 to ``concurrent`` and set ``precision: 0``.
@@ -297,7 +297,7 @@ Use this when you already have a CSV or JSONL file with input and output lengths
 
 .. code-block:: bash
 
-    uvx veeksha benchmark --config replay_request_log.veeksha.yml
+    uvx -p 3.14t veeksha benchmark --config replay_request_log.veeksha.yml
 
 Your trace file should contain ``input_length`` and ``output_length`` columns.
 If you need a multi-turn conversation trace, a timed session trace, a
@@ -339,7 +339,7 @@ Unless noted otherwise, run them with:
 
 .. code-block:: bash
 
-    uvx veeksha benchmark --config <file>.veeksha.yml
+    uvx -p 3.14t veeksha benchmark --config <file>.veeksha.yml
 
 For trace-based workloads beyond simple request-log replay, including
 conversation datasets, timed multi-turn traces, and shared-prefix traces, see

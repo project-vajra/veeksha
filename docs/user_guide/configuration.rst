@@ -30,7 +30,7 @@ Configuration methods
 
     .. code-block:: bash
 
-        uvx veeksha benchmark \
+        uvx -p 3.14t veeksha benchmark \
             --client.api_base http://localhost:8000/v1 \
             --traffic_scheduler.interval_generator.arrival_rate 20.0
 
@@ -42,7 +42,7 @@ Argument names mirror the YAML hierarchy with dots.
     .. code-block:: bash
 
         # Base config from file, override arrival rate
-        uvx veeksha benchmark \
+        uvx -p 3.14t veeksha benchmark \
             --config base.veeksha.yml \
             --traffic_scheduler.interval_generator.arrival_rate 30.0
 
@@ -375,7 +375,7 @@ Run the benchmark with a single ``--config`` flag:
 
 .. code-block:: bash
 
-    uvx veeksha benchmark --config main_config.yml
+    uvx -p 3.14t veeksha benchmark --config main_config.yml
 
 **CLI overrides still work**
 
@@ -383,7 +383,7 @@ You can override any value from the included files using CLI arguments:
 
 .. code-block:: bash
 
-    uvx veeksha benchmark \
+    uvx -p 3.14t veeksha benchmark \
         --config main_config.yml \
         --client.model llama-70b  # Override model from client.yml
 

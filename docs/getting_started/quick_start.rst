@@ -79,7 +79,7 @@ Execute the benchmark using the CLI (against an already-running server; for mana
 
 .. code-block:: bash
 
-    uvx veeksha benchmark --config my_benchmark.veeksha.yml
+    uvx -p 3.14t veeksha benchmark --config my_benchmark.veeksha.yml
 
 Step 3: View results
 --------------------
@@ -170,7 +170,7 @@ Override configuration values without editing the file:
 
 .. code-block:: bash
 
-    uvx veeksha benchmark \
+    uvx -p 3.14t veeksha benchmark \
         --config my_benchmark.veeksha.yml \
         --traffic_scheduler.interval_generator.arrival_rate 20.0 \
         --runtime.benchmark_timeout 120
@@ -185,7 +185,7 @@ Common patterns
 
 .. code-block:: bash
 
-    uvx veeksha benchmark \
+    uvx -p 3.14t veeksha benchmark \
         --config my_benchmark.veeksha.yml \
         --traffic_scheduler.interval_generator.arrival_rate 1.0 \
         --runtime.max_sessions 50
