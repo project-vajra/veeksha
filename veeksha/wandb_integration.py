@@ -686,6 +686,8 @@ def _log_microbench_prefill(results: Dict[str, Any], wandb: Any) -> None:
     if not rows:
         return
 
+    rows = sorted(rows, key=lambda r: r["input_length"])
+
     # Scalars per input length
     for row in rows:
         il = row["input_length"]
@@ -725,12 +727,31 @@ def _log_microbench_prefill(results: Dict[str, Any], wandb: Any) -> None:
         )
     wandb.log({"prefill_results": wandb.Table(columns=columns, data=data)})
 
+    # Line charts
+    xs = [r["input_length"] for r in rows]
+    wandb.log(
+        {
+            "prefill/ttfc_vs_input_length": wandb.plot.line_series(
+                xs=xs,
+                ys=[
+                    [r.get("ttfc", {}).get("median", 0) * 1000 for r in rows],
+                    [r.get("ttfc", {}).get("p99", 0) * 1000 for r in rows],
+                ],
+                keys=["P50", "P99"],
+                title="TTFC vs Input Length",
+                xname="Input Length (tokens)",
+            ),
+        }
+    )
+
 
 def _log_microbench_decode(results: Dict[str, Any], wandb: Any) -> None:
     """Log decode microbenchmark results to wandb."""
     rows = results.get("results", [])
     if not rows:
         return
+
+    rows = sorted(rows, key=lambda r: (r["batch_size"], r["input_length"]))
 
     # Scalars per (batch_size, input_length)
     for row in rows:
@@ -774,6 +795,65 @@ def _log_microbench_decode(results: Dict[str, Any], wandb: Any) -> None:
             ]
         )
     wandb.log({"decode_results": wandb.Table(columns=columns, data=data)})
+
+    # Line charts: TBT vs batch size, one series per input_length
+    from collections import defaultdict
+
+    by_il: Dict[int, list] = defaultdict(list)
+    for r in rows:
+        by_il[r["input_length"]].append(r)
+
+    if len(by_il) >= 1:
+        # Group by input_length → TBT P50 vs batch_size
+        all_bs = sorted({r["batch_size"] for r in rows})
+        series_keys = []
+        series_ys = []
+        for il in sorted(by_il):
+            bs_map = {
+                r["batch_size"]: r.get("tbt", {}).get("median", 0) * 1000
+                for r in by_il[il]
+            }
+            series_keys.append(f"IL={il}")
+            series_ys.append([bs_map.get(bs, None) for bs in all_bs])
+        wandb.log(
+            {
+                "decode/tbt_p50_vs_batch_size": wandb.plot.line_series(
+                    xs=all_bs,
+                    ys=series_ys,
+                    keys=series_keys,
+                    title="TBT P50 vs Batch Size",
+                    xname="Batch Size",
+                ),
+            }
+        )
+
+    # Group by batch_size → TBT P50 vs input_length
+    by_bs: Dict[int, list] = defaultdict(list)
+    for r in rows:
+        by_bs[r["batch_size"]].append(r)
+
+    if len(by_bs) >= 1:
+        all_il = sorted({r["input_length"] for r in rows})
+        series_keys = []
+        series_ys = []
+        for bs in sorted(by_bs):
+            il_map = {
+                r["input_length"]: r.get("tbt", {}).get("median", 0) * 1000
+                for r in by_bs[bs]
+            }
+            series_keys.append(f"BS={bs}")
+            series_ys.append([il_map.get(il, None) for il in all_il])
+        wandb.log(
+            {
+                "decode/tbt_p50_vs_input_length": wandb.plot.line_series(
+                    xs=all_il,
+                    ys=series_ys,
+                    keys=series_keys,
+                    title="TBT P50 vs Input Length",
+                    xname="Input Length (tokens)",
+                ),
+            }
+        )
 
 
 def _log_microbench_stress(results: Dict[str, Any], wandb: Any) -> None:
@@ -851,6 +931,90 @@ def _log_microbench_stress(results: Dict[str, Any], wandb: Any) -> None:
             )
         data.append(row)
     wandb.log({"stress_results": wandb.Table(columns=columns, data=data)})
+
+    # Line charts
+    levels = [r["level"] for r in rows]
+
+    wandb.log(
+        {
+            "stress/throughput_vs_load": wandb.plot.line_series(
+                xs=levels,
+                ys=[
+                    [r["output_throughput"] for r in rows],
+                    [r["input_throughput"] for r in rows],
+                ],
+                keys=["Output (tok/s)", "Input (tok/s)"],
+                title="Throughput vs Load",
+                xname="Concurrency",
+            ),
+        }
+    )
+
+    wandb.log(
+        {
+            "stress/latency_vs_load": wandb.plot.line_series(
+                xs=levels,
+                ys=[
+                    [r["e2e_latency_p50"] * 1000 for r in rows],
+                    [r["e2e_latency_p99"] * 1000 for r in rows],
+                    [r["ttfc_p50"] * 1000 for r in rows],
+                    [r["ttfc_p99"] * 1000 for r in rows],
+                ],
+                keys=["E2E P50", "E2E P99", "TTFC P50", "TTFC P99"],
+                title="Latency vs Load (ms)",
+                xname="Concurrency",
+            ),
+        }
+    )
+
+    wandb.log(
+        {
+            "stress/interactivity_vs_load": wandb.plot.line_series(
+                xs=levels,
+                ys=[
+                    [r["interactivity_p50"] for r in rows],
+                    [r["interactivity_p99"] for r in rows],
+                ],
+                keys=["P50 (tok/s/user)", "P99 (tok/s/user)"],
+                title="Interactivity vs Load",
+                xname="Concurrency",
+            ),
+        }
+    )
+
+    if num_gpus > 0:
+        tps_per_gpu = [
+            r.get("output_tps_per_gpu", r["output_throughput"] / num_gpus) for r in rows
+        ]
+        wandb.log(
+            {
+                "stress/tps_per_gpu_vs_load": wandb.plot.line_series(
+                    xs=levels,
+                    ys=[
+                        tps_per_gpu,
+                        [
+                            r.get("input_tps_per_gpu", r["input_throughput"] / num_gpus)
+                            for r in rows
+                        ],
+                    ],
+                    keys=["Output TPS/GPU", "Input TPS/GPU"],
+                    title="TPS/GPU vs Load",
+                    xname="Concurrency",
+                ),
+            }
+        )
+
+        wandb.log(
+            {
+                "stress/throughput_curve": wandb.plot.line_series(
+                    xs=[r["interactivity_p50"] for r in rows],
+                    ys=[tps_per_gpu],
+                    keys=["TPS/GPU"],
+                    title="Throughput Curve: TPS/GPU vs TPS/User",
+                    xname="TPS/User (tok/s/user)",
+                ),
+            }
+        )
 
     # Summary
     if rows:
