@@ -81,17 +81,24 @@ def gen_prompt_from_corpus(
     rng,
     suffix: Optional[RawContent] = None,
 ) -> RawContent:
-    """Assemble exactly num_tokens token IDs from a pre-tokenized corpus."""
+    """Assemble ~num_tokens tokens from pre-tokenized corpus via a single decode.
+
+    Takes exactly num_tokens token IDs from the (shuffled, tiled) corpus and
+    decodes them once.  The resulting text will re-tokenize to approximately
+    num_tokens tokens (within ±a few at chunk boundaries), which is accurate
+    enough for throughput benchmarks.
+
+    The previous implementation binary-searched over decode+encode round-trips
+    to hit an exact count.  With the Sarvam tokenizer that cost ~38ms per
+    step × 16 steps × 1172 sessions = 12 minutes of stall before the
+    benchmark started for 28k-token inputs.
+    """
     empty_content = tokenizer_handle.decode([])
     effective_suffix = suffix if suffix is not None else empty_content
 
     if num_tokens <= 0:
         return empty_content
 
-    suffix_len = tokenizer_handle.count_tokens(effective_suffix)
-    target_body_len = max(0, num_tokens - suffix_len)
-
-    # 1. get candidate tokens
     token_lines = [line for line in pretokenized_lines if line]
     if not token_lines:
         return effective_suffix
@@ -99,47 +106,10 @@ def gen_prompt_from_corpus(
     rng.shuffle(token_lines)
     base_tokens = [tok for line in token_lines for tok in line]
 
-    # If corpus is smaller than needed, tile it efficiently to reach target
-    needed = int(target_body_len * 1.2) + 50 + 100
-    if len(base_tokens) < needed and base_tokens:
-        # Calculate how many full copies we need, plus one extra for safety
-        repeats = (needed // len(base_tokens)) + 2
-        candidate_ids = (base_tokens * repeats)[:needed]
+    if len(base_tokens) < num_tokens and base_tokens:
+        repeats = (num_tokens // len(base_tokens)) + 2
+        body_ids = (base_tokens * repeats)[:num_tokens]
     else:
-        candidate_ids = base_tokens[:needed]
+        body_ids = base_tokens[:num_tokens]
 
-    # 2. binary search for best token count
-    low, high, best_k = 0, len(candidate_ids), len(candidate_ids)
-    while low <= high:
-        mid = (low + high) // 2
-        count = tokenizer_handle.count_tokens(
-            tokenizer_handle.decode(candidate_ids[:mid]) + effective_suffix
-        )
-        if count == num_tokens:
-            return tokenizer_handle.decode(candidate_ids[:mid]) + effective_suffix
-        elif count < num_tokens:
-            low = mid + 1
-        else:
-            best_k = mid
-            high = mid - 1
-
-    # 3. trim or pad characters
-    def try_adjust(base_ids: List[int], trim: bool) -> Optional[RawContent]:
-        text = tokenizer_handle.decode(base_ids)
-        limit = 200 if trim else 50
-        for i in range(limit):
-            adjusted = text[:-i] if trim and i > 0 else text + (" " * i)
-            if trim and i >= len(text):
-                break
-            if tokenizer_handle.count_tokens(adjusted + effective_suffix) == num_tokens:
-                return adjusted + effective_suffix
-        return None
-
-    # overshoot
-    if result := try_adjust(candidate_ids[:best_k], trim=True):
-        return result
-    # undershoot
-    if best_k > 0 and (result := try_adjust(candidate_ids[: best_k - 1], trim=False)):
-        return result
-
-    return tokenizer_handle.decode(candidate_ids[:best_k]) + effective_suffix
+    return tokenizer_handle.decode(body_ids) + effective_suffix

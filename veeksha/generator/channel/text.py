@@ -1,10 +1,10 @@
 from typing import Optional
 
-from veeksha.benchmark_data_utils import load_corpus
 from veeksha.config.generator.channel import TextChannelGeneratorConfig
+from veeksha.core.prompt_generator import PromptStringGenerator
 from veeksha.core.request_content import TextChannelRequestContent
 from veeksha.core.seeding import SeedManager
-from veeksha.core.tokenizer import TokenizerHandle, gen_prompt_from_corpus
+from veeksha.core.tokenizer import TokenizerHandle
 from veeksha.generator.channel.base import BaseChannelGenerator
 from veeksha.generator.length.registry import LengthGeneratorRegistry
 from veeksha.logger import init_logger
@@ -15,7 +15,9 @@ logger = init_logger(__name__)
 class TextChannelGenerator(BaseChannelGenerator):
     """Generator for text channel input content.
 
-    This generator produces text input content for requests.
+    Uses PromptStringGenerator: stable encodings are loaded from disk cache
+    (~10 ms) or generated once (~2 s) and then pre-decoded.  Per-session
+    cost is pure Python string ops (~0.5 ms), with no tokenizer calls.
     """
 
     def __init__(
@@ -33,27 +35,18 @@ class TextChannelGenerator(BaseChannelGenerator):
             rng=self.seed_manager.numpy_factory("body_length")(),
         )
         self.tokenizer_handle = tokenizer_handle
-        corpus_lines = [line.strip() for line in load_corpus()]
-        self._corpus_lines = [
-            list(self.tokenizer_handle.encode(line)) for line in corpus_lines if line
-        ]
-        self._corpus_rng = self.seed_manager.random("text_corpus")
-
+        self._prompt_gen = PromptStringGenerator(
+            tokenizer_handle,
+            rng=self.seed_manager.random("prompt_gen"),
+        )
         self._shared_prefix_tokens: list[int] = []
         self._prefix_rng = self.seed_manager.random("shared_prefix")
 
     def _generate_shared_prefix(self, num_tokens: int) -> list[int]:
-        """Generate and cache shared prefix tokens. Extends existing prefix if needed."""
+        """Generate and cache shared prefix tokens. Extends if needed."""
         if len(self._shared_prefix_tokens) < num_tokens:
-            # Extend the existing prefix with additional tokens
             tokens_needed = num_tokens - len(self._shared_prefix_tokens)
-            additional_text = gen_prompt_from_corpus(
-                num_tokens=tokens_needed,
-                pretokenized_lines=self._corpus_lines,
-                tokenizer_handle=self.tokenizer_handle,
-                rng=self._prefix_rng,
-                suffix="",
-            )
+            additional_text = self._prompt_gen.generate(tokens_needed)
             self._shared_prefix_tokens.extend(
                 list(self.tokenizer_handle.encode(additional_text))
             )
@@ -64,33 +57,20 @@ class TextChannelGenerator(BaseChannelGenerator):
         is_root: bool = False,
         min_tokens_suffix: Optional[int] = None,
     ) -> TextChannelRequestContent:
-        """Generate text channel content.
-
-        Args:
-            is_root: Whether this is a root request (for shared prefix handling).
-            min_tokens_suffix: If provided, appends a suffix instruction requesting
-                at least this many output tokens. This is used when
-                use_min_tokens_prompt_fallback is enabled in the client.
-
-        Returns:
-            TextChannelRequestContent with the generated input text.
-        """
+        """Generate text channel content."""
         text_token_length = self.body_length_generator.get_next_value()
 
         use_shared_prefix = (
             is_root
             and self.config.shared_prefix_ratio > 0
-            and self._corpus_rng.random() < self.config.shared_prefix_probability
+            and self._prefix_rng.random() < self.config.shared_prefix_probability
         )
 
-        # when using the shared prefix + instruction suffix, there are things to consider
         if use_shared_prefix:
             prefix_length = int(text_token_length * self.config.shared_prefix_ratio)
             remainder_length = text_token_length - prefix_length
             effective_length = remainder_length
         else:
-            prefix_length = 0
-            remainder_length = text_token_length
             effective_length = text_token_length
 
         # Build suffix for min tokens instruction if requested
@@ -101,37 +81,22 @@ class TextChannelGenerator(BaseChannelGenerator):
             if effective_length <= suffix_tokens:
                 if not self._logged_body_length_warning:
                     logger.warning(
-                        f"Effective body length ({effective_length}) is too short to append "
-                        f"min tokens instruction ({suffix_tokens} tokens). "
+                        f"Effective body length ({effective_length}) is too short to "
+                        f"append min tokens instruction ({suffix_tokens} tokens). "
                         "Skipping instruction for this request."
                     )
                     self._logged_body_length_warning = True
                 suffix = ""
 
         if use_shared_prefix:
-            prefix_tokens = self._generate_shared_prefix(prefix_length)
-
-            # advance rng for unique remainder of each root request
-            self._corpus_rng.random()
-
-            remainder_text = gen_prompt_from_corpus(
-                num_tokens=remainder_length,
-                pretokenized_lines=self._corpus_lines,
-                tokenizer_handle=self.tokenizer_handle,
-                rng=self._corpus_rng,
-                suffix=suffix,
-            )
-
+            plen = int(text_token_length * self.config.shared_prefix_ratio)
+            rlen = text_token_length - plen
+            prefix_tokens = self._generate_shared_prefix(plen)
             prefix_text = self.tokenizer_handle.decode(prefix_tokens)
+            remainder_text = self._prompt_gen.generate(rlen) + suffix
             input_text = prefix_text + " " + remainder_text
         else:
-            input_text = gen_prompt_from_corpus(
-                num_tokens=text_token_length,
-                pretokenized_lines=self._corpus_lines,
-                tokenizer_handle=self.tokenizer_handle,
-                rng=self._corpus_rng,
-                suffix=suffix,
-            )
+            input_text = self._prompt_gen.generate(text_token_length) + suffix
 
         return TextChannelRequestContent(
             input_text=input_text,
