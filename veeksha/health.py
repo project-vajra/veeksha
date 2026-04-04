@@ -288,13 +288,13 @@ class HealthChecker:
         dispatched_col = self._get_col("scheduler_dispatched_at")
 
         # Get benchmark end time (last request completion)
-        all_ends = self.merged_df[dispatched_col] + self.merged_df["end_to_end_latency"]
+        all_ends = self.merged_df[dispatched_col] + self.merged_df["e2e"]
         benchmark_end_time = all_ends.max()
 
         intervals = []
         for session_id, group in self.merged_df.groupby(session_col):
             starts = group[dispatched_col]
-            ends = group[dispatched_col] + group["end_to_end_latency"]
+            ends = group[dispatched_col] + group["e2e"]
 
             s_start = starts.min()
 

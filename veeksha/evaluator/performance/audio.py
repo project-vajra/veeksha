@@ -2,9 +2,11 @@
 
 import json
 import os
+import re
+import string
 import struct
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from veeksha.config.evaluator import (
@@ -19,6 +21,78 @@ from veeksha.types import ChannelModality
 logger = init_logger(__name__)
 
 SAMPLE_RATE_DEFAULT = 24000
+
+# ---- Text normalization for WER ----
+
+_ONES = {
+    "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
+    "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine",
+    "10": "ten", "11": "eleven", "12": "twelve", "13": "thirteen",
+    "14": "fourteen", "15": "fifteen", "16": "sixteen", "17": "seventeen",
+    "18": "eighteen", "19": "nineteen", "20": "twenty",
+}
+
+_ORDINALS = {
+    "1st": "first", "2nd": "second", "3rd": "third", "4th": "fourth",
+    "5th": "fifth", "6th": "sixth", "7th": "seventh", "8th": "eighth",
+    "9th": "ninth", "10th": "tenth",
+}
+
+_CONTRACTIONS = {
+    "can't": "cannot", "won't": "will not", "don't": "do not",
+    "isn't": "is not", "aren't": "are not", "wasn't": "was not",
+    "weren't": "were not", "it's": "it is", "i'm": "i am",
+    "i've": "i have", "i'll": "i will", "i'd": "i would",
+    "he's": "he is", "she's": "she is", "they're": "they are",
+    "we're": "we are", "you're": "you are", "that's": "that is",
+    "there's": "there is", "what's": "what is",
+}
+
+_PUNCTUATION_TABLE = str.maketrans("", "", string.punctuation)
+
+
+def _normalize_transcript(text: str) -> str:
+    """Normalize transcript for fair WER comparison.
+
+    Lowercase → expand contractions → expand ordinals →
+    expand numbers (0-20) → remove punctuation → collapse whitespace.
+    """
+    text = text.lower().strip()
+    for contraction, expansion in _CONTRACTIONS.items():
+        text = text.replace(contraction, expansion)
+    for ordinal, word in _ORDINALS.items():
+        text = re.sub(r"\b" + re.escape(ordinal) + r"\b", word, text)
+    for digit, word in _ONES.items():
+        text = re.sub(r"\b" + re.escape(digit) + r"\b", word, text)
+    text = text.translate(_PUNCTUATION_TABLE)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _compute_wer(reference: str, hypothesis: str) -> float:
+    """Word Error Rate via Levenshtein on word sequences.
+
+    Returns WER as a percentage (0-100+).
+    """
+    ref_words = _normalize_transcript(reference).split()
+    hyp_words = _normalize_transcript(hypothesis).split()
+
+    if not ref_words:
+        return 0.0 if not hyp_words else 100.0
+
+    # Levenshtein DP on word lists
+    n, m = len(ref_words), len(hyp_words)
+    prev = list(range(m + 1))
+    for i in range(1, n + 1):
+        curr = [i] + [0] * m
+        for j in range(1, m + 1):
+            if ref_words[i - 1] == hyp_words[j - 1]:
+                curr[j] = prev[j - 1]
+            else:
+                curr[j] = 1 + min(prev[j], curr[j - 1], prev[j - 1])
+        prev = curr
+
+    return (prev[m] / n) * 100
 
 
 def _make_wav_header(data_size: int, sample_rate: int = SAMPLE_RATE_DEFAULT) -> bytes:
@@ -51,20 +125,24 @@ class AudioRequestMetrics:
     session_id: int
     request_dispatched_at: float
     client_completed_at: float
-    ttfa: float
-    end_to_end_latency: float
+    ttft: float
+    e2e: float
     generated_audio_duration: float
     rtf: float
     chunk_count: int
     pcm_byte_count: int
     input_tokens: int = 0
+    tpot: Optional[float] = None
+    wer: Optional[float] = None
+    transcript: Optional[str] = None
+    expected_transcript: Optional[str] = None
     session_total_requests: Optional[int] = None
 
 
 class AudioPerformanceEvaluator:
-    """Performance evaluator for audio generation (TTS).
+    """Performance evaluator for audio (TTS / STT).
 
-    Tracks per-request TTFA, total latency, audio duration, RTF (real-time factor),
+    Tracks per-request TTFT, total latency, audio duration, RTF (real-time factor),
     and chunk count. Computes p50/p90/p99 aggregates via CDFSketch.
     """
 
@@ -81,14 +159,16 @@ class AudioPerformanceEvaluator:
 
         # CDF sketches for aggregate metrics
         self.summaries: Dict[str, CDFSketch] = {
-            "ttfa": CDFSketch("ttfa", unit="ms"),
-            "end_to_end_latency": CDFSketch("end_to_end_latency", unit="ms"),
+            "ttft": CDFSketch("ttft", unit="ms"),
+            "tpot": CDFSketch("tpot", unit="ms"),
+            "e2e": CDFSketch("e2e", unit="ms"),
             "generated_audio_duration": CDFSketch(
                 "generated_audio_duration", unit="ms"
             ),
             "rtf": CDFSketch("rtf"),
             "chunk_count": CDFSketch("chunk_count"),
             "input_tokens": CDFSketch("input_tokens", unit="tokens"),
+            "wer": CDFSketch("wer", unit="%"),
             "session_size": CDFSketch("session_size"),
             "session_duration": CDFSketch("session_duration", unit="ms"),
         }
@@ -152,8 +232,9 @@ class AudioPerformanceEvaluator:
                 return
 
             cm = channel_response.metrics or {}
-            ttfa = cm.get("ttfa", 0.0)
-            end_to_end_latency = cm.get("end_to_end_latency", 0.0)
+            ttft = cm.get("ttft", 0.0)
+            tpot_value: Optional[float] = cm.get("tpot")
+            e2e = cm.get("e2e", 0.0)
             generated_audio_duration = cm.get("generated_audio_duration", 0.0)
             rtf = cm.get("rtf", 0.0)
             chunk_count = cm.get("chunk_count", 0)
@@ -162,18 +243,29 @@ class AudioPerformanceEvaluator:
 
             session_total_requests = getattr(response, "session_total_requests", None)
 
+            # WER computation
+            transcript = cm.get("transcript")
+            expected_transcript = cm.get("expected_transcript")
+            wer_value: Optional[float] = None
+            if transcript is not None and expected_transcript is not None:
+                wer_value = _compute_wer(expected_transcript, transcript)
+
             metrics = AudioRequestMetrics(
                 request_id=request_id,
                 session_id=session_id,
                 request_dispatched_at=dispatched_at,
                 client_completed_at=completed_at,
-                ttfa=ttfa,
-                end_to_end_latency=end_to_end_latency,
+                ttft=ttft,
+                e2e=e2e,
                 generated_audio_duration=generated_audio_duration,
                 rtf=rtf,
                 chunk_count=chunk_count,
                 pcm_byte_count=pcm_byte_count,
                 input_tokens=input_tokens,
+                tpot=tpot_value,
+                wer=wer_value,
+                transcript=transcript,
+                expected_transcript=expected_transcript,
                 session_total_requests=session_total_requests,
             )
 
@@ -206,12 +298,16 @@ class AudioPerformanceEvaluator:
             )
 
             # Update CDF sketches
-            self.summaries["ttfa"].put(ttfa)
-            self.summaries["end_to_end_latency"].put(end_to_end_latency)
+            self.summaries["ttft"].put(ttft)
+            if tpot_value is not None:
+                self.summaries["tpot"].put(tpot_value)
+            self.summaries["e2e"].put(e2e)
             self.summaries["generated_audio_duration"].put(generated_audio_duration)
             self.summaries["rtf"].put(rtf)
             self.summaries["chunk_count"].put(chunk_count)
             self.summaries["input_tokens"].put(input_tokens)
+            if wer_value is not None:
+                self.summaries["wer"].put(wer_value)
 
             # Store audio buffer for optional WAV saving
             if self.channel_config.save_audio_files:
@@ -300,26 +396,33 @@ class AudioPerformanceEvaluator:
             normalized_completed = max(
                 0.0, m.client_completed_at - self._request_time_reference
             )
-            rows.append(
-                {
-                    "request_id": m.request_id,
-                    "session_id": m.session_id,
-                    "session_total_requests": m.session_total_requests,
-                    # Lifecycle timestamps
-                    "scheduler_ready_at": lifecycle["scheduler_ready_at"],
-                    "scheduler_dispatched_at": round(normalized_dispatched, 5),
-                    "client_picked_up_at": lifecycle["client_picked_up_at"],
-                    "client_completed_at": round(normalized_completed, 5),
-                    "result_processed_at": lifecycle["result_processed_at"],
-                    "ttfa": round(m.ttfa, 3),
-                    "end_to_end_latency": round(m.end_to_end_latency, 3),
-                    "generated_audio_duration": round(m.generated_audio_duration, 3),
-                    "rtf": round(m.rtf, 5),
-                    "chunk_count": m.chunk_count,
-                    "pcm_byte_count": m.pcm_byte_count,
-                    "input_tokens": m.input_tokens,
-                }
-            )
+            row_dict = {
+                "request_id": m.request_id,
+                "session_id": m.session_id,
+                "session_total_requests": m.session_total_requests,
+                # Lifecycle timestamps
+                "scheduler_ready_at": lifecycle["scheduler_ready_at"],
+                "scheduler_dispatched_at": round(normalized_dispatched, 5),
+                "client_picked_up_at": lifecycle["client_picked_up_at"],
+                "client_completed_at": round(normalized_completed, 5),
+                "result_processed_at": lifecycle["result_processed_at"],
+                "ttft": round(m.ttft, 3),
+                "e2e": round(m.e2e, 3),
+                "generated_audio_duration": round(m.generated_audio_duration, 3),
+                "rtf": round(m.rtf, 5),
+                "chunk_count": m.chunk_count,
+                "pcm_byte_count": m.pcm_byte_count,
+                "input_tokens": m.input_tokens,
+            }
+            if m.tpot is not None:
+                row_dict["tpot"] = round(m.tpot, 3)
+            if m.wer is not None:
+                row_dict["wer"] = round(m.wer, 3)
+            if m.transcript is not None:
+                row_dict["transcript"] = m.transcript
+            if m.expected_transcript is not None:
+                row_dict["expected_transcript"] = m.expected_transcript
+            rows.append(row_dict)
         return rows
 
     def _append_request_level_rows(

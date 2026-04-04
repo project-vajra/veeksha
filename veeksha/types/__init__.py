@@ -32,6 +32,8 @@ class TraceFlavorType(BaseIntEnum):
     CLAUDE_CODE = 1
     MOONCAKE_CONV = 2
     RAG = 3
+    SHAREGPT = 4
+    AUDIO = 5
 
 
 class ChannelModality(BaseIntEnum):
@@ -59,6 +61,7 @@ class ClientType(BaseIntEnum):
     OPENAI_COMPLETIONS = 2
     OPENAI_ROUTER = 3
     TTS = 4
+    STT = 5
 
 
 # ----- Server -----

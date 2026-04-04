@@ -4,6 +4,8 @@ from typing import Optional
 from veeksha.config.client import (
     BaseClientConfig,
     OpenAIChatCompletionsClientConfig,
+    STTClientConfig,
+    TTSClientConfig,
 )
 from veeksha.config.core.flat_dataclass import create_flat_dataclass
 from veeksha.config.core.frozen_dataclass import frozen_dataclass

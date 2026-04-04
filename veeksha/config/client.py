@@ -210,6 +210,11 @@ class TTSClientConfig(BaseClientConfig):
     def __post_init__(self):
         super().__post_init__()
 
+        # Skip validation when instantiated with defaults by the flat_dataclass
+        # framework for non-selected polymorphic children.
+        if not self.provider and not self.model:
+            return
+
         # --- Required field checks ---
         if not self.provider:
             raise ValueError(
@@ -249,6 +254,120 @@ class TTSClientConfig(BaseClientConfig):
 
     def build_tokenizer_provider(self):
         """TTS models use a simple word-split tokenizer."""
+        from veeksha.core.tokenizer import TokenizerHandle, TokenizerProvider
+        from veeksha.types import ChannelModality
+
+        handle = TokenizerHandle(
+            count_tokens=lambda text: len(text.split()),
+            decode=lambda ids: " ".join(str(i) for i in ids),
+            encode=lambda text: list(range(len(text.split()))),
+        )
+        return TokenizerProvider(
+            {ChannelModality.TEXT: handle},
+            model_name=self.model,
+        )
+
+
+@frozen_dataclass
+class STTClientConfig(BaseClientConfig):
+    """STT client configuration for speech-to-text APIs.
+
+    `client.type: stt` sends audio to an STT API and measures transcription
+    performance metrics (TTFT, latency, RTF).
+    """
+
+    provider: str = field(
+        default="",
+        metadata={
+            "help": "STT provider name. "
+            "Supported: 'vajra', 'vllm', 'vllm_realtime'."
+        },
+    )
+    language: str = field(
+        default="en",
+        metadata={"help": "Language code for transcription (e.g. 'en', 'es')."},
+    )
+    audio_format: str = field(
+        default="wav",
+        metadata={
+            "help": "Audio format of input files. "
+            "Supported: 'wav', 'mp3', 'flac', 'ogg', 'webm'."
+        },
+    )
+    sample_rate: int = field(
+        default=16000,
+        metadata={"help": "Expected audio sample rate in Hz."},
+    )
+    streaming: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to use streaming transcription (SSE). "
+            "Only supported by vllm provider. "
+            "vllm_realtime always streams via WebSocket."
+        },
+    )
+    ws_chunk_size: int = field(
+        default=4096,
+        metadata={
+            "help": "Bytes of raw PCM audio per WebSocket message "
+            "(vllm_realtime only)."
+        },
+    )
+    model: str = field(
+        default="",
+        metadata={
+            "help": "The STT model ID (e.g. 'openai/whisper-large-v3')."
+        },
+    )
+
+    @classmethod
+    def get_type(cls) -> ClientType:
+        return ClientType.STT
+
+    _SUPPORTED_PROVIDERS = ("vajra", "vllm", "vllm_realtime")
+
+    _FORMAT_MIME_MAP = {
+        "wav": "audio/wav",
+        "mp3": "audio/mpeg",
+        "flac": "audio/flac",
+        "ogg": "audio/ogg",
+        "webm": "audio/webm",
+    }
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        if not self.provider and not self.model:
+            return
+
+        if not self.provider:
+            raise ValueError(
+                "STTClientConfig.provider is required. "
+                f"Supported: {', '.join(self._SUPPORTED_PROVIDERS)}"
+            )
+        if self.provider not in self._SUPPORTED_PROVIDERS:
+            raise ValueError(
+                f"Unsupported STT provider: {self.provider}. "
+                f"Supported: {', '.join(self._SUPPORTED_PROVIDERS)}"
+            )
+        if not self.model:
+            raise ValueError(
+                "STTClientConfig.model is required "
+                "(e.g. 'openai/whisper-large-v3')."
+            )
+        if self.api_base is None:
+            raise ValueError("STTClientConfig.api_base is required.")
+        if self.streaming and self.provider == "vajra":
+            raise ValueError(
+                "Streaming transcription is not supported by the vajra provider."
+            )
+
+    def get_mime_type(self) -> str:
+        """Return MIME type for the configured audio format."""
+        return self._FORMAT_MIME_MAP.get(self.audio_format, "audio/wav")
+
+    def build_tokenizer_provider(self):
+        """STT models use a simple word-split tokenizer."""
         from veeksha.core.tokenizer import TokenizerHandle, TokenizerProvider
         from veeksha.types import ChannelModality
 

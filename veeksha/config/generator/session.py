@@ -150,6 +150,70 @@ class RAGTraceFlavorConfig(BaseTraceFlavorConfig):
         return TraceFlavorType.RAG
 
 
+@frozen_dataclass
+class ShareGPTTraceFlavorConfig(BaseTraceFlavorConfig):
+    """ShareGPT conversation trace flavor configuration.
+
+    Reads ShareGPT-format conversations and uses assistant turn text
+    as TTS input. Each assistant turn becomes a single-request session.
+    Input text is truncated to a token length sampled uniformly between
+    min_tokens and max_tokens. Turns shorter than min_tokens are skipped.
+    """
+
+    assistant_role: str = field(
+        default="gpt",
+        metadata={
+            "help": "Role name for assistant turns in the ShareGPT data "
+            "(common values: 'gpt', 'assistant')."
+        },
+    )
+    min_tokens: int = field(
+        default=20,
+        metadata={
+            "help": "Minimum input token count. Turns shorter than this are skipped."
+        },
+    )
+    max_tokens: int = field(
+        default=100,
+        metadata={
+            "help": "Maximum input token count. Text is truncated to sampled length."
+        },
+    )
+    min_alpha_ratio: float = field(
+        default=0.5,
+        metadata={
+            "help": "Minimum ratio of alphabetic characters to total non-space characters. "
+            "Filters out junk entries like number sequences or code snippets. "
+            "Set to 0.0 to disable."
+        },
+    )
+
+    @classmethod
+    def get_type(cls):
+        return TraceFlavorType.SHAREGPT
+
+
+@frozen_dataclass
+class AudioTraceFlavorConfig(BaseTraceFlavorConfig):
+    """Audio trace flavor configuration for STT benchmarking.
+
+    Reads a JSONL file where each line has a ``session_id`` and
+    ``audio_file`` (path to an audio file).  Each row becomes a
+    single-request session with an AUDIO channel.
+    """
+
+    audio_dir: str = field(
+        default="",
+        metadata={
+            "help": "Optional base directory prepended to relative audio_file paths."
+        },
+    )
+
+    @classmethod
+    def get_type(cls):
+        return TraceFlavorType.AUDIO
+
+
 # ----- Trace Session Generator Config -----
 
 

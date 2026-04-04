@@ -89,7 +89,12 @@ class TTSClient(BaseLLMClient):
                 data["speaker"] = self._voice_id
             return data
         elif self._provider == "vllm_omni":
-            payload = {"model": self._model_id, "input": text}
+            payload = {
+                "model": self._model_id,
+                "input": text,
+                "stream": True,
+                "response_format": "pcm",
+            }
             if self._voice_id:
                 payload["voice"] = self._voice_id
             return payload
@@ -200,8 +205,8 @@ class TTSClient(BaseLLMClient):
                 modality=ChannelModality.AUDIO,
                 content=audio_data,
                 metrics={
-                    "ttfa": round(ttfa or 0.0, 3),
-                    "end_to_end_latency": round(total_latency_ms, 3),
+                    "ttft": round(ttfa or 0.0, 3),
+                    "e2e": round(total_latency_ms, 3),
                     "generated_audio_duration": round(audio_dur_ms, 3),
                     "rtf": round(rtf, 5),
                     "chunk_count": chunk_count,
