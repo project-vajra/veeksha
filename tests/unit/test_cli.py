@@ -4,10 +4,19 @@ import subprocess
 
 import pytest
 
+from veeksha.version import __version__
+
 
 @pytest.mark.unit
 class TestCLI:
     """Test CLI commands work correctly."""
+
+    def test_top_level_version_flag(self) -> None:
+        """Test that the top-level version flag works."""
+        cmd = ["python", "-m", "veeksha", "--version"]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        assert result.returncode == 0, "Version command failed"
+        assert result.stdout.strip() == f"veeksha {__version__}", "Version output mismatch"
 
     def test_benchmark_help_command(self) -> None:
         """Test that benchmark help command works."""

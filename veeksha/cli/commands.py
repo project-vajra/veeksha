@@ -34,6 +34,7 @@ from veeksha.microbench.decode import run_decode
 from veeksha.microbench.diff import DiffConfig, run_diff
 from veeksha.microbench.prefill import run_prefill
 from veeksha.microbench.stress import run_stress
+from veeksha.version import __version__
 
 _RUNNERS = {
     BenchmarkConfig: run_benchmark,
@@ -44,9 +45,15 @@ _RUNNERS = {
     DiffConfig: lambda configs: [run_diff(c) for c in configs],
 }
 
+_VERSION_FLAGS = {"--version", "-V"}
+
 
 def main() -> None:
     """Entry point for the veeksha CLI."""
+    if len(sys.argv) == 2 and sys.argv[1] in _VERSION_FLAGS:
+        print(f"veeksha {__version__}")
+        return
+
     configs = parse_cli_sweep(VeekshaCommand)
     if not configs:
         sys.exit("No configuration resolved from CLI arguments.")
