@@ -9,6 +9,7 @@ integrating with external tools.
 
    configuration
    output_files
+   trace_flavors
    capacity_search
    sweeps
    server_management

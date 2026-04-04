@@ -207,7 +207,7 @@ Traces directory
         {
           "request_id": 42,
           "session_id": 7,
-          "session_size": 21
+          "session_size": 21,
           "dispatched_at": 0.49085,
           "session_context": {
             "node_id": 0,

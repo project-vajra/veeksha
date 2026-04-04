@@ -439,30 +439,8 @@ The trace file needs ``input_length`` and ``output_length`` columns (or the
 common alternatives ``num_prefill_tokens`` / ``num_decode_tokens``, which are
 auto-normalized). Each row becomes an independent single-request session.
 
-**Trace flavors:**
-
-``request_log``
-    Independent requests with just token lengths. No session structure,
-    no corpus files. Supports CSV and JSONL. Best for replaying public
-    benchmarking datasets (ShareGPT, etc.).
-
-``timed_synthetic_session``
-    Timed session traces with synthetic content. Supports DAG replay through
-    ``session_context`` and context caching via ``page_size``. Best for testing
-    KV-cache reuse across linear and non-linear sessions.
-
-``untimed_content_multi_turn``
-    Replay conversation datasets with actual message content (ShareGPT,
-    LMSYS-Chat, etc.). Configurable message schema for different dataset
-    formats.
-
-``shared_prefix``
-    Multi-turn conversation dataset. Uses hash-based deterministic content
-    generation with configurable ``block_size``.
-
-``rag``
-    Single-turn retrieval-augmented generation. Includes ``num_documents``
-    warmup documents. Good for testing long-context prefill.
+For choosing a trace flavor and seeing what each trace file should look like,
+see :doc:`trace_flavors`.
 
 
 Replay conversation datasets

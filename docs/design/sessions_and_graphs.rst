@@ -305,13 +305,8 @@ Three session generator types are available:
             type: timed_synthetic_session
           wrap_mode: true
 
-    Supported trace flavors:
-
-    - ``request_log``: Independent requests with token lengths only
-    - ``timed_synthetic_session``: Timed session traces with synthetic content and context caching
-    - ``untimed_content_multi_turn``: Replay conversation datasets with actual message content
-    - ``shared_prefix``: Shared-prefix conversation traces
-    - ``rag``: RAG (Retrieval-Augmented Generation) traces
+    See :doc:`/user_guide/trace_flavors` for the user-facing comparison of
+    trace flavors and example trace shapes.
 
     Best for: Realistic workload replay, production traffic analysis.
 

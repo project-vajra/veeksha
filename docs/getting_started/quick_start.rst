@@ -224,8 +224,10 @@ For a detailed reference of all configuration options, see the :doc:`/config_ref
 Next steps
 ----------
 
+- :doc:`common_benchmarks` - Jump straight to the most common benchmark recipes
 - :ref:`Workload recipes <workload-recipes>` - Trace replay, multi-turn, agentic, LM-Eval examples
 - :doc:`/user_guide/configuration` - Full configuration system guide
 - :doc:`/user_guide/output_files` - Understand all output files
-- :doc:`/microbenchmarks/index` - Isolate prefill, decode, and stress performance
+- :doc:`/user_guide/microbenchmarks` - Isolate prefill, decode, and stress performance
+- - :doc:`/user_guide/trace_flavors` - Choose the right trace flavor and trace format
 - :doc:`/user_guide/capacity_search` - Find maximum sustainable throughput

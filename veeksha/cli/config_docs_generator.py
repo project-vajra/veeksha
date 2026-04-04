@@ -510,6 +510,13 @@ def _generate_api_index(all_classes: Dict[str, Type]) -> str:
                 "- :doc:`CapacitySearchConfig` - Configuration for ``veeksha.capacity_search`` runs"
             )
             lines.append("")
+            lines.append(".. toctree::")
+            lines.append("   :maxdepth: 1")
+            lines.append("   :hidden:")
+            lines.append("")
+            lines.append("   BenchmarkConfig")
+            lines.append("   CapacitySearchConfig")
+            lines.append("")
             continue
 
         # Toctree with human-readable display names
