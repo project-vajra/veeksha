@@ -41,6 +41,10 @@ class BaseMicrobenchmarkConfig:
     seed: int = field(42, help="Random seed")
     request_timeout: int = field(120, help="Request timeout in seconds")
     benchmark_timeout: int = field(600, help="Benchmark timeout in seconds")
+    post_timeout_grace_seconds: int = field(
+        30,
+        help="Grace period (s) for in-flight requests after benchmark window ends. -1 waits for all, 0 exits immediately.",
+    )
     max_tokens_param: str = field("max_tokens", help="Parameter name for max tokens")
     ignore_eos: bool = field(True, help="Ignore EOS token")
     validate_only: bool = field(

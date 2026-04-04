@@ -170,6 +170,7 @@ def _build_one_config(cfg: StressMicrobenchmarkConfig, level: int) -> BenchmarkC
             benchmark_timeout=cfg.point_duration,
             num_client_threads=max(level, 3),
             pregenerate_sessions=True,
+            post_timeout_grace_seconds=cfg.post_timeout_grace_seconds,
         ),
         trace_recorder=TraceRecorderConfig(enabled=False),
     )
