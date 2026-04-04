@@ -61,7 +61,7 @@ Quick example
 
 Run a simple benchmark against a running OpenAI-compatible endpoint::
 
-    uvx veeksha benchmark \
+    uvx -p 3.14t veeksha benchmark \
         --client.type openai_chat_completions \
         --client.api_base http://localhost:8000/v1 \
         --client.model meta-llama/Llama-3.2-1B-Instruct \
@@ -72,7 +72,7 @@ Run a simple benchmark against a running OpenAI-compatible endpoint::
 
 Or use a YAML configuration file::
 
-    uvx veeksha benchmark --config my_benchmark.veeksha.yml
+    uvx -p 3.14t veeksha benchmark --config my_benchmark.veeksha.yml
 
 
 Documentation

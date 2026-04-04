@@ -35,7 +35,7 @@ one request at a time with minimal output tokens.
 
 .. code-block:: bash
 
-    uvx veeksha prefill \
+    uvx -p 3.14t veeksha prefill \
         --api_base http://localhost:8000/v1 \
         --model meta-llama/Llama-3-8B-Instruct \
         --input_lengths 128 256 512 1024 2048 \
@@ -78,7 +78,7 @@ using decode window analysis to isolate steady-state decode performance.
 
 .. code-block:: bash
 
-    uvx veeksha decode \
+    uvx -p 3.14t veeksha decode \
         --api_base http://localhost:8000/v1 \
         --model meta-llama/Llama-3-8B-Instruct \
         --batch_sizes 1 2 4 8 16 \
@@ -135,7 +135,7 @@ Specify exact concurrency levels:
 
 .. code-block:: bash
 
-    uvx veeksha stress \
+    uvx -p 3.14t veeksha stress \
         --api_base http://localhost:8000/v1 \
         --model meta-llama/Llama-3-8B-Instruct \
         --input_length 512 --output_length 256 \
@@ -152,7 +152,7 @@ Automatically generate log-spaced concurrency levels:
 
 .. code-block:: bash
 
-    uvx veeksha stress \
+    uvx -p 3.14t veeksha stress \
         --mode.type range \
         --mode.concurrency_min 1 --mode.concurrency_max 64 --mode.concurrency_points 8 \
         --input_length 512 --output_length 256 \
@@ -178,7 +178,7 @@ approach:
 
 .. code-block:: bash
 
-    uvx veeksha stress \
+    uvx -p 3.14t veeksha stress \
         --api_base http://localhost:8000/v1 \
         --model meta-llama/Llama-3-8B-Instruct \
         --input_length 512 --output_length 256 \
@@ -194,7 +194,7 @@ avoids re-running concurrency levels that have already been measured:
 
 .. code-block:: bash
 
-    uvx veeksha stress \
+    uvx -p 3.14t veeksha stress \
         --mode.type auto \
         --mode.resume_dir microbench_output/stress/2026-03-07_23-07-30 \
         --point_duration 300 --warmup_duration 30 \

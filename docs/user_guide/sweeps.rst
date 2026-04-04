@@ -98,7 +98,7 @@ Run it:
 
 .. code-block:: bash
 
-    uvx veeksha benchmark --config sweep.veeksha.yml
+    uvx -p 3.14t veeksha benchmark --config sweep.veeksha.yml
 
 Veeksha automatically runs 4 benchmarks with rates 5, 10, 20, and 30.
 
@@ -206,7 +206,7 @@ Run with a single ``--config``:
 
 .. code-block:: bash
 
-    uvx veeksha benchmark --config main.yml
+    uvx -p 3.14t veeksha benchmark --config main.yml
 
 This creates **6 runs** (2 servers × 3 rates):
 

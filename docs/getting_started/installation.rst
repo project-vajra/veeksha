@@ -1,13 +1,13 @@
 Installation
 ============
 
-You can run Veeksha without explicit installation using `uvx`:
+You can run Veeksha without explicit installation using ``uvx`` with free-threaded Python:
 
 .. code-block:: bash
-   uvx veeksha benchmark ...
+   uvx -p 3.14t veeksha benchmark ...
 
 We recommend using `uv <https://github.com/astral-sh/uv>`_ for managing environments and dependencies.
-For optimal performance and true worker parallelism, it is recommended to use **Python 3.14 free-threaded**.
+For optimal performance and true worker parallelism, it is recommended to use **free-threaded Python**.
 
 Prerequisites
 -------------

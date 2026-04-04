@@ -15,10 +15,10 @@ microbenchmarks. One tool, any workload.
 
 ## Quick start
 
-No install needed — run directly with [uvx](https://docs.astral.sh/uv/):
+No install needed - run directly with [uvx](https://docs.astral.sh/uv/) and free-threaded Python 3.14t:
 
 ```bash
-uvx veeksha benchmark \
+uvx -p 3.14t veeksha benchmark \
     --client.type openai_chat_completions \
     --client.api_base http://localhost:8000/v1 \
     --client.model meta-llama/Llama-3.2-1B-Instruct \
@@ -31,7 +31,7 @@ uvx veeksha benchmark \
 Or use a YAML configuration file:
 
 ```bash
-uvx veeksha benchmark --config my_benchmark.veeksha.yml
+uvx -p 3.14t veeksha benchmark --config my_benchmark.veeksha.yml
 ```
 
 Or install with `uv pip install veeksha` / `pip install veeksha` and use `veeksha` directly.
