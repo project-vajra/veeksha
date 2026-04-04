@@ -37,8 +37,25 @@ class ClientWorker:
         self.traffic_scheduler = traffic_scheduler
 
     def run(self) -> None:
-        """Run the async event loop for this worker."""
-        asyncio.run(self._run_async())
+        """Run the async event loop for this worker.
+
+        Uses an explicit event loop instead of ``asyncio.run()`` to avoid the
+        default teardown behavior: ``asyncio.run()`` calls
+        ``loop.run_until_complete(gather(*all_tasks))`` which waits *forever*
+        for in-flight tasks to finish.  At high concurrency with long output
+        sequences the LLM server trickles tokens indefinitely, so those tasks
+        never complete and the process hangs for hours.
+
+        ``_run_async`` already cancels active tasks and gives them 2 s to
+        respond.  Any that survive that window are destroyed when we close the
+        loop — acceptable, since we explicitly told them to cancel.
+        """
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._run_async())
+        finally:
+            loop.close()
 
     async def _run_async(self) -> None:
         """Async main loop."""
