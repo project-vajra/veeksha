@@ -5,7 +5,7 @@ from enum import StrEnum
 from vidhi import BasePolyConfig, field, frozen_dataclass
 
 from veeksha.cli.base import VeekshaCommand
-from veeksha.config.wandb import WandbConfig  # noqa: F401
+from veeksha.config.wandb import WandbConfig
 
 
 class StressTrafficMode(StrEnum):

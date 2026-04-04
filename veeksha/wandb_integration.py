@@ -864,28 +864,7 @@ def _log_microbench_stress(results: Dict[str, Any], wandb: Any) -> None:
 
     num_gpus = results.get("num_gpus", 0)
 
-    # Step-indexed scalars (one wandb.log per concurrency level)
-    for r in rows:
-        metrics: Dict[str, Any] = {
-            "stress/level": r["level"],
-            "stress/output_throughput": r["output_throughput"],
-            "stress/input_throughput": r["input_throughput"],
-            "stress/e2e_latency_p50_ms": r["e2e_latency_p50"] * 1000,
-            "stress/e2e_latency_p99_ms": r["e2e_latency_p99"] * 1000,
-            "stress/ttfc_p50_ms": r["ttfc_p50"] * 1000,
-            "stress/ttfc_p99_ms": r["ttfc_p99"] * 1000,
-            "stress/interactivity_p50": r["interactivity_p50"],
-            "stress/interactivity_p99": r["interactivity_p99"],
-            "stress/num_requests": r["num_requests"],
-        }
-        if num_gpus > 0:
-            metrics["stress/output_tps_per_gpu"] = r.get(
-                "output_tps_per_gpu", r["output_throughput"] / num_gpus
-            )
-            metrics["stress/input_tps_per_gpu"] = r.get(
-                "input_tps_per_gpu", r["input_throughput"] / num_gpus
-            )
-        wandb.log(metrics, step=r["level"])
+    rows = sorted(rows, key=lambda r: r["level"])
 
     # Table
     columns = [

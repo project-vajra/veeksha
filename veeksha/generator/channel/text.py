@@ -66,12 +66,13 @@ class TextChannelGenerator(BaseChannelGenerator):
             and self._prefix_rng.random() < self.config.shared_prefix_probability
         )
 
+        prefix_length = 0
+        remainder_length = text_token_length
         if use_shared_prefix:
             prefix_length = int(text_token_length * self.config.shared_prefix_ratio)
             remainder_length = text_token_length - prefix_length
-            effective_length = remainder_length
-        else:
-            effective_length = text_token_length
+
+        effective_length = remainder_length
 
         # Build suffix for min tokens instruction if requested
         suffix = ""
@@ -89,11 +90,9 @@ class TextChannelGenerator(BaseChannelGenerator):
                 suffix = ""
 
         if use_shared_prefix:
-            plen = int(text_token_length * self.config.shared_prefix_ratio)
-            rlen = text_token_length - plen
-            prefix_tokens = self._generate_shared_prefix(plen)
+            prefix_tokens = self._generate_shared_prefix(prefix_length)
             prefix_text = self.tokenizer_handle.decode(prefix_tokens)
-            remainder_text = self._prompt_gen.generate(rlen) + suffix
+            remainder_text = self._prompt_gen.generate(remainder_length) + suffix
             input_text = prefix_text + " " + remainder_text
         else:
             input_text = self._prompt_gen.generate(text_token_length) + suffix

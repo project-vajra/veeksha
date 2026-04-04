@@ -97,8 +97,11 @@ def _generate_stable_encodings(handle: TokenizerHandle, n: int) -> List[List[int
         result = []
 
     # ── Slow fallback: probe random integer strings ────────────────────
-    used: set = set()
-    while len(result) < n:
+    used: set[int] = set()
+    max_attempts = n * 100_000
+    for _ in range(max_attempts):
+        if len(result) >= n:
+            break
         seed = rng.randint(0, 10_000_000)
         if seed in used:
             continue
@@ -109,6 +112,14 @@ def _generate_stable_encodings(handle: TokenizerHandle, n: int) -> List[List[int
         doubled = tokens + tokens
         if list(handle.encode(handle.decode(doubled))) == doubled:
             result.append(tokens)
+
+    if len(result) < n:
+        logger.warning(
+            "Could only find %d/%d stable encodings after %d attempts",
+            len(result),
+            n,
+            max_attempts,
+        )
     return result
 
 
@@ -118,10 +129,19 @@ def _load_or_generate(handle: TokenizerHandle) -> List[List[int]]:
     cache_path = _CACHE_ROOT / f"{fp}.json"
 
     if cache_path.exists():
-        data = json.loads(cache_path.read_text())
-        if len(data) >= _NUM_ENCODINGS:
-            logger.debug("Loaded %d stable encodings from %s", len(data), cache_path)
-            return data[:_NUM_ENCODINGS]
+        try:
+            data = json.loads(cache_path.read_text())
+            if (
+                isinstance(data, list)
+                and len(data) >= _NUM_ENCODINGS
+                and all(isinstance(enc, list) for enc in data[:_NUM_ENCODINGS])
+            ):
+                logger.debug(
+                    "Loaded %d stable encodings from %s", len(data), cache_path
+                )
+                return data[:_NUM_ENCODINGS]
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Corrupt cache at %s (%s), regenerating", cache_path, exc)
 
     logger.info(
         "Generating %d stable prompt encodings for this tokenizer "
