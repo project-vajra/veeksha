@@ -10,3 +10,4 @@ run your first benchmark in minutes.
    why_veeksha
    installation
    quick_start
+   common_benchmarks

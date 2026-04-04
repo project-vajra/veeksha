@@ -14,8 +14,9 @@ microbenchmarks. One tool, any workload.
 
 **From isolated requests to complex agentic sessions, Veeksha captures the full complexity of modern LLM workloads.**
 
-👉 **New here?** Start with :doc:`getting_started/why_veeksha` to learn what
-sets Veeksha apart.
+👉 **New here?** Start with :doc:`getting_started/common_benchmarks` if you want
+the shortest path to the most common benchmark recipes. Read
+:doc:`getting_started/why_veeksha` to understand the model behind them.
 
 .. note::
 

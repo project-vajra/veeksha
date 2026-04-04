@@ -102,7 +102,8 @@ Trace flavors for real workloads
 Many benchmarks treat all traces the same way. Veeksha introduces **trace flavors**
 that define how to parse and replay different trace types (coding assistants, RAG,
 conversational datasets), each with appropriate wrapping and shuffling behavior.
-See :doc:`/design/content_generation` for details.
+See :doc:`/user_guide/trace_flavors` for a practical guide to choosing a flavor
+and formatting the trace.
 
 Multimodal architecture
 -----------------------
@@ -121,9 +122,9 @@ Veeksha is more than a workload generator:
 integration) under different load levels to see how model quality degrades as the
 system saturates.
 
-**SLO checking**: Easily define service level objectives for metrics such as TPOT, TBT, TTFT,
-or end to end latency and check compliance under different workloads. 
-For example, "90% of requests must have a TTFT smaller than 0.5 seconds."
+**SLO checking**: Easily define service level objectives for metrics such as TPOT, TBC, TTFC,
+or end to end latency and check compliance under different workloads.
+For example, "90% of requests must have a TTFC smaller than 0.5 seconds."
 
 **Capacity search**: Automatically find the maximum sustainable session rate or
 concurrency that meets your SLOs using an adaptive probe-then-binary-search algorithm.

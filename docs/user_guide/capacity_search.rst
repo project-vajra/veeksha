@@ -224,7 +224,7 @@ Output structure
 
 **capacity_search_results.json** contains the search outcome:
 
-.. code-block:: json
+.. code-block:: text
 
     {
       "traffic_scheduler_type": "concurrent",
@@ -308,7 +308,7 @@ Find the maximum rate for a latency-sensitive deployment:
       evaluators:
         - type: performance
           slos:
-            - name: "P99 TTFT < 2s"
+            - name: "P99 TTFC < 2s"
               metric: ttfc
               percentile: 0.99
               value: 2.0

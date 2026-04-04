@@ -177,14 +177,17 @@ This accurately models scenarios like:
 - RAG with common document prefixes
 - Function calling with shared tool definitions
 
-Another way in which Veeksha helps test prefix cache capabilities is by making session nodes inherit conversation
-history. This is done by setting the ``inherit_history`` flag to ``true`` in the session generator configuration:
+Another way in which Veeksha helps test prefix cache capabilities is by making
+session nodes inherit conversation history. This is done by setting the
+``inherit_history`` flag to ``true`` in the session graph configuration:
 
 .. code-block:: yaml
 
     session_generator:
       type: synthetic
-      inherit_history: true
+      session_graph:
+        type: linear
+        inherit_history: true
 
 A node can only inherit history from one of its parent nodes. 
 
@@ -242,118 +245,16 @@ implements:
 - Session/request preparation from trace rows
 - Wrapping behavior for looping through traces
 
-We provide flavors for five different use cases. You can also implement your own flavor by creating a class that
-inherits from ``TraceFlavorGeneratorBase`` and implements the methods ``required_columns``, ``prepare_session`` and ``wrap``.
+Veeksha ships with five built-in flavors. For the user-facing comparison,
+minimal trace examples, and guidance on which flavor to choose, see
+:doc:`/user_guide/trace_flavors`.
+
+You can also implement your own flavor by creating a class that inherits from
+``TraceFlavorGeneratorBase`` and implements ``required_columns``,
+``prepare_session``, and ``wrap``.
 
 Trace files can be in JSONL or CSV format. CSV columns are automatically
 normalized (e.g. ``num_prefill_tokens`` → ``input_length``).
-
-Comparison table:
-
-.. list-table::
-   :header-rows: 1
-   :widths: 20 20 20 40
-
-   * - Flavor
-     - Turns
-     - Prompt generation
-     - Best for
-   * - ``request_log``
-     - Single-turn
-     - Random tokens
-     - Simple (input, output) length distributions (e.g. ShareGPT CSVs)
-   * - ``timed_synthetic_session``
-     - Multi-turn
-     - Synthetic (from length)
-     - Coding assistants, long-context chat, prefix caching
-   * - ``untimed_content_multi_turn``
-     - Multi-turn
-     - Real content (from dataset)
-     - Replaying conversation datasets (ShareGPT, LMSYS-Chat, etc.)
-   * - ``rag``
-     - Single-turn
-     - From trace (text col)
-     - RAG workloads, document caching, massive shared prefixes
-   * - ``shared_prefix``
-     - Multi-turn
-     - Synthetic (from Hash IDs)
-     - Replaying privacy-safe conversation structures
-
-**request_log** (``type: request_log``)
-    Independent requests with just token lengths. No session structure,
-    no corpus files, no prompt materialization. Each row becomes a single-request
-    session with a random-token prompt of the specified length.
-
-    Required columns: ``input_length``, ``output_length``
-
-    .. code-block:: yaml
-
-        flavor:
-          type: request_log
-
-**timed_synthetic_session** (``type: timed_synthetic_session``)
-    Timed session traces with context caching:
-
-    - Replays linear or DAG sessions using ``session_context``
-    - The first ``page_size`` tokens are guaranteed to be unique across history lineages for KV-cache diversity
-    - Wait times between nodes preserved from trace
-
-    Required columns: ``session_id``, ``input_length``, ``new_input_length``, ``output_length``
-    Topology contract: ``session_context`` with ``node_id``, ``parent_nodes``,
-    ``history_parent``, and ``wait_after_ready``. Legacy traces without
-    ``session_context`` are interpreted as linear sessions by row order.
-
-    .. code-block:: yaml
-
-        flavor:
-          type: timed_synthetic_session
-          page_size: 16          # Token page size for prefix caching
-          corpus_file: null      # Optional corpus for prompt generation
-
-**untimed_content_multi_turn** (``type: untimed_content_multi_turn``)
-    Replay datasets with actual conversation content (ShareGPT, LMSYS-Chat, etc.):
-
-    - Each row contains a full conversation with real message text
-    - Turns are split into individual requests with pre-populated history
-    - No timestamps — history is pre-populated from the dataset
-    - Configurable message schema (role/content keys, role value mappings)
-
-    Required columns: ``conversations`` (configurable via ``conversation_column``)
-
-    .. code-block:: yaml
-
-        flavor:
-          type: untimed_content_multi_turn
-          conversation_column: conversations  # Column with message list
-          role_key: from                      # Key for role in each message
-          content_key: value                  # Key for content in each message
-          user_role_value: human              # Value indicating user messages
-          assistant_role_value: gpt           # Value indicating assistant messages
-
-**rag** (``type: rag``)
-    Retrieval-Augmented Generation workload traces:
-
-    - Single-turn requests (one request per session)
-    - Document-based filtering by frequency
-    - Warmup sessions to pre-populate document cache
-    - Suitable for testing prefix caching with shared documents
-
-    Required columns: ``doc_id``, ``prompt_text``, ``input_length``, ``output_length``
-
-    .. code-block:: yaml
-
-        flavor:
-          type: rag
-          num_documents: 10      # Use top N most frequent documents
-
-**shared_prefix** (``type: shared_prefix``)
-    Shared-prefix conversation traces:
-
-    - Multi-turn conversations with hash-based prompt generation
-    - Uses ``hash_ids`` to reconstruct shared prefixes deterministically
-    - Privacy-safe (no real text in trace)
-
-    Required columns: ``session_id``, ``hash_ids``, ``new_input_length``, ``output_length``
 
 
 Wrap mode
