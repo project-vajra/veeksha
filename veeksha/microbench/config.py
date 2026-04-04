@@ -5,6 +5,7 @@ from enum import StrEnum
 from vidhi import BasePolyConfig, field, frozen_dataclass
 
 from veeksha.cli.base import VeekshaCommand
+from veeksha.config.wandb import WandbConfig
 
 
 class StressTrafficMode(StrEnum):
@@ -40,12 +41,20 @@ class BaseMicrobenchmarkConfig:
     seed: int = field(42, help="Random seed")
     request_timeout: int = field(120, help="Request timeout in seconds")
     benchmark_timeout: int = field(600, help="Benchmark timeout in seconds")
+    post_timeout_grace_seconds: int = field(
+        30,
+        help="Grace period (s) for in-flight requests after benchmark window ends. -1 waits for all, 0 exits immediately.",
+    )
     max_tokens_param: str = field("max_tokens", help="Parameter name for max tokens")
     ignore_eos: bool = field(True, help="Ignore EOS token")
     validate_only: bool = field(
         False, help="Skip benchmark, only validate existing output"
     )
     skip_validation: bool = field(False, help="Skip post-run validation")
+    wandb: WandbConfig = field(
+        default_factory=WandbConfig,
+        help="Weights & Biases logging configuration.",
+    )
 
 
 @frozen_dataclass
@@ -174,6 +183,9 @@ class StressMicrobenchmarkConfig(
     )
     max_tokens_per_second_estimate: float = field(
         500.0, help="Estimated max output tok/s (for session budget)"
+    )
+    num_gpus: int = field(
+        0, help="Number of GPUs serving the model (0 = unknown, TPS/GPU not computed)"
     )
     mode: BaseStressModeConfig = field(
         default_factory=ManualStressModeConfig,
