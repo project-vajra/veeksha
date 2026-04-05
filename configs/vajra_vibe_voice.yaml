@@ -1,0 +1,64 @@
+seed: 42
+output_dir: benchmark_output/vajra_vibe_voice
+
+client:
+  type: tts
+  provider: vajra
+  api_base: "http://localhost:8001"
+  model: vibe_voice_0.5
+  sample_rate: 24000
+  chunk_size: 1024
+  raw_pcm: false
+  save_audio: true
+  request_timeout: 90
+
+session_generator:
+  type: trace
+  trace_file: traces/sharegpt_data.json
+  wrap_mode: true
+  flavor:
+    type: sharegpt
+    assistant_role: gpt
+    min_tokens: 20
+    max_tokens: 150
+
+traffic_scheduler:
+  type: concurrent
+  target_concurrent_sessions: 1
+  rampup_seconds: 0
+
+evaluators:
+  - type: performance
+    target_channels: ["audio"]
+    audio_channel:
+      save_audio_files: true
+    stream_metrics: true
+    stream_metrics_interval: 5.0
+    slos:
+      - name: "P99 TTFA under 500ms"
+        metric: ttfa
+        percentile: 0.99
+        value: 1000
+        type: constant
+      - name: "P90 Total Latency under 2s"
+        metric: e2e
+        percentile: 0.90
+        value: 4000
+        type: constant
+
+runtime:
+  max_sessions: 500
+  benchmark_timeout: 30000
+  num_client_threads: 1
+  num_dispatcher_threads: 1
+  num_completion_threads: 1
+
+trace_recorder:
+  enabled: false
+
+wandb:                                                                                                                                                                                                      
+  enabled: true                                                                                                                                                                                             
+  project: "sharegpt-tts"    
+  run_name: "vj_vibe_voice_0.5"                                                                                                                                                                             
+  tags: ["vajra", "vibe_voice_0.5","vibe_voice","realtime"]                                                                                                                                                                            
+  log_artifacts: true

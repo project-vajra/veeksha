@@ -1,0 +1,59 @@
+seed: 42
+output_dir: benchmark_output/stt_vajra_batching_2
+
+client:
+  type: stt
+  provider: vajra
+  api_base: "http://localhost:8002"
+  model: vajra-asr
+  language: en
+  audio_format: wav
+  sample_rate: 16000
+  request_timeout: 120
+
+session_generator:
+  type: trace
+  trace_file: traces/audio_manifest.jsonl
+  wrap_mode: true
+  flavor:
+    type: audio
+    audio_dir: ""
+
+traffic_scheduler:
+  type: concurrent
+  target_concurrent_sessions: 1
+  rampup_seconds: 0
+
+evaluators:
+  - type: performance
+    target_channels: ["audio"]
+    audio_channel:
+      save_audio_files: false
+    stream_metrics: true
+    stream_metrics_interval: 5.0
+    slos:
+      - name: "P99 TTFT under 500ms"
+        metric: ttft
+        percentile: 0.99
+        value: 500
+        type: constant
+      - name: "P99 TPOT under 50ms"
+        metric: tpot
+        percentile: 0.99
+        value: 50
+        type: constant
+      - name: "P90 Total Latency under 20s"
+        metric: e2e
+        percentile: 0.90
+        value: 20000
+        type: constant
+
+runtime:
+  max_sessions: 64
+  benchmark_timeout: 30000
+  num_client_threads: 1
+  num_dispatcher_threads: 1
+  num_completion_threads: 1
+
+trace_recorder:
+  enabled: false

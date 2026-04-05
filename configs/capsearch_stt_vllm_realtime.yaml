@@ -1,0 +1,58 @@
+output_dir: capacity_search_output/stt_vllm_realtime
+start_value: 1
+max_value: 64
+expansion_factor: 2.0
+max_iterations: 10
+precision: 0
+
+benchmark_config:
+  seed: 42
+  output_dir: capacity_search_output/stt_vllm_realtime
+
+  client:
+    type: stt
+    provider: vllm_realtime
+    api_base: "http://localhost:8000"
+    model: mistralai/Voxtral-Mini-4B-Realtime-2602
+    language: en
+    audio_format: wav
+    sample_rate: 16000
+    ws_chunk_size: 4096
+    request_timeout: 120
+
+  session_generator:
+    type: trace
+    trace_file: traces/audio_manifest.jsonl
+    wrap_mode: true
+    flavor:
+      type: audio
+      audio_dir: ""
+
+  traffic_scheduler:
+    type: concurrent
+    target_concurrent_sessions: 1
+    rampup_seconds: 0
+
+  evaluators:
+    - type: performance
+      target_channels: ["audio"]
+      audio_channel:
+        save_audio_files: false
+      stream_metrics: true
+      stream_metrics_interval: 5.0
+      slos:
+        - name: "P90 Total Latency under 60s"
+          metric: e2e
+          percentile: 0.90
+          value: 60000
+          type: constant
+
+  runtime:
+    max_sessions: 64
+    benchmark_timeout: 600
+    num_client_threads: 10
+    num_dispatcher_threads: 2
+    num_completion_threads: 2
+
+  trace_recorder:
+    enabled: false
