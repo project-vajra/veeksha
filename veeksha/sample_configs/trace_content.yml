@@ -1,3 +1,4 @@
+# to run with `veeksha benchmark`
 seed: 42
 
 traffic_scheduler:
@@ -11,7 +12,8 @@ traffic_scheduler:
 
 session_generator:
   type: trace
-  trace_file: traces/claude-code/claude_code_trace-filtered-ctxt_len_8k.jsonl
+  # Replace with a local JSONL/CSV trace file before running this sample.
+  trace_file: traces/sample_trace.jsonl
   flavor:
     type: timed_synthetic_session
 

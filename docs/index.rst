@@ -74,7 +74,7 @@ Or use a YAML configuration file::
 
     uvx -p 3.14t veeksha benchmark --config my_benchmark.veeksha.yml
 
-We recommend free-threaded Python builds, such as 3.14t.
+Veeksha requires free-threaded Python 3.14 or newer.
 
 Documentation
 -------------

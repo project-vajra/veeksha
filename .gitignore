@@ -118,9 +118,7 @@ scripts/nodes.txt
 
 # Generated documentation files
 /docs/_build
-/docs/source/_static/thumbs
-/docs/source/tune/generated_guides/
-/dosc/source/**/doc/
+/docs/_static/thumbs
 /docs/config_reference/api_reference/
 
 # User-specific stuff:
