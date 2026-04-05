@@ -27,12 +27,12 @@ FIX #xxxx (*link existing issues this PR will resolve*)
 
 <h3>Code Quality</h3>
 
-<p>The PR need to meet the following code quality standards:</p>
+<p>The PR needs to meet the following code quality standards:</p>
 
 <ul>
-    <li>Pass all linter checks. Please use <code>make format</code></a> to format your code.</li>
-    <li>The code need to be well-documented to ensure future contributors can easily understand the code.</li>
-    <li>Please add documentation to <code>docs/source/</code> if the PR modifies the user-facing behaviors of Veeksha. It helps user understand and utilize the new features or changes.</li>
+    <li>Pass all linter checks. Please use <code>make format</code> to format your code.</li>
+    <li>The code needs to be well-documented so future contributors can easily understand it.</li>
+    <li>Please add documentation under <code>docs/</code> if the PR changes user-facing behavior. This helps users understand and adopt the new behavior.</li>
 </ul>
 
 <h3>Notes for Large Changes</h3>

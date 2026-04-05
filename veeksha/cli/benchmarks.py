@@ -1,6 +1,6 @@
-"""CLI runner for `python -m veeksha`.
+"""CLI runner for Veeksha benchmark invocations.
 
-We keep the module entrypoint intentionally thin and centralize orchestration
+We keep the CLI entrypoint intentionally thin and centralize orchestration
 logic here for readability and reuse.
 """
 

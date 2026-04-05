@@ -43,7 +43,7 @@ dependencies = [
 ]
 
 [project.scripts]
-veeksha = "veeksha.cli.commands:main"
+veeksha = "veeksha.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/project-vajra/veeksha"

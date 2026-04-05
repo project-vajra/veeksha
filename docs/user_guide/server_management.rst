@@ -122,7 +122,7 @@ The resource manager finds 4 contiguous available GPUs.
     server:
       type: vllm
       tensor_parallel_size: 2
-      cpu_ids: [0, 2]           # Use GPUs 0 and 2
+      gpu_ids: [0, 2]           # Use GPUs 0 and 2
       require_contiguous_gpus: false
 
 Server logs
@@ -133,7 +133,7 @@ Server stdout/stderr are written to the benchmark output directory:
 .. code-block:: text
 
     benchmark_output/09:01:2026-10:30:00-abc123/
-    ├── server_logs_vajra_localhost_30003_20260109-110406.log
+    ├── server_logs_sglang_localhost_30000_20260109-110406.log
     └── ...
 
 This is useful for debugging server issues.

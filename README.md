@@ -10,12 +10,12 @@ microbenchmarks. One tool, any workload.
 
 **From isolated requests to complex agentic sessions, Veeksha captures the full complexity of modern LLM workloads.**
 
-👉 **[Why Veeksha?](https://project-vajra.github.io/veeksha/why_veeksha.html)** — Learn what sets Veeksha apart  
+👉 **[Why Veeksha?](https://project-vajra.github.io/veeksha/getting_started/why_veeksha.html)** — Learn what sets Veeksha apart  
 📚 **[Documentation](https://project-vajra.github.io/veeksha)** — Full guides and API reference
 
 ## Quick start
 
-No install needed - run directly with [uvx](https://docs.astral.sh/uv/) and free-threaded Python 3.14t:
+No install needed; run directly with [uvx](https://docs.astral.sh/uv/):
 
 ```bash
 uvx -p 3.14t veeksha benchmark \
@@ -36,6 +36,8 @@ uvx -p 3.14t veeksha benchmark --config my_benchmark.veeksha.yml
 
 Or install with `uv pip install veeksha` / `pip install veeksha` and use `veeksha` directly.
 
+We require free-threaded Python for worker parallelism.
+
 ## Installation from source
 
 ```bash
@@ -45,7 +47,7 @@ cd veeksha
 # Install uv if needed
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Create environment (Python 3.14t recommended for true parallelism)
+# Create an environment
 uv venv --python 3.14t
 source .venv/bin/activate
 uv pip install -e .

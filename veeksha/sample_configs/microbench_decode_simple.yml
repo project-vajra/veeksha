@@ -1,4 +1,4 @@
-type: decode
+# to run with `veeksha decode`
 model: meta-llama/Llama-3.1-8B-Instruct
 api_base: http://localhost:30002/v1
 input_lengths: [512]

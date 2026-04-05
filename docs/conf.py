@@ -3,9 +3,7 @@
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
-# ... existing imports ...
 import sys
-import os
 from pathlib import Path
 
 # Add project root to sys.path so we can import veeksha
@@ -51,9 +49,9 @@ html_css_files = ["custom.css"]
 html_title = "veeksha"
 
 html_context = {
-    "display_github": True, # Integrate GitHub
-    "github_user": "project-veeksha", # Username
-    "github_repo": "veeksha", # Repo name
-    "github_version": "main", # Version
-    "conf_py_path": "/docs/", # Path in the checkout to the docs root
+    "display_github": True,  # Integrate GitHub
+    "github_user": "project-vajra",  # GitHub org/user
+    "github_repo": "veeksha",  # Repo name
+    "github_version": "main",  # Version
+    "conf_py_path": "/docs/",  # Path in the checkout to the docs root
 }
