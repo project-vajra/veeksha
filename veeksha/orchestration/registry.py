@@ -18,14 +18,6 @@ ServerManagerRegistry.register(
 )
 
 ServerManagerRegistry.register(
-    ServerType.VAJRA,
-    _LazyLoader(
-        "veeksha.orchestration.vajra_server",
-        "VajraServerManager",
-    ),
-)
-
-ServerManagerRegistry.register(
     ServerType.SGLANG,
     _LazyLoader(
         "veeksha.orchestration.sglang_server",

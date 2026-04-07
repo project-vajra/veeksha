@@ -6,9 +6,8 @@ from textwrap import dedent
 import pytest  # type: ignore[import]
 import yaml
 
-from veeksha.config.server import VllmServerConfig, VajraServerConfig
+from veeksha.config.server import VllmServerConfig
 from veeksha.orchestration.vllm_server import VLLMServerManager
-from veeksha.orchestration.vajra_server import VajraServerManager
 
 pytestmark = pytest.mark.unit
 
@@ -54,40 +53,6 @@ def test_vllm_launch_command_with_advanced_configuration():
     rope_index = command.index("--rope-scaling")
     assert command[rope_index + 1] == json.dumps({"type": "linear", "factor": 2.0})
 
-
-def test_vajra_launch_command_with_extra_cli_options():
-    config = VajraServerConfig(
-        model="meta/test-model",
-        host="127.0.0.1",
-        port=7777,
-        api_key="another-secret",
-        tensor_parallel_size=3,
-        max_model_len=4096,
-        additional_args={
-            "pipeline_parallel_size": 4,
-            "log_requests": True,
-            "multi_value": ["foo", "bar"],
-        },
-    )
-
-    command = VajraServerManager(config, output_dir="/tmp")._build_launch_command()
-
-    assert command[:3] == ["python", "-m", "vajra_server.server"]
-    assert command[command.index("--model") + 1] == "meta/test-model"
-    assert command[command.index("--host") + 1] == "127.0.0.1"
-    assert command[command.index("--port") + 1] == "7777"
-    assert command[command.index("--api-key") + 1] == "another-secret"
-    assert command[command.index("--tensor-parallel-size") + 1] == "3"
-    assert command[command.index("--max-model-len") + 1] == "4096"
-
-    assert command[command.index("--pipeline_parallel_size") + 1] == "4"
-    assert "--log_requests" in command
-
-    mv_first = command.index("--multi_value")
-    assert command[mv_first : mv_first + 2] == ["--multi_value", "foo"]
-    assert command[mv_first + 2 : mv_first + 4] == ["--multi_value", "bar"]
-
-
 def test_server_config_additional_args_loaded_from_yaml(tmp_path):
     config_file = tmp_path / "server_config.yaml"
     config_file.write_text(
@@ -109,11 +74,7 @@ def test_server_config_additional_args_loaded_from_yaml(tmp_path):
     data = yaml.safe_load(config_file.read_text())
     # ServerConfig logic for creating from dict might be gone.
     # We should manually create VllmServerConfig if 'engine' is vllm.
-    engine = data.pop("engine", "vllm")
-    if engine == "vllm":
-        server_config = VllmServerConfig(**data)
-    else:
-        server_config = VajraServerConfig(**data)
+    server_config = VllmServerConfig(**data)
         
     command = VLLMServerManager(server_config, output_dir="/tmp")._build_launch_command()
 

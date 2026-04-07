@@ -4,9 +4,8 @@ from unittest.mock import MagicMock, patch
 
 pytestmark = pytest.mark.unit
 from veeksha.orchestration.benchmark_orchestrator import create_server_manager, managed_server
-from veeksha.config.server import VllmServerConfig, VajraServerConfig, SglangServerConfig, BaseServerConfig
+from veeksha.config.server import VllmServerConfig, SglangServerConfig, BaseServerConfig
 from veeksha.orchestration.vllm_server import VLLMServerManager
-from veeksha.orchestration.vajra_server import VajraServerManager
 from veeksha.orchestration.sglang_server import SGLangServerManager
 
 class TestBenchmarkOrchestrator:
@@ -15,11 +14,6 @@ class TestBenchmarkOrchestrator:
         config = VllmServerConfig()
         manager = create_server_manager(config, output_dir="/tmp")
         assert isinstance(manager, VLLMServerManager)
-
-    def test_create_server_manager_vajra(self):
-        config = VajraServerConfig()
-        manager = create_server_manager(config, output_dir="/tmp")
-        assert isinstance(manager, VajraServerManager)
 
     def test_create_server_manager_sglang(self):
         config = SglangServerConfig()

@@ -90,13 +90,6 @@ class VllmServerConfig(BaseServerConfig):
 
 
 @frozen_dataclass
-class VajraServerConfig(BaseServerConfig):
-    @classmethod
-    def get_type(cls) -> ServerType:
-        return ServerType.VAJRA
-
-
-@frozen_dataclass
 class SglangServerConfig(BaseServerConfig):
     @classmethod
     def get_type(cls) -> ServerType:

@@ -67,8 +67,7 @@ class ClientType(BaseIntEnum):
 # ----- Server -----
 class ServerType(BaseIntEnum):
     VLLM = 1
-    VAJRA = 2
-    SGLANG = 3
+    SGLANG = 2
 
 
 # ----- SLOs -----
