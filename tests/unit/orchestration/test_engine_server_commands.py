@@ -5,8 +5,9 @@ from textwrap import dedent
 
 import pytest  # type: ignore[import]
 import yaml
+from vidhi import create_class_from_dict
 
-from veeksha.config.server import VllmServerConfig
+from veeksha.config.server import BaseServerConfig, VllmServerConfig
 from veeksha.orchestration.vllm_server import VLLMServerManager
 
 pytestmark = pytest.mark.unit
@@ -58,7 +59,7 @@ def test_server_config_additional_args_loaded_from_yaml(tmp_path):
     config_file.write_text(
         dedent(
             """
-            engine: vllm
+            type: vllm
             model: meta/demo-model
             port: 8100
             additional_args:
@@ -72,10 +73,8 @@ def test_server_config_additional_args_loaded_from_yaml(tmp_path):
     )
 
     data = yaml.safe_load(config_file.read_text())
-    # ServerConfig logic for creating from dict might be gone.
-    # We should manually create VllmServerConfig if 'engine' is vllm.
-    server_config = VllmServerConfig(**data)
-        
+    server_config = create_class_from_dict(BaseServerConfig, data)
+
     command = VLLMServerManager(server_config, output_dir="/tmp")._build_launch_command()
 
     assert "--trust-remote-code" in command
