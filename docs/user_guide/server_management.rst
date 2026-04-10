@@ -11,7 +11,6 @@ Supported servers
 
 Veeksha currently supports:
 
-- **Vajra**
 - **SGLang**
 - **vLLM**
 
@@ -24,7 +23,7 @@ Add a ``server`` section to your benchmark config:
 .. code-block:: yaml
 
     server:
-      type: sglang            # or vllm, vajra
+      type: sglang            # or vllm
       env_path: sglang_env    # Python environment with server installed
       model: meta-llama/Llama-3-8B-Instruct
       host: localhost
