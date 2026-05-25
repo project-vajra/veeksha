@@ -313,6 +313,17 @@ class STTClientConfig(BaseClientConfig):
             "(vllm_realtime only)."
         },
     )
+    ws_realtime_pacing: bool = field(
+        default=False,
+        metadata={
+            "help": "If True, sleep between WebSocket audio chunks to "
+            "simulate real-time playback cadence (chunk_duration = "
+            "ws_chunk_size / 2 / sample_rate seconds, assuming PCM16 "
+            "mono). Use for realtime-SLO benchmarks (meetings, live "
+            "mic); leave off for engine-bound throughput measurements. "
+            "Applies to vllm_realtime and streaming vajra providers."
+        },
+    )
     model: str = field(
         default="",
         metadata={
@@ -357,10 +368,6 @@ class STTClientConfig(BaseClientConfig):
             )
         if self.api_base is None:
             raise ValueError("STTClientConfig.api_base is required.")
-        if self.streaming and self.provider == "vajra":
-            raise ValueError(
-                "Streaming transcription is not supported by the vajra provider."
-            )
 
     def get_mime_type(self) -> str:
         """Return MIME type for the configured audio format."""

@@ -1,0 +1,89 @@
+seed: 42
+output_dir: "benchmark_output/vllm_{datetime}"
+
+client:
+  type: stt
+  provider: vllm_realtime
+  api_base: "http://localhost:8025"
+  # api_base: "http://172.17.0.2:8025"
+  model: mistralai/Voxtral-Mini-4B-Realtime-2602
+  language: en
+  audio_format: wav
+  sample_rate: 16000
+  # 2048 bytes = 1024 samples = 64 ms of audio at 16 kHz. Close to what
+  # a Chrome AudioWorklet + MediaRecorder typically produces after
+  # small-buffer coalescing; tighter than 128 ms (better responsiveness),
+  # wider than 20 ms (avoids per-frame JSON cost dominating).
+  ws_chunk_size: 2048
+  # Simulate live microphone: sleep chunk_duration between sends so the
+  # server receives audio at 1× playback rate, not burst-as-fast-as-you-can.
+  ws_realtime_pacing: true
+  # Meetings run long. Don't HTTP-timeout mid-session.
+  request_timeout: 7200
+
+session_generator:
+  type: trace
+  # Option C: reuse the existing short-clip manifest with wrap_mode so
+  # each session loops its clip(s) to fill the benchmark window. Not
+  # WER-accurate for meetings (repeated content = unrealistic cache
+  # behavior) but correctly stresses the engine's real-time capacity.
+  trace_file: traces/audio_manifest_varied.jsonl
+  wrap_mode: true
+  flavor:
+    type: audio
+    audio_dir: ""
+
+traffic_scheduler:
+  type: concurrent
+  # Start at 8 simultaneous meetings. Sweep via CLI --concurrency to
+  # find the RTF-crosses-1.0 capacity point.
+  target_concurrent_sessions: 8
+  # Staggered joins — real meetings don't have all participants at
+  # t=0. 60 s of rampup spreads the initial prefill burst.
+  rampup_seconds: 0
+
+evaluators:
+  - type: performance
+    target_channels: ["audio"]
+    audio_channel:
+      save_audio_files: false
+    # Track how the engine tracks real-time over the benchmark window.
+    stream_metrics: true
+    stream_metrics_interval: 10.0
+    slos:
+      # Partial transcript appears quickly (user just started speaking).
+      - name: "P99 TTFT under 500ms"
+        metric: ttft
+        percentile: 0.99
+        value: 500
+        type: constant
+      # Engine keeps up with real-time. RTF > 1 means transcripts fall
+      # behind speech — unacceptable for a live meeting.
+      - name: "P95 RTF under 1.0"
+        metric: rtf
+        percentile: 0.95
+        value: 1.0
+        type: constant
+      # Per-output-token latency (time from audio frame to transcribed
+      # token). Proxies "time from spoken to seen".
+      - name: "P90 TPOT under 300ms"
+        metric: tpot
+        percentile: 0.90
+        value: 300
+        type: constant
+
+runtime:
+  max_sessions: -1
+  # 30 minutes of benchmark — long enough to clear rampup, show steady
+  # state, and expose any memory/KV growth issues.
+  benchmark_timeout: 300
+  # Give in-flight streaming sessions time to drain cleanly rather
+  # than slamming them with cancel. Important because streaming
+  # finalization goes through end_stream + FinishSession.
+  post_timeout_grace_seconds: 120
+  num_client_threads: 2
+  num_dispatcher_threads: 2
+  num_completion_threads: 2
+
+trace_recorder:
+  enabled: false
