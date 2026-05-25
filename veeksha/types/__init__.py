@@ -32,6 +32,7 @@ class TraceFlavorType(BaseIntEnum):
     CLAUDE_CODE = 1
     MOONCAKE_CONV = 2
     RAG = 3
+    SHAREGPT = 4
 
 
 class ChannelModality(BaseIntEnum):

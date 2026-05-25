@@ -30,3 +30,10 @@ TraceFlavorGeneratorRegistry.register(
         "RAGTraceFlavorGenerator",
     ),
 )
+TraceFlavorGeneratorRegistry.register(
+    TraceFlavorType.SHAREGPT,
+    _LazyLoader(
+        "veeksha.generator.session.trace.sharegpt",
+        "ShareGPTTraceFlavorGenerator",
+    ),
+)

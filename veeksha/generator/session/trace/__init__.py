@@ -7,6 +7,7 @@ from veeksha.generator.session.trace.mooncake_conv import (
     MooncakeConvTraceFlavorGenerator,
 )
 from veeksha.generator.session.trace.rag import RAGTraceFlavorGenerator
+from veeksha.generator.session.trace.sharegpt import ShareGPTTraceFlavorGenerator
 
 __all__ = [
     "TraceSessionGenerator",
@@ -14,4 +15,5 @@ __all__ = [
     "ClaudeCodeTraceFlavorGenerator",
     "MooncakeConvTraceFlavorGenerator",
     "RAGTraceFlavorGenerator",
+    "ShareGPTTraceFlavorGenerator",
 ]

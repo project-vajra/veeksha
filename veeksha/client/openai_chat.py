@@ -3,6 +3,8 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any, List, Optional
 
+import base64
+
 import httpx  # type: ignore
 
 from veeksha.client.openai_base import OpenAIBaseClient
@@ -22,6 +24,9 @@ if TYPE_CHECKING:
     from veeksha.config.client import OpenAIChatCompletionsClientConfig
 
 logger = init_logger(__name__)
+
+AUDIO_SAMPLE_RATE = 24000
+AUDIO_BYTES_PER_SAMPLE = 2
 
 
 class OpenAIChatCompletionsClient(OpenAIBaseClient):
@@ -336,11 +341,17 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
 
         # multimodal response data
         image_data: Optional[Any] = None
-        audio_data: Optional[Any] = None
         video_data: Optional[Any] = None
+
+        # audio output tracking
+        audio_chunks: List[bytes] = []
+        audio_ttfa: Optional[float] = None
+        audio_chunk_count = 0
+        audio_total_bytes = 0
 
         delta_prompt_len = 0
         messages = []
+        t_start = time.monotonic()
 
         try:
             messages, delta_prompt_len = self._build_message_content(request)
@@ -380,7 +391,8 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
             }
 
             client = self._get_client()
-            most_recent_token_time = time.monotonic()
+            t_start = time.monotonic()
+            most_recent_token_time = t_start
             async with client.stream(
                 "POST",
                 self.chat_address,
@@ -411,7 +423,16 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
                         )
                         continue
 
-                    if delta.get("content"):
+                    modality_type = data.get("modality")
+
+                    if modality_type == "audio" and delta.get("content"):
+                        chunk_bytes = base64.b64decode(delta["content"])
+                        if audio_ttfa is None:
+                            audio_ttfa = (receive_time - t_start) * 1000
+                        audio_chunks.append(chunk_bytes)
+                        audio_chunk_count += 1
+                        audio_total_bytes += len(chunk_bytes)
+                    elif delta.get("content"):
                         (
                             generated_text,
                             chunks_received,
@@ -428,9 +449,6 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
 
                     # TODO: image deltas
                     image_data = self._process_image_response(delta, image_data)
-
-                    # TODO: audio deltas
-                    audio_data = self._process_audio_response(delta, audio_data)
 
                     # TODO: video deltas
                     video_data = self._process_video_response(delta, video_data)
@@ -477,9 +495,36 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
             total_prompt_len=num_total_prompt_tokens,
             tokens_received=num_completion_tokens,
             image_data=image_data,
-            audio_data=audio_data,
+            audio_data=None,
             video_data=video_data,
         )
+
+        # Build audio channel from streamed audio chunks
+        if success and audio_chunks:
+            audio_bytes = b"".join(audio_chunks)
+            total_latency_ms = (completed_at - t_start) * 1000
+            pcm_bytes = audio_total_bytes
+            num_samples = pcm_bytes / AUDIO_BYTES_PER_SAMPLE
+            audio_dur_ms = (num_samples / AUDIO_SAMPLE_RATE) * 1000
+            rtf = (
+                total_latency_ms / audio_dur_ms
+                if audio_dur_ms > 0
+                else float("inf")
+            )
+            channels[ChannelModality.AUDIO] = ChannelResponse(
+                modality=ChannelModality.AUDIO,
+                content=audio_bytes,
+                metrics={
+                    "ttfa": round(audio_ttfa or 0.0, 3),
+                    "end_to_end_latency": round(total_latency_ms, 3),
+                    "generated_audio_duration": round(audio_dur_ms, 3),
+                    "rtf": round(rtf, 5),
+                    "chunk_count": audio_chunk_count,
+                    "pcm_byte_count": pcm_bytes,
+                    "raw_pcm": True,
+                    "sample_rate": AUDIO_SAMPLE_RATE,
+                },
+            )
 
         return RequestResult(
             request_id=request.id,

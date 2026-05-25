@@ -57,6 +57,7 @@ class AudioRequestMetrics:
     rtf: float
     chunk_count: int
     pcm_byte_count: int
+    input_chars: int = 0
     input_tokens: int = 0
     session_total_requests: Optional[int] = None
 
@@ -105,6 +106,11 @@ class AudioPerformanceEvaluator:
         # Audio bytes storage for optional WAV saving
         self._audio_buffers: Dict[int, bytes] = {}
         self._audio_metadata: Dict[int, Dict[str, Any]] = {}
+
+        # Running totals for aggregate throughput
+        self._total_input_chars: int = 0
+        self._first_dispatch_at: Optional[float] = None
+        self._last_completion_at: Optional[float] = None
 
     def register_request(
         self,
@@ -158,6 +164,7 @@ class AudioPerformanceEvaluator:
             rtf = cm.get("rtf", 0.0)
             chunk_count = cm.get("chunk_count", 0)
             pcm_byte_count = cm.get("pcm_byte_count", 0)
+            input_chars = cm.get("input_chars", 0)
             input_tokens = cm.get("input_tokens", 0)
 
             session_total_requests = getattr(response, "session_total_requests", None)
@@ -173,11 +180,19 @@ class AudioPerformanceEvaluator:
                 rtf=rtf,
                 chunk_count=chunk_count,
                 pcm_byte_count=pcm_byte_count,
+                input_chars=input_chars,
                 input_tokens=input_tokens,
                 session_total_requests=session_total_requests,
             )
 
             self._completed_metrics.append(metrics)
+
+            # Update aggregate throughput accumulators
+            self._total_input_chars += input_chars
+            if self._first_dispatch_at is None or dispatched_at < self._first_dispatch_at:
+                self._first_dispatch_at = dispatched_at
+            if self._last_completion_at is None or completed_at > self._last_completion_at:
+                self._last_completion_at = completed_at
 
             # Store lifecycle timestamps (matching text.py pattern)
             def normalize_ts(ts: Optional[float]) -> Optional[float]:
@@ -243,6 +258,13 @@ class AudioPerformanceEvaluator:
         perf_summary: Dict[str, Optional[float]] = {}
         for cdf_sketch in self.summaries.values():
             perf_summary.update(cdf_sketch.get_summary())
+
+        wall_s = 0.0
+        if self._first_dispatch_at is not None and self._last_completion_at is not None:
+            wall_s = max(0.0, self._last_completion_at - self._first_dispatch_at)
+        perf_summary["chars_per_sec_aggregate"] = (
+            self._total_input_chars / wall_s if wall_s > 0 else None
+        )
         return perf_summary
 
     def finalize(self) -> EvaluationResult:
@@ -317,6 +339,7 @@ class AudioPerformanceEvaluator:
                     "rtf": round(m.rtf, 5),
                     "chunk_count": m.chunk_count,
                     "pcm_byte_count": m.pcm_byte_count,
+                    "input_chars": m.input_chars,
                     "input_tokens": m.input_tokens,
                 }
             )

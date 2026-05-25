@@ -210,6 +210,11 @@ class TTSClientConfig(BaseClientConfig):
     def __post_init__(self):
         super().__post_init__()
 
+        # Skip validation when instantiated with defaults by the flat_dataclass
+        # framework for non-selected polymorphic children.
+        if not self.provider and not self.model:
+            return
+
         # --- Required field checks ---
         if not self.provider:
             raise ValueError(
@@ -242,6 +247,8 @@ class TTSClientConfig(BaseClientConfig):
                 key = os.environ.get(env_var)
                 if key:
                     object.__setattr__(self, "api_key", key)
+            elif self.provider == "vllm_omni":
+                object.__setattr__(self, "api_key", "EMPTY")
 
         # Auto-set raw_pcm for ElevenLabs (returns raw PCM, not WAV)
         if self.provider == "elevenlabs" and not self.raw_pcm:

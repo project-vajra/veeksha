@@ -275,3 +275,8 @@ traces/
 # claude
 CLAUDE.md
 benchmark_outputs/
+
+.env
+benchmark_output/
+capacity_search_output/
+configs/

@@ -150,6 +150,96 @@ class RAGTraceFlavorConfig(BaseTraceFlavorConfig):
         return TraceFlavorType.RAG
 
 
+@frozen_dataclass
+class ShareGPTTraceFlavorConfig(BaseTraceFlavorConfig):
+    """ShareGPT conversation trace flavor configuration.
+
+    Reads ShareGPT-format conversations and uses assistant turn text
+    as TTS input. Each assistant turn becomes a single-request session.
+
+    Two mutually-exclusive ways to control input length:
+      - Token mode (default): truncate to a token length sampled uniformly
+        between min_tokens and max_tokens.
+      - Char mode: set min_chars/max_chars to non-negative values; min_tokens
+        and max_tokens are ignored and text is truncated to a char length
+        sampled uniformly between min_chars and max_chars.
+    Turns shorter than the minimum (tokens or chars, depending on mode) are
+    skipped during flattening.
+    """
+
+    assistant_role: str = field(
+        default="gpt",
+        metadata={
+            "help": "Role name for assistant turns in the ShareGPT data "
+            "(common values: 'gpt', 'assistant')."
+        },
+    )
+    min_tokens: int = field(
+        default=20,
+        metadata={
+            "help": "Minimum input token count. Turns shorter than this are skipped. "
+            "Ignored when min_chars/max_chars are set."
+        },
+    )
+    max_tokens: int = field(
+        default=100,
+        metadata={
+            "help": "Maximum input token count. Text is truncated to sampled length. "
+            "Ignored when min_chars/max_chars are set."
+        },
+    )
+    min_chars: int = field(
+        default=-1,
+        metadata={
+            "help": "If >= 0, enables char-based input length control (mutually exclusive "
+            "with min_tokens/max_tokens). Turns with fewer than this many chars are skipped."
+        },
+    )
+    max_chars: int = field(
+        default=-1,
+        metadata={
+            "help": "If >= 0, enables char-based input length control (mutually exclusive "
+            "with min_tokens/max_tokens). Text is truncated to a char length sampled "
+            "uniformly in [min_chars, max_chars]."
+        },
+    )
+    min_alpha_ratio: float = field(
+        default=0.5,
+        metadata={
+            "help": "Minimum ratio of alphabetic characters to total non-space characters. "
+            "Filters out junk entries like number sequences or code snippets. "
+            "Set to 0.0 to disable."
+        },
+    )
+
+    @property
+    def use_chars(self) -> bool:
+        return self.min_chars >= 0 and self.max_chars >= 0
+
+    def __post_init__(self):
+        # Mutex: chars must be set together or not at all.
+        one_set = (self.min_chars >= 0) != (self.max_chars >= 0)
+        if one_set:
+            raise ValueError(
+                "min_chars and max_chars must both be set (>= 0) or both left "
+                f"unset (-1); got min_chars={self.min_chars}, max_chars={self.max_chars}"
+            )
+        if self.use_chars:
+            if self.min_chars > self.max_chars:
+                raise ValueError(
+                    f"min_chars ({self.min_chars}) must be <= max_chars ({self.max_chars})"
+                )
+        else:
+            if self.min_tokens > self.max_tokens:
+                raise ValueError(
+                    f"min_tokens ({self.min_tokens}) must be <= max_tokens ({self.max_tokens})"
+                )
+
+    @classmethod
+    def get_type(cls):
+        return TraceFlavorType.SHAREGPT
+
+
 # ----- Trace Session Generator Config -----
 
 
