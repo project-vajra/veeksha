@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-CONFIG="configs/stt_vajra_meeting.yaml"
+CONFIG="configs/stt_vajra.yaml"
 if [[ "${1:-}" == "--config" ]]; then
     CONFIG="$2"
     shift 2
