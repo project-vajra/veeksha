@@ -133,6 +133,8 @@ class AudioRequestMetrics:
     pcm_byte_count: int
     input_tokens: int = 0
     tpot: Optional[float] = None
+    final_latency: Optional[float] = None
+    first_partial: Optional[float] = None
     wer: Optional[float] = None
     transcript: Optional[str] = None
     expected_transcript: Optional[str] = None
@@ -161,6 +163,8 @@ class AudioPerformanceEvaluator:
         self.summaries: Dict[str, CDFSketch] = {
             "ttft": CDFSketch("ttft", unit="ms"),
             "tpot": CDFSketch("tpot", unit="ms"),
+            "final_latency": CDFSketch("final_latency", unit="ms"),
+            "first_partial": CDFSketch("first_partial", unit="ms"),
             "e2e": CDFSketch("e2e", unit="ms"),
             "generated_audio_duration": CDFSketch(
                 "generated_audio_duration", unit="ms"
@@ -234,6 +238,8 @@ class AudioPerformanceEvaluator:
             cm = channel_response.metrics or {}
             ttft = cm.get("ttft", 0.0)
             tpot_value: Optional[float] = cm.get("tpot")
+            final_latency_value: Optional[float] = cm.get("final_latency")
+            first_partial_value: Optional[float] = cm.get("first_partial")
             e2e = cm.get("e2e", 0.0)
             generated_audio_duration = cm.get("generated_audio_duration", 0.0)
             rtf = cm.get("rtf", 0.0)
@@ -263,6 +269,8 @@ class AudioPerformanceEvaluator:
                 pcm_byte_count=pcm_byte_count,
                 input_tokens=input_tokens,
                 tpot=tpot_value,
+                final_latency=final_latency_value,
+                first_partial=first_partial_value,
                 wer=wer_value,
                 transcript=transcript,
                 expected_transcript=expected_transcript,
@@ -301,6 +309,10 @@ class AudioPerformanceEvaluator:
             self.summaries["ttft"].put(ttft)
             if tpot_value is not None:
                 self.summaries["tpot"].put(tpot_value)
+            if final_latency_value is not None:
+                self.summaries["final_latency"].put(final_latency_value)
+            if first_partial_value is not None:
+                self.summaries["first_partial"].put(first_partial_value)
             self.summaries["e2e"].put(e2e)
             self.summaries["generated_audio_duration"].put(generated_audio_duration)
             self.summaries["rtf"].put(rtf)
@@ -416,6 +428,10 @@ class AudioPerformanceEvaluator:
             }
             if m.tpot is not None:
                 row_dict["tpot"] = round(m.tpot, 3)
+            if m.final_latency is not None:
+                row_dict["final_latency"] = round(m.final_latency, 3)
+            if m.first_partial is not None:
+                row_dict["first_partial"] = round(m.first_partial, 3)
             if m.wer is not None:
                 row_dict["wer"] = round(m.wer, 3)
             if m.transcript is not None:

@@ -175,13 +175,14 @@ class STTClient(BaseLLMClient):
         tpot: Optional[float] = None
         transcript_chunks: list[str] = []
         chunk_count = 0
+        stream_timings: dict = {}
 
         t_start = time.monotonic()
 
         try:
             if self._provider == "vajra":
                 if self._streaming:
-                    ttft, chunk_count = await self._stream_vajra(
+                    ttft, chunk_count, stream_timings = await self._stream_vajra(
                         audio_path, t_start, transcript_chunks
                     )
                 else:
@@ -252,6 +253,16 @@ class STTClient(BaseLLMClient):
             if tpot is not None:
                 metrics_dict["tpot"] = round(tpot, 3)
 
+            # Streaming-latency timings (vajra streaming path). Measured from
+            # the audio stream itself, so they isolate server responsiveness
+            # rather than tracking clip length the way ttft/e2e do.
+            final_latency = stream_timings.get("final_latency_ms")
+            if final_latency is not None:
+                metrics_dict["final_latency"] = round(final_latency, 3)
+            first_partial = stream_timings.get("first_partial_ms")
+            if first_partial is not None:
+                metrics_dict["first_partial"] = round(first_partial, 3)
+
             # Forward reference transcript for WER evaluation
             expected = request.metadata.get("expected_transcript")
             if expected is not None:
@@ -309,8 +320,18 @@ class STTClient(BaseLLMClient):
         audio_path: str,
         t_start: float,
         transcript_chunks: list[str],
-    ) -> tuple[Optional[float], int]:
+    ) -> tuple[Optional[float], int, dict]:
         """Stream int16 PCM over WebSocket /stream, receive delta/done JSON.
+
+        Send and receive run concurrently so partial transcripts are observed
+        live, rather than buffered until the upload finishes. This makes the
+        returned streaming-latency timings faithful:
+          - ``first_partial_ms``: first audio frame sent -> first partial
+            transcript (TTFB; with realtime pacing this includes the audio
+            that must be spoken before a transcript can exist).
+          - ``final_latency_ms``: end-of-audio sentinel -> final transcript.
+            Isolates server processing tail, independent of clip length.
+        The legacy ``ttft`` (request start -> first partial) is preserved.
 
         Protocol (see vajra-next/examples/asr_streaming_server.py):
           Client -> Server:  binary int16 LE PCM frames @ 16 kHz mono, then
@@ -324,6 +345,11 @@ class STTClient(BaseLLMClient):
 
         ttft: Optional[float] = None
         chunk_count = 0
+        timings: dict = {"first_partial_ms": None, "final_latency_ms": None}
+        send_marks: dict = {"audio_start": None, "audio_end": None}
+
+        pcm_bytes = _audio_to_pcm16_bytes(audio_path, self._sample_rate)
+        pace = self.config.ws_realtime_pacing
 
         async with websockets.connect(self._ws_url) as ws:
             # 1. Wait for ready
@@ -331,45 +357,72 @@ class STTClient(BaseLLMClient):
             if msg.get("type") != "ready":
                 raise RuntimeError(f"Expected ready, got: {msg}")
 
-            # 2. Send PCM16 audio as binary frames of ws_chunk_size bytes each.
-            #    When ws_realtime_pacing is on, sleep chunk_duration between
-            #    sends to simulate live microphone cadence (1× playback).
-            pcm_bytes = _audio_to_pcm16_bytes(audio_path, self._sample_rate)
-            pace = self.config.ws_realtime_pacing
-            for i in range(0, len(pcm_bytes), self._ws_chunk_size):
-                chunk = pcm_bytes[i : i + self._ws_chunk_size]
-                await ws.send(chunk)
-                if pace:
-                    await asyncio.sleep(len(chunk) / 2 / self._sample_rate)
+            # 2. Sender coroutine: stream PCM16 frames of ws_chunk_size bytes,
+            #    pacing at 1x playback when ws_realtime_pacing is on, then send
+            #    the EOF sentinel. Runs concurrently with the receive loop so
+            #    deltas emitted mid-stream are timed when they actually arrive.
+            async def _send() -> None:
+                send_marks["audio_start"] = time.monotonic()
+                for i in range(0, len(pcm_bytes), self._ws_chunk_size):
+                    chunk = pcm_bytes[i : i + self._ws_chunk_size]
+                    await ws.send(chunk)
+                    if pace:
+                        await asyncio.sleep(len(chunk) / 2 / self._sample_rate)
+                await ws.send("end")
+                send_marks["audio_end"] = time.monotonic()
 
-            # 3. EOF sentinel
-            await ws.send("end")
+            send_task = asyncio.ensure_future(_send())
+            try:
+                # 3. Consume deltas + done concurrently with the sender.
+                while True:
+                    msg = json_mod.loads(await ws.recv())
+                    msg_type = msg.get("type")
 
-            # 4. Consume deltas + done
-            while True:
-                msg = json_mod.loads(await ws.recv())
-                msg_type = msg.get("type")
-
-                if msg_type == "delta":
-                    if ttft is None:
-                        ttft = (time.monotonic() - t_start) * 1000
-                    transcript_chunks.append(msg.get("text", ""))
-                    chunk_count += 1
-
-                elif msg_type == "done":
-                    if not transcript_chunks and msg.get("text"):
-                        transcript_chunks.append(msg["text"])
-                        chunk_count = 1
+                    if msg_type == "delta":
+                        now = time.monotonic()
                         if ttft is None:
-                            ttft = (time.monotonic() - t_start) * 1000
-                    break
+                            ttft = (now - t_start) * 1000
+                            if send_marks["audio_start"] is not None:
+                                timings["first_partial_ms"] = (
+                                    now - send_marks["audio_start"]
+                                ) * 1000
+                        transcript_chunks.append(msg.get("text", ""))
+                        chunk_count += 1
 
-                elif msg_type == "error":
-                    raise RuntimeError(
-                        f"Vajra streaming error: {msg.get('message', 'unknown')}"
-                    )
+                    elif msg_type == "done":
+                        now = time.monotonic()
+                        if not transcript_chunks and msg.get("text"):
+                            transcript_chunks.append(msg["text"])
+                            chunk_count = 1
+                            if ttft is None:
+                                ttft = (now - t_start) * 1000
+                                if send_marks["audio_start"] is not None:
+                                    timings["first_partial_ms"] = (
+                                        now - send_marks["audio_start"]
+                                    ) * 1000
+                        if send_marks["audio_end"] is not None:
+                            timings["final_latency_ms"] = (
+                                now - send_marks["audio_end"]
+                            ) * 1000
+                        break
 
-        return ttft, chunk_count
+                    elif msg_type == "error":
+                        raise RuntimeError(
+                            f"Vajra streaming error: {msg.get('message', 'unknown')}"
+                        )
+            finally:
+                # On the normal path the sender is already done (server only
+                # emits "done" after "end"); on the error path, cancel it. A
+                # CancelledError here is expected; any other is a real send
+                # failure and must propagate.
+                if not send_task.done():
+                    send_task.cancel()
+                try:
+                    await send_task
+                except asyncio.CancelledError:
+                    pass
+
+        return ttft, chunk_count, timings
 
     # ------------------------------------------------------------------
     # vLLM — POST /v1/audio/transcriptions  (multipart, batch or SSE)
