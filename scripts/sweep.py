@@ -17,6 +17,10 @@ Examples
     # Use the Seed TTS text dataset instead of the default ShareGPT trace
     python scripts/sweep.py --sweep-type concurrency --engine vajra \\
         --model qwen-tts --trace seed_tts
+
+    # Override output_dir for generated benchmark configs
+    python scripts/sweep.py --sweep-type concurrency --engine vajra \\
+        --model qwen-tts --output-dir 'benchmark_output/{run_name}'
 """
 
 from __future__ import annotations
@@ -349,6 +353,28 @@ def _format_template(
     )
 
 
+def _format_output_dir(
+    template: str,
+    spec: SweepSpec,
+    *,
+    concurrency: int,
+    input_size: Optional[int],
+    run_name: str,
+) -> str:
+    try:
+        return template.format(
+            concurrency=concurrency,
+            input_size=input_size,
+            run_name=run_name,
+            date_tag=_date_tag(),
+            engine=spec.engine,
+            model=spec.model,
+            sweep_type=spec.sweep_type,
+        )
+    except KeyError as exc:
+        raise ValueError(f"Unknown --output-dir template field: {exc.args[0]}") from exc
+
+
 def _input_sizes(args: argparse.Namespace, spec: SweepSpec) -> Tuple[int, ...]:
     if args.sizes:
         return args.sizes
@@ -375,6 +401,7 @@ def _build_run_config(
     input_size: Optional[int],
     timeout_seconds: int,
     max_sessions: int,
+    output_dir_template: Optional[str],
 ) -> Dict[str, Any]:
     config = copy.deepcopy(base_config)
 
@@ -394,6 +421,15 @@ def _build_run_config(
         input_size=input_size,
     )
     _set_required(config, ("wandb", "run_name"), run_name)
+
+    if output_dir_template:
+        config["output_dir"] = _format_output_dir(
+            output_dir_template,
+            spec,
+            concurrency=concurrency,
+            input_size=input_size,
+            run_name=run_name,
+        )
 
     if spec.sweep_type == INPUT_SWEEP:
         if input_size is None:
@@ -434,6 +470,7 @@ def _print_run_header(
     max_sessions: int,
     dry_run: bool,
     trace_source: str,
+    output_dir: Optional[str],
 ) -> None:
     mode = "DRY RUN " if dry_run else ""
     target = f"concurrency={concurrency}"
@@ -447,6 +484,8 @@ def _print_run_header(
     print(f"   config       : {run_config}")
     print(f"   base config  : {spec.config_path}")
     print(f"   trace        : {trace_source}")
+    if output_dir is not None:
+        print(f"   output_dir   : {output_dir}")
     print(f"   wandb        : {run_name}")
     if spec.write_runtime_limits:
         print(f"   timeout      : {timeout_seconds}s")
@@ -489,6 +528,7 @@ def _run_sweep(args: argparse.Namespace, spec: SweepSpec) -> int:
                 input_size=input_size,
                 timeout_seconds=args.timeout_seconds,
                 max_sessions=args.max_sessions,
+                output_dir_template=args.output_dir,
             )
             _write_config(run_config, run_cfg)
             _print_run_header(
@@ -503,6 +543,7 @@ def _run_sweep(args: argparse.Namespace, spec: SweepSpec) -> int:
                 max_sessions=args.max_sessions,
                 dry_run=args.dry_run,
                 trace_source=args.trace,
+                output_dir=run_cfg.get("output_dir"),
             )
             command = _benchmark_command(run_config)
             print(" ".join(command))
@@ -551,6 +592,14 @@ def _build_parser() -> argparse.ArgumentParser:
         type=_parse_trace,
         default=TRACE_SHAREGPT,
         help="Trace text source. Supported: sharegpt, seed_tts.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        help=(
+            "Override benchmark output_dir in generated configs. Supports "
+            "{concurrency}, {input_size}, {run_name}, {date_tag}, {engine}, "
+            "{model}, and {sweep_type}."
+        ),
     )
     parser.add_argument(
         "--concurrencies",
