@@ -19,7 +19,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 os.environ.setdefault(
     "MPLCONFIGDIR", os.path.join(tempfile.gettempdir(), "matplotlib")
@@ -35,8 +35,12 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from utils import (  # type: ignore[import-not-found]  # noqa: E402
+    DEFAULT_NARADA_DIR,
+    InputRun,
     PERCENTILES,
     REPORT_METRICS,
+    Run,
+    archive_selected_sweep_runs,
     build_concurrency_df,
     build_input_df,
     collect_input_runs,
@@ -44,7 +48,6 @@ from utils import (  # type: ignore[import-not-found]  # noqa: E402
     filter_complete_axis,
     pick_best_input_rtf,
     pick_best_rtf,
-    run_rtf,
 )
 
 
@@ -90,8 +93,18 @@ def _axis_col(sweep_type: str) -> str:
     return "concurrency" if sweep_type == "conc" else "input_chars"
 
 
+MetricSpec = Tuple[str, str, str, bool]
+SelectedRun = Run | InputRun
+
+
 def _axis_label(sweep_type: str) -> str:
     return "Concurrent Sessions" if sweep_type == "conc" else "Input Length (chars)"
+
+
+def _sort_selected_runs(
+    selected: Dict[Tuple[str, int], SelectedRun],
+) -> List[SelectedRun]:
+    return [run for _, run in sorted(selected.items(), key=lambda item: item[0])]
 
 
 def _bar_is_missing(rect: Rectangle) -> bool:
@@ -527,7 +540,9 @@ def plot_auxiliary_sweep(
         print(f"Wrote {path}")
 
 
-def _build_dataframe(args: argparse.Namespace, systems: Sequence[str]):
+def _build_dataframe(
+    args: argparse.Namespace, systems: Sequence[str]
+) -> Tuple[pd.DataFrame, Sequence[MetricSpec], List[SelectedRun]]:
     if args.sweep_type == "conc":
         metrics = (
             SINGLE_CONC_METRICS
@@ -555,7 +570,13 @@ def _build_dataframe(args: argparse.Namespace, systems: Sequence[str]):
                 percentiles=percentiles,
             )
         selected = pick_best_rtf(runs)
-        return build_concurrency_df(selected, systems, metrics=metrics, percentiles=percentiles), metrics
+        return (
+            build_concurrency_df(
+                selected, systems, metrics=metrics, percentiles=percentiles
+            ),
+            metrics,
+            _sort_selected_runs(selected),
+        )
 
     runs = collect_input_runs(
         systems[0],
@@ -573,7 +594,13 @@ def _build_dataframe(args: argparse.Namespace, systems: Sequence[str]):
             percentiles=PERCENTILES,
         )
     selected = pick_best_input_rtf(runs)
-    return build_input_df(selected, systems, metrics=REPORT_METRICS, percentiles=PERCENTILES), REPORT_METRICS
+    return (
+        build_input_df(
+            selected, systems, metrics=REPORT_METRICS, percentiles=PERCENTILES
+        ),
+        REPORT_METRICS,
+        _sort_selected_runs(selected),
+    )
 
 
 def print_summary(df: pd.DataFrame, axis_col: str) -> None:
@@ -613,6 +640,36 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Only plot x-axis values present for every provided engine.",
     )
+    parser.add_argument(
+        "--exp-name",
+        help="Copy selected run data under --benchmarks-dir using sweep/{conc|input}/{engine}/{axis=value}.",
+    )
+    parser.add_argument(
+        "--model-name",
+        help="Model folder name for --exp-name archives; inferred from run configs if omitted.",
+    )
+    parser.add_argument(
+        "--benchmarks-dir",
+        default=str(DEFAULT_NARADA_DIR / "benchmarks"),
+        help="Archive root for --exp-name data copies.",
+    )
+    parser.add_argument(
+        "--include-plots",
+        action="store_true",
+        help="Also copy generated PNGs from each selected run's metrics directory.",
+    )
+    parser.add_argument(
+        "--overwrite",
+        "--overwrite-archive",
+        dest="overwrite_archive",
+        action="store_true",
+        help="Replace existing archived data directories.",
+    )
+    parser.add_argument(
+        "--dry-run-archive",
+        action="store_true",
+        help="Print archive targets without copying selected run data.",
+    )
     return parser
 
 
@@ -627,7 +684,7 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     axis_col = _axis_col(args.sweep_type)
 
-    df, metrics = _build_dataframe(args, systems)
+    df, metrics, selected_runs = _build_dataframe(args, systems)
     if df.empty:
         print("[error] No valid benchmark runs found.", file=sys.stderr)
         return 1
@@ -686,6 +743,19 @@ def main() -> int:
         )
 
     print_summary(df, axis_col)
+    archive_selected_sweep_runs(
+        selected_runs,
+        axis_values=df[axis_col].dropna().astype(str).unique(),
+        axis_col=axis_col,
+        sweep_type=args.sweep_type,
+        systems=systems,
+        exp_name=args.exp_name,
+        model_name=args.model_name,
+        benchmarks_dir=args.benchmarks_dir,
+        include_plots=args.include_plots,
+        overwrite=args.overwrite_archive,
+        dry_run=args.dry_run_archive,
+    )
     return 0
 
 

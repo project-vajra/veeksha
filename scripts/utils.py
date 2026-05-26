@@ -77,6 +77,9 @@ class InputRun:
     summary: Dict[str, Any]
 
 
+SweepRun = Run | InputRun
+
+
 @dataclass
 class RunReport:
     run_name: str
@@ -789,15 +792,17 @@ def _slug(value: str) -> str:
     return slug.lower() or "unnamed"
 
 
-def _run_created_at(run: Run) -> str:
+def _run_created_at(run: SweepRun) -> str:
     return run.timestamp.strftime("%Y-%m-%dT%H:%M:%S")
 
 
-def _run_date_for_dir(run: Run) -> str:
+def _run_date_for_dir(run: SweepRun) -> str:
     return run.timestamp.strftime("%Y_%m_%d-%H_%M_%S")
 
 
-def _data_dir_name(run: Run) -> str:
+def _data_dir_name(run: SweepRun) -> str:
+    if isinstance(run, InputRun):
+        return f"data_input_{run.input_chars}_{_run_date_for_dir(run)}"
     return f"data_{run.concurrency}_{_run_date_for_dir(run)}"
 
 
@@ -824,8 +829,9 @@ def _write_metadata(
     plot_name: str,
     engine_name: str,
     comparison_against: str,
-    run: Run,
+    run: SweepRun,
     copied_files: Sequence[Path],
+    selection_policy: Optional[str] = None,
 ) -> None:
     exported_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     source_run_dir = Path(run.run_dir).resolve()
@@ -835,22 +841,30 @@ def _write_metadata(
         f"plot_name: {plot_name}",
         f"engine_name: {engine_name}",
         f"comparison_against: {comparison_against}",
-        f"concurrency: {run.concurrency}",
         f"data_created_at: {_run_created_at(run)}",
         f"exported_at_utc: {exported_at}",
         f"source_run_dir: {source_run_dir}",
-        "selection_policy: lowest positive RTF P90 per (engine, concurrency); "
-        "latest timestamp tie-break",
-        "",
-        "copied_files:",
     ]
+    if run.concurrency is not None:
+        lines.append(f"concurrency: {run.concurrency}")
+    if isinstance(run, InputRun):
+        lines.append(f"input_chars: {run.input_chars}")
+    lines.append(
+        "selection_policy: "
+        + (
+            selection_policy
+            or "lowest positive RTF P90 per (engine, concurrency); "
+            "latest timestamp tie-break"
+        )
+    )
+    lines.extend(["", "copied_files:"])
     lines.extend(f"- {path}" for path in rel_files)
     lines.append("")
     (target_dir / "metadata.txt").write_text("\n".join(lines), encoding="utf-8")
 
 
 def _copy_run_data(
-    run: Run,
+    run: SweepRun,
     target_dir: Path,
     *,
     plot_name: str,
@@ -858,6 +872,7 @@ def _copy_run_data(
     include_plots: bool,
     overwrite: bool,
     dry_run: bool,
+    selection_policy: Optional[str] = None,
 ) -> List[Path]:
     source_run_dir = Path(run.run_dir)
     files = list(_iter_data_files(source_run_dir, include_plots))
@@ -891,8 +906,188 @@ def _copy_run_data(
         comparison_against=comparison_against,
         run=run,
         copied_files=copied_files,
+        selection_policy=selection_policy,
     )
     return copied_files
+
+
+def _sweep_archive_kind(sweep_type: str) -> str:
+    return "conc" if sweep_type == "conc" else "input"
+
+
+def _run_axis_value(run: SweepRun, axis_col: str) -> Optional[int]:
+    if axis_col == "concurrency":
+        return run.concurrency
+    if isinstance(run, InputRun) and axis_col == "input_chars":
+        return run.input_chars
+    return None
+
+
+def _axis_folder_name(run: SweepRun, *, axis_col: str, sweep_type: str) -> Optional[str]:
+    axis_value = _run_axis_value(run, axis_col)
+    if axis_value is None:
+        return None
+    return f"{_sweep_archive_kind(sweep_type)}={axis_value}"
+
+
+def _selected_runs_for_axis_values(
+    selected_runs: Sequence[SweepRun], axis_col: str, axis_values: Iterable[Any]
+) -> List[SweepRun]:
+    keep = {str(value) for value in axis_values}
+    return [
+        run
+        for run in selected_runs
+        if (axis_value := _run_axis_value(run, axis_col)) is not None
+        and str(axis_value) in keep
+    ]
+
+
+def _model_name_from_run(run: SweepRun) -> Optional[str]:
+    cfg = safe_read_yaml(Path(run.run_dir) / "config.yml")
+    if cfg is None:
+        return None
+    model = find_key(cfg, "model")
+    return str(model) if model else None
+
+
+def _infer_model_name(selected_runs: Sequence[SweepRun]) -> str:
+    model_names: List[str] = []
+    for run in selected_runs:
+        model_name = _model_name_from_run(run)
+        if model_name and model_name not in model_names:
+            model_names.append(model_name)
+
+    if not model_names:
+        print(
+            "[warn] Could not infer a model name from selected runs; "
+            "using unknown_model.",
+            file=sys.stderr,
+        )
+        return "unknown_model"
+
+    if len(model_names) > 1:
+        print(
+            f"[warn] Multiple model names found ({', '.join(model_names)}); "
+            f"using {model_names[0]}. Pass --model-name to override.",
+            file=sys.stderr,
+        )
+    return model_names[0]
+
+
+def _selection_policy_for_sweep(sweep_type: str) -> str:
+    axis = "concurrency" if sweep_type == "conc" else "input_chars"
+    return f"lowest positive RTF P90 per (engine, {axis}); latest timestamp tie-break"
+
+
+def _write_sweep_archive_manifest(
+    sweep_dir: Path,
+    rows: Sequence[Tuple[SweepRun, Path, str]],
+    *,
+    axis_col: str,
+    dry_run: bool,
+) -> None:
+    if dry_run:
+        return
+    manifest_path = sweep_dir / "selected_runs.csv"
+    with manifest_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            [
+                "engine_name",
+                "comparison_against",
+                axis_col,
+                "concurrency",
+                "input_chars",
+                "data_created_at",
+                "source_run_dir",
+                "benchmark_data_dir",
+            ]
+        )
+        for run, target_dir, comparison_against in rows:
+            input_chars = run.input_chars if isinstance(run, InputRun) else ""
+            axis_value = _run_axis_value(run, axis_col)
+            writer.writerow(
+                [
+                    run.system,
+                    comparison_against,
+                    axis_value if axis_value is not None else "",
+                    run.concurrency if run.concurrency is not None else "",
+                    input_chars,
+                    _run_created_at(run),
+                    str(Path(run.run_dir).resolve()),
+                    str(target_dir.resolve()),
+                ]
+            )
+
+
+def archive_selected_sweep_runs(
+    selected_runs: Sequence[SweepRun],
+    *,
+    axis_values: Iterable[Any],
+    axis_col: str,
+    sweep_type: str,
+    systems: Sequence[str],
+    exp_name: Optional[str],
+    model_name: Optional[str],
+    benchmarks_dir: str | Path,
+    include_plots: bool,
+    overwrite: bool,
+    dry_run: bool,
+) -> None:
+    if not exp_name:
+        return
+
+    archive_runs = _selected_runs_for_axis_values(selected_runs, axis_col, axis_values)
+    if not archive_runs:
+        print("[warn] No selected runs remain to archive.", file=sys.stderr)
+        return
+
+    resolved_model_name = model_name or _infer_model_name(archive_runs)
+    sweep_dir = (
+        Path(benchmarks_dir)
+        / _slug(resolved_model_name)
+        / _slug(exp_name)
+        / "sweep"
+        / _sweep_archive_kind(sweep_type)
+    )
+    comparison_for = {
+        systems[0]: systems[1] if len(systems) > 1 else "none",
+    }
+    if len(systems) > 1:
+        comparison_for[systems[1]] = systems[0]
+
+    rows: List[Tuple[SweepRun, Path, str]] = []
+    selection_policy = _selection_policy_for_sweep(sweep_type)
+    for run in archive_runs:
+        axis_folder = _axis_folder_name(run, axis_col=axis_col, sweep_type=sweep_type)
+        if axis_folder is None:
+            continue
+        target_dir = sweep_dir / _slug(run.system) / axis_folder
+        comparison_against = comparison_for.get(run.system, "unknown")
+        copied_files = _copy_run_data(
+            run,
+            target_dir,
+            plot_name=exp_name,
+            comparison_against=comparison_against,
+            include_plots=include_plots,
+            overwrite=overwrite,
+            dry_run=dry_run,
+            selection_policy=selection_policy,
+        )
+        print(
+            f"{'Would copy' if dry_run else 'Copied'} "
+            f"{len(copied_files)} files -> {target_dir}"
+        )
+        rows.append((run, target_dir, comparison_against))
+
+    _write_sweep_archive_manifest(
+        sweep_dir,
+        rows,
+        axis_col=axis_col,
+        dry_run=dry_run,
+    )
+    if not dry_run:
+        print(f"Wrote benchmark archive under {sweep_dir}")
 
 
 def _write_selected_runs_manifest(

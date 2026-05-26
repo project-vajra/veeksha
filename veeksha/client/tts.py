@@ -226,6 +226,7 @@ class TTSClient(BaseLLMClient):
                     "pcm_byte_count": pcm_bytes,
                     "input_chars": len(input_text),
                     "input_tokens": text_content.target_prompt_tokens or 0,
+                    "input_text": input_text,
                     "raw_pcm": self._raw_pcm,
                     "sample_rate": self._sample_rate,
                 },

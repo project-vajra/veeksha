@@ -59,6 +59,7 @@ class AudioRequestMetrics:
     pcm_byte_count: int
     input_chars: int = 0
     input_tokens: int = 0
+    input_text: str = ""
     session_total_requests: Optional[int] = None
 
 
@@ -109,6 +110,7 @@ class AudioPerformanceEvaluator:
 
         # Running totals for aggregate throughput
         self._total_input_chars: int = 0
+        self._total_generated_audio_duration_ms: float = 0.0
         self._first_dispatch_at: Optional[float] = None
         self._last_completion_at: Optional[float] = None
 
@@ -166,6 +168,7 @@ class AudioPerformanceEvaluator:
             pcm_byte_count = cm.get("pcm_byte_count", 0)
             input_chars = cm.get("input_chars", 0)
             input_tokens = cm.get("input_tokens", 0)
+            input_text = cm.get("input_text", "")
 
             session_total_requests = getattr(response, "session_total_requests", None)
 
@@ -182,6 +185,7 @@ class AudioPerformanceEvaluator:
                 pcm_byte_count=pcm_byte_count,
                 input_chars=input_chars,
                 input_tokens=input_tokens,
+                input_text=input_text,
                 session_total_requests=session_total_requests,
             )
 
@@ -189,6 +193,7 @@ class AudioPerformanceEvaluator:
 
             # Update aggregate throughput accumulators
             self._total_input_chars += input_chars
+            self._total_generated_audio_duration_ms += generated_audio_duration
             if self._first_dispatch_at is None or dispatched_at < self._first_dispatch_at:
                 self._first_dispatch_at = dispatched_at
             if self._last_completion_at is None or completed_at > self._last_completion_at:
@@ -264,6 +269,11 @@ class AudioPerformanceEvaluator:
             wall_s = max(0.0, self._last_completion_at - self._first_dispatch_at)
         perf_summary["chars_per_sec_aggregate"] = (
             self._total_input_chars / wall_s if wall_s > 0 else None
+        )
+        perf_summary["generated_audio_seconds_per_sec_aggregate"] = (
+            (self._total_generated_audio_duration_ms / 1000.0) / wall_s
+            if wall_s > 0
+            else None
         )
         return perf_summary
 
@@ -341,6 +351,7 @@ class AudioPerformanceEvaluator:
                     "pcm_byte_count": m.pcm_byte_count,
                     "input_chars": m.input_chars,
                     "input_tokens": m.input_tokens,
+                    "input_text": m.input_text,
                 }
             )
         return rows

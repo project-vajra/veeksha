@@ -194,6 +194,12 @@ class TTSClientConfig(BaseClientConfig):
             "help": "Whether the provider returns raw PCM (True) or WAV (False)."
         },
     )
+    save_audio: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to persist generated TTS audio files in the run output."
+        },
+    )
     model: str = field(
         default="",
         metadata={

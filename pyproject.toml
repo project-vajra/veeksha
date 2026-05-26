@@ -39,7 +39,12 @@ dependencies = [
     "requests",
     "uvloop",
     "httpx",
-    "nvidia-ml-py"
+    "nvidia-ml-py",
+    "faster-whisper",
+    "fastapi",
+    "uvicorn",
+    "python-multipart",
+    "jiwer",
 ]
 
 [project.scripts]
