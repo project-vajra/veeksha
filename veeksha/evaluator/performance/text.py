@@ -46,14 +46,14 @@ class TextRequestMetrics:
         return self.num_prompt_tokens + self.num_output_tokens
 
     @property
-    def e2e(self) -> float:
+    def end_to_end_latency(self) -> float:
         return sum(self.inter_chunk_times)
 
     @property
-    def normalized_e2e(self) -> float:
+    def normalized_end_to_end_latency(self) -> float:
         if self.num_output_tokens == 0:
             return 0.0
-        return self.e2e / self.num_output_tokens
+        return self.end_to_end_latency / self.num_output_tokens
 
     @property
     def ttfc(self) -> float:
@@ -66,7 +66,7 @@ class TextRequestMetrics:
         if self.num_output_tokens <= 1:
             return 0.0
         # (E2E - TTFC) / (OutputTokens - 1)
-        return (self.e2e - self.ttfc) / (self.num_output_tokens - 1)
+        return (self.end_to_end_latency - self.ttfc) / (self.num_output_tokens - 1)
 
     @property
     def tbc(self) -> float:
@@ -76,9 +76,9 @@ class TextRequestMetrics:
 
     @property
     def output_throughput(self) -> float:
-        if self.e2e == 0:
+        if self.end_to_end_latency == 0:
             return 0.0
-        return self.num_output_tokens / self.e2e
+        return self.num_output_tokens / self.end_to_end_latency
 
 
 class TextPerformanceEvaluator:
@@ -133,11 +133,11 @@ class TextPerformanceEvaluator:
                 metric_name="Time Between Chunks",
                 unit="s",
             ),
-            "e2e": CDFSketch(
+            "end_to_end_latency": CDFSketch(
                 metric_name="End to End Latency",
                 unit="s",
             ),
-            "normalized_e2e": CDFSketch(
+            "normalized_end_to_end_latency": CDFSketch(
                 metric_name="Normalized End to End Latency",
                 unit="s/token",
             ),
@@ -165,8 +165,8 @@ class TextPerformanceEvaluator:
             "tpot",
             "ttfc",
             "tbc",
-            "e2e",
-            "normalized_e2e",
+            "end_to_end_latency",
+            "normalized_end_to_end_latency",
             "output_throughput",
         }
 
@@ -182,8 +182,8 @@ class TextPerformanceEvaluator:
         self.tpot: List[float] = []
         self.ttfc: List[float] = []
         self.tbc: List[List[float]] = []
-        self.e2e: List[float] = []
-        self.normalized_e2e: List[float] = []
+        self.end_to_end_latency: List[float] = []
+        self.normalized_end_to_end_latency: List[float] = []
         self.output_throughput: List[float] = []
         self.session_ids: List[Optional[int]] = []
         self.session_total_requests: List[Optional[int]] = []
@@ -343,8 +343,8 @@ class TextPerformanceEvaluator:
         self.tpot.append(metrics.tpot)
         self.ttfc.append(metrics.ttfc)
         self.tbc.append(metrics.inter_chunk_times[1:])
-        self.e2e.append(metrics.e2e)
-        self.normalized_e2e.append(metrics.normalized_e2e)
+        self.end_to_end_latency.append(metrics.end_to_end_latency)
+        self.normalized_end_to_end_latency.append(metrics.normalized_end_to_end_latency)
         self.output_throughput.append(metrics.output_throughput)
         self.session_ids.append(metrics.session_id)
         self.session_total_requests.append(metrics.session_total_requests)
@@ -484,9 +484,9 @@ class TextPerformanceEvaluator:
                     # Latency metrics
                     "tpot": round(self.tpot[idx], 5),
                     "ttfc": round(self.ttfc[idx], 5),
-                    "e2e": round(self.e2e[idx], 5),
-                    "normalized_e2e": round(
-                        self.normalized_e2e[idx], 5
+                    "end_to_end_latency": round(self.end_to_end_latency[idx], 5),
+                    "normalized_end_to_end_latency": round(
+                        self.normalized_end_to_end_latency[idx], 5
                     ),
                     "output_throughput": round(self.output_throughput[idx], 5),
                     "tbc": [round(t, 5) for t in self.tbc[idx]],

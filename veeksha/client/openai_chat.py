@@ -345,7 +345,7 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
 
         # audio output tracking
         audio_chunks: List[bytes] = []
-        audio_ttfa: Optional[float] = None
+        audio_ttfc: Optional[float] = None
         audio_chunk_count = 0
         audio_total_bytes = 0
 
@@ -427,8 +427,8 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
 
                     if modality_type == "audio" and delta.get("content"):
                         chunk_bytes = base64.b64decode(delta["content"])
-                        if audio_ttfa is None:
-                            audio_ttfa = (receive_time - t_start) * 1000
+                        if audio_ttfc is None:
+                            audio_ttfc = (receive_time - t_start) * 1000
                         audio_chunks.append(chunk_bytes)
                         audio_chunk_count += 1
                         audio_total_bytes += len(chunk_bytes)
@@ -515,8 +515,8 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
                 modality=ChannelModality.AUDIO,
                 content=audio_bytes,
                 metrics={
-                    "ttfa": round(audio_ttfa or 0.0, 3),
-                    "e2e": round(total_latency_ms, 3),
+                    "ttfc": round(audio_ttfc or 0.0, 3),
+                    "end_to_end_latency": round(total_latency_ms, 3),
                     "generated_audio_duration": round(audio_dur_ms, 3),
                     "rtf": round(rtf, 5),
                     "chunk_count": audio_chunk_count,

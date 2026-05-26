@@ -6,7 +6,7 @@ import re
 import string
 import struct
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from veeksha.config.evaluator import (
@@ -125,15 +125,14 @@ class AudioRequestMetrics:
     session_id: int
     request_dispatched_at: float
     client_completed_at: float
-    ttft: float
-    e2e: float
+    ttfc: float
+    end_to_end_latency: float
     generated_audio_duration: float
     rtf: float
     chunk_count: int
     pcm_byte_count: int
     input_chars: int = 0
     input_tokens: int = 0
-    ttfa: Optional[float] = None
     tpot: Optional[float] = None
     final_latency: Optional[float] = None
     first_partial: Optional[float] = None
@@ -147,7 +146,7 @@ class AudioRequestMetrics:
 class AudioPerformanceEvaluator:
     """Performance evaluator for audio (TTS / STT).
 
-    Tracks per-request TTFT, total latency, audio duration, RTF (real-time factor),
+    Tracks per-request TTFC, total latency, audio duration, RTF (real-time factor),
     and chunk count. Computes p50/p90/p99 aggregates via CDFSketch.
     """
 
@@ -164,12 +163,11 @@ class AudioPerformanceEvaluator:
 
         # CDF sketches for aggregate metrics
         self.summaries: Dict[str, CDFSketch] = {
-            "ttft": CDFSketch("ttft", unit="ms"),
-            "ttfa": CDFSketch("ttfa", unit="ms"),
+            "ttfc": CDFSketch("ttfc", unit="ms"),
             "tpot": CDFSketch("tpot", unit="ms"),
             "final_latency": CDFSketch("final_latency", unit="ms"),
             "first_partial": CDFSketch("first_partial", unit="ms"),
-            "e2e": CDFSketch("e2e", unit="ms"),
+            "end_to_end_latency": CDFSketch("end_to_end_latency", unit="ms"),
             "generated_audio_duration": CDFSketch(
                 "generated_audio_duration", unit="ms"
             ),
@@ -246,12 +244,11 @@ class AudioPerformanceEvaluator:
                 return
 
             cm = channel_response.metrics or {}
-            ttft = cm.get("ttft", 0.0)
-            ttfa_value: Optional[float] = cm.get("ttfa")
+            ttfc = cm.get("ttfc", 0.0)
             tpot_value: Optional[float] = cm.get("tpot")
             final_latency_value: Optional[float] = cm.get("final_latency")
             first_partial_value: Optional[float] = cm.get("first_partial")
-            e2e = cm.get("e2e", 0.0)
+            end_to_end_latency = cm.get("end_to_end_latency", 0.0)
             generated_audio_duration = cm.get("generated_audio_duration", 0.0)
             rtf = cm.get("rtf", 0.0)
             chunk_count = cm.get("chunk_count", 0)
@@ -274,15 +271,14 @@ class AudioPerformanceEvaluator:
                 session_id=session_id,
                 request_dispatched_at=dispatched_at,
                 client_completed_at=completed_at,
-                ttft=ttft,
-                e2e=e2e,
+                ttfc=ttfc,
+                end_to_end_latency=end_to_end_latency,
                 generated_audio_duration=generated_audio_duration,
                 rtf=rtf,
                 chunk_count=chunk_count,
                 pcm_byte_count=pcm_byte_count,
                 input_chars=input_chars,
                 input_tokens=input_tokens,
-                ttfa=ttfa_value,
                 tpot=tpot_value,
                 final_latency=final_latency_value,
                 first_partial=first_partial_value,
@@ -330,16 +326,14 @@ class AudioPerformanceEvaluator:
             )
 
             # Update CDF sketches
-            self.summaries["ttft"].put(ttft)
-            if ttfa_value is not None:
-                self.summaries["ttfa"].put(ttfa_value)
+            self.summaries["ttfc"].put(ttfc)
             if tpot_value is not None:
                 self.summaries["tpot"].put(tpot_value)
             if final_latency_value is not None:
                 self.summaries["final_latency"].put(final_latency_value)
             if first_partial_value is not None:
                 self.summaries["first_partial"].put(first_partial_value)
-            self.summaries["e2e"].put(e2e)
+            self.summaries["end_to_end_latency"].put(end_to_end_latency)
             self.summaries["generated_audio_duration"].put(generated_audio_duration)
             self.summaries["rtf"].put(rtf)
             self.summaries["chunk_count"].put(chunk_count)
@@ -456,8 +450,8 @@ class AudioPerformanceEvaluator:
                 "client_picked_up_at": lifecycle["client_picked_up_at"],
                 "client_completed_at": round(normalized_completed, 5),
                 "result_processed_at": lifecycle["result_processed_at"],
-                "ttft": round(m.ttft, 3),
-                "e2e": round(m.e2e, 3),
+                "ttfc": round(m.ttfc, 3),
+                "end_to_end_latency": round(m.end_to_end_latency, 3),
                 "generated_audio_duration": round(m.generated_audio_duration, 3),
                 "rtf": round(m.rtf, 5),
                 "chunk_count": m.chunk_count,
@@ -466,8 +460,6 @@ class AudioPerformanceEvaluator:
                 "input_tokens": m.input_tokens,
                 "input_text": m.input_text,
             }
-            if m.ttfa is not None:
-                row_dict["ttfa"] = round(m.ttfa, 3)
             if m.tpot is not None:
                 row_dict["tpot"] = round(m.tpot, 3)
             if m.final_latency is not None:

@@ -52,8 +52,8 @@ evaluators:
     stream_metrics_interval: 10.0
     slos:
       # Partial transcript appears quickly (user just started speaking).
-      - name: "P99 TTFT under 500ms"
-        metric: ttft
+      - name: "P99 TTFC under 500ms"
+        metric: ttfc
         percentile: 0.99
         value: 500
         type: constant

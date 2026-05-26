@@ -144,7 +144,7 @@ class TTSClient(BaseLLMClient):
 
         error_msg: Optional[str] = None
         error_code: Optional[int] = None
-        ttfa: Optional[float] = None
+        ttfc: Optional[float] = None
         chunk_count = 0
         total_bytes = 0
         audio_chunks: List[bytes] = []
@@ -172,8 +172,8 @@ class TTSClient(BaseLLMClient):
                 async for chunk in response.aiter_bytes(chunk_size=self._chunk_size):
                     if chunk:
                         receive_time = time.monotonic()
-                        if ttfa is None:
-                            ttfa = (receive_time - t_start) * 1000  # ms
+                        if ttfc is None:
+                            ttfc = (receive_time - t_start) * 1000  # ms
 
                         audio_chunks.append(chunk)
                         chunk_count += 1
@@ -218,8 +218,8 @@ class TTSClient(BaseLLMClient):
                 modality=ChannelModality.AUDIO,
                 content=audio_data,
                 metrics={
-                    "ttfa": round(ttfa or 0.0, 3),
-                    "e2e": round(total_latency_ms, 3),
+                    "ttfc": round(ttfc or 0.0, 3),
+                    "end_to_end_latency": round(total_latency_ms, 3),
                     "generated_audio_duration": round(audio_dur_ms, 3),
                     "rtf": round(rtf, 5),
                     "chunk_count": chunk_count,

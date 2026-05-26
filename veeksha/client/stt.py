@@ -171,7 +171,7 @@ class STTClient(BaseLLMClient):
 
         error_msg: Optional[str] = None
         error_code: Optional[int] = None
-        ttft: Optional[float] = None
+        ttfc: Optional[float] = None
         tpot: Optional[float] = None
         transcript_chunks: list[str] = []
         chunk_count = 0
@@ -182,29 +182,29 @@ class STTClient(BaseLLMClient):
         try:
             if self._provider == "vajra":
                 if self._streaming:
-                    ttft, chunk_count, stream_timings = await self._stream_vajra(
+                    ttfc, chunk_count, stream_timings = await self._stream_vajra(
                         audio_path, t_start, transcript_chunks
                     )
                 else:
-                    text, server_ttft, server_tpot = await self._batch_vajra(audio_data, audio_path)
-                    ttft = server_ttft if server_ttft is not None else (time.monotonic() - t_start) * 1000
+                    text, server_ttfc, server_tpot = await self._batch_vajra(audio_data, audio_path)
+                    ttfc = server_ttfc if server_ttfc is not None else (time.monotonic() - t_start) * 1000
                     tpot = server_tpot
                     transcript_chunks.append(text)
                     chunk_count = 1
 
             elif self._provider == "vllm":
                 if self._streaming:
-                    ttft, chunk_count = await self._stream_vllm(
+                    ttfc, chunk_count = await self._stream_vllm(
                         audio_data, audio_path, t_start, transcript_chunks
                     )
                 else:
                     text = await self._batch_vllm(audio_data, audio_path)
-                    ttft = (time.monotonic() - t_start) * 1000
+                    ttfc = (time.monotonic() - t_start) * 1000
                     transcript_chunks.append(text)
                     chunk_count = 1
 
             elif self._provider == "vllm_realtime":
-                ttft, chunk_count = await self._realtime_vllm(
+                ttfc, chunk_count = await self._realtime_vllm(
                     audio_path, t_start, transcript_chunks
                 )
 
@@ -239,8 +239,8 @@ class STTClient(BaseLLMClient):
             # Return metrics via the AUDIO channel so that
             # AudioPerformanceEvaluator can aggregate them unchanged.
             metrics_dict: dict = {
-                "ttft": round(ttft or 0.0, 3),
-                "e2e": round(total_latency_ms, 3),
+                "ttfc": round(ttfc or 0.0, 3),
+                "end_to_end_latency": round(total_latency_ms, 3),
                 "generated_audio_duration": round(input_audio_duration_ms, 3),
                 "rtf": round(rtf, 5),
                 "chunk_count": chunk_count,
@@ -255,7 +255,7 @@ class STTClient(BaseLLMClient):
 
             # Streaming-latency timings (vajra streaming path). Measured from
             # the audio stream itself, so they isolate server responsiveness
-            # rather than tracking clip length the way ttft/e2e do.
+            # rather than tracking clip length the way ttfc/end_to_end_latency do.
             final_latency = stream_timings.get("final_latency_ms")
             if final_latency is not None:
                 metrics_dict["final_latency"] = round(final_latency, 3)
@@ -292,7 +292,7 @@ class STTClient(BaseLLMClient):
     async def _batch_vajra(
         self, audio_data: bytes, audio_path: str,
     ) -> tuple[str, Optional[float], Optional[float]]:
-        """Returns (text, ttft_ms, tpot_ms)."""
+        """Returns (text, ttfc_ms, tpot_ms)."""
         filename = os.path.basename(audio_path)
         files = {"audio": (filename, audio_data, self._mime_type)}
         response = await self._client.post(
@@ -302,14 +302,14 @@ class STTClient(BaseLLMClient):
         )
         response.raise_for_status()
         data = response.json()
-        server_ttft = data.get("ttft_ms")
+        server_ttfc = data.get("ttft_ms")
         # Compute TPOT from server-reported decode time and token count
         decode_ms = data.get("decode_ms")
         num_tokens = data.get("num_tokens")
         tpot: Optional[float] = None
         if decode_ms is not None and num_tokens and num_tokens > 0:
             tpot = decode_ms / num_tokens
-        return data.get("text", ""), server_ttft, tpot
+        return data.get("text", ""), server_ttfc, tpot
 
     # ------------------------------------------------------------------
     # Vajra — WebSocket /stream  (binary PCM16, JSON delta frames)
@@ -331,7 +331,7 @@ class STTClient(BaseLLMClient):
             that must be spoken before a transcript can exist).
           - ``final_latency_ms``: end-of-audio sentinel -> final transcript.
             Isolates server processing tail, independent of clip length.
-        The legacy ``ttft`` (request start -> first partial) is preserved.
+        The legacy ``ttfc`` (request start -> first partial) is preserved.
 
         Protocol (see vajra-next/examples/asr_streaming_server.py):
           Client -> Server:  binary int16 LE PCM frames @ 16 kHz mono, then
@@ -343,7 +343,7 @@ class STTClient(BaseLLMClient):
         """
         import websockets
 
-        ttft: Optional[float] = None
+        ttfc: Optional[float] = None
         chunk_count = 0
         timings: dict = {"first_partial_ms": None, "final_latency_ms": None}
         send_marks: dict = {"audio_start": None, "audio_end": None}
@@ -380,8 +380,8 @@ class STTClient(BaseLLMClient):
 
                     if msg_type == "delta":
                         now = time.monotonic()
-                        if ttft is None:
-                            ttft = (now - t_start) * 1000
+                        if ttfc is None:
+                            ttfc = (now - t_start) * 1000
                             if send_marks["audio_start"] is not None:
                                 timings["first_partial_ms"] = (
                                     now - send_marks["audio_start"]
@@ -394,8 +394,8 @@ class STTClient(BaseLLMClient):
                         if not transcript_chunks and msg.get("text"):
                             transcript_chunks.append(msg["text"])
                             chunk_count = 1
-                            if ttft is None:
-                                ttft = (now - t_start) * 1000
+                            if ttfc is None:
+                                ttfc = (now - t_start) * 1000
                                 if send_marks["audio_start"] is not None:
                                     timings["first_partial_ms"] = (
                                         now - send_marks["audio_start"]
@@ -422,7 +422,7 @@ class STTClient(BaseLLMClient):
                 except asyncio.CancelledError:
                     pass
 
-        return ttft, chunk_count, timings
+        return ttfc, chunk_count, timings
 
     # ------------------------------------------------------------------
     # vLLM — POST /v1/audio/transcriptions  (multipart, batch or SSE)
@@ -464,7 +464,7 @@ class STTClient(BaseLLMClient):
             "stream": "true",
         }
 
-        ttft: Optional[float] = None
+        ttfc: Optional[float] = None
         chunk_count = 0
 
         async with self._client.stream(
@@ -490,12 +490,12 @@ class STTClient(BaseLLMClient):
                 for choice in event.get("choices", []):
                     content = choice.get("delta", {}).get("content", "")
                     if content:
-                        if ttft is None:
-                            ttft = (time.monotonic() - t_start) * 1000
+                        if ttfc is None:
+                            ttfc = (time.monotonic() - t_start) * 1000
                         transcript_chunks.append(content)
                         chunk_count += 1
 
-        return ttft, chunk_count
+        return ttfc, chunk_count
 
     # ------------------------------------------------------------------
     # vLLM Realtime — WebSocket /v1/realtime  (PCM16 chunks)
@@ -510,7 +510,7 @@ class STTClient(BaseLLMClient):
         """Stream PCM16 audio over WebSocket, receive transcription deltas."""
         import websockets
 
-        ttft: Optional[float] = None
+        ttfc: Optional[float] = None
         chunk_count = 0
 
         async with websockets.connect(self._ws_url) as ws:
@@ -556,8 +556,8 @@ class STTClient(BaseLLMClient):
                 msg_type = msg.get("type")
 
                 if msg_type == "transcription.delta":
-                    if ttft is None:
-                        ttft = (time.monotonic() - t_start) * 1000
+                    if ttfc is None:
+                        ttfc = (time.monotonic() - t_start) * 1000
                     transcript_chunks.append(msg["delta"])
                     chunk_count += 1
 
@@ -566,8 +566,8 @@ class STTClient(BaseLLMClient):
                     if not transcript_chunks and msg.get("text"):
                         transcript_chunks.append(msg["text"])
                         chunk_count = 1
-                        if ttft is None:
-                            ttft = (time.monotonic() - t_start) * 1000
+                        if ttfc is None:
+                            ttfc = (time.monotonic() - t_start) * 1000
                     break
 
                 elif msg_type == "error":
@@ -575,4 +575,4 @@ class STTClient(BaseLLMClient):
                         f"Realtime STT error: {msg.get('error', 'unknown')}"
                     )
 
-        return ttft, chunk_count
+        return ttfc, chunk_count

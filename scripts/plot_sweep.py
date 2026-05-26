@@ -53,7 +53,7 @@ from utils import (  # type: ignore[import-not-found]  # noqa: E402
 
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "benchmark_output" / "sweep_plots"
 SINGLE_CONC_METRICS: Tuple[Tuple[str, str, str, bool], ...] = (
-    ("ttfa", "TTFA", "ms", True),
+    ("ttfc", "TTFC", "ms", True),
     ("rtf", "RTF", "ratio", True),
 )
 SINGLE_CONC_PERCENTILES = ("P50", "P90", "P99")

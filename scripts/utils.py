@@ -47,7 +47,7 @@ ROOT_DATA_FILES = ("config.yml", "health_check_results.txt", "wandb_run.json")
 
 PERCENTILES: Tuple[str, ...] = ("P50", "P90")
 REPORT_METRICS: Tuple[Tuple[str, str, str, bool], ...] = (
-    ("ttfa", "TTFA", "ms", True),
+    ("ttfc", "TTFC", "ms", True),
     ("rtf", "RTF", "ratio", True),
     ("generated_audio_duration", "Generated Audio Duration", "ms", False),
 )
@@ -85,8 +85,8 @@ class RunReport:
     run_name: str
     concurrency: Optional[int]
     n_completed: int
-    ttfa_p50_ms: Optional[float]
-    ttfa_p90_ms: Optional[float]
+    ttfc_p50_ms: Optional[float]
+    ttfc_p90_ms: Optional[float]
     rtf_p50: Optional[float]
     rtf_p90: Optional[float]
     chars_per_sec: Optional[float]
@@ -678,7 +678,7 @@ def analyze_run(run_dir: str | Path) -> RunReport:
     if not rows:
         return RunReport(run_dir.name, concurrency, 0, None, None, None, None, None, "empty jsonl")
 
-    ttfas = [row["ttfa"] for row in rows if row.get("ttfa") is not None]
+    ttfcs = [row["ttfc"] for row in rows if row.get("ttfc") is not None]
     rtfs = [row["rtf"] for row in rows if row.get("rtf") is not None]
     dispatched = [
         row["scheduler_dispatched_at"]
@@ -722,8 +722,8 @@ def analyze_run(run_dir: str | Path) -> RunReport:
         run_name=run_dir.name,
         concurrency=concurrency,
         n_completed=len(rows),
-        ttfa_p50_ms=percentile(ttfas, 50),
-        ttfa_p90_ms=percentile(ttfas, 90),
+        ttfc_p50_ms=percentile(ttfcs, 50),
+        ttfc_p90_ms=percentile(ttfcs, 90),
         rtf_p50=percentile(rtfs, 50),
         rtf_p90=percentile(rtfs, 90),
         chars_per_sec=chars_per_sec,
@@ -758,8 +758,8 @@ def print_throughput_table(reports: Sequence[RunReport]) -> None:
         "run",
         "conc",
         "n",
-        "TTFA p50 (ms)",
-        "TTFA p90 (ms)",
+        "TTFC p50 (ms)",
+        "TTFC p90 (ms)",
         "RTF p50",
         "RTF p90",
         "chars/sec",
@@ -772,8 +772,8 @@ def print_throughput_table(reports: Sequence[RunReport]) -> None:
                 report.run_name,
                 str(report.concurrency) if report.concurrency is not None else "-",
                 str(report.n_completed),
-                fmt_optional(report.ttfa_p50_ms, 1),
-                fmt_optional(report.ttfa_p90_ms, 1),
+                fmt_optional(report.ttfc_p50_ms, 1),
+                fmt_optional(report.ttfc_p90_ms, 1),
                 fmt_optional(report.rtf_p50, 4),
                 fmt_optional(report.rtf_p90, 4),
                 fmt_optional(report.chars_per_sec, 2),
