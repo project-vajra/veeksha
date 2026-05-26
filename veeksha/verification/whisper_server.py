@@ -6,11 +6,11 @@ import argparse
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
+
+from fastapi import FastAPI, File, HTTPException, UploadFile
 
 
-def create_app(model_name: str, device: str, compute_type: str) -> Any:
-    from fastapi import FastAPI, File, HTTPException, UploadFile
+def create_app(model_name: str, device: str, compute_type: str) -> FastAPI:
     from faster_whisper import WhisperModel
 
     app = FastAPI()

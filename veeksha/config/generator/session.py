@@ -240,6 +240,112 @@ class ShareGPTTraceFlavorConfig(BaseTraceFlavorConfig):
         return TraceFlavorType.SHAREGPT
 
 
+@frozen_dataclass
+class SeedTTSTextTraceFlavorConfig(BaseTraceFlavorConfig):
+    """Seed TTS eval text dataset configuration.
+
+    Loads one text-only TTS request per dataset row. The default source is the
+    English split of the Hugging Face Seed-TTS eval mirror.
+    """
+
+    dataset_name: str = field(
+        default="TwinkStart/Seed-TTS-Eval",
+        metadata={"help": "Hugging Face dataset name used when local_path is empty."},
+    )
+    subset: str = field(
+        default="en",
+        metadata={"help": "Dataset subset/config name. Defaults to English."},
+    )
+    split: str = field(
+        default="train",
+        metadata={"help": "Dataset split to load."},
+    )
+    text_column: str = field(
+        default="text",
+        metadata={"help": "Column containing the target TTS synthesis text."},
+    )
+    id_column: str = field(
+        default="filename",
+        metadata={
+            "help": "Optional source row identifier column copied into request metadata."
+        },
+    )
+    local_path: str = field(
+        default="",
+        metadata={
+            "help": "Optional local dataset path. Supports saved HF datasets and common "
+            "data files such as JSON/JSONL, CSV, and Parquet."
+        },
+    )
+    min_tokens: int = field(
+        default=20,
+        metadata={
+            "help": "Minimum input word count. Rows with fewer words are skipped. "
+            "Ignored when min_chars/max_chars are set."
+        },
+    )
+    max_tokens: int = field(
+        default=150,
+        metadata={
+            "help": "Maximum input word count. Text is truncated to a sampled word "
+            "count in [min_tokens, max_tokens]. Ignored when min_chars/max_chars "
+            "are set."
+        },
+    )
+    min_chars: int = field(
+        default=-1,
+        metadata={
+            "help": "If >= 0, enables char-based input length control. Rows with "
+            "fewer chars are skipped."
+        },
+    )
+    max_chars: int = field(
+        default=-1,
+        metadata={
+            "help": "If >= 0, enables char-based input length control. Text is "
+            "truncated to a sampled char count in [min_chars, max_chars]."
+        },
+    )
+
+    @property
+    def use_chars(self) -> bool:
+        return self.min_chars >= 0 and self.max_chars >= 0
+
+    @classmethod
+    def get_type(cls):
+        return TraceFlavorType.SEED_TTS_TEXT
+
+    def __post_init__(self):
+        if not self.text_column:
+            raise ValueError("SeedTTSTextTraceFlavorConfig.text_column is required.")
+        if not self.local_path and not self.dataset_name:
+            raise ValueError(
+                "SeedTTSTextTraceFlavorConfig requires dataset_name or local_path."
+            )
+
+        one_char_bound_set = (self.min_chars >= 0) != (self.max_chars >= 0)
+        if one_char_bound_set:
+            raise ValueError(
+                "min_chars and max_chars must both be set (>= 0) or both left "
+                f"unset (-1); got min_chars={self.min_chars}, "
+                f"max_chars={self.max_chars}"
+            )
+        if self.use_chars:
+            if self.min_chars > self.max_chars:
+                raise ValueError(
+                    f"min_chars ({self.min_chars}) must be <= max_chars "
+                    f"({self.max_chars})"
+                )
+        else:
+            if self.min_tokens < 0 or self.max_tokens < 0:
+                raise ValueError("min_tokens and max_tokens must be non-negative.")
+            if self.min_tokens > self.max_tokens:
+                raise ValueError(
+                    f"min_tokens ({self.min_tokens}) must be <= max_tokens "
+                    f"({self.max_tokens})"
+                )
+
+
 # ----- Trace Session Generator Config -----
 
 

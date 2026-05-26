@@ -33,6 +33,7 @@ class TraceFlavorType(BaseIntEnum):
     MOONCAKE_CONV = 2
     RAG = 3
     SHAREGPT = 4
+    SEED_TTS_TEXT = 5
 
 
 class ChannelModality(BaseIntEnum):

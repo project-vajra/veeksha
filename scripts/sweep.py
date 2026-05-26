@@ -13,6 +13,10 @@ Examples
     # Preview generated configs and benchmark commands without running them
     python scripts/sweep.py --sweep-type concurrency --engine vllm \\
         --model qwen3-omni --concurrencies 1,2 --dry-run
+
+    # Use the Seed TTS text dataset instead of the default ShareGPT trace
+    python scripts/sweep.py --sweep-type concurrency --engine vajra \\
+        --model qwen-tts --trace seed_tts
 """
 
 from __future__ import annotations
@@ -30,12 +34,21 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import yaml
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = REPO_ROOT / "configs"
 
 CONCURRENCY_SWEEP = "concurrency"
 INPUT_SWEEP = "input"
+
+TRACE_SHAREGPT = "sharegpt"
+TRACE_SEED_TTS = "seed_tts"
+TRACE_ALIASES = {
+    "sharegpt": TRACE_SHAREGPT,
+    "share_gpt": TRACE_SHAREGPT,
+    "seed_tts": TRACE_SEED_TTS,
+    "seedtts": TRACE_SEED_TTS,
+    "seed_tts_text": TRACE_SEED_TTS,
+}
 
 MODEL_ALIASES = {
     "qwen-tts": "qwen-tts",
@@ -211,9 +224,19 @@ def _parse_sizes(raw: str) -> Tuple[int, ...]:
     return _parse_csv_ints(raw, name="sizes")
 
 
+def _parse_trace(raw: str) -> str:
+    key = raw.strip().lower().replace("-", "_")
+    if key not in TRACE_ALIASES:
+        supported = ", ".join(sorted(TRACE_ALIASES))
+        raise argparse.ArgumentTypeError(f"trace must be one of: {supported}")
+    return TRACE_ALIASES[key]
+
+
 def _supported_combinations() -> str:
     rows = sorted(SPECS)
-    return "\n".join(f"  {kind:11s} {engine:8s} {model}" for kind, engine, model in rows)
+    return "\n".join(
+        f"  {kind:11s} {engine:8s} {model}" for kind, engine, model in rows
+    )
 
 
 def _normalize_model(raw: str) -> str:
@@ -261,6 +284,11 @@ def _set_required(config: Dict[str, Any], path: Sequence[str], value: Any) -> No
     parent[key] = value
 
 
+def _set_mapping_value(config: Dict[str, Any], path: Sequence[str], value: Any) -> None:
+    parent = _mapping_at(config, path[:-1])
+    parent[path[-1]] = value
+
+
 def _disable_audio_saving(config: Dict[str, Any]) -> None:
     client = config.get("client")
     if isinstance(client, dict) and "save_audio" in client:
@@ -275,6 +303,36 @@ def _disable_audio_saving(config: Dict[str, Any]) -> None:
         audio_channel = evaluator.get("audio_channel")
         if isinstance(audio_channel, dict) and "save_audio_files" in audio_channel:
             audio_channel["save_audio_files"] = False
+
+
+def _apply_trace_source(config: Dict[str, Any], args: argparse.Namespace) -> None:
+    session_generator = _mapping_at(config, ("session_generator",))
+    if session_generator.get("type") != "trace":
+        raise ValueError(
+            "--trace can only be used with trace session generator configs"
+        )
+
+    flavor = session_generator.get("flavor")
+    if not isinstance(flavor, dict):
+        raise TypeError("Expected YAML mapping at session_generator.flavor")
+
+    if args.trace == TRACE_SHAREGPT:
+        flavor["type"] = "sharegpt"
+        if "assistant_role" not in flavor:
+            flavor["assistant_role"] = "gpt"
+        return
+
+    if args.trace != TRACE_SEED_TTS:
+        raise ValueError(f"Unsupported trace source: {args.trace}")
+
+    seed_flavor = {"type": "seed_tts_text"}
+
+    for key in ("min_tokens", "max_tokens", "min_chars", "max_chars"):
+        if key in flavor:
+            seed_flavor[key] = flavor[key]
+
+    session_generator["trace_file"] = ""
+    session_generator["flavor"] = seed_flavor
 
 
 def _date_tag() -> str:
@@ -295,7 +353,9 @@ def _input_sizes(args: argparse.Namespace, spec: SweepSpec) -> Tuple[int, ...]:
     if args.sizes:
         return args.sizes
 
-    start = args.range_start if args.range_start is not None else spec.default_range_start
+    start = (
+        args.range_start if args.range_start is not None else spec.default_range_start
+    )
     end = args.range_end if args.range_end is not None else spec.default_range_end
     step = args.step if args.step is not None else spec.default_step
     if start is None or end is None or step is None:
@@ -338,8 +398,12 @@ def _build_run_config(
     if spec.sweep_type == INPUT_SWEEP:
         if input_size is None:
             raise ValueError("input_size is required for input sweeps")
-        _set_required(config, ("session_generator", "flavor", "min_chars"), input_size)
-        _set_required(config, ("session_generator", "flavor", "max_chars"), input_size)
+        _set_mapping_value(
+            config, ("session_generator", "flavor", "min_chars"), input_size
+        )
+        _set_mapping_value(
+            config, ("session_generator", "flavor", "max_chars"), input_size
+        )
         if spec.disable_audio_for_input:
             _disable_audio_saving(config)
 
@@ -369,6 +433,7 @@ def _print_run_header(
     timeout_seconds: int,
     max_sessions: int,
     dry_run: bool,
+    trace_source: str,
 ) -> None:
     mode = "DRY RUN " if dry_run else ""
     target = f"concurrency={concurrency}"
@@ -381,6 +446,7 @@ def _print_run_header(
     )
     print(f"   config       : {run_config}")
     print(f"   base config  : {spec.config_path}")
+    print(f"   trace        : {trace_source}")
     print(f"   wandb        : {run_name}")
     if spec.write_runtime_limits:
         print(f"   timeout      : {timeout_seconds}s")
@@ -390,6 +456,7 @@ def _print_run_header(
 
 def _run_sweep(args: argparse.Namespace, spec: SweepSpec) -> int:
     base_config = _load_config(spec.config_path)
+    _apply_trace_source(base_config, args)
     tmp_parent = Path(tempfile.mkdtemp(prefix=f"{spec.temp_prefix}."))
 
     if spec.sweep_type == CONCURRENCY_SWEEP:
@@ -435,6 +502,7 @@ def _run_sweep(args: argparse.Namespace, spec: SweepSpec) -> int:
                 timeout_seconds=args.timeout_seconds,
                 max_sessions=args.max_sessions,
                 dry_run=args.dry_run,
+                trace_source=args.trace,
             )
             command = _benchmark_command(run_config)
             print(" ".join(command))
@@ -466,13 +534,23 @@ def _build_parser() -> argparse.ArgumentParser:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--sweep-type", choices=(CONCURRENCY_SWEEP, INPUT_SWEEP), required=True)
-    parser.add_argument("--engine", choices=("vajra", "vllm", "voxserve"), required=True)
+    parser.add_argument(
+        "--sweep-type", choices=(CONCURRENCY_SWEEP, INPUT_SWEEP), required=True
+    )
+    parser.add_argument(
+        "--engine", choices=("vajra", "vllm", "voxserve"), required=True
+    )
     parser.add_argument(
         "--model",
         choices=tuple(sorted(MODEL_ALIASES)),
         required=True,
         help="Model/workload alias. qwen3-tts and tts map to qwen-tts.",
+    )
+    parser.add_argument(
+        "--trace",
+        type=_parse_trace,
+        default=TRACE_SHAREGPT,
+        help="Trace text source. Supported: sharegpt, seed_tts.",
     )
     parser.add_argument(
         "--concurrencies",
@@ -528,7 +606,13 @@ def main() -> int:
     if args.sweep_type == CONCURRENCY_SWEEP:
         disallowed = [
             name
-            for name in ("--concurrency", "--sizes", "--range-start", "--range-end", "--step")
+            for name in (
+                "--concurrency",
+                "--sizes",
+                "--range-start",
+                "--range-end",
+                "--step",
+            )
             if getattr(args, name.lstrip("-").replace("-", "_")) is not None
         ]
         if disallowed:

@@ -37,3 +37,10 @@ TraceFlavorGeneratorRegistry.register(
         "ShareGPTTraceFlavorGenerator",
     ),
 )
+TraceFlavorGeneratorRegistry.register(
+    TraceFlavorType.SEED_TTS_TEXT,
+    _LazyLoader(
+        "veeksha.generator.session.trace.seed_tts_text",
+        "SeedTTSTextTraceFlavorGenerator",
+    ),
+)
