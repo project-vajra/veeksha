@@ -515,7 +515,7 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
                 modality=ChannelModality.AUDIO,
                 content=audio_bytes,
                 metrics={
-                    "ttft": round(audio_ttfa or 0.0, 3),
+                    "ttfa": round(audio_ttfa or 0.0, 3),
                     "e2e": round(total_latency_ms, 3),
                     "generated_audio_duration": round(audio_dur_ms, 3),
                     "rtf": round(rtf, 5),

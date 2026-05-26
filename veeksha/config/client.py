@@ -194,6 +194,12 @@ class TTSClientConfig(BaseClientConfig):
             "help": "Whether the provider returns raw PCM (True) or WAV (False)."
         },
     )
+    save_audio: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to persist generated TTS audio files in the run output."
+        },
+    )
     model: str = field(
         default="",
         metadata={
@@ -247,6 +253,8 @@ class TTSClientConfig(BaseClientConfig):
                 key = os.environ.get(env_var)
                 if key:
                     object.__setattr__(self, "api_key", key)
+            elif self.provider == "vllm_omni":
+                object.__setattr__(self, "api_key", "EMPTY")
 
         # Auto-set raw_pcm for ElevenLabs (returns raw PCM, not WAV)
         if self.provider == "elevenlabs" and not self.raw_pcm:

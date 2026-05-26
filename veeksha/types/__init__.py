@@ -34,6 +34,7 @@ class TraceFlavorType(BaseIntEnum):
     RAG = 3
     SHAREGPT = 4
     AUDIO = 5
+    SEED_TTS_TEXT = 6
 
 
 class ChannelModality(BaseIntEnum):

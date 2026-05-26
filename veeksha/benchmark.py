@@ -1,4 +1,5 @@
 import os
+import shutil
 import threading
 import time
 from dataclasses import replace
@@ -13,6 +14,10 @@ from veeksha.benchmark_utils import (
 )
 from veeksha.client.registry import ClientRegistry
 from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.evaluator import (
+    AudioChannelPerformanceConfig,
+    PerformanceEvaluatorConfig,
+)
 from veeksha.core.seeding import SeedManager
 from veeksha.core.thread_pool import ThreadPoolManager
 from veeksha.core.trace_recorder import TraceRecorder
@@ -21,6 +26,7 @@ from veeksha.health import HealthChecker
 from veeksha.logger import init_logger
 from veeksha.orchestration import managed_server
 from veeksha.traffic.registry import TrafficSchedulerRegistry
+from veeksha.types import ChannelModality, ClientType, EvaluationType
 from veeksha.wandb_integration import (
     maybe_finish_wandb_run,
     maybe_init_wandb_run,
@@ -58,6 +64,112 @@ def _maybe_pregenerate_sessions(benchmark_config, session_generator) -> Optional
         "Pre-generation complete: %d sessions ready", len(pregenerated_sessions)
     )
     return pregenerated_sessions
+
+
+def _prepare_tts_audio_artifacts(benchmark_config: BenchmarkConfig) -> BenchmarkConfig:
+    """Make the TTS client save_audio flag drive persisted audio artifacts."""
+    verification_config = benchmark_config.tts_verification
+    if benchmark_config.client.get_type() != ClientType.TTS:
+        if verification_config.enabled:
+            logger.warning(
+                "TTS verification is enabled for a non-TTS client; skipping setup"
+            )
+        return benchmark_config
+
+    persist_audio = bool(getattr(benchmark_config.client, "save_audio", False))
+    # WER runs need WAV files as verifier input. If the user did not request
+    # persisted audio, these files are cleaned up after verification completes.
+    save_audio_files = persist_audio or verification_config.enabled
+
+    updated_evaluators = []
+    has_performance_evaluator = False
+    for evaluator_config in benchmark_config.evaluators:
+        if evaluator_config.get_type() != EvaluationType.PERFORMANCE:
+            updated_evaluators.append(evaluator_config)
+            continue
+
+        has_performance_evaluator = True
+        target_channels = list(evaluator_config.target_channels or [])
+        if save_audio_files and not any(
+            channel == ChannelModality.AUDIO for channel in target_channels
+        ):
+            target_channels.append(ChannelModality.AUDIO)
+
+        audio_channel = replace(
+            evaluator_config.audio_channel,
+            save_audio_files=save_audio_files,
+        )
+        updated_evaluators.append(
+            replace(
+                evaluator_config,
+                target_channels=target_channels,
+                audio_channel=audio_channel,
+            )
+        )
+
+    if save_audio_files and not has_performance_evaluator:
+        updated_evaluators.append(
+            PerformanceEvaluatorConfig(
+                target_channels=[ChannelModality.AUDIO],
+                stream_metrics=False,
+                slos=[],
+                audio_channel=AudioChannelPerformanceConfig(save_audio_files=True),
+            )
+        )
+
+    return replace(benchmark_config, evaluators=updated_evaluators)
+
+
+def _cleanup_transient_tts_audio_artifacts(benchmark_config: BenchmarkConfig) -> None:
+    """Remove verifier-only audio files when client.save_audio is false."""
+    if benchmark_config.client.get_type() != ClientType.TTS:
+        return
+    if not benchmark_config.tts_verification.enabled:
+        return
+    if getattr(benchmark_config.client, "save_audio", False):
+        return
+
+    audio_dir = os.path.join(benchmark_config.output_dir, "audio_files")
+    if os.path.isdir(audio_dir):
+        shutil.rmtree(audio_dir)
+        logger.info("Removed transient TTS audio files from %s", audio_dir)
+
+
+def _maybe_run_tts_verification(benchmark_config: BenchmarkConfig) -> None:
+    """Run optional post-run TTS verification after benchmark artifacts exist."""
+    verification_config = benchmark_config.tts_verification
+    if not verification_config.enabled:
+        return
+
+    if benchmark_config.client.get_type() != ClientType.TTS:
+        logger.warning("TTS verification is enabled for a non-TTS client; skipping")
+        return
+
+    from veeksha.verification.tts import TTSVerificationError, run_tts_verification
+
+    try:
+        summary = run_tts_verification(
+            config=verification_config,
+            output_dir=benchmark_config.output_dir,
+        )
+        logger.info(
+            "TTS verification complete: %d transcribed, %d above threshold, "
+            "%d UTMOS scored, %d errors",
+            summary.transcribed_requests,
+            summary.failed_requests,
+            summary.utmos_evaluated,
+            summary.error_requests + len(summary.errors),
+        )
+    except TTSVerificationError as exc:
+        if verification_config.fail_on_threshold:
+            raise
+        logger.warning("TTS verification failed; continuing: %s", exc)
+    except Exception:
+        if verification_config.fail_on_threshold:
+            raise
+        logger.exception(
+            "TTS verification failed; continuing because fail_on_threshold=False"
+        )
 
 
 def _run_main_loop(
@@ -325,44 +437,58 @@ def manage_benchmark_run(
     Returns:
         EvaluationResult from the evaluator.
     """
+    benchmark_config = _prepare_tts_audio_artifacts(benchmark_config)
     logger.info("Running benchmark with config:\n%s", benchmark_config)
 
     _init_output_dir(benchmark_config)
 
     if benchmark_config.server is not None:
         logger.info(f"Launching {benchmark_config.server.engine} server...")
+        updated_benchmark_config = None
+        result = None
+        try:
+            with managed_server(
+                benchmark_config.server, output_dir=benchmark_config.output_dir
+            ) as server_info:
+                logger.info(f"Server ready at {server_info['api_base']}")
 
-        with managed_server(
-            benchmark_config.server, output_dir=benchmark_config.output_dir
-        ) as server_info:
-            logger.info(f"Server ready at {server_info['api_base']}")
+                # server dictates client
+                updated_client_config = replace(
+                    benchmark_config.client,
+                    api_base=server_info["api_base"],
+                    api_key=server_info["api_key"],
+                    model=benchmark_config.server.model,
+                )
+                updated_benchmark_config = replace(
+                    benchmark_config,
+                    client=updated_client_config,
+                    server=None,
+                )
 
-            # server dictates client
-            updated_client_config = replace(
-                benchmark_config.client,
-                api_base=server_info["api_base"],
-                api_key=server_info["api_key"],
-                model=benchmark_config.server.model,
-            )
-            updated_benchmark_config = replace(
-                benchmark_config,
-                client=updated_client_config,
-                server=None,
-            )
+                maybe_init_wandb_run(updated_benchmark_config, run_kind="benchmark")
+                try:
+                    result = _run_benchmark(updated_benchmark_config)
+                finally:
+                    logger.info("Server shutting down...")
 
-            maybe_init_wandb_run(updated_benchmark_config, run_kind="benchmark")
             try:
-                result = _run_benchmark(updated_benchmark_config)
-                maybe_log_benchmark_scalars(updated_benchmark_config.output_dir)
-                maybe_log_benchmark_artifacts(updated_benchmark_config)
-                return result
+                _maybe_run_tts_verification(updated_benchmark_config)
             finally:
+                _cleanup_transient_tts_audio_artifacts(updated_benchmark_config)
+            maybe_log_benchmark_scalars(updated_benchmark_config.output_dir)
+            maybe_log_benchmark_artifacts(updated_benchmark_config)
+            return result
+        finally:
+            if updated_benchmark_config is not None:
                 maybe_finish_wandb_run(updated_benchmark_config.output_dir)
-                logger.info("Server shutting down...")
     else:
         maybe_init_wandb_run(benchmark_config, run_kind="benchmark")
         try:
             result = _run_benchmark(benchmark_config)
+            try:
+                _maybe_run_tts_verification(benchmark_config)
+            finally:
+                _cleanup_transient_tts_audio_artifacts(benchmark_config)
             maybe_log_benchmark_scalars(benchmark_config.output_dir)
             maybe_log_benchmark_artifacts(benchmark_config)
             return result

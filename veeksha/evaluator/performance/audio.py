@@ -131,13 +131,16 @@ class AudioRequestMetrics:
     rtf: float
     chunk_count: int
     pcm_byte_count: int
+    input_chars: int = 0
     input_tokens: int = 0
+    ttfa: Optional[float] = None
     tpot: Optional[float] = None
     final_latency: Optional[float] = None
     first_partial: Optional[float] = None
     wer: Optional[float] = None
     transcript: Optional[str] = None
     expected_transcript: Optional[str] = None
+    input_text: str = ""
     session_total_requests: Optional[int] = None
 
 
@@ -162,6 +165,7 @@ class AudioPerformanceEvaluator:
         # CDF sketches for aggregate metrics
         self.summaries: Dict[str, CDFSketch] = {
             "ttft": CDFSketch("ttft", unit="ms"),
+            "ttfa": CDFSketch("ttfa", unit="ms"),
             "tpot": CDFSketch("tpot", unit="ms"),
             "final_latency": CDFSketch("final_latency", unit="ms"),
             "first_partial": CDFSketch("first_partial", unit="ms"),
@@ -189,6 +193,12 @@ class AudioPerformanceEvaluator:
         # Audio bytes storage for optional WAV saving
         self._audio_buffers: Dict[int, bytes] = {}
         self._audio_metadata: Dict[int, Dict[str, Any]] = {}
+
+        # Running totals for aggregate throughput
+        self._total_input_chars: int = 0
+        self._total_generated_audio_duration_ms: float = 0.0
+        self._first_dispatch_at: Optional[float] = None
+        self._last_completion_at: Optional[float] = None
 
     def register_request(
         self,
@@ -237,6 +247,7 @@ class AudioPerformanceEvaluator:
 
             cm = channel_response.metrics or {}
             ttft = cm.get("ttft", 0.0)
+            ttfa_value: Optional[float] = cm.get("ttfa")
             tpot_value: Optional[float] = cm.get("tpot")
             final_latency_value: Optional[float] = cm.get("final_latency")
             first_partial_value: Optional[float] = cm.get("first_partial")
@@ -245,7 +256,9 @@ class AudioPerformanceEvaluator:
             rtf = cm.get("rtf", 0.0)
             chunk_count = cm.get("chunk_count", 0)
             pcm_byte_count = cm.get("pcm_byte_count", 0)
+            input_chars = cm.get("input_chars", 0)
             input_tokens = cm.get("input_tokens", 0)
+            input_text = cm.get("input_text", "")
 
             session_total_requests = getattr(response, "session_total_requests", None)
 
@@ -267,17 +280,28 @@ class AudioPerformanceEvaluator:
                 rtf=rtf,
                 chunk_count=chunk_count,
                 pcm_byte_count=pcm_byte_count,
+                input_chars=input_chars,
                 input_tokens=input_tokens,
+                ttfa=ttfa_value,
                 tpot=tpot_value,
                 final_latency=final_latency_value,
                 first_partial=first_partial_value,
                 wer=wer_value,
                 transcript=transcript,
                 expected_transcript=expected_transcript,
+                input_text=input_text,
                 session_total_requests=session_total_requests,
             )
 
             self._completed_metrics.append(metrics)
+
+            # Update aggregate throughput accumulators
+            self._total_input_chars += input_chars
+            self._total_generated_audio_duration_ms += generated_audio_duration
+            if self._first_dispatch_at is None or dispatched_at < self._first_dispatch_at:
+                self._first_dispatch_at = dispatched_at
+            if self._last_completion_at is None or completed_at > self._last_completion_at:
+                self._last_completion_at = completed_at
 
             # Store lifecycle timestamps (matching text.py pattern)
             def normalize_ts(ts: Optional[float]) -> Optional[float]:
@@ -307,6 +331,8 @@ class AudioPerformanceEvaluator:
 
             # Update CDF sketches
             self.summaries["ttft"].put(ttft)
+            if ttfa_value is not None:
+                self.summaries["ttfa"].put(ttfa_value)
             if tpot_value is not None:
                 self.summaries["tpot"].put(tpot_value)
             if final_latency_value is not None:
@@ -351,6 +377,18 @@ class AudioPerformanceEvaluator:
         perf_summary: Dict[str, Optional[float]] = {}
         for cdf_sketch in self.summaries.values():
             perf_summary.update(cdf_sketch.get_summary())
+
+        wall_s = 0.0
+        if self._first_dispatch_at is not None and self._last_completion_at is not None:
+            wall_s = max(0.0, self._last_completion_at - self._first_dispatch_at)
+        perf_summary["chars_per_sec_aggregate"] = (
+            self._total_input_chars / wall_s if wall_s > 0 else None
+        )
+        perf_summary["generated_audio_seconds_per_sec_aggregate"] = (
+            (self._total_generated_audio_duration_ms / 1000.0) / wall_s
+            if wall_s > 0
+            else None
+        )
         return perf_summary
 
     def finalize(self) -> EvaluationResult:
@@ -424,8 +462,12 @@ class AudioPerformanceEvaluator:
                 "rtf": round(m.rtf, 5),
                 "chunk_count": m.chunk_count,
                 "pcm_byte_count": m.pcm_byte_count,
+                "input_chars": m.input_chars,
                 "input_tokens": m.input_tokens,
+                "input_text": m.input_text,
             }
+            if m.ttfa is not None:
+                row_dict["ttfa"] = round(m.ttfa, 3)
             if m.tpot is not None:
                 row_dict["tpot"] = round(m.tpot, 3)
             if m.final_latency is not None:

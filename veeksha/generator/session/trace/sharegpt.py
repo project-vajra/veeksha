@@ -2,8 +2,9 @@
 
 Reads ShareGPT-format conversation data and uses assistant turn text
 as TTS request input. Each assistant turn becomes its own single-request
-session. Input text is truncated to a token length sampled uniformly
-between min_tokens and max_tokens.
+session. Input text is truncated to a length sampled uniformly between
+min_tokens..max_tokens (token mode, default) or min_chars..max_chars
+(char mode, when chars are set on the flavor config).
 """
 
 import json
@@ -57,20 +58,23 @@ def _flatten_to_dataframe(
     conversations: List[Dict[str, Any]],
     assistant_role: str,
     tokenizer: Any,
-    min_tokens: int,
+    min_length: int,
+    use_chars: bool,
     min_alpha_ratio: float = 0.5,
 ) -> pd.DataFrame:
     """Convert ShareGPT conversations to a flat DataFrame of assistant turns.
 
     Each assistant turn gets its own session_id (1 request per session).
-    Turns with fewer than min_tokens are skipped.
+    Turns shorter than min_length are skipped, where the unit is chars
+    (use_chars=True) or tokens (use_chars=False).
     Turns with alpha ratio below min_alpha_ratio are skipped (filters out
     number sequences, code snippets, etc.).
-    Returns DataFrame with columns: session_id, text, token_count
+    Returns DataFrame with columns: session_id, text, token_count, char_count
     """
+    unit = "chars" if use_chars else "tokens"
     rows = []
     session_id = 0
-    skipped_tokens = 0
+    skipped_length = 0
     skipped_alpha = 0
     for conv in conversations:
         turns = conv.get("conversations", [])
@@ -84,24 +88,34 @@ def _flatten_to_dataframe(
                 if min_alpha_ratio > 0 and _alpha_ratio(text) < min_alpha_ratio:
                     skipped_alpha += 1
                     continue
-                token_count = len(tokenizer.encode(text))
-                if token_count < min_tokens:
-                    skipped_tokens += 1
-                    continue
+                char_count = len(text)
+                if use_chars:
+                    # Skip token encode in char mode -- it's the hot path filter.
+                    if char_count < min_length:
+                        skipped_length += 1
+                        continue
+                    token_count = -1
+                else:
+                    token_count = len(tokenizer.encode(text))
+                    if token_count < min_length:
+                        skipped_length += 1
+                        continue
                 rows.append(
                     {
                         "session_id": session_id,
                         "text": text,
                         "token_count": token_count,
+                        "char_count": char_count,
                     }
                 )
                 session_id += 1
 
-    if skipped_tokens:
+    if skipped_length:
         logger.info(
-            "Skipped %d assistant turns shorter than %d tokens",
-            skipped_tokens,
-            min_tokens,
+            "Skipped %d assistant turns shorter than %d %s",
+            skipped_length,
+            min_length,
+            unit,
         )
     if skipped_alpha:
         logger.info(
@@ -112,10 +126,11 @@ def _flatten_to_dataframe(
         )
 
     if not rows:
+        min_key = "min_chars" if use_chars else "min_tokens"
         raise ValueError(
             f"No assistant turns found with role='{assistant_role}' "
-            f"and >= {min_tokens} tokens and alpha_ratio >= {min_alpha_ratio}. "
-            "Check 'assistant_role', 'min_tokens', and 'min_alpha_ratio' config."
+            f"and >= {min_length} {unit} and alpha_ratio >= {min_alpha_ratio}. "
+            f"Check 'assistant_role', '{min_key}', and 'min_alpha_ratio' config."
         )
 
     return pd.DataFrame(rows)
@@ -125,8 +140,9 @@ class ShareGPTTraceFlavorGenerator(TraceFlavorGeneratorBase):
     """Trace flavor that reads ShareGPT conversations for TTS benchmarking.
 
     Each assistant turn becomes a single-request session. Input text is
-    truncated to a token length sampled uniformly between min_tokens and
-    max_tokens. Turns shorter than min_tokens are skipped entirely.
+    truncated to a length sampled uniformly between min_tokens..max_tokens
+    (token mode) or min_chars..max_chars (char mode, when chars are set).
+    Turns shorter than the minimum are skipped entirely.
     """
 
     def __init__(
@@ -157,17 +173,21 @@ class ShareGPTTraceFlavorGenerator(TraceFlavorGeneratorBase):
             config.trace_file,
         )
 
+        use_chars = flavor_config.use_chars
+        min_length = flavor_config.min_chars if use_chars else flavor_config.min_tokens
         self.trace_df = _flatten_to_dataframe(
             raw_conversations,
             flavor_config.assistant_role,
             self.tokenizer,
-            flavor_config.min_tokens,
+            min_length,
+            use_chars,
             flavor_config.min_alpha_ratio,
         )
         logger.info(
-            "Extracted %d assistant turns (1 session each, min_tokens=%d)",
+            "Extracted %d assistant turns (1 session each, min_%s=%d)",
             len(self.trace_df),
-            flavor_config.min_tokens,
+            "chars" if use_chars else "tokens",
+            min_length,
         )
 
         # wrapping state (same as base)
@@ -196,15 +216,21 @@ class ShareGPTTraceFlavorGenerator(TraceFlavorGeneratorBase):
         row = group.iloc[0]
         text = str(row["text"])
 
-        # Sample target token length uniformly between min and max
-        target_tokens = self._length_rng.randint(
-            self.flavor_config.min_tokens,
-            self.flavor_config.max_tokens,
-        )
-
-        # Truncate text to target length
-        text = self._truncate_to_tokens(text, target_tokens)
-        actual_tokens = len(self.tokenizer.encode(text))
+        if self.flavor_config.use_chars:
+            target_chars = self._length_rng.randint(
+                self.flavor_config.min_chars,
+                self.flavor_config.max_chars,
+            )
+            if len(text) > target_chars:
+                text = text[:target_chars]
+            actual_tokens = len(self.tokenizer.encode(text))
+        else:
+            target_tokens = self._length_rng.randint(
+                self.flavor_config.min_tokens,
+                self.flavor_config.max_tokens,
+            )
+            text = self._truncate_to_tokens(text, target_tokens)
+            actual_tokens = len(self.tokenizer.encode(text))
 
         request = self._create_text_request(
             node_id=0,

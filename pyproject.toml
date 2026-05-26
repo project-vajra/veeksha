@@ -39,7 +39,12 @@ dependencies = [
     "requests",
     "uvloop",
     "httpx",
-    "nvidia-ml-py"
+    "nvidia-ml-py",
+    "faster-whisper",
+    "fastapi",
+    "uvicorn",
+    "python-multipart",
+    "jiwer",
 ]
 
 [project.scripts]
@@ -70,6 +75,12 @@ test = [
     "rich",  # For enhanced test reporting
     "torch",  # For GPU test synchronization
     "jinja2",  # For test config templates
+]
+utmos = [
+    "torch",
+    "scipy",
+    "soundfile",
+    "huggingface_hub",
 ]
 
 [tool.setuptools]

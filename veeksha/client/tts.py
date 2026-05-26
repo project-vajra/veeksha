@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from typing import TYPE_CHECKING, List, Optional
 
@@ -76,7 +77,15 @@ class TTSClient(BaseLLMClient):
         else:
             raise ValueError(f"Unsupported TTS provider: {self._provider}")
 
-        self._client = httpx.AsyncClient(timeout=config.request_timeout)
+        self._client_storage = threading.local()
+
+    def _get_client(self) -> httpx.AsyncClient:
+        """Return a thread-local httpx client bound to the caller's event loop."""
+        if not hasattr(self._client_storage, "client"):
+            self._client_storage.client = httpx.AsyncClient(
+                timeout=self.config.request_timeout
+            )
+        return self._client_storage.client
 
     def _build_payload(self, text: str) -> dict:
         if self._provider in ("deepgram", "vajra"):
@@ -89,11 +98,11 @@ class TTSClient(BaseLLMClient):
                 data["speaker"] = self._voice_id
             return data
         elif self._provider == "vllm_omni":
-            payload = {
-                "model": self._model_id,
+            payload: dict = {
                 "input": text,
-                "stream": True,
+                "model": self._model_id,
                 "response_format": "pcm",
+                "stream": True,
             }
             if self._voice_id:
                 payload["voice"] = self._voice_id
@@ -153,7 +162,7 @@ class TTSClient(BaseLLMClient):
             else:
                 stream_kwargs["json"] = payload
 
-            async with self._client.stream(
+            async with self._get_client().stream(
                 "POST",
                 self._url,
                 **stream_kwargs,
@@ -173,15 +182,19 @@ class TTSClient(BaseLLMClient):
         except httpx.HTTPStatusError as e:
             error_code = e.response.status_code if e.response else 500
             error_msg = str(e)
+            logger.warning("HTTP Error: status=%s msg=%s", error_code, error_msg)
         except httpx.ConnectError as e:
             error_code = 503
             error_msg = str(e)
+            logger.warning("Connection Error: (%s) %s", error_code, error_msg)
         except httpx.TimeoutException:
             error_code = 408
             error_msg = "TTS request timed out"
+            logger.warning("Timeout Error: (%s) %s", error_code, error_msg)
         except Exception as e:
             error_code = 520
             error_msg = str(e)
+            logger.exception("Unexpected error: (%s) %s", error_code, error_msg)
 
         completed_at = time.monotonic()
         total_latency_ms = (completed_at - t_start) * 1000
@@ -205,13 +218,15 @@ class TTSClient(BaseLLMClient):
                 modality=ChannelModality.AUDIO,
                 content=audio_data,
                 metrics={
-                    "ttft": round(ttfa or 0.0, 3),
+                    "ttfa": round(ttfa or 0.0, 3),
                     "e2e": round(total_latency_ms, 3),
                     "generated_audio_duration": round(audio_dur_ms, 3),
                     "rtf": round(rtf, 5),
                     "chunk_count": chunk_count,
                     "pcm_byte_count": pcm_bytes,
+                    "input_chars": len(input_text),
                     "input_tokens": text_content.target_prompt_tokens or 0,
+                    "input_text": input_text,
                     "raw_pcm": self._raw_pcm,
                     "sample_rate": self._sample_rate,
                 },
@@ -227,3 +242,4 @@ class TTSClient(BaseLLMClient):
             error_msg=error_msg,
             client_completed_at=completed_at,
         )
+
