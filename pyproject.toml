@@ -76,6 +76,12 @@ test = [
     "torch",  # For GPU test synchronization
     "jinja2",  # For test config templates
 ]
+utmos = [
+    "torch",
+    "scipy",
+    "soundfile",
+    "huggingface_hub",
+]
 
 [tool.setuptools]
 include-package-data = true

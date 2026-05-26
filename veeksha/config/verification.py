@@ -6,23 +6,23 @@ from veeksha.config.core.frozen_dataclass import frozen_dataclass
 
 @frozen_dataclass
 class TTSVerificationConfig:
-    """Post-run TTS verification using a managed local Whisper ASR service."""
+    """Post-run TTS verification for generated audio quality."""
 
     enabled: bool = field(
         default=False,
         metadata={"help": "Enable post-run TTS transcription/WER verification."},
     )
-    backend: str = field(
-        default="faster_whisper",
-        metadata={
-            "help": "ASR backend for verification. Supported: 'faster_whisper'."
-        },
+    wer_enabled: bool = field(
+        default=True,
+        metadata={"help": "Enable WER verification using the managed Whisper service."},
+    )
+    utmos_enabled: bool = field(
+        default=False,
+        metadata={"help": "Enable UTMOS predicted MOS scoring for generated audio."},
     )
     model: str = field(
         default="large-v3",
-        metadata={
-            "help": "Whisper model identifier passed to faster-whisper."
-        },
+        metadata={"help": "Whisper model identifier passed to faster-whisper."},
     )
     device: str = field(
         default="cuda",
@@ -77,11 +77,25 @@ class TTSVerificationConfig:
         },
     )
 
+    utmos_hf_repo: str = field(
+        default="balacoon/utmos",
+        metadata={"help": "Hugging Face model repo containing the UTMOS JIT file."},
+    )
+    utmos_jit_file: str = field(
+        default="utmos.jit",
+        metadata={"help": "TorchScript filename to load from the UTMOS HF repo."},
+    )
+    utmos_device: str = field(
+        default="cpu",
+        metadata={
+            "help": "Device for UTMOS TorchScript inference, e.g. 'cpu' or 'cuda:0'."
+        },
+    )
+
     def __post_init__(self):
-        if self.backend != "faster_whisper":
+        if self.enabled and not (self.wer_enabled or self.utmos_enabled):
             raise ValueError(
-                f"Unsupported TTS verification backend: {self.backend}. "
-                "Supported: faster_whisper"
+                "TTSVerificationConfig requires wer_enabled or utmos_enabled when enabled=True."
             )
         if self.port <= 0:
             raise ValueError("TTSVerificationConfig.port must be > 0")
@@ -93,3 +107,9 @@ class TTSVerificationConfig:
             raise ValueError("TTSVerificationConfig.request_timeout must be > 0")
         if self.wer_threshold < 0:
             raise ValueError("TTSVerificationConfig.wer_threshold must be >= 0")
+        if not self.utmos_hf_repo:
+            raise ValueError("TTSVerificationConfig.utmos_hf_repo is required")
+        if not self.utmos_jit_file:
+            raise ValueError("TTSVerificationConfig.utmos_jit_file is required")
+        if not self.utmos_device:
+            raise ValueError("TTSVerificationConfig.utmos_device is required")

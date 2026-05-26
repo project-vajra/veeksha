@@ -375,6 +375,33 @@ def _format_output_dir(
         raise ValueError(f"Unknown --output-dir template field: {exc.args[0]}") from exc
 
 
+def _clear_length_bounds(flavor: Dict[str, Any]) -> None:
+    for key in ("min_tokens", "max_tokens", "min_chars", "max_chars"):
+        flavor.pop(key, None)
+
+
+def _apply_length_bounds(
+    config: Dict[str, Any],
+    *,
+    min_tokens: Optional[int],
+    max_tokens: Optional[int],
+    min_chars: Optional[int],
+    max_chars: Optional[int],
+) -> None:
+    flavor = _mapping_at(config, ("session_generator", "flavor"))
+    _clear_length_bounds(flavor)
+
+    if min_chars is not None and max_chars is not None:
+        flavor["min_chars"] = min_chars
+        flavor["max_chars"] = max_chars
+        return
+
+    if min_tokens is None or max_tokens is None:
+        raise ValueError("min_tokens and max_tokens must be set together")
+    flavor["min_tokens"] = min_tokens
+    flavor["max_tokens"] = max_tokens
+
+
 def _input_sizes(args: argparse.Namespace, spec: SweepSpec) -> Tuple[int, ...]:
     if args.sizes:
         return args.sizes
@@ -402,6 +429,10 @@ def _build_run_config(
     timeout_seconds: int,
     max_sessions: int,
     output_dir_template: Optional[str],
+    min_tokens: Optional[int],
+    max_tokens: Optional[int],
+    min_chars: Optional[int],
+    max_chars: Optional[int],
 ) -> Dict[str, Any]:
     config = copy.deepcopy(base_config)
 
@@ -434,14 +465,20 @@ def _build_run_config(
     if spec.sweep_type == INPUT_SWEEP:
         if input_size is None:
             raise ValueError("input_size is required for input sweeps")
-        _set_mapping_value(
-            config, ("session_generator", "flavor", "min_chars"), input_size
-        )
-        _set_mapping_value(
-            config, ("session_generator", "flavor", "max_chars"), input_size
-        )
+        flavor = _mapping_at(config, ("session_generator", "flavor"))
+        _clear_length_bounds(flavor)
+        flavor["min_chars"] = input_size
+        flavor["max_chars"] = input_size
         if spec.disable_audio_for_input:
             _disable_audio_saving(config)
+    else:
+        _apply_length_bounds(
+            config,
+            min_tokens=min_tokens,
+            max_tokens=max_tokens,
+            min_chars=min_chars,
+            max_chars=max_chars,
+        )
 
     return config
 
@@ -529,6 +566,10 @@ def _run_sweep(args: argparse.Namespace, spec: SweepSpec) -> int:
                 timeout_seconds=args.timeout_seconds,
                 max_sessions=args.max_sessions,
                 output_dir_template=args.output_dir,
+                min_tokens=args.min_tokens,
+                max_tokens=args.max_tokens,
+                min_chars=args.min_chars,
+                max_chars=args.max_chars,
             )
             _write_config(run_config, run_cfg)
             _print_run_header(
@@ -602,6 +643,26 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--min-tokens",
+        type=int,
+        help="Minimum input word count for concurrency sweeps. Defaults to 20.",
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        help="Maximum input word count for concurrency sweeps. Defaults to 150.",
+    )
+    parser.add_argument(
+        "--min-chars",
+        type=int,
+        help="Minimum input char count for concurrency sweeps.",
+    )
+    parser.add_argument(
+        "--max-chars",
+        type=int,
+        help="Maximum input char count for concurrency sweeps.",
+    )
+    parser.add_argument(
         "--concurrencies",
         type=_parse_concurrencies,
         help="Comma-separated concurrency values for concurrency sweeps.",
@@ -630,6 +691,50 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _validate_length_args(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> None:
+    char_pair = (args.min_chars is not None, args.max_chars is not None)
+    token_pair = (args.min_tokens is not None, args.max_tokens is not None)
+    has_chars = any(char_pair)
+    has_tokens = any(token_pair)
+
+    if args.sweep_type == INPUT_SWEEP:
+        if has_chars or has_tokens:
+            parser.error(
+                "input sweeps derive min_chars/max_chars from --sizes; do not pass "
+                "--min-tokens/--max-tokens or --min-chars/--max-chars"
+            )
+        return
+
+    if has_chars and has_tokens:
+        parser.error(
+            "--min-chars/--max-chars and --min-tokens/--max-tokens are mutually "
+            "exclusive"
+        )
+    if has_chars and not all(char_pair):
+        parser.error("--min-chars and --max-chars must be specified together")
+    if has_tokens and not all(token_pair):
+        parser.error("--min-tokens and --max-tokens must be specified together")
+
+    if has_chars:
+        if args.min_chars <= 0 or args.max_chars <= 0:
+            parser.error("--min-chars and --max-chars must be positive")
+        if args.min_chars > args.max_chars:
+            parser.error("--min-chars must be <= --max-chars")
+        return
+
+    if has_tokens:
+        if args.min_tokens <= 0 or args.max_tokens <= 0:
+            parser.error("--min-tokens and --max-tokens must be positive")
+        if args.min_tokens > args.max_tokens:
+            parser.error("--min-tokens must be <= --max-tokens")
+        return
+
+    args.min_tokens = 20
+    args.max_tokens = 150
+
+
 def main() -> int:
     parser = _build_parser()
     args = parser.parse_args()
@@ -642,6 +747,7 @@ def main() -> int:
         parser.error("--max-sessions must be positive")
     if args.concurrency is not None and args.concurrency <= 0:
         parser.error("--concurrency must be positive")
+    _validate_length_args(parser, args)
 
     model = _normalize_model(args.model)
     spec = SPECS.get((args.sweep_type, args.engine, model))

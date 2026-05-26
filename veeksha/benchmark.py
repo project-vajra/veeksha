@@ -153,9 +153,11 @@ def _maybe_run_tts_verification(benchmark_config: BenchmarkConfig) -> None:
             output_dir=benchmark_config.output_dir,
         )
         logger.info(
-            "TTS verification complete: %d transcribed, %d above threshold, %d errors",
+            "TTS verification complete: %d transcribed, %d above threshold, "
+            "%d UTMOS scored, %d errors",
             summary.transcribed_requests,
             summary.failed_requests,
+            summary.utmos_evaluated,
             summary.error_requests + len(summary.errors),
         )
     except TTSVerificationError as exc:
