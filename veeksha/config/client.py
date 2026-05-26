@@ -278,47 +278,26 @@ class TTSClientConfig(BaseClientConfig):
 
 @frozen_dataclass
 class STTClientConfig(BaseClientConfig):
-    """STT client configuration for speech-to-text APIs.
+    """STT client configuration for realtime streaming speech-to-text APIs.
 
-    `client.type: stt` sends audio to an STT API and measures transcription
-    performance metrics (TTFT, latency, RTF).
+    `client.type: stt` streams audio to an STT API over a WebSocket and
+    measures transcription performance metrics (TTFC, latency, RTF).
     """
 
     provider: str = field(
         default="",
         metadata={
-            "help": "STT provider name. "
-            "Supported: 'vajra', 'vllm', 'vllm_realtime'."
-        },
-    )
-    language: str = field(
-        default="en",
-        metadata={"help": "Language code for transcription (e.g. 'en', 'es')."},
-    )
-    audio_format: str = field(
-        default="wav",
-        metadata={
-            "help": "Audio format of input files. "
-            "Supported: 'wav', 'mp3', 'flac', 'ogg', 'webm'."
+            "help": "STT provider name. Supported: 'vajra', 'vllm_realtime'."
         },
     )
     sample_rate: int = field(
         default=16000,
         metadata={"help": "Expected audio sample rate in Hz."},
     )
-    streaming: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether to use streaming transcription (SSE). "
-            "Only supported by vllm provider. "
-            "vllm_realtime always streams via WebSocket."
-        },
-    )
     ws_chunk_size: int = field(
         default=4096,
         metadata={
-            "help": "Bytes of raw PCM audio per WebSocket message "
-            "(vllm_realtime only)."
+            "help": "Bytes of raw PCM audio per WebSocket message."
         },
     )
     ws_realtime_pacing: bool = field(
@@ -335,7 +314,8 @@ class STTClientConfig(BaseClientConfig):
     model: str = field(
         default="",
         metadata={
-            "help": "The STT model ID (e.g. 'openai/whisper-large-v3')."
+            "help": "The STT model ID "
+            "(e.g. 'mistralai/Voxtral-Mini-4B-Realtime-2602')."
         },
     )
 
@@ -343,15 +323,7 @@ class STTClientConfig(BaseClientConfig):
     def get_type(cls) -> ClientType:
         return ClientType.STT
 
-    _SUPPORTED_PROVIDERS = ("vajra", "vllm", "vllm_realtime")
-
-    _FORMAT_MIME_MAP = {
-        "wav": "audio/wav",
-        "mp3": "audio/mpeg",
-        "flac": "audio/flac",
-        "ogg": "audio/ogg",
-        "webm": "audio/webm",
-    }
+    _SUPPORTED_PROVIDERS = ("vajra", "vllm_realtime")
 
     def __post_init__(self):
         super().__post_init__()
@@ -372,14 +344,10 @@ class STTClientConfig(BaseClientConfig):
         if not self.model:
             raise ValueError(
                 "STTClientConfig.model is required "
-                "(e.g. 'openai/whisper-large-v3')."
+                "(e.g. 'mistralai/Voxtral-Mini-4B-Realtime-2602')."
             )
         if self.api_base is None:
             raise ValueError("STTClientConfig.api_base is required.")
-
-    def get_mime_type(self) -> str:
-        """Return MIME type for the configured audio format."""
-        return self._FORMAT_MIME_MAP.get(self.audio_format, "audio/wav")
 
     def build_tokenizer_provider(self):
         """STT models use a simple word-split tokenizer."""

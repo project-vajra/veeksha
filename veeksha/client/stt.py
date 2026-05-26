@@ -1,4 +1,15 @@
-"""STT client for speech-to-text APIs (vajra, vllm, vllm_realtime)."""
+"""STT clients for realtime streaming speech-to-text (vajra, vllm_realtime).
+
+`STTClient` is a thin base owning everything provider-independent: reading the
+AUDIO channel, 1x pacing, error mapping, RTF, and assembling the metrics dict
+the `AudioPerformanceEvaluator` consumes. Each provider is a subclass
+implementing `_setup_urls` + `_transcribe`.
+
+Both supported providers stream PCM16 over a WebSocket, paced at 1x playback
+when `ws_realtime_pacing` is on. Instantiating ``STTClient(config)`` dispatches
+to the subclass for ``config.provider`` (see ``__new__``), so the registry only
+needs one entry.
+"""
 
 from __future__ import annotations
 
@@ -8,9 +19,9 @@ import json as json_mod
 import os
 import re
 import time
+from abc import abstractmethod
 from typing import TYPE_CHECKING, Optional
 
-import httpx
 import librosa
 import numpy as np
 
@@ -32,30 +43,19 @@ BYTES_PER_SAMPLE = 2
 _STREAMING_TOKEN_RE = re.compile(r"\[STREAMING_(?:PAD|WORD)\]")
 
 
-def _audio_duration_from_file(file_path: str, sample_rate: int) -> float:
-    """Estimate audio duration in ms from WAV file size (linear16 mono).
-
-    Falls back to file-size heuristic for non-WAV formats.
-    """
-    try:
-        file_size = os.path.getsize(file_path)
-    except OSError:
-        return 0.0
-    pcm_bytes = max(file_size - 44, 0)
-    num_samples = pcm_bytes / BYTES_PER_SAMPLE
-    return (num_samples / sample_rate) * 1000
+def _wav_duration_ms(file_size_bytes: int, sample_rate: int) -> float:
+    """Estimate WAV audio duration in ms from file size (linear16 mono)."""
+    pcm_bytes = max(file_size_bytes - 44, 0)
+    return (pcm_bytes / BYTES_PER_SAMPLE / sample_rate) * 1000
 
 
 def _clean_transcript(text: str) -> str:
-    """Clean up a streaming transcript.
-
-    Strips Voxtral streaming control tokens and collapses whitespace.
-    """
+    """Strip Voxtral streaming control tokens and collapse whitespace."""
     text = _STREAMING_TOKEN_RE.sub("", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _audio_to_pcm16_bytes(audio_path: str, target_sr: int = 16000) -> bytes:
+def _audio_to_pcm16_bytes(audio_path: str, target_sr: int) -> bytes:
     """Load an audio file and convert to raw PCM16 bytes at target sample rate."""
     audio, _ = librosa.load(audio_path, sr=target_sr, mono=True)
     pcm16 = (audio * 32767).astype(np.int16)
@@ -63,62 +63,89 @@ def _audio_to_pcm16_bytes(audio_path: str, target_sr: int = 16000) -> bytes:
 
 
 class STTClient(BaseLLMClient):
-    """Async client for speech-to-text APIs.
+    """Base async client for realtime streaming STT.
 
-    Supported providers:
-      - vajra:         POST /transcribe  (multipart, batch)
-                       OR WebSocket /stream when streaming=true
-      - vllm:          POST /v1/audio/transcriptions  (multipart, batch or SSE)
-      - vllm_realtime: WebSocket /v1/realtime  (PCM16 chunks, streaming deltas)
+    Subclasses set ``provider_name`` and implement ``_setup_urls`` +
+    ``_transcribe``; the request lifecycle, pacing, error handling, and metrics
+    are shared here.
     """
 
-    def __init__(self, config: STTClientConfig, **kwargs) -> None:
-        self.config = config
-        self.api_base = config.api_base
-        self.api_key = config.api_key
+    # provider name -> concrete subclass, populated by __init_subclass__
+    _PROVIDER_REGISTRY: dict[str, type["STTClient"]] = {}
+
+    #: provider key matched against ``config.provider`` (set by subclasses)
+    provider_name: str = ""
+
+    def __init_subclass__(cls, **kwargs) -> None:
+        super().__init_subclass__(**kwargs)
+        if cls.provider_name:
+            STTClient._PROVIDER_REGISTRY[cls.provider_name] = cls
+
+    def __new__(cls, config: "STTClientConfig", **kwargs) -> "STTClient":
+        # Dispatch STTClient(config) to the subclass for config.provider.
+        target = cls
+        if target is STTClient:
+            try:
+                target = STTClient._PROVIDER_REGISTRY[config.provider]
+            except KeyError:
+                raise ValueError(f"Unsupported STT provider: {config.provider}")
+        return super().__new__(target)  # type: ignore[arg-type]
+
+    def __init__(self, config: "STTClientConfig", **kwargs) -> None:
+        super().__init__(config)
         self._provider = config.provider
         self._model = config.model
-        self._language = config.language
-        self._audio_format = config.audio_format
         self._sample_rate = config.sample_rate
-        self._streaming = config.streaming
-        self._mime_type = config.get_mime_type()
         self._ws_chunk_size = config.ws_chunk_size
+        self._pacing = config.ws_realtime_pacing
+        self._setup_urls()
 
-        if self._provider == "vajra":
-            self._url = f"{self.api_base}/transcribe"
-            if self._streaming:
-                api_base = self.api_base or ""
-                if api_base.startswith("https://"):
-                    ws_base = "wss://" + api_base[len("https://"):]
-                elif api_base.startswith("http://"):
-                    ws_base = "ws://" + api_base[len("http://"):]
-                else:
-                    ws_base = api_base
-                self._ws_url = f"{ws_base}/stream"
-        elif self._provider == "vllm":
-            self._url = f"{self.api_base}/v1/audio/transcriptions"
-        elif self._provider == "vllm_realtime":
-            # Convert http(s) to ws(s) for WebSocket
-            api_base = self.api_base or ""
-            if api_base.startswith("https://"):
-                ws_base = "wss://" + api_base[len("https://"):]
-            elif api_base.startswith("http://"):
-                ws_base = "ws://" + api_base[len("http://"):]
-            else:
-                ws_base = api_base
-            self._ws_url = f"{ws_base}/v1/realtime"
-        else:
-            raise ValueError(f"Unsupported STT provider: {self._provider}")
+    # ------------------------------------------------------------------
+    # Subclass hooks
+    # ------------------------------------------------------------------
 
-        self._headers: dict[str, str] = {}
-        if self.api_key and self._provider in ("vllm", "vllm_realtime"):
-            self._headers["Authorization"] = f"Bearer {self.api_key}"
+    @abstractmethod
+    def _setup_urls(self) -> None:
+        """Set ``self._ws_url`` from ``self.api_base``."""
 
-        # HTTP client not needed for pure-WebSocket providers
-        if not (self._provider == "vllm_realtime"
-                or (self._provider == "vajra" and self._streaming)):
-            self._client = httpx.AsyncClient(timeout=config.request_timeout)
+    @abstractmethod
+    async def _transcribe(
+        self,
+        audio_path: str,
+        t_start: float,
+        transcript_chunks: list[str],
+    ) -> tuple[Optional[float], int, dict]:
+        """Stream audio to the provider and collect the transcript.
+
+        Appends transcript text to ``transcript_chunks`` and returns
+        ``(ttfc_ms, chunk_count, stream_timings)``.
+        """
+
+    # ------------------------------------------------------------------
+    # Shared helpers
+    # ------------------------------------------------------------------
+
+    def _http_to_ws(self, path: str) -> str:
+        """Convert the http(s) api_base to a ws(s) URL with ``path`` appended."""
+        base = self.api_base or ""
+        if base.startswith("https://"):
+            base = "wss://" + base[len("https://"):]
+        elif base.startswith("http://"):
+            base = "ws://" + base[len("http://"):]
+        return f"{base}{path}"
+
+    async def _maybe_pace(self, n_bytes: int) -> None:
+        """Sleep one chunk's playback duration when realtime pacing is on.
+
+        Simulates live-microphone cadence (1x playback) so the server sees
+        audio arrive at real time. PCM16 mono: ``n_bytes / 2 / sample_rate`` s.
+        """
+        if self._pacing:
+            await asyncio.sleep(n_bytes / 2 / self._sample_rate)
+
+    # ------------------------------------------------------------------
+    # Request lifecycle (shared)
+    # ------------------------------------------------------------------
 
     async def send_request(
         self,
@@ -126,7 +153,7 @@ class STTClient(BaseLLMClient):
         session_id: int,
         session_total_requests: int = 1,
     ) -> RequestResult:
-        """Send an audio file to the STT API and collect transcription metrics."""
+        """Stream an audio file to the STT API and collect transcription metrics."""
 
         audio_content = request.channels.get(ChannelModality.AUDIO)
         if not isinstance(audio_content, AudioChannelRequestContent):
@@ -143,9 +170,8 @@ class STTClient(BaseLLMClient):
         audio_path = audio_content.input_audio
 
         try:
-            with open(audio_path, "rb") as f:
-                audio_data = f.read()
-        except (OSError, IOError) as e:
+            file_size = os.path.getsize(audio_path)
+        except OSError as e:
             return RequestResult(
                 request_id=request.id,
                 session_id=session_id,
@@ -156,9 +182,7 @@ class STTClient(BaseLLMClient):
                 client_completed_at=time.monotonic(),
             )
 
-        input_audio_duration_ms = _audio_duration_from_file(
-            audio_path, self._sample_rate
-        )
+        input_audio_duration_ms = _wav_duration_ms(file_size, self._sample_rate)
 
         logger.debug(
             "[STT %s] request_id=%d session_id=%d file=%s duration_ms=%.1f",
@@ -172,7 +196,6 @@ class STTClient(BaseLLMClient):
         error_msg: Optional[str] = None
         error_code: Optional[int] = None
         ttfc: Optional[float] = None
-        tpot: Optional[float] = None
         transcript_chunks: list[str] = []
         chunk_count = 0
         stream_timings: dict = {}
@@ -180,43 +203,16 @@ class STTClient(BaseLLMClient):
         t_start = time.monotonic()
 
         try:
-            if self._provider == "vajra":
-                if self._streaming:
-                    ttfc, chunk_count, stream_timings = await self._stream_vajra(
-                        audio_path, t_start, transcript_chunks
-                    )
-                else:
-                    text, server_ttfc, server_tpot = await self._batch_vajra(audio_data, audio_path)
-                    ttfc = server_ttfc if server_ttfc is not None else (time.monotonic() - t_start) * 1000
-                    tpot = server_tpot
-                    transcript_chunks.append(text)
-                    chunk_count = 1
-
-            elif self._provider == "vllm":
-                if self._streaming:
-                    ttfc, chunk_count = await self._stream_vllm(
-                        audio_data, audio_path, t_start, transcript_chunks
-                    )
-                else:
-                    text = await self._batch_vllm(audio_data, audio_path)
-                    ttfc = (time.monotonic() - t_start) * 1000
-                    transcript_chunks.append(text)
-                    chunk_count = 1
-
-            elif self._provider == "vllm_realtime":
-                ttfc, chunk_count = await self._realtime_vllm(
-                    audio_path, t_start, transcript_chunks
-                )
-
-        except httpx.HTTPStatusError as e:
-            error_code = e.response.status_code if e.response else 500
-            error_msg = str(e)
-        except httpx.ConnectError as e:
-            error_code = 503
-            error_msg = str(e)
-        except httpx.TimeoutException:
+            ttfc, chunk_count, stream_timings = await self._transcribe(
+                audio_path, t_start, transcript_chunks
+            )
+        except asyncio.TimeoutError:
             error_code = 408
             error_msg = "STT request timed out"
+        except (OSError, ConnectionError) as e:
+            # Includes ConnectionRefusedError when the server isn't up.
+            error_code = 503
+            error_msg = str(e)
         except Exception as e:
             error_code = 520
             error_msg = str(e)
@@ -244,18 +240,17 @@ class STTClient(BaseLLMClient):
                 "generated_audio_duration": round(input_audio_duration_ms, 3),
                 "rtf": round(rtf, 5),
                 "chunk_count": chunk_count,
-                "pcm_byte_count": len(audio_data),
+                "pcm_byte_count": file_size,
                 "input_tokens": len(full_transcript.split()),
                 "raw_pcm": False,
                 "sample_rate": self._sample_rate,
                 "transcript": full_transcript,
             }
-            if tpot is not None:
-                metrics_dict["tpot"] = round(tpot, 3)
 
-            # Streaming-latency timings (vajra streaming path). Measured from
+            # Streaming-latency timings (vajra path emits these). Measured from
             # the audio stream itself, so they isolate server responsiveness
-            # rather than tracking clip length the way ttfc/end_to_end_latency do.
+            # rather than tracking clip length the way ttfc/end_to_end_latency
+            # do once 1x pacing is on.
             final_latency = stream_timings.get("final_latency_ms")
             if final_latency is not None:
                 metrics_dict["final_latency"] = round(final_latency, 3)
@@ -263,7 +258,7 @@ class STTClient(BaseLLMClient):
             if first_partial is not None:
                 metrics_dict["first_partial"] = round(first_partial, 3)
 
-            # Forward reference transcript for WER evaluation
+            # Forward reference transcript for optional WER evaluation
             expected = request.metadata.get("expected_transcript")
             if expected is not None:
                 metrics_dict["expected_transcript"] = expected
@@ -285,53 +280,32 @@ class STTClient(BaseLLMClient):
             client_completed_at=completed_at,
         )
 
-    # ------------------------------------------------------------------
-    # Vajra — POST /transcribe  (multipart, batch)
-    # ------------------------------------------------------------------
 
-    async def _batch_vajra(
-        self, audio_data: bytes, audio_path: str,
-    ) -> tuple[str, Optional[float], Optional[float]]:
-        """Returns (text, ttfc_ms, tpot_ms)."""
-        filename = os.path.basename(audio_path)
-        files = {"audio": (filename, audio_data, self._mime_type)}
-        response = await self._client.post(
-            self._url,
-            files=files,
-            timeout=self.config.request_timeout,
-        )
-        response.raise_for_status()
-        data = response.json()
-        server_ttfc = data.get("ttft_ms")
-        # Compute TPOT from server-reported decode time and token count
-        decode_ms = data.get("decode_ms")
-        num_tokens = data.get("num_tokens")
-        tpot: Optional[float] = None
-        if decode_ms is not None and num_tokens and num_tokens > 0:
-            tpot = decode_ms / num_tokens
-        return data.get("text", ""), server_ttfc, tpot
+class VajraSTTClient(STTClient):
+    """vajra: WebSocket /stream (binary int16 PCM frames, JSON delta/done)."""
 
-    # ------------------------------------------------------------------
-    # Vajra — WebSocket /stream  (binary PCM16, JSON delta frames)
-    # ------------------------------------------------------------------
+    provider_name = "vajra"
 
-    async def _stream_vajra(
+    def _setup_urls(self) -> None:
+        self._ws_url = self._http_to_ws("/stream")
+
+    async def _transcribe(
         self,
         audio_path: str,
         t_start: float,
         transcript_chunks: list[str],
     ) -> tuple[Optional[float], int, dict]:
-        """Stream int16 PCM over WebSocket /stream, receive delta/done JSON.
+        """Stream int16 PCM over WebSocket /stream, receiving delta/done JSON.
 
         Send and receive run concurrently so partial transcripts are observed
         live, rather than buffered until the upload finishes. This makes the
         returned streaming-latency timings faithful:
           - ``first_partial_ms``: first audio frame sent -> first partial
-            transcript (TTFB; with realtime pacing this includes the audio
-            that must be spoken before a transcript can exist).
+            transcript (TTFB; with 1x pacing this includes the audio that must
+            be spoken before a transcript can exist).
           - ``final_latency_ms``: end-of-audio sentinel -> final transcript.
             Isolates server processing tail, independent of clip length.
-        The legacy ``ttfc`` (request start -> first partial) is preserved.
+        The legacy ``ttfc`` (request start -> first partial) is also returned.
 
         Protocol (see vajra-next/examples/asr_streaming_server.py):
           Client -> Server:  binary int16 LE PCM frames @ 16 kHz mono, then
@@ -349,7 +323,6 @@ class STTClient(BaseLLMClient):
         send_marks: dict = {"audio_start": None, "audio_end": None}
 
         pcm_bytes = _audio_to_pcm16_bytes(audio_path, self._sample_rate)
-        pace = self.config.ws_realtime_pacing
 
         async with websockets.connect(self._ws_url) as ws:
             # 1. Wait for ready
@@ -357,8 +330,7 @@ class STTClient(BaseLLMClient):
             if msg.get("type") != "ready":
                 raise RuntimeError(f"Expected ready, got: {msg}")
 
-            # 2. Sender coroutine: stream PCM16 frames of ws_chunk_size bytes,
-            #    pacing at 1x playback when ws_realtime_pacing is on, then send
+            # 2. Sender coroutine: stream PCM16 frames, pace at 1x when on, then
             #    the EOF sentinel. Runs concurrently with the receive loop so
             #    deltas emitted mid-stream are timed when they actually arrive.
             async def _send() -> None:
@@ -366,8 +338,7 @@ class STTClient(BaseLLMClient):
                 for i in range(0, len(pcm_bytes), self._ws_chunk_size):
                     chunk = pcm_bytes[i : i + self._ws_chunk_size]
                     await ws.send(chunk)
-                    if pace:
-                        await asyncio.sleep(len(chunk) / 2 / self._sample_rate)
+                    await self._maybe_pace(len(chunk))
                 await ws.send("end")
                 send_marks["audio_end"] = time.monotonic()
 
@@ -424,90 +395,22 @@ class STTClient(BaseLLMClient):
 
         return ttfc, chunk_count, timings
 
-    # ------------------------------------------------------------------
-    # vLLM — POST /v1/audio/transcriptions  (multipart, batch or SSE)
-    # ------------------------------------------------------------------
 
-    async def _batch_vllm(self, audio_data: bytes, audio_path: str) -> str:
-        filename = os.path.basename(audio_path)
-        files = {"file": (filename, audio_data, self._mime_type)}
-        data: dict[str, str] = {
-            "model": self._model,
-            "language": self._language,
-            "response_format": "json",
-        }
-        response = await self._client.post(
-            self._url,
-            headers=self._headers,
-            files=files,
-            data=data,
-            timeout=self.config.request_timeout,
-        )
-        response.raise_for_status()
-        result = response.json()
-        return result.get("text", "")
+class VllmRealtimeSTTClient(STTClient):
+    """vllm_realtime: WebSocket /v1/realtime (base64 PCM16 chunks, deltas)."""
 
-    async def _stream_vllm(
-        self,
-        audio_data: bytes,
-        audio_path: str,
-        t_start: float,
-        transcript_chunks: list[str],
-    ) -> tuple[Optional[float], int]:
-        """SSE streaming via /v1/audio/transcriptions?stream=true."""
-        filename = os.path.basename(audio_path)
-        files = {"file": (filename, audio_data, self._mime_type)}
-        data: dict[str, str] = {
-            "model": self._model,
-            "language": self._language,
-            "response_format": "json",
-            "stream": "true",
-        }
+    provider_name = "vllm_realtime"
 
-        ttfc: Optional[float] = None
-        chunk_count = 0
+    def _setup_urls(self) -> None:
+        self._ws_url = self._http_to_ws("/v1/realtime")
 
-        async with self._client.stream(
-            "POST",
-            self._url,
-            headers=self._headers,
-            files=files,
-            data=data,
-            timeout=self.config.request_timeout,
-        ) as response:
-            response.raise_for_status()
-            async for line in response.aiter_lines():
-                line = line.strip()
-                if not line or line == "data: [DONE]":
-                    continue
-                if line.startswith("data: "):
-                    line = line[len("data: "):]
-                try:
-                    event = json_mod.loads(line)
-                except (json_mod.JSONDecodeError, ValueError):
-                    continue
-
-                for choice in event.get("choices", []):
-                    content = choice.get("delta", {}).get("content", "")
-                    if content:
-                        if ttfc is None:
-                            ttfc = (time.monotonic() - t_start) * 1000
-                        transcript_chunks.append(content)
-                        chunk_count += 1
-
-        return ttfc, chunk_count
-
-    # ------------------------------------------------------------------
-    # vLLM Realtime — WebSocket /v1/realtime  (PCM16 chunks)
-    # ------------------------------------------------------------------
-
-    async def _realtime_vllm(
+    async def _transcribe(
         self,
         audio_path: str,
         t_start: float,
         transcript_chunks: list[str],
-    ) -> tuple[Optional[float], int]:
-        """Stream PCM16 audio over WebSocket, receive transcription deltas."""
+    ) -> tuple[Optional[float], int, dict]:
+        """Stream PCM16 over WebSocket /v1/realtime, receiving transcription deltas."""
         import websockets
 
         ttfc: Optional[float] = None
@@ -519,38 +422,33 @@ class STTClient(BaseLLMClient):
             if msg.get("type") != "session.created":
                 raise RuntimeError(f"Expected session.created, got: {msg}")
 
-            # 2. Send session.update with model
+            # 2. Configure the session with the model
             await ws.send(json_mod.dumps({
                 "type": "session.update",
                 "model": self._model,
             }))
-
-            # 3. Signal ready
             await ws.send(json_mod.dumps({
                 "type": "input_audio_buffer.commit",
             }))
 
-            # 4. Convert audio to PCM16 @ target sample rate and send chunks.
-            #    When ws_realtime_pacing is on, sleep chunk_duration between
-            #    sends to simulate live microphone cadence (1× playback).
+            # 3. Convert audio to PCM16 @ target sample rate and send chunks,
+            #    paced at 1x when ws_realtime_pacing is on.
             pcm_bytes = _audio_to_pcm16_bytes(audio_path, self._sample_rate)
-            pace = self.config.ws_realtime_pacing
             for i in range(0, len(pcm_bytes), self._ws_chunk_size):
                 chunk = pcm_bytes[i : i + self._ws_chunk_size]
                 await ws.send(json_mod.dumps({
                     "type": "input_audio_buffer.append",
                     "audio": base64.b64encode(chunk).decode("utf-8"),
                 }))
-                if pace:
-                    await asyncio.sleep(len(chunk) / 2 / self._sample_rate)
+                await self._maybe_pace(len(chunk))
 
-            # 5. Signal all audio sent
+            # 4. Signal all audio sent
             await ws.send(json_mod.dumps({
                 "type": "input_audio_buffer.commit",
                 "final": True,
             }))
 
-            # 6. Receive transcription deltas until done
+            # 5. Receive transcription deltas until done
             while True:
                 msg = json_mod.loads(await ws.recv())
                 msg_type = msg.get("type")
@@ -575,4 +473,4 @@ class STTClient(BaseLLMClient):
                         f"Realtime STT error: {msg.get('error', 'unknown')}"
                     )
 
-        return ttfc, chunk_count
+        return ttfc, chunk_count, {}
