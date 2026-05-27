@@ -10,7 +10,7 @@ SUPPORTED_SLO_METRICS = {
     "tbc",
     "tpot",
     "e2e",
-    "ttfa",
+    "ttfc",
     "generated_audio_duration",
     "rtf",
 }

@@ -95,12 +95,15 @@ class PerformanceEvaluator(BaseEvaluator):
         for channel in self.config.target_channels:
             channel_config = self.config.get_channel_config(channel)
             if channel_config:
+                evaluator_kwargs: Dict[str, Any] = {
+                    "config": self.config,
+                    "channel_config": channel_config,
+                    "benchmark_start_time": self.benchmark_start_time,
+                }
                 self._channel_evaluators[channel] = (
                     ChannelPerformanceEvaluatorRegistry.get(
                         channel,
-                        config=self.config,
-                        channel_config=channel_config,
-                        benchmark_start_time=self.benchmark_start_time,
+                        **evaluator_kwargs,
                     )
                 )
 

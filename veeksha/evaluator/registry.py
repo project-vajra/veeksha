@@ -29,6 +29,14 @@ EvaluatorRegistry.register(
     ),
 )
 
+EvaluatorRegistry.register(
+    EvaluationType.AUDIO_QUALITY,
+    _LazyLoader(
+        "veeksha.evaluator.accuracy.audio",
+        "AudioQualityEvaluator",
+    ),
+)
+
 
 class ChannelPerformanceEvaluatorRegistry(BaseRegistry):
     """Registry for channel-specific performance evaluators."""

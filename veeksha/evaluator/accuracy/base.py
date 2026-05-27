@@ -15,16 +15,7 @@ from abc import ABC
 from collections import defaultdict
 from typing import Any, Dict, Optional, Set, Tuple, cast
 
-# NOTE: `lm_eval` is an external dependency; type checkers in some environments
-# may not have it available, so we silence missing-import diagnostics here.
-from lm_eval.evaluator_utils import (  # pyright: ignore[reportMissingImports]  # type: ignore[import-not-found]
-    consolidate_group_results,
-    consolidate_results,
-    get_subtask_list,
-    prepare_print_tasks,
-)
-
-from veeksha.config.evaluator import LMEvalAccuracyEvaluatorConfig
+from veeksha.config.evaluator import BaseEvaluatorConfig, LMEvalAccuracyEvaluatorConfig
 from veeksha.core.seeding import SeedManager
 from veeksha.evaluator.base import BaseEvaluator, EvaluationResult
 from veeksha.generator.session.lmeval import LMEvalSessionGenerator
@@ -44,7 +35,7 @@ class BaseAccuracyEvaluator(BaseEvaluator, ABC):
 
     def __init__(
         self,
-        config: LMEvalAccuracyEvaluatorConfig,
+        config: BaseEvaluatorConfig,
         seed_manager: Optional[SeedManager] = None,
         output_dir: Optional[str] = None,
         benchmark_start_time: float = 0.0,
@@ -277,6 +268,13 @@ class LMEvalAccuracyEvaluator(BaseAccuracyEvaluator):
         raise KeyError("Unsupported logprobs structure for completions response.")
 
     def _evaluate_lmeval(self) -> Dict[str, Any]:
+        from lm_eval.evaluator_utils import (  # pyright: ignore[reportMissingImports]  # type: ignore[import-not-found]
+            consolidate_group_results,
+            consolidate_results,
+            get_subtask_list,
+            prepare_print_tasks,
+        )
+
         # Bind generator-owned tasks and compute lm-eval metrics
         eval_tasks = self.session_generator.eval_tasks
         limits = self.session_generator.limits

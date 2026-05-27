@@ -2,7 +2,6 @@
 
 import json
 import os
-import struct
 import threading
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -18,29 +17,22 @@ from veeksha.types import ChannelModality
 
 logger = init_logger(__name__)
 
-SAMPLE_RATE_DEFAULT = 24000
+DEFAULT_AUDIO_SAMPLE_RATE = 24000
+BYTES_PER_SAMPLE = 2
+WAV_HEADER_BYTES = 44
 
 
-def _make_wav_header(data_size: int, sample_rate: int = SAMPLE_RATE_DEFAULT) -> bytes:
-    """Build a 44-byte WAV header for raw PCM data."""
-    byte_rate = sample_rate * 1 * 16 // 8
-    block_align = 1 * 16 // 8
-    return struct.pack(
-        "<4sI4s4sIHHIIHH4sI",
-        b"RIFF",
-        36 + data_size,
-        b"WAVE",
-        b"fmt ",
-        16,
-        1,  # PCM format
-        1,  # mono
-        sample_rate,
-        byte_rate,
-        block_align,
-        16,  # bits per sample
-        b"data",
-        data_size,
-    )
+def _pcm_byte_count(total_bytes: int, *, raw_pcm: bool) -> int:
+    if raw_pcm:
+        return total_bytes
+    return max(total_bytes - WAV_HEADER_BYTES, 0)
+
+
+def _audio_duration_ms(
+    pcm_bytes: int, sample_rate: int = DEFAULT_AUDIO_SAMPLE_RATE
+) -> float:
+    num_samples = pcm_bytes / BYTES_PER_SAMPLE
+    return (num_samples / sample_rate) * 1000
 
 
 @dataclass
@@ -51,7 +43,7 @@ class AudioRequestMetrics:
     session_id: int
     request_dispatched_at: float
     client_completed_at: float
-    ttfa: float
+    ttfc: float
     end_to_end_latency: float
     generated_audio_duration: float
     rtf: float
@@ -66,7 +58,7 @@ class AudioRequestMetrics:
 class AudioPerformanceEvaluator:
     """Performance evaluator for audio generation (TTS).
 
-    Tracks per-request TTFA, total latency, audio duration, RTF (real-time factor),
+    Tracks per-request TTFC, total latency, audio duration, RTF (real-time factor),
     and chunk count. Computes p50/p90/p99 aggregates via CDFSketch.
     """
 
@@ -83,7 +75,7 @@ class AudioPerformanceEvaluator:
 
         # CDF sketches for aggregate metrics
         self.summaries: Dict[str, CDFSketch] = {
-            "ttfa": CDFSketch("ttfa", unit="ms"),
+            "ttfc": CDFSketch("ttfc", unit="ms"),
             "end_to_end_latency": CDFSketch("end_to_end_latency", unit="ms"),
             "generated_audio_duration": CDFSketch(
                 "generated_audio_duration", unit="ms"
@@ -103,10 +95,6 @@ class AudioPerformanceEvaluator:
         self._lifecycle_timestamps: List[Dict[str, Optional[float]]] = []
         self._request_rows_streamed: int = 0
         self._request_time_reference: float = self.benchmark_start_time
-
-        # Audio bytes storage for optional WAV saving
-        self._audio_buffers: Dict[int, bytes] = {}
-        self._audio_metadata: Dict[int, Dict[str, Any]] = {}
 
         # Running totals for aggregate throughput
         self._total_input_chars: int = 0
@@ -160,12 +148,20 @@ class AudioPerformanceEvaluator:
                 return
 
             cm = channel_response.metrics or {}
-            ttfa = cm.get("ttfa", 0.0)
+            ttfc = cm.get("ttfc", 0.0)
             end_to_end_latency = cm.get("end_to_end_latency", 0.0)
-            generated_audio_duration = cm.get("generated_audio_duration", 0.0)
-            rtf = cm.get("rtf", 0.0)
             chunk_count = cm.get("chunk_count", 0)
-            pcm_byte_count = cm.get("pcm_byte_count", 0)
+            raw_pcm = bool(cm.get("raw_pcm", False))
+            sample_rate = int(cm.get("sample_rate", DEFAULT_AUDIO_SAMPLE_RATE))
+            audio_content = channel_response.content
+            total_bytes = len(audio_content) if isinstance(audio_content, bytes) else 0
+            pcm_byte_count = _pcm_byte_count(total_bytes, raw_pcm=raw_pcm)
+            generated_audio_duration = _audio_duration_ms(pcm_byte_count, sample_rate)
+            rtf = (
+                end_to_end_latency / generated_audio_duration
+                if generated_audio_duration > 0
+                else float("inf")
+            )
             input_chars = cm.get("input_chars", 0)
             input_tokens = cm.get("input_tokens", 0)
             input_text = cm.get("input_text", "")
@@ -177,7 +173,7 @@ class AudioPerformanceEvaluator:
                 session_id=session_id,
                 request_dispatched_at=dispatched_at,
                 client_completed_at=completed_at,
-                ttfa=ttfa,
+                ttfc=ttfc,
                 end_to_end_latency=end_to_end_latency,
                 generated_audio_duration=generated_audio_duration,
                 rtf=rtf,
@@ -226,22 +222,12 @@ class AudioPerformanceEvaluator:
             )
 
             # Update CDF sketches
-            self.summaries["ttfa"].put(ttfa)
+            self.summaries["ttfc"].put(ttfc)
             self.summaries["end_to_end_latency"].put(end_to_end_latency)
             self.summaries["generated_audio_duration"].put(generated_audio_duration)
             self.summaries["rtf"].put(rtf)
             self.summaries["chunk_count"].put(chunk_count)
             self.summaries["input_tokens"].put(input_tokens)
-
-            # Store audio buffer for optional WAV saving
-            if self.channel_config.save_audio_files:
-                audio_content = channel_response.content
-                if audio_content and isinstance(audio_content, bytes):
-                    self._audio_buffers[request_id] = audio_content
-                    self._audio_metadata[request_id] = {
-                        "raw_pcm": cm.get("raw_pcm", False),
-                        "sample_rate": cm.get("sample_rate", SAMPLE_RATE_DEFAULT),
-                    }
 
     def record_session_completed(
         self,
@@ -297,10 +283,6 @@ class AudioPerformanceEvaluator:
             self._save_request_level_metrics(output_dir)
             self._save_cdf_csvs(output_dir)
             self._plot_cdfs(output_dir)
-            if self.channel_config.save_audio_files:
-                # Save audio files to parent dir (not inside metrics/)
-                parent_dir = os.path.dirname(output_dir)
-                self._save_audio_files(parent_dir)
 
     def flush_streaming_outputs(self, output_dir: str) -> None:
         """Flush current metrics for streaming."""
@@ -343,7 +325,7 @@ class AudioPerformanceEvaluator:
                     "client_picked_up_at": lifecycle["client_picked_up_at"],
                     "client_completed_at": round(normalized_completed, 5),
                     "result_processed_at": lifecycle["result_processed_at"],
-                    "ttfa": round(m.ttfa, 3),
+                    "ttfc": round(m.ttfc, 3),
                     "end_to_end_latency": round(m.end_to_end_latency, 3),
                     "generated_audio_duration": round(m.generated_audio_duration, 3),
                     "rtf": round(m.rtf, 5),
@@ -378,22 +360,3 @@ class AudioPerformanceEvaluator:
                 cdf_sketch.plot_cdf(output_dir, f"audio_{metric_name}")
             except Exception as e:
                 logger.warning("Failed to plot CDF for %s: %s", metric_name, e)
-
-    def _save_audio_files(self, output_dir: str) -> None:
-        """Save collected audio buffers as WAV files."""
-        if not self._audio_buffers:
-            return
-        audio_dir = os.path.join(output_dir, "audio_files")
-        os.makedirs(audio_dir, exist_ok=True)
-        for req_id, audio_data in self._audio_buffers.items():
-            meta = self._audio_metadata.get(req_id, {})
-            raw_pcm = meta.get("raw_pcm", False)
-            sample_rate = meta.get("sample_rate", SAMPLE_RATE_DEFAULT)
-            wav_path = os.path.join(audio_dir, f"request_{req_id}.wav")
-            with open(wav_path, "wb") as f:
-                if raw_pcm:
-                    f.write(_make_wav_header(len(audio_data), sample_rate))
-                f.write(audio_data)
-        logger.info("Saved %d audio files to %s", len(self._audio_buffers), audio_dir)
-        self._audio_buffers.clear()
-        self._audio_metadata.clear()

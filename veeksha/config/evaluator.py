@@ -7,6 +7,7 @@ The hierarchy follows the BasePolyConfig pattern used elsewhere in veeksha:
 - BaseEvaluatorConfig (abstract base)
   - PerformanceEvaluatorConfig (latency, throughput)
   - LMEvalAccuracyEvaluatorConfig (task-specific correctness - lm-eval)
+  - AudioQualityEvaluatorConfig (generated audio quality checks)
 """
 
 from dataclasses import field
@@ -15,6 +16,7 @@ from typing import Optional, Union
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.slo import BaseSloConfig, ConstantSloConfig
+from veeksha.config.verification import AudioVerificationConfig
 from veeksha.types import ChannelModality, EvaluationType, SloType
 
 
@@ -118,13 +120,6 @@ class ImageChannelPerformanceConfig(BaseChannelPerformanceConfig):
 @frozen_dataclass
 class AudioChannelPerformanceConfig(BaseChannelPerformanceConfig):
     """Audio channel performance configuration for TTS benchmarking."""
-
-    save_audio_files: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether to save the generated audio files to the output directory."
-        },
-    )
 
     @classmethod
     def get_type(cls) -> ChannelModality:
@@ -249,6 +244,14 @@ class LMEvalAccuracyEvaluatorConfig(BaseEvaluatorConfig):
     and the evaluator binds responses to instances for evaluation.
     """
 
+    slos: list[BaseSloConfig] = field(
+        default_factory=list,
+        metadata={"help": "Accuracy evaluators do not use performance SLOs."},
+    )
+    stream_metrics: bool = field(
+        default=False,
+        metadata={"help": "Accuracy evaluation does not stream incremental metrics."},
+    )
     bootstrap_iters: int = field(
         default=100000,
         metadata={"help": "Bootstrap iterations for confidence intervals"},
@@ -257,3 +260,33 @@ class LMEvalAccuracyEvaluatorConfig(BaseEvaluatorConfig):
     @classmethod
     def get_type(cls) -> EvaluationType:
         return EvaluationType.ACCURACY_LMEVAL
+
+
+@frozen_dataclass
+class AudioQualityEvaluatorConfig(BaseEvaluatorConfig):
+    """Configuration for generated audio quality evaluation."""
+
+    target_channels: list = field(
+        default_factory=lambda: ["audio"],
+        metadata={"help": "List of modalities whose output quality should be evaluated."},
+    )
+    slos: list[BaseSloConfig] = field(
+        default_factory=list,
+        metadata={"help": "Accuracy evaluators do not use performance SLOs."},
+    )
+    stream_metrics: bool = field(
+        default=False,
+        metadata={"help": "Accuracy evaluation does not stream incremental metrics."},
+    )
+    verification: AudioVerificationConfig = field(
+        default_factory=AudioVerificationConfig,
+        metadata={"help": "Generated audio verification configuration."},
+    )
+    save_audio_files: bool = field(
+        default=True,
+        metadata={"help": "Whether to persist audio artifacts for quality evaluation."},
+    )
+
+    @classmethod
+    def get_type(cls) -> EvaluationType:
+        return EvaluationType.AUDIO_QUALITY

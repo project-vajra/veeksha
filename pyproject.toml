@@ -40,17 +40,13 @@ dependencies = [
     "uvloop",
     "httpx",
     "nvidia-ml-py",
-    "faster-whisper",
-    "fastapi",
-    "uvicorn",
-    "python-multipart",
-    "jiwer",
 ]
 
 [project.scripts]
 veeksha = "veeksha.__main__:main"
 "veeksha.benchmark" = "veeksha.cli.benchmarks:main"
 "veeksha.config" = "veeksha.cli.config:main"
+"veeksha-launcher" = "veeksha_launcher.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/project-vajra/veeksha"
@@ -76,6 +72,10 @@ test = [
     "torch",  # For GPU test synchronization
     "jinja2",  # For test config templates
 ]
+audio-verification = [
+    "faster-whisper",
+    "jiwer",
+]
 utmos = [
     "torch",
     "scipy",
@@ -88,7 +88,7 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["veeksha*"]
+include = ["veeksha*", "veeksha_launcher*"]
 exclude = ["tests*", "docs*"]
 
 [tool.setuptools.package-data]

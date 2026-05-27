@@ -18,7 +18,6 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import yaml
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_NARADA_DIR = REPO_ROOT / "narada"
 DATA_SUFFIXES = {".csv", ".json", ".jsonl", ".txt", ".yaml", ".yml"}
@@ -26,10 +25,14 @@ ROOT_DATA_FILES = ("config.yml", "health_check_results.txt", "wandb_run.json")
 
 PERCENTILES: Tuple[str, ...] = ("P50", "P90")
 REPORT_METRICS: Tuple[Tuple[str, str, str, bool], ...] = (
-    ("ttfa", "TTFA", "ms", True),
+    ("ttfc", "TTFC", "ms", True),
     ("rtf", "RTF", "ratio", True),
     ("generated_audio_duration", "Generated Audio Duration", "ms", False),
 )
+METRIC_KEY_ALIASES: Dict[str, Tuple[str, ...]] = {
+    "ttfa": ("ttfa", "ttfc"),
+    "ttfc": ("ttfc", "ttfa"),
+}
 
 # DD_MM_YYYY-HH_MM_SS-<hash>
 DIR_TS_RE = re.compile(r"^(\d{2}_\d{2}_\d{4}-\d{2}_\d{2}_\d{2})-")
@@ -135,6 +138,32 @@ def required_metric_keys(
     return [f"{metric[0]} ({p})" for metric in metrics for p in percentiles]
 
 
+def _metric_summary_keys(key: str, percentile: str) -> Tuple[str, ...]:
+    aliases = METRIC_KEY_ALIASES.get(key, (key,))
+    return tuple(f"{alias} ({percentile})" for alias in aliases)
+
+
+def _summary_metric_value(
+    summary: Dict[str, Any], key: str, percentile: str
+) -> Optional[Any]:
+    for summary_key in _metric_summary_keys(key, percentile):
+        if summary_key in summary:
+            return summary[summary_key]
+    return None
+
+
+def _has_required_metrics(
+    summary: Dict[str, Any],
+    metrics: Sequence[Tuple[str, str, str, bool]],
+    percentiles: Sequence[str],
+) -> bool:
+    return all(
+        any(summary_key in summary for summary_key in _metric_summary_keys(key, p))
+        for key, _, _, _ in metrics
+        for p in percentiles
+    )
+
+
 def collect_runs(
     system: str,
     root: str | Path,
@@ -148,7 +177,6 @@ def collect_runs(
         print(f"[warn] {system}: directory does not exist: {root}", file=sys.stderr)
         return runs
 
-    required_keys = required_metric_keys(metrics, percentiles)
     for path in sorted(root.iterdir()):
         if not path.is_dir():
             continue
@@ -162,7 +190,7 @@ def collect_runs(
         if concurrency is None:
             continue
         summary = safe_read_json(path / "metrics" / "summary_stats.json")
-        if summary is None or any(k not in summary for k in required_keys):
+        if summary is None or not _has_required_metrics(summary, metrics, percentiles):
             continue
         completed = as_int(summary.get("Number of Completed Requests"))
         if min_completed > 0 and (completed is None or completed < min_completed):
@@ -184,7 +212,6 @@ def collect_input_runs(
         print(f"[warn] {system}: directory does not exist: {root}", file=sys.stderr)
         return runs
 
-    required_keys = required_metric_keys(metrics, percentiles)
     for path in sorted(root.iterdir()):
         if not path.is_dir():
             continue
@@ -199,7 +226,7 @@ def collect_input_runs(
             continue
         concurrency = as_int(find_key(cfg, "target_concurrent_sessions"))
         summary = safe_read_json(path / "metrics" / "summary_stats.json")
-        if summary is None or any(k not in summary for k in required_keys):
+        if summary is None or not _has_required_metrics(summary, metrics, percentiles):
             continue
         completed = as_int(summary.get("Number of Completed Requests"))
         if min_completed > 0 and (completed is None or completed < min_completed):
@@ -280,7 +307,7 @@ def _metric_rows_for_run(
                 axis_name: axis_value,
                 "metric": display,
                 "percentile": percentile,
-                "value": safe_float(summary.get(f"{key} ({percentile})")),
+                "value": safe_float(_summary_metric_value(summary, key, percentile)),
                 "completed_requests": completed,
                 "chars_per_sec_aggregate": safe_float(
                     summary.get("chars_per_sec_aggregate")
@@ -583,7 +610,9 @@ def _run_axis_value(run: SweepRun, axis_col: str) -> Optional[int]:
     return None
 
 
-def _axis_folder_name(run: SweepRun, *, axis_col: str, sweep_type: str) -> Optional[str]:
+def _axis_folder_name(
+    run: SweepRun, *, axis_col: str, sweep_type: str
+) -> Optional[str]:
     axis_value = _run_axis_value(run, axis_col)
     if axis_value is None:
         return None

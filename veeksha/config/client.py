@@ -1,5 +1,4 @@
 import json
-import os
 from dataclasses import field
 from typing import Optional
 
@@ -161,23 +160,22 @@ class OpenAIRouterClientConfig(OpenAIChatCompletionsClientConfig):
 
 @frozen_dataclass
 class TTSClientConfig(BaseClientConfig):
-    """TTS client configuration for Deepgram/ElevenLabs streaming APIs.
+    """TTS client configuration for Vajra and vLLM Omni streaming APIs.
 
-    `client.type: tts` sends text to a TTS API and measures audio generation metrics.
+    `client.type: tts` sends text to a TTS API and measures audio generation
+    metrics from the streamed audio response.
     """
 
     provider: str = field(
         default="",
         metadata={
-            "help": "TTS provider name. "
-            "Supported: 'deepgram', 'elevenlabs', 'vajra', 'voxserve', 'vllm_omni'."
+            "help": "TTS provider name. Supported: 'vajra', 'vllm_omni'."
         },
     )
     voice_id: str = field(
         default="",
         metadata={
-            "help": "Voice identifier passed to the TTS provider. "
-            "Required for ElevenLabs (e.g. 'JBFqnCBsd6RMkjVDRZzb')."
+            "help": "Optional voice identifier passed to providers that support it."
         },
     )
     sample_rate: int = field(
@@ -191,27 +189,20 @@ class TTSClientConfig(BaseClientConfig):
     raw_pcm: bool = field(
         default=False,
         metadata={
-            "help": "Whether the provider returns raw PCM (True) or WAV (False)."
-        },
-    )
-    save_audio: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether to persist generated TTS audio files in the run output."
+            "help": "Whether the provider returns raw PCM (True) or WAV (False). "
+            "vllm_omni always uses raw PCM regardless of this value."
         },
     )
     model: str = field(
         default="",
-        metadata={
-            "help": "The TTS model ID (e.g. 'aura-2-thalia-en', 'eleven_turbo_v2_5')."
-        },
+        metadata={"help": "The TTS model ID."},
     )
 
     @classmethod
     def get_type(cls) -> ClientType:
         return ClientType.TTS
 
-    _SUPPORTED_PROVIDERS = ("deepgram", "elevenlabs", "vajra", "voxserve", "vllm_omni")
+    _SUPPORTED_PROVIDERS = ("vajra", "vllm_omni")
 
     def __post_init__(self):
         super().__post_init__()
@@ -221,7 +212,6 @@ class TTSClientConfig(BaseClientConfig):
         if not self.provider and not self.model:
             return
 
-        # --- Required field checks ---
         if not self.provider:
             raise ValueError(
                 "TTSClientConfig.provider is required. "
@@ -233,32 +223,15 @@ class TTSClientConfig(BaseClientConfig):
                 f"Supported: {', '.join(self._SUPPORTED_PROVIDERS)}"
             )
         if not self.model:
-            raise ValueError(
-                "TTSClientConfig.model is required "
-                "(e.g. 'aura-2-thalia-en', 'eleven_turbo_v2_5')."
-            )
-        if self.provider == "elevenlabs" and not self.voice_id:
-            raise ValueError(
-                "TTSClientConfig.voice_id is required for the ElevenLabs provider."
-            )
+            raise ValueError("TTSClientConfig.model is required.")
         if self.api_base is None:
             raise ValueError("TTSClientConfig.api_base is required.")
-        if self.api_key is None:
-            env_map = {
-                "deepgram": "DEEPGRAM_API_KEY",
-                "elevenlabs": "ELEVENLABS_API_KEY",
-            }
-            env_var = env_map.get(self.provider)
-            if env_var:
-                key = os.environ.get(env_var)
-                if key:
-                    object.__setattr__(self, "api_key", key)
-            elif self.provider == "vllm_omni":
-                object.__setattr__(self, "api_key", "EMPTY")
-
-        # Auto-set raw_pcm for ElevenLabs (returns raw PCM, not WAV)
-        if self.provider == "elevenlabs" and not self.raw_pcm:
-            object.__setattr__(self, "raw_pcm", True)
+        if self.sample_rate <= 0:
+            raise ValueError("TTSClientConfig.sample_rate must be > 0")
+        if self.chunk_size <= 0:
+            raise ValueError("TTSClientConfig.chunk_size must be > 0")
+        if self.provider == "vllm_omni" and self.api_key is None:
+            object.__setattr__(self, "api_key", "EMPTY")
 
     def build_tokenizer_provider(self):
         """TTS models use a simple word-split tokenizer."""
