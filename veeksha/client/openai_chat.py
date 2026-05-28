@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 logger = init_logger(__name__)
 
 AUDIO_SAMPLE_RATE = 24000
-AUDIO_BYTES_PER_SAMPLE = 2
 
 
 class OpenAIChatCompletionsClient(OpenAIBaseClient):
@@ -347,7 +346,6 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
         audio_chunks: List[bytes] = []
         audio_ttfc: Optional[float] = None
         audio_chunk_count = 0
-        audio_total_bytes = 0
 
         delta_prompt_len = 0
         messages = []
@@ -431,7 +429,6 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
                             audio_ttfc = (receive_time - t_start) * 1000
                         audio_chunks.append(chunk_bytes)
                         audio_chunk_count += 1
-                        audio_total_bytes += len(chunk_bytes)
                     elif delta.get("content"):
                         (
                             generated_text,
@@ -503,24 +500,13 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
         if success and audio_chunks:
             audio_bytes = b"".join(audio_chunks)
             total_latency_ms = (completed_at - t_start) * 1000
-            pcm_bytes = audio_total_bytes
-            num_samples = pcm_bytes / AUDIO_BYTES_PER_SAMPLE
-            audio_dur_ms = (num_samples / AUDIO_SAMPLE_RATE) * 1000
-            rtf = (
-                total_latency_ms / audio_dur_ms
-                if audio_dur_ms > 0
-                else float("inf")
-            )
             channels[ChannelModality.AUDIO] = ChannelResponse(
                 modality=ChannelModality.AUDIO,
                 content=audio_bytes,
                 metrics={
                     "ttfc": round(audio_ttfc or 0.0, 3),
                     "end_to_end_latency": round(total_latency_ms, 3),
-                    "generated_audio_duration": round(audio_dur_ms, 3),
-                    "rtf": round(rtf, 5),
                     "chunk_count": audio_chunk_count,
-                    "pcm_byte_count": pcm_bytes,
                     "raw_pcm": True,
                     "sample_rate": AUDIO_SAMPLE_RATE,
                 },

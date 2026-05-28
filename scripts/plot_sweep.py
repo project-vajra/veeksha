@@ -4,7 +4,7 @@ Examples
 --------
     python scripts/plot_sweep.py --sweep-type conc --plot-type sweep \\
         --engine1-dir benchmark_output/vajra_qwen3tts_new_server_async \\
-        --engine2-dir benchmark_output/vajra_qwen3tts_async_ttfa_fix \\
+        --engine2-dir benchmark_output/vajra_qwen3tts_async_ttfc_fix \\
         --engine1-name Vajra --engine2-name vLLM
 
     python scripts/plot_sweep.py --sweep-type input --plot-type report \\
@@ -61,15 +61,15 @@ SINGLE_CONC_PERCENTILES = ("P50", "P90", "P99")
 LIGHT_COLORS = {
     "value_text": "#5C6166",
     "delta_box_face": "white",
-    "delta_win": "#86B300",
-    "delta_lose": "#FA8D3E",
+    "delta_win": "#2E7D32",
+    "delta_lose": "#C62828",
     "missing": "#F07171",
 }
 DARK_COLORS = {
     "value_text": "#BFBDB6",
     "delta_box_face": "#1F2430",
     "delta_win": "#BAE67E",
-    "delta_lose": "#F28779",
+    "delta_lose": "#FF6B6B",
     "missing": "#F28779",
 }
 DEFAULT_ENGINE1_COLOR = "#73D0FF"
@@ -120,7 +120,7 @@ def _format_delta(winner: float, loser: float, delta_style: str) -> str:
         return ""
     if delta_style == "multiplier":
         return f"{loser / winner:.2f}x"
-    return f"Delta {abs(loser - winner) / winner * 100.0:.1f}%"
+    return f"Δ {abs(loser - winner) / winner * 100.0:.1f}%"
 
 
 def _annotate_bar_axes(
@@ -177,11 +177,17 @@ def _annotate_bar_axes(
             left_h, right_h = left.get_height(), right.get_height()
             winner = min(left_h, right_h) if lower_is_better else max(left_h, right_h)
             loser = max(left_h, right_h) if lower_is_better else min(left_h, right_h)
-            label = _format_delta(winner, loser, delta_style)
+            label = _format_delta(
+                winner, loser, delta_style
+            )
             if not label:
                 continue
             winner_is_left = left_h < right_h if lower_is_better else left_h > right_h
-            color = theme["delta_win"] if winner_is_left else theme["delta_lose"]
+            color = (
+                theme["value_text"]
+                if left_h == right_h
+                else theme["delta_win"] if winner_is_left else theme["delta_lose"]
+            )
             mid_x = (
                 left.get_x() + left.get_width() / 2
                 + right.get_x() + right.get_width() / 2
@@ -262,11 +268,17 @@ def _annotate_line_axes(
                 continue
             winner = min(first_v, second_v) if lower_is_better else max(first_v, second_v)
             loser = max(first_v, second_v) if lower_is_better else min(first_v, second_v)
-            label = _format_delta(winner, loser, delta_style)
+            label = _format_delta(
+                winner, loser, delta_style
+            )
             if not label:
                 continue
             winner_is_first = first_v < second_v if lower_is_better else first_v > second_v
-            color = theme["delta_win"] if winner_is_first else theme["delta_lose"]
+            color = (
+                theme["value_text"]
+                if first_v == second_v
+                else theme["delta_win"] if winner_is_first else theme["delta_lose"]
+            )
             ax.text(
                 idx,
                 max(first_v, second_v) + y_pad * 5,

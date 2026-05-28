@@ -21,7 +21,6 @@ from veeksha.config.runtime import RuntimeConfig
 from veeksha.config.server import BaseServerConfig
 from veeksha.config.trace_recorder import TraceRecorderConfig
 from veeksha.config.traffic import BaseTrafficConfig, RateTrafficConfig
-from veeksha.config.verification import TTSVerificationConfig
 from veeksha.config.wandb import WandbConfig
 from veeksha.types import (
     ClientType,
@@ -83,10 +82,6 @@ class BenchmarkConfig:
     wandb: WandbConfig = field(
         default_factory=WandbConfig,
         metadata={"help": "Weights & Biases logging configuration."},
-    )
-    tts_verification: TTSVerificationConfig = field(
-        default_factory=TTSVerificationConfig,
-        metadata={"help": "Post-run TTS transcription/WER verification."},
     )
 
     @classmethod

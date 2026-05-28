@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import threading
 import time
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Optional
+from urllib.parse import urljoin
 
 import httpx
 
@@ -20,63 +23,93 @@ if TYPE_CHECKING:
 
 logger = init_logger(__name__)
 
-SAMPLE_RATE = 24000
-BYTES_PER_SAMPLE = 2
+
+@dataclass(frozen=True)
+class TTSProviderRequest:
+    url: str
+    headers: dict[str, str]
+    payload: dict
 
 
-def _audio_duration_ms(pcm_bytes: int, sample_rate: int = SAMPLE_RATE) -> float:
-    """Estimate audio duration from raw PCM byte count (linear16, mono)."""
-    num_samples = pcm_bytes / BYTES_PER_SAMPLE
-    return (num_samples / sample_rate) * 1000
+class TTSProviderAdapter(ABC):
+    """Provider-specific request adapter for streaming TTS endpoints."""
+
+    def __init__(self, config: TTSClientConfig) -> None:
+        self.config = config
+
+    @property
+    @abstractmethod
+    def raw_pcm(self) -> bool:
+        """Whether the provider streams raw PCM bytes."""
+
+    @abstractmethod
+    def build_request(self, text: str) -> TTSProviderRequest:
+        """Build a streaming HTTP request for a text input."""
+
+    @staticmethod
+    def _join_url(api_base: str, endpoint: str) -> str:
+        return urljoin(api_base.rstrip("/") + "/", endpoint.lstrip("/"))
+
+
+class VajraTTSProviderAdapter(TTSProviderAdapter):
+    @property
+    def raw_pcm(self) -> bool:
+        return self.config.raw_pcm
+
+    def build_request(self, text: str) -> TTSProviderRequest:
+        return TTSProviderRequest(
+            url=self._join_url(str(self.config.api_base), "synthesize/stream"),
+            headers={"Content-Type": "application/json"},
+            payload={"text": text},
+        )
+
+
+class VLLMOmniTTSProviderAdapter(TTSProviderAdapter):
+    @property
+    def raw_pcm(self) -> bool:
+        return True
+
+    def build_request(self, text: str) -> TTSProviderRequest:
+        api_base = str(self.config.api_base)
+        endpoint = (
+            "audio/speech"
+            if api_base.rstrip("/").endswith("/v1")
+            else "v1/audio/speech"
+        )
+        payload: dict = {
+            "input": text,
+            "model": self.config.model,
+            "response_format": "pcm",
+            "stream": True,
+        }
+        if self.config.voice_id:
+            payload["voice"] = self.config.voice_id
+        return TTSProviderRequest(
+            url=self._join_url(api_base, endpoint),
+            headers={
+                "Authorization": f"Bearer {self.config.api_key}",
+                "Content-Type": "application/json",
+            },
+            payload=payload,
+        )
+
+
+def _build_provider_adapter(config: TTSClientConfig) -> TTSProviderAdapter:
+    if config.provider == "vajra":
+        return VajraTTSProviderAdapter(config)
+    if config.provider == "vllm_omni":
+        return VLLMOmniTTSProviderAdapter(config)
+    raise ValueError(f"Unsupported TTS provider: {config.provider}")
 
 
 class TTSClient(BaseLLMClient):
     """Async client for streaming HTTP-based TTS APIs."""
 
     def __init__(self, config: TTSClientConfig, **kwargs) -> None:
-        self.config = config
-        self.api_base = config.api_base
-        self.api_key = config.api_key
+        super().__init__(config)
         self._provider = config.provider
-        self._sample_rate = config.sample_rate
-        self._voice_id = config.voice_id
-        self._model_id = config.model
         self._chunk_size = config.chunk_size
-        self._raw_pcm = config.raw_pcm
-
-        # Build the request URL and headers based on provider
-        if self._provider == "deepgram":
-            self._url = (
-                f"{self.api_base}?model={self._model_id}"
-                f"&encoding=linear16&container=wav&sample_rate={self._sample_rate}"
-            )
-            self._headers = {
-                "Authorization": f"Token {self.api_key}",
-                "Content-Type": "application/json",
-            }
-        elif self._provider == "elevenlabs":
-            self._url = (
-                f"{self.api_base}{self._voice_id}/stream"
-                f"?output_format=pcm_{self._sample_rate}"
-            )
-            self._headers = {
-                "xi-api-key": str(self.api_key),
-                "Content-Type": "application/json",
-            }
-        elif self._provider == "vajra":
-            self._url = f"{self.api_base}/synthesize/stream"
-            self._headers = {
-                "Content-Type": "application/json",
-            }
-        elif self._provider == "voxserve":
-            self._url = f"{self.api_base}/generate"
-            self._headers = {}  # form-encoded, no extra headers needed
-        elif self._provider == "vllm_omni":
-            self._url = f"{self.api_base}/v1/audio/speech"
-            self._headers = {"Content-Type": "application/json"}
-        else:
-            raise ValueError(f"Unsupported TTS provider: {self._provider}")
-
+        self._provider_adapter = _build_provider_adapter(config)
         self._client_storage = threading.local()
 
     def _get_client(self) -> httpx.AsyncClient:
@@ -87,28 +120,6 @@ class TTSClient(BaseLLMClient):
             )
         return self._client_storage.client
 
-    def _build_payload(self, text: str) -> dict:
-        if self._provider in ("deepgram", "vajra"):
-            return {"text": text}
-        elif self._provider == "elevenlabs":
-            return {"text": text, "model_id": self._model_id}
-        elif self._provider == "voxserve":
-            data = {"text": text, "streaming": "true"}
-            if self._voice_id:
-                data["speaker"] = self._voice_id
-            return data
-        elif self._provider == "vllm_omni":
-            payload: dict = {
-                "input": text,
-                "model": self._model_id,
-                "response_format": "pcm",
-                "stream": True,
-            }
-            if self._voice_id:
-                payload["voice"] = self._voice_id
-            return payload
-        raise ValueError(f"Unsupported provider: {self._provider}")
-
     async def send_request(
         self,
         request: Request,
@@ -116,8 +127,6 @@ class TTSClient(BaseLLMClient):
         session_total_requests: int = 1,
     ) -> RequestResult:
         """Send a streaming TTS request and collect audio metrics."""
-
-        # Extract text from the TEXT channel
         text_content = request.channels.get(ChannelModality.TEXT)
         if not isinstance(text_content, TextChannelRequestContent):
             return RequestResult(
@@ -130,8 +139,7 @@ class TTSClient(BaseLLMClient):
                 client_completed_at=time.monotonic(),
             )
         input_text = text_content.input_text
-
-        payload = self._build_payload(input_text)
+        provider_request = self._provider_adapter.build_request(input_text)
 
         logger.debug(
             "[TTS %s] request_id=%d session_id=%d chars=%d text=%.80r",
@@ -146,26 +154,17 @@ class TTSClient(BaseLLMClient):
         error_code: Optional[int] = None
         ttfc: Optional[float] = None
         chunk_count = 0
-        total_bytes = 0
         audio_chunks: List[bytes] = []
 
         t_start = time.monotonic()
 
         try:
-            # VoxServe uses form-encoded data; other providers use JSON.
-            stream_kwargs: dict = {
-                "headers": self._headers,
-                "timeout": self.config.request_timeout,
-            }
-            if self._provider == "voxserve":
-                stream_kwargs["data"] = payload
-            else:
-                stream_kwargs["json"] = payload
-
             async with self._get_client().stream(
                 "POST",
-                self._url,
-                **stream_kwargs,
+                provider_request.url,
+                headers=provider_request.headers,
+                json=provider_request.payload,
+                timeout=self.config.request_timeout,
             ) as response:
                 response.raise_for_status()
 
@@ -177,7 +176,6 @@ class TTSClient(BaseLLMClient):
 
                         audio_chunks.append(chunk)
                         chunk_count += 1
-                        total_bytes += len(chunk)
 
         except httpx.HTTPStatusError as e:
             error_code = e.response.status_code if e.response else 500
@@ -199,17 +197,6 @@ class TTSClient(BaseLLMClient):
         completed_at = time.monotonic()
         total_latency_ms = (completed_at - t_start) * 1000
         success = error_msg is None and error_code is None
-
-        # Compute audio metrics
-        if self._raw_pcm:
-            pcm_bytes = total_bytes
-        else:
-            pcm_bytes = max(total_bytes - 44, 0)  # Deepgram WAV has 44-byte header
-
-        audio_dur_ms = _audio_duration_ms(pcm_bytes, self._sample_rate)
-        rtf = total_latency_ms / audio_dur_ms if audio_dur_ms > 0 else float("inf")
-
-        # Combine audio bytes
         audio_data = b"".join(audio_chunks) if audio_chunks else b""
 
         channels = {}
@@ -220,15 +207,12 @@ class TTSClient(BaseLLMClient):
                 metrics={
                     "ttfc": round(ttfc or 0.0, 3),
                     "end_to_end_latency": round(total_latency_ms, 3),
-                    "generated_audio_duration": round(audio_dur_ms, 3),
-                    "rtf": round(rtf, 5),
                     "chunk_count": chunk_count,
-                    "pcm_byte_count": pcm_bytes,
+                    "raw_pcm": self._provider_adapter.raw_pcm,
+                    "sample_rate": self.config.sample_rate,
                     "input_chars": len(input_text),
                     "input_tokens": text_content.target_prompt_tokens or 0,
                     "input_text": input_text,
-                    "raw_pcm": self._raw_pcm,
-                    "sample_rate": self._sample_rate,
                 },
             )
 
@@ -242,4 +226,3 @@ class TTSClient(BaseLLMClient):
             error_msg=error_msg,
             client_completed_at=completed_at,
         )
-

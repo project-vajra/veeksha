@@ -54,6 +54,7 @@ class SessionGraphType(BaseIntEnum):
 class EvaluationType(BaseIntEnum):
     PERFORMANCE = 1
     ACCURACY_LMEVAL = 2
+    AUDIO_QUALITY = 3
 
 
 # ----- Client -----
@@ -70,6 +71,11 @@ class ServerType(BaseIntEnum):
     VLLM = 1
     VAJRA = 2
     SGLANG = 3
+
+
+# ----- Verification -----
+class VerificationType(BaseIntEnum):
+    AUDIO = 1
 
 
 # ----- SLOs -----

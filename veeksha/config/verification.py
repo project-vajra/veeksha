@@ -1,25 +1,27 @@
 from dataclasses import field
-from typing import Optional
 
+from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from veeksha.types import VerificationType
 
 
 @frozen_dataclass
-class TTSVerificationConfig:
-    """Post-run TTS verification for generated audio quality."""
+class BaseVerificationConfig(BasePolyConfig):
+    """Base class for post-run verification configuration."""
 
-    enabled: bool = field(
+    fail_on_threshold: bool = field(
         default=False,
-        metadata={"help": "Enable post-run TTS transcription/WER verification."},
+        metadata={"help": "If True, fail the run when verification thresholds fail."},
     )
-    wer_enabled: bool = field(
-        default=True,
-        metadata={"help": "Enable WER verification using the managed Whisper service."},
-    )
-    utmos_enabled: bool = field(
-        default=False,
-        metadata={"help": "Enable UTMOS predicted MOS scoring for generated audio."},
-    )
+
+    def is_enabled(self) -> bool:
+        return False
+
+
+@frozen_dataclass
+class WhisperTranscriptionConfig:
+    """Whisper transcription configuration used by WER verification."""
+
     model: str = field(
         default="large-v3",
         metadata={"help": "Whisper model identifier passed to faster-whisper."},
@@ -34,82 +36,92 @@ class TTSVerificationConfig:
             "help": "Compute type passed to faster-whisper, e.g. 'float16' or 'int8'."
         },
     )
-    host: str = field(
-        default="localhost",
-        metadata={"help": "Host for the managed Whisper verification service."},
+
+    def __post_init__(self):
+        if not self.model:
+            raise ValueError("WhisperTranscriptionConfig.model is required")
+        if not self.device:
+            raise ValueError("WhisperTranscriptionConfig.device is required")
+        if not self.compute_type:
+            raise ValueError("WhisperTranscriptionConfig.compute_type is required")
+
+
+@frozen_dataclass
+class WERVerifierConfig:
+    """WER verifier configuration for generated speech."""
+
+    enabled: bool = field(
+        default=False,
+        metadata={"help": "Enable WER verification using inline Whisper transcription."},
     )
-    port: int = field(
-        default=8077,
-        metadata={"help": "Port for the managed Whisper verification service."},
-    )
-    startup_timeout: int = field(
-        default=300,
-        metadata={"help": "Seconds to wait for the Whisper service to become ready."},
-    )
-    health_check_interval: float = field(
-        default=2.0,
-        metadata={"help": "Seconds between Whisper service health probes."},
-    )
-    request_timeout: int = field(
-        default=300,
-        metadata={"help": "Seconds to wait for each transcription request."},
-    )
-    wer_threshold: float = field(
+    threshold: float = field(
         default=0.05,
         metadata={"help": "Per-request WER threshold for pass/fail classification."},
     )
-    fail_on_threshold: bool = field(
-        default=False,
-        metadata={
-            "help": "If True, raise after saving artifacts when any request exceeds the WER threshold."
-        },
-    )
-    env_path: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": "Optional virtualenv/conda environment path for launching the verifier service."
-        },
-    )
-    gpu_ids: Optional[list[int]] = field(
-        default=None,
-        metadata={
-            "help": "Optional GPU IDs for the verifier service CUDA_VISIBLE_DEVICES."
-        },
+    whisper: WhisperTranscriptionConfig = field(
+        default_factory=WhisperTranscriptionConfig,
+        metadata={"help": "Inline Whisper transcription configuration."},
     )
 
-    utmos_hf_repo: str = field(
+    def __post_init__(self):
+        if self.threshold < 0:
+            raise ValueError("WERVerifierConfig.threshold must be >= 0")
+
+
+@frozen_dataclass
+class UTMOSVerifierConfig:
+    """UTMOS predicted MOS verifier configuration."""
+
+    enabled: bool = field(
+        default=False,
+        metadata={"help": "Enable UTMOS predicted MOS scoring for generated audio."},
+    )
+    hf_repo: str = field(
         default="balacoon/utmos",
         metadata={"help": "Hugging Face model repo containing the UTMOS JIT file."},
     )
-    utmos_jit_file: str = field(
+    jit_file: str = field(
         default="utmos.jit",
         metadata={"help": "TorchScript filename to load from the UTMOS HF repo."},
     )
-    utmos_device: str = field(
-        default="cpu",
+    device: str = field(
+        default="cuda:0",
         metadata={
-            "help": "Device for UTMOS TorchScript inference, e.g. 'cpu' or 'cuda:0'."
+            "help": "Device for UTMOS TorchScript inference, e.g. 'cuda:0' or 'cpu'."
         },
     )
 
     def __post_init__(self):
-        if self.enabled and not (self.wer_enabled or self.utmos_enabled):
-            raise ValueError(
-                "TTSVerificationConfig requires wer_enabled or utmos_enabled when enabled=True."
-            )
-        if self.port <= 0:
-            raise ValueError("TTSVerificationConfig.port must be > 0")
-        if self.startup_timeout <= 0:
-            raise ValueError("TTSVerificationConfig.startup_timeout must be > 0")
-        if self.health_check_interval <= 0:
-            raise ValueError("TTSVerificationConfig.health_check_interval must be > 0")
-        if self.request_timeout <= 0:
-            raise ValueError("TTSVerificationConfig.request_timeout must be > 0")
-        if self.wer_threshold < 0:
-            raise ValueError("TTSVerificationConfig.wer_threshold must be >= 0")
-        if not self.utmos_hf_repo:
-            raise ValueError("TTSVerificationConfig.utmos_hf_repo is required")
-        if not self.utmos_jit_file:
-            raise ValueError("TTSVerificationConfig.utmos_jit_file is required")
-        if not self.utmos_device:
-            raise ValueError("TTSVerificationConfig.utmos_device is required")
+        if not self.hf_repo:
+            raise ValueError("UTMOSVerifierConfig.hf_repo is required")
+        if not self.jit_file:
+            raise ValueError("UTMOSVerifierConfig.jit_file is required")
+        if not self.device:
+            raise ValueError("UTMOSVerifierConfig.device is required")
+
+
+@frozen_dataclass
+class AudioVerificationConfig(BaseVerificationConfig):
+    """Post-run verification for generated audio artifacts."""
+
+    max_requests: int = field(
+        default=2000,
+        metadata={
+            "help": "Maximum number of request rows to verify. Use 0 or less to verify all rows."
+        },
+    )
+    wer: WERVerifierConfig = field(
+        default_factory=WERVerifierConfig,
+        metadata={"help": "WER verifier configuration."},
+    )
+    utmos: UTMOSVerifierConfig = field(
+        default_factory=UTMOSVerifierConfig,
+        metadata={"help": "UTMOS verifier configuration."},
+    )
+
+    @classmethod
+    def get_type(cls) -> VerificationType:
+        return VerificationType.AUDIO
+
+    def is_enabled(self) -> bool:
+        return bool(self.wer.enabled or self.utmos.enabled)
