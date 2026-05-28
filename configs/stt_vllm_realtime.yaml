@@ -1,5 +1,5 @@
 seed: 42
-output_dir: "benchmark_output/vllm_{datetime}"
+output_dir: "benchmark_output/stt_vllm_realtime"
 
 client:
   type: stt
@@ -13,7 +13,7 @@ client:
 
 session_generator:
   type: trace
-  trace_file: traces/audio_manifest_varied.jsonl
+  trace_file: traces/audio_manifest.jsonl
   wrap_mode: true
   flavor:
     type: audio

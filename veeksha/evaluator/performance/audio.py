@@ -2,12 +2,12 @@
 
 import json
 import os
-import re
-import string
 import struct
 import threading
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+
+import jiwer
 
 from veeksha.config.evaluator import (
     AudioChannelPerformanceConfig,
@@ -15,6 +15,7 @@ from veeksha.config.evaluator import (
 )
 from veeksha.evaluator.base import EvaluationResult
 from veeksha.evaluator.cdf_sketch import CDFSketch
+from veeksha.evaluator.performance.asr_normalizer import EnglishTextNormalizer
 from veeksha.logger import init_logger
 from veeksha.types import ChannelModality
 
@@ -22,77 +23,22 @@ logger = init_logger(__name__)
 
 SAMPLE_RATE_DEFAULT = 24000
 
-# ---- Text normalization for WER ----
+# ---- WER via the vendored Open ASR Leaderboard normalizer ----
+#
+# Score transcripts with the leaderboard's Whisper EnglishTextNormalizer
+# (vendored under asr_normalizer/) and compute the edit distance with jiwer, so
+# WER matches the leaderboard.
 
-_ONES = {
-    "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
-    "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine",
-    "10": "ten", "11": "eleven", "12": "twelve", "13": "thirteen",
-    "14": "fourteen", "15": "fifteen", "16": "sixteen", "17": "seventeen",
-    "18": "eighteen", "19": "nineteen", "20": "twenty",
-}
-
-_ORDINALS = {
-    "1st": "first", "2nd": "second", "3rd": "third", "4th": "fourth",
-    "5th": "fifth", "6th": "sixth", "7th": "seventh", "8th": "eighth",
-    "9th": "ninth", "10th": "tenth",
-}
-
-_CONTRACTIONS = {
-    "can't": "cannot", "won't": "will not", "don't": "do not",
-    "isn't": "is not", "aren't": "are not", "wasn't": "was not",
-    "weren't": "were not", "it's": "it is", "i'm": "i am",
-    "i've": "i have", "i'll": "i will", "i'd": "i would",
-    "he's": "he is", "she's": "she is", "they're": "they are",
-    "we're": "we are", "you're": "you are", "that's": "that is",
-    "there's": "there is", "what's": "what is",
-}
-
-_PUNCTUATION_TABLE = str.maketrans("", "", string.punctuation)
-
-
-def _normalize_transcript(text: str) -> str:
-    """Normalize transcript for fair WER comparison.
-
-    Lowercase → expand contractions → expand ordinals →
-    expand numbers (0-20) → remove punctuation → collapse whitespace.
-    """
-    text = text.lower().strip()
-    for contraction, expansion in _CONTRACTIONS.items():
-        text = text.replace(contraction, expansion)
-    for ordinal, word in _ORDINALS.items():
-        text = re.sub(r"\b" + re.escape(ordinal) + r"\b", word, text)
-    for digit, word in _ONES.items():
-        text = re.sub(r"\b" + re.escape(digit) + r"\b", word, text)
-    text = text.translate(_PUNCTUATION_TABLE)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+_normalizer = EnglishTextNormalizer()
 
 
 def _compute_wer(reference: str, hypothesis: str) -> float:
-    """Word Error Rate via Levenshtein on word sequences.
-
-    Returns WER as a percentage (0-100+).
-    """
-    ref_words = _normalize_transcript(reference).split()
-    hyp_words = _normalize_transcript(hypothesis).split()
-
-    if not ref_words:
-        return 0.0 if not hyp_words else 100.0
-
-    # Levenshtein DP on word lists
-    n, m = len(ref_words), len(hyp_words)
-    prev = list(range(m + 1))
-    for i in range(1, n + 1):
-        curr = [i] + [0] * m
-        for j in range(1, m + 1):
-            if ref_words[i - 1] == hyp_words[j - 1]:
-                curr[j] = prev[j - 1]
-            else:
-                curr[j] = 1 + min(prev[j], curr[j - 1], prev[j - 1])
-        prev = curr
-
-    return (prev[m] / n) * 100
+    """WER (%) using the leaderboard normalizer + jiwer."""
+    ref = _normalizer(reference)
+    hyp = _normalizer(hypothesis)
+    if not ref.strip():
+        return 0.0 if not hyp.strip() else 100.0
+    return jiwer.wer(ref, hyp) * 100
 
 
 def _make_wav_header(data_size: int, sample_rate: int = SAMPLE_RATE_DEFAULT) -> bytes:
@@ -133,9 +79,6 @@ class AudioRequestMetrics:
     pcm_byte_count: int
     input_chars: int = 0
     input_tokens: int = 0
-    tpot: Optional[float] = None
-    final_latency: Optional[float] = None
-    first_partial: Optional[float] = None
     wer: Optional[float] = None
     transcript: Optional[str] = None
     expected_transcript: Optional[str] = None
@@ -164,9 +107,6 @@ class AudioPerformanceEvaluator:
         # CDF sketches for aggregate metrics
         self.summaries: Dict[str, CDFSketch] = {
             "ttfc": CDFSketch("ttfc", unit="ms"),
-            "tpot": CDFSketch("tpot", unit="ms"),
-            "final_latency": CDFSketch("final_latency", unit="ms"),
-            "first_partial": CDFSketch("first_partial", unit="ms"),
             "end_to_end_latency": CDFSketch("end_to_end_latency", unit="ms"),
             "generated_audio_duration": CDFSketch(
                 "generated_audio_duration", unit="ms"
@@ -245,9 +185,6 @@ class AudioPerformanceEvaluator:
 
             cm = channel_response.metrics or {}
             ttfc = cm.get("ttfc", 0.0)
-            tpot_value: Optional[float] = cm.get("tpot")
-            final_latency_value: Optional[float] = cm.get("final_latency")
-            first_partial_value: Optional[float] = cm.get("first_partial")
             end_to_end_latency = cm.get("end_to_end_latency", 0.0)
             generated_audio_duration = cm.get("generated_audio_duration", 0.0)
             rtf = cm.get("rtf", 0.0)
@@ -279,9 +216,6 @@ class AudioPerformanceEvaluator:
                 pcm_byte_count=pcm_byte_count,
                 input_chars=input_chars,
                 input_tokens=input_tokens,
-                tpot=tpot_value,
-                final_latency=final_latency_value,
-                first_partial=first_partial_value,
                 wer=wer_value,
                 transcript=transcript,
                 expected_transcript=expected_transcript,
@@ -327,12 +261,6 @@ class AudioPerformanceEvaluator:
 
             # Update CDF sketches
             self.summaries["ttfc"].put(ttfc)
-            if tpot_value is not None:
-                self.summaries["tpot"].put(tpot_value)
-            if final_latency_value is not None:
-                self.summaries["final_latency"].put(final_latency_value)
-            if first_partial_value is not None:
-                self.summaries["first_partial"].put(first_partial_value)
             self.summaries["end_to_end_latency"].put(end_to_end_latency)
             self.summaries["generated_audio_duration"].put(generated_audio_duration)
             self.summaries["rtf"].put(rtf)
@@ -460,12 +388,6 @@ class AudioPerformanceEvaluator:
                 "input_tokens": m.input_tokens,
                 "input_text": m.input_text,
             }
-            if m.tpot is not None:
-                row_dict["tpot"] = round(m.tpot, 3)
-            if m.final_latency is not None:
-                row_dict["final_latency"] = round(m.final_latency, 3)
-            if m.first_partial is not None:
-                row_dict["first_partial"] = round(m.first_partial, 3)
             if m.wer is not None:
                 row_dict["wer"] = round(m.wer, 3)
             if m.transcript is not None:

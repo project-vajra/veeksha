@@ -30,14 +30,9 @@ CONCURRENCY_LEVELS="${@:-2 4 8 16 32 64}"
 INTER_RUN_SLEEP_S="${INTER_RUN_SLEEP_S:-30}"
 
 # Read the output_dir from the YAML config to use as the label
-# e.g. output_dir: benchmark_output/stt_vllm_voxtral_realtime_3 -> stt_vllm_voxtral_realtime_3
-# Resolve the {datetime} placeholder once here so every concurrency level in
-# this sweep shares one parent directory instead of getting a fresh timestamp
-# per run.
-RUN_DATETIME=$(date +"%Y-%m-%d_%H-%M-%S")
+# e.g. output_dir: benchmark_output/stt_vajra -> stt_vajra
 CONFIG_LABEL=$(grep '^output_dir:' "$CONFIG" \
-    | sed 's|output_dir: *||; s|"||g; s|'"'"'||g; s|benchmark_output/||; s|/*$||' \
-    | sed "s|{datetime}|$RUN_DATETIME|g")
+    | sed 's|output_dir: *||; s|"||g; s|'"'"'||g; s|benchmark_output/||; s|/*$||')
 
 FIRST_RUN=1
 for C in $CONCURRENCY_LEVELS; do

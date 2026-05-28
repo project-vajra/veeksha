@@ -45,6 +45,7 @@ dependencies = [
     "uvicorn",
     "python-multipart",
     "jiwer",
+    "regex",
 ]
 
 [project.scripts]

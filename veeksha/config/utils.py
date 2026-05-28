@@ -406,29 +406,6 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
         raise
 
 
-_TEMPLATE_TOKENS = {
-    "datetime": lambda: time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime()),
-    "date": lambda: time.strftime("%Y-%m-%d", time.localtime()),
-    "time": lambda: time.strftime("%H-%M-%S", time.localtime()),
-}
-
-
-def _substitute_template_tokens(raw: str) -> str:
-    """Replace `{datetime}`, `{date}`, `{time}` in raw YAML text with current values.
-
-    Resolved at load time so configs can pin output dirs to a run timestamp
-    without needing pre-processing in shell wrappers.
-    """
-    import re
-
-    def _repl(match):
-        token = match.group(1)
-        return _TEMPLATE_TOKENS[token]()
-
-    pattern = r"\{(" + "|".join(_TEMPLATE_TOKENS) + r")\}"
-    return re.sub(pattern, _repl, raw)
-
-
 def load_yaml_config(file_path: str):
     """Load a YAML configuration file and return its contents.
 
@@ -495,8 +472,6 @@ def load_yaml_config(file_path: str):
     except Exception as exc:
         logger.error("Failed to read configuration file '%s': %s", file_path, exc)
         raise
-
-    raw_content = _substitute_template_tokens(raw_content)
 
     # try yaml first
     try:
