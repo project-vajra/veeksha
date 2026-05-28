@@ -29,8 +29,6 @@ traffic_scheduler:
 evaluators:
   - type: performance
     target_channels: ["audio"]
-    audio_channel:
-      save_audio_files: false
     stream_metrics: true
     stream_metrics_interval: 10.0
     slos:
@@ -52,3 +50,10 @@ runtime:
 
 trace_recorder:
   enabled: false
+
+wandb:
+  enabled: false
+  project: "stt-benchmark"
+  run_name: "stt_vajra_voxtral"
+  tags: ["stt", "vajra", "voxtral"]
+  log_artifacts: false

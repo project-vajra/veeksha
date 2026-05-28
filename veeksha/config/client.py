@@ -10,6 +10,23 @@ from veeksha.types import ClientType
 logger = init_logger(__name__)
 
 
+def _word_split_tokenizer_provider(model: str):
+    """A TokenizerProvider that counts whitespace-delimited words.
+
+    TTS and STT models don't expose a usable HF text tokenizer here; both
+    workloads only need word counts, so they share this lightweight provider.
+    """
+    from veeksha.core.tokenizer import TokenizerHandle, TokenizerProvider
+    from veeksha.types import ChannelModality
+
+    handle = TokenizerHandle(
+        count_tokens=lambda text: len(text.split()),
+        decode=lambda ids: " ".join(str(i) for i in ids),
+        encode=lambda text: list(range(len(text.split()))),
+    )
+    return TokenizerProvider({ChannelModality.TEXT: handle}, model_name=model)
+
+
 @frozen_dataclass(allow_from_file=True)
 class BaseClientConfig(BasePolyConfig):
     api_base: Optional[str] = field(
@@ -235,18 +252,7 @@ class TTSClientConfig(BaseClientConfig):
 
     def build_tokenizer_provider(self):
         """TTS models use a simple word-split tokenizer."""
-        from veeksha.core.tokenizer import TokenizerHandle, TokenizerProvider
-        from veeksha.types import ChannelModality
-
-        handle = TokenizerHandle(
-            count_tokens=lambda text: len(text.split()),
-            decode=lambda ids: " ".join(str(i) for i in ids),
-            encode=lambda text: list(range(len(text.split()))),
-        )
-        return TokenizerProvider(
-            {ChannelModality.TEXT: handle},
-            model_name=self.model,
-        )
+        return _word_split_tokenizer_provider(self.model)
 
 
 @frozen_dataclass
@@ -324,15 +330,4 @@ class STTClientConfig(BaseClientConfig):
 
     def build_tokenizer_provider(self):
         """STT models use a simple word-split tokenizer."""
-        from veeksha.core.tokenizer import TokenizerHandle, TokenizerProvider
-        from veeksha.types import ChannelModality
-
-        handle = TokenizerHandle(
-            count_tokens=lambda text: len(text.split()),
-            decode=lambda ids: " ".join(str(i) for i in ids),
-            encode=lambda text: list(range(len(text.split()))),
-        )
-        return TokenizerProvider(
-            {ChannelModality.TEXT: handle},
-            model_name=self.model,
-        )
+        return _word_split_tokenizer_provider(self.model)

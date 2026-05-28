@@ -18,6 +18,10 @@ Examples
     python scripts/sweep.py --sweep-type concurrency --engine vajra \\
         --model qwen-tts --trace seed_tts
 
+    # STT concurrency sweep (audio trace flavor; no --trace/length overrides)
+    python scripts/sweep.py --sweep-type concurrency --engine vajra \\
+        --model voxtral --cooldown-seconds 30
+
     # Override output_dir for generated benchmark configs
     python scripts/sweep.py --sweep-type concurrency --engine vajra \\
         --model qwen-tts --output-dir 'benchmark_output/{run_name}'
@@ -62,6 +66,9 @@ MODEL_ALIASES = {
     "omni": "qwen3-omni",
     "vibe-voice": "vibe-voice",
     "vibe": "vibe-voice",
+    "voxtral": "voxtral",
+    "voxtral-mini": "voxtral",
+    "stt": "voxtral",
 }
 
 
@@ -81,6 +88,9 @@ class SweepSpec:
     default_step: Optional[int] = None
     write_runtime_limits: bool = True
     disable_audio_for_input: bool = False
+    # Audio-input workloads (STT) read an audio trace flavor directly, so the
+    # planner must not override the trace source or inject text length bounds.
+    audio_input: bool = False
 
     @property
     def config_path(self) -> Path:
@@ -165,6 +175,28 @@ SPECS: Dict[Tuple[str, str, str], SweepSpec] = {
         run_name_template="vj_vibe_voice_0.5_{date_tag}_c={concurrency}",
         default_concurrencies=(1, 2, 4, 8),
         write_runtime_limits=False,
+    ),
+    (CONCURRENCY_SWEEP, "vajra", "voxtral"): SweepSpec(
+        sweep_type=CONCURRENCY_SWEEP,
+        engine="vajra",
+        model="voxtral",
+        config_name="stt_vajra.yaml",
+        temp_prefix="stt_vajra_voxtral_sweep",
+        run_config_template="stt_vajra_voxtral_c{concurrency}.yaml",
+        run_name_template="stt_vajra_voxtral_c_{concurrency}",
+        default_concurrencies=(1, 2, 4, 8, 16, 32, 64),
+        audio_input=True,
+    ),
+    (CONCURRENCY_SWEEP, "vllm", "voxtral"): SweepSpec(
+        sweep_type=CONCURRENCY_SWEEP,
+        engine="vllm",
+        model="voxtral",
+        config_name="stt_vllm_realtime.yaml",
+        temp_prefix="stt_vllm_voxtral_sweep",
+        run_config_template="stt_vllm_voxtral_c{concurrency}.yaml",
+        run_name_template="stt_vllm_voxtral_c_{concurrency}",
+        default_concurrencies=(1, 2, 4, 8, 16, 32, 64),
+        audio_input=True,
     ),
     (INPUT_SWEEP, "vajra", "qwen-tts"): SweepSpec(
         sweep_type=INPUT_SWEEP,
@@ -483,7 +515,8 @@ def _build_run_config(
         flavor["max_chars"] = input_size
         if spec.disable_audio_for_input:
             _disable_audio_saving(config)
-    else:
+    elif not spec.audio_input:
+        # Audio (STT) flavors have no text length bounds to set.
         _apply_length_bounds(
             config,
             min_tokens=min_tokens,
@@ -521,7 +554,11 @@ def _build_sweep_plan(
     tmp_parent: Optional[Path] = None,
 ) -> SweepPlan:
     base_config = _load_config(spec.config_path)
-    _apply_trace_source(base_config, args)
+    # STT specs carry their own audio trace flavor; only text workloads take a
+    # --trace override (sharegpt / seed_tts).
+    if not spec.audio_input:
+        _apply_trace_source(base_config, args)
+    trace_source = "audio" if spec.audio_input else args.trace
     if tmp_parent is None:
         tmp_parent = Path(tempfile.mkdtemp(prefix=f"{spec.temp_prefix}."))
     else:
@@ -577,7 +614,7 @@ def _build_sweep_plan(
                 command=_benchmark_command(run_config),
                 timeout_seconds=args.timeout_seconds,
                 max_sessions=args.max_sessions,
-                trace_source=args.trace,
+                trace_source=trace_source,
             )
         )
 
