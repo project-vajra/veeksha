@@ -16,7 +16,7 @@ from veeksha.core.request import Request
 from veeksha.core.request_content import TextChannelRequestContent
 from veeksha.core.response import ChannelResponse, RequestResult
 from veeksha.logger import init_logger
-from veeksha.types import ChannelModality
+from veeksha.types import AudioTask, ChannelModality
 
 if TYPE_CHECKING:
     from veeksha.config.client import TTSClientConfig
@@ -205,6 +205,7 @@ class TTSClient(BaseLLMClient):
                 modality=ChannelModality.AUDIO,
                 content=audio_data,
                 metrics={
+                    "audio_task": AudioTask.TTS,
                     "ttfc": round(ttfc or 0.0, 3),
                     "end_to_end_latency": round(total_latency_ms, 3),
                     "chunk_count": chunk_count,

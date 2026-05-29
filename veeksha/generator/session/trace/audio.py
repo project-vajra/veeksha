@@ -59,6 +59,16 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
         self.trace_df = pd.read_json(config.trace_file, lines=True)
         self._validate_trace()
 
+        # Ground truth is mandatory; fail at load, not silently per request.
+        col = self.trace_df["expected_transcript"]
+        missing = col.isna() | (col.astype(str).str.strip() == "")
+        if missing.any():
+            examples = self.trace_df.loc[missing, "audio_file"].head(3).tolist()
+            raise ValueError(
+                f"{int(missing.sum())} audio trace row(s) missing "
+                f"expected_transcript (e.g. {examples})."
+            )
+
         # Resolve relative paths against audio_dir if provided
         if flavor_config.audio_dir:
             self.trace_df["audio_file"] = self.trace_df["audio_file"].apply(
@@ -82,7 +92,7 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
 
     @property
     def required_columns(self) -> List[str]:
-        return ["session_id", "audio_file"]
+        return ["session_id", "audio_file", "expected_transcript"]
 
     def prepare_session(self, group: pd.DataFrame) -> Session:
         """Convert a single trace row into a single-request Session."""
@@ -96,9 +106,9 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
             )
         }
 
-        metadata: dict = {}
-        if "expected_transcript" in row.index and pd.notna(row["expected_transcript"]):
-            metadata["expected_transcript"] = str(row["expected_transcript"])
+        metadata: dict = {
+            "expected_transcript": str(row["expected_transcript"]),
+        }
 
         request = Request(
             id=self._next_request_id(),

@@ -44,6 +44,14 @@ class ChannelModality(BaseIntEnum):
     VIDEO = 4
 
 
+class AudioTask(BaseIntEnum):
+    """Workload behind an AUDIO response. STT transcribes; TTS/LLM_AUDIO emit audio."""
+
+    TTS = 1
+    STT = 2
+    LLM_AUDIO = 3
+
+
 class SessionGraphType(BaseIntEnum):
     LINEAR = 1
     SINGLE_REQUEST = 2

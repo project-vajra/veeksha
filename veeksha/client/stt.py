@@ -31,7 +31,7 @@ from veeksha.core.request import Request
 from veeksha.core.request_content import AudioChannelRequestContent
 from veeksha.core.response import ChannelResponse, RequestResult
 from veeksha.logger import init_logger
-from veeksha.types import ChannelModality
+from veeksha.types import AudioTask, ChannelModality
 
 if TYPE_CHECKING:
     from veeksha.config.client import STTClientConfig
@@ -277,23 +277,16 @@ class _STTClientBase(BaseLLMClient):
         total_latency_ms = (completed_at - t_start) * 1000
         success = error_msg is None and error_code is None
 
-        rtf = (
-            total_latency_ms / input_audio_duration_ms
-            if input_audio_duration_ms > 0
-            else float("inf")
-        )
-
         full_transcript = _clean_transcript("".join(transcript_chunks))
 
         channels = {}
         if success:
-            # Return metrics via the AUDIO channel so AudioPerformanceEvaluator
-            # can aggregate them unchanged.
+            # Report the input clip's byte count; the evaluator derives
+            # duration/RTF from pcm_byte_count + sample_rate.
             metrics_dict: dict = {
+                "audio_task": AudioTask.STT,
                 "ttfc": round(ttfc or 0.0, 3),
                 "end_to_end_latency": round(total_latency_ms, 3),
-                "generated_audio_duration": round(input_audio_duration_ms, 3),
-                "rtf": round(rtf, 5),
                 "chunk_count": chunk_count,
                 "pcm_byte_count": file_size,
                 "input_tokens": len(full_transcript.split()),
@@ -301,10 +294,10 @@ class _STTClientBase(BaseLLMClient):
                 "transcript": full_transcript,
             }
 
-            # Forward reference transcript for optional WER evaluation.
-            expected = request.metadata.get("expected_transcript")
-            if expected is not None:
-                metrics_dict["expected_transcript"] = expected
+            # Ground truth is guaranteed by the audio trace generator.
+            metrics_dict["expected_transcript"] = request.metadata[
+                "expected_transcript"
+            ]
 
             channels[ChannelModality.AUDIO] = ChannelResponse(
                 modality=ChannelModality.AUDIO,

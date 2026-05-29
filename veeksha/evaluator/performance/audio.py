@@ -16,7 +16,7 @@ from veeksha.evaluator.base import EvaluationResult
 from veeksha.evaluator.cdf_sketch import CDFSketch
 from veeksha.evaluator.performance.asr_normalizer import EnglishTextNormalizer
 from veeksha.logger import init_logger
-from veeksha.types import ChannelModality
+from veeksha.types import AudioTask, ChannelModality
 
 logger = init_logger(__name__)
 
@@ -71,6 +71,7 @@ class AudioRequestMetrics:
     pcm_byte_count: int
     input_chars: int = 0
     input_tokens: int = 0
+    audio_task: Optional[AudioTask] = None
     wer: Optional[float] = None
     transcript: Optional[str] = None
     expected_transcript: Optional[str] = None
@@ -177,8 +178,21 @@ class AudioPerformanceEvaluator:
             chunk_count = cm.get("chunk_count", 0)
             raw_pcm = bool(cm.get("raw_pcm", False))
             sample_rate = int(cm.get("sample_rate", DEFAULT_AUDIO_SAMPLE_RATE))
-            audio_content = channel_response.content
-            total_bytes = len(audio_content) if isinstance(audio_content, bytes) else 0
+            # STT measures the input clip (reported via pcm_byte_count);
+            # TTS / LLM_AUDIO measure generated output audio bytes.
+            audio_task = cm.get("audio_task")
+            if audio_task is AudioTask.STT:
+                total_bytes = int(cm["pcm_byte_count"])
+            elif audio_task in (AudioTask.TTS, AudioTask.LLM_AUDIO):
+                audio_content = channel_response.content
+                total_bytes = (
+                    len(audio_content) if isinstance(audio_content, bytes) else 0
+                )
+            else:
+                raise ValueError(
+                    f"AUDIO response for request {request_id} has unknown "
+                    f"audio_task={audio_task!r}; expected one of {list(AudioTask)}"
+                )
             pcm_byte_count = _pcm_byte_count(total_bytes, raw_pcm=raw_pcm)
             generated_audio_duration = _audio_duration_ms(pcm_byte_count, sample_rate)
             rtf = (
@@ -192,11 +206,17 @@ class AudioPerformanceEvaluator:
 
             session_total_requests = getattr(response, "session_total_requests", None)
 
-            # WER computation
+            # WER is STT-only, and mandatory for every STT request.
             transcript = cm.get("transcript")
             expected_transcript = cm.get("expected_transcript")
             wer_value: Optional[float] = None
-            if transcript is not None and expected_transcript is not None:
+            if audio_task is AudioTask.STT:
+                if transcript is None or expected_transcript is None:
+                    raise ValueError(
+                        f"STT response for request {request_id} missing "
+                        f"transcript={transcript!r} / "
+                        f"expected_transcript={expected_transcript!r}."
+                    )
                 wer_value = _compute_wer(expected_transcript, transcript)
 
             metrics = AudioRequestMetrics(
@@ -212,6 +232,7 @@ class AudioPerformanceEvaluator:
                 pcm_byte_count=pcm_byte_count,
                 input_chars=input_chars,
                 input_tokens=input_tokens,
+                audio_task=audio_task,
                 wer=wer_value,
                 transcript=transcript,
                 expected_transcript=expected_transcript,
@@ -370,12 +391,10 @@ class AudioPerformanceEvaluator:
                 "input_tokens": m.input_tokens,
                 "input_text": m.input_text,
             }
-            if m.wer is not None:
-                row_dict["wer"] = round(m.wer, 3)
-            if m.transcript is not None:
+            if m.audio_task is AudioTask.STT:
                 row_dict["transcript"] = m.transcript
-            if m.expected_transcript is not None:
                 row_dict["expected_transcript"] = m.expected_transcript
+                row_dict["wer"] = round(m.wer, 3) if m.wer is not None else None
             rows.append(row_dict)
         return rows
 
