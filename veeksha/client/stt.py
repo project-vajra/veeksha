@@ -44,9 +44,8 @@ BYTES_PER_SAMPLE = 2
 _STREAMING_TOKEN_RE = re.compile(r"\[STREAMING_(?:PAD|WORD)\]")
 
 
-def _wav_duration_ms(file_size_bytes: int, sample_rate: int) -> float:
-    """Estimate WAV audio duration in ms from file size (linear16 mono)."""
-    pcm_bytes = max(file_size_bytes - 44, 0)
+def _pcm_duration_ms(pcm_bytes: int, sample_rate: int) -> float:
+    """Compute PCM16 mono audio duration in ms."""
     return (pcm_bytes / BYTES_PER_SAMPLE / sample_rate) * 1000
 
 
@@ -81,6 +80,7 @@ class _STTClientBase(BaseLLMClient):
         self._sample_rate = config.sample_rate
         self._ws_chunk_size = config.ws_chunk_size
         self._pacing = config.ws_realtime_pacing
+        self._request_timeout = config.request_timeout
         self._ws_url = self._http_to_ws(self.ws_path)
 
     # ------------------------------------------------------------------
@@ -116,9 +116,9 @@ class _STTClientBase(BaseLLMClient):
         """Convert the http(s) api_base to a ws(s) URL with ``path`` appended."""
         base = self.api_base or ""
         if base.startswith("https://"):
-            base = "wss://" + base[len("https://"):]
+            base = "wss://" + base[len("https://") :]
         elif base.startswith("http://"):
-            base = "ws://" + base[len("http://"):]
+            base = "ws://" + base[len("http://") :]
         return f"{base}{path}"
 
     async def _maybe_pace(self, n_bytes: int) -> None:
@@ -135,12 +135,12 @@ class _STTClientBase(BaseLLMClient):
         audio_path: str,
         t_start: float,
         transcript_chunks: list[str],
-    ) -> tuple[Optional[float], int]:
+    ) -> tuple[Optional[float], int, int]:
         """Stream PCM16 to the provider and collect the transcript.
 
         The sender and receiver run concurrently so partial transcripts are
         timed when they arrive, not after the (paced) upload completes. Returns
-        ``(ttfc_ms, chunk_count)``.
+        ``(ttfc_ms, chunk_count, pcm_byte_count)``.
         """
         import websockets
 
@@ -191,7 +191,7 @@ class _STTClientBase(BaseLLMClient):
                 except asyncio.CancelledError:
                     pass
 
-        return ttfc, chunk_count
+        return ttfc, chunk_count, len(pcm_bytes)
 
     # ------------------------------------------------------------------
     # Request lifecycle (shared)
@@ -220,7 +220,7 @@ class _STTClientBase(BaseLLMClient):
         audio_path = audio_content.input_audio
 
         try:
-            file_size = os.path.getsize(audio_path)
+            os.path.getsize(audio_path)
         except OSError as e:
             return RequestResult(
                 request_id=request.id,
@@ -232,15 +232,12 @@ class _STTClientBase(BaseLLMClient):
                 client_completed_at=time.monotonic(),
             )
 
-        input_audio_duration_ms = _wav_duration_ms(file_size, self._sample_rate)
-
         logger.debug(
-            "[STT %s] request_id=%d session_id=%d file=%s duration_ms=%.1f",
+            "[STT %s] request_id=%d session_id=%d file=%s",
             self._provider,
             request.id,
             session_id,
             audio_path,
-            input_audio_duration_ms,
         )
 
         error_msg: Optional[str] = None
@@ -248,16 +245,18 @@ class _STTClientBase(BaseLLMClient):
         ttfc: Optional[float] = None
         transcript_chunks: list[str] = []
         chunk_count = 0
+        pcm_byte_count = 0
 
         t_start = time.monotonic()
 
         try:
-            ttfc, chunk_count = await self._stream(
-                audio_path, t_start, transcript_chunks
-            )
-        except asyncio.TimeoutError:
+            async with asyncio.timeout(self._request_timeout):
+                ttfc, chunk_count, pcm_byte_count = await self._stream(
+                    audio_path, t_start, transcript_chunks
+                )
+        except TimeoutError:
             error_code = 408
-            error_msg = "STT request timed out"
+            error_msg = f"STT request timed out after {self._request_timeout}s"
         except (OSError, ConnectionError) as e:
             # Includes ConnectionRefusedError when the server isn't up.
             error_code = 503
@@ -281,6 +280,9 @@ class _STTClientBase(BaseLLMClient):
 
         channels = {}
         if success:
+            input_audio_duration_ms = _pcm_duration_ms(
+                pcm_byte_count, self._sample_rate
+            )
             # Report the input clip's byte count; the evaluator derives
             # duration/RTF from pcm_byte_count + sample_rate.
             metrics_dict: dict = {
@@ -288,9 +290,11 @@ class _STTClientBase(BaseLLMClient):
                 "ttfc": round(ttfc or 0.0, 3),
                 "end_to_end_latency": round(total_latency_ms, 3),
                 "chunk_count": chunk_count,
-                "pcm_byte_count": file_size,
+                "pcm_byte_count": pcm_byte_count,
+                "raw_pcm": True,
                 "input_tokens": len(full_transcript.split()),
                 "sample_rate": self._sample_rate,
+                "input_audio_duration_ms": round(input_audio_duration_ms, 3),
                 "transcript": full_transcript,
             }
 
