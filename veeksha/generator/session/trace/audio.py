@@ -11,8 +11,9 @@ containing the file path in ``AudioChannelRequestContent.input_audio``.
 """
 
 import os
-from typing import List
+from typing import Any, List
 
+import numpy as np
 import pandas as pd
 
 from veeksha.config.generator.session import (
@@ -115,9 +116,7 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
             )
         }
 
-        metadata: dict = {
-            "expected_transcript": str(row["expected_transcript"]),
-        }
+        metadata = self._row_metadata(row)
 
         request = Request(
             id=self._next_request_id(),
@@ -136,6 +135,21 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
             session_graph=graph,
             requests={0: request},
         )
+
+    def _row_metadata(self, row: pd.Series) -> dict:
+        """Pass manifest metadata through to the STT client/evaluator."""
+        metadata: dict[str, Any] = {}
+        for column in self.trace_df.columns:
+            if column in {"session_id", "audio_file"}:
+                continue
+            value = row[column]
+            if pd.isna(value):
+                continue
+            if isinstance(value, np.generic):
+                value = value.item()
+            metadata[column] = value
+        metadata["expected_transcript"] = str(metadata["expected_transcript"])
+        return metadata
 
     def wrap(self) -> pd.DataFrame:
         """Wrap trace for new epoch with shuffled session order."""

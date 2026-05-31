@@ -21,6 +21,7 @@ import os
 import re
 import time
 from abc import abstractmethod
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
 import librosa
@@ -60,6 +61,19 @@ def _audio_to_pcm16_bytes(audio_path: str, target_sr: int) -> bytes:
     audio, _ = librosa.load(audio_path, sr=target_sr, mono=True)
     pcm16 = (audio * 32767).astype(np.int16)
     return pcm16.tobytes()
+
+
+@dataclass
+class STTStreamResult:
+    """Provider-neutral transcript and timing output from one streaming request."""
+
+    ttfc: Optional[float]
+    time_to_first_partial: Optional[float]
+    time_to_final_transcript: Optional[float]
+    partial_transcript: Optional[str]
+    final_transcript: str
+    chunk_count: int
+    pcm_byte_count: int
 
 
 class _STTClientBase(BaseLLMClient):
@@ -134,46 +148,67 @@ class _STTClientBase(BaseLLMClient):
         self,
         audio_path: str,
         t_start: float,
-        transcript_chunks: list[str],
-    ) -> tuple[Optional[float], int, int]:
+    ) -> STTStreamResult:
         """Stream PCM16 to the provider and collect the transcript.
 
         The sender and receiver run concurrently so partial transcripts are
-        timed when they arrive, not after the (paced) upload completes. Returns
-        ``(ttfc_ms, chunk_count, pcm_byte_count)``.
+        timed when they arrive, not after the (paced) upload completes.
         """
         import websockets
 
         ttfc: Optional[float] = None
+        audio_end_at: Optional[float] = None
+        time_to_first_partial: Optional[float] = None
+        time_to_final_transcript: Optional[float] = None
+        partial_transcript: Optional[str] = None
+        final_transcript = ""
         chunk_count = 0
+        transcript_chunks: list[str] = []
         pcm_bytes = _audio_to_pcm16_bytes(audio_path, self._sample_rate)
 
         async with websockets.connect(self._ws_url) as ws:
             await self._open_session(ws)
 
             async def _send() -> None:
+                nonlocal audio_end_at
                 for i in range(0, len(pcm_bytes), self._ws_chunk_size):
                     chunk = pcm_bytes[i : i + self._ws_chunk_size]
                     await ws.send(self._encode_chunk(chunk))
                     await self._maybe_pace(len(chunk))
                 await ws.send(self._eof())
+                audio_end_at = time.monotonic()
 
             send_task = asyncio.ensure_future(_send())
             try:
                 while True:
                     kind, text = self._parse_message(json.loads(await ws.recv()))
+                    now = time.monotonic()
                     if kind == "delta":
                         if ttfc is None:
-                            ttfc = (time.monotonic() - t_start) * 1000
+                            ttfc = (now - t_start) * 1000
                         transcript_chunks.append(text)
                         chunk_count += 1
+                        current_transcript = _clean_transcript(
+                            "".join(transcript_chunks)
+                        )
+                        if (
+                            audio_end_at is not None
+                            and time_to_first_partial is None
+                            and current_transcript
+                        ):
+                            time_to_first_partial = (now - audio_end_at) * 1000
+                            partial_transcript = current_transcript
                     elif kind == "done":
-                        # Fall back to the final text if no deltas streamed.
-                        if not transcript_chunks and text:
-                            transcript_chunks.append(text)
-                            chunk_count = 1
+                        final_transcript = _clean_transcript(
+                            text or "".join(transcript_chunks)
+                        )
+                        if final_transcript:
                             if ttfc is None:
-                                ttfc = (time.monotonic() - t_start) * 1000
+                                ttfc = (now - t_start) * 1000
+                            if chunk_count == 0:
+                                chunk_count = 1
+                        if audio_end_at is not None:
+                            time_to_final_transcript = (now - audio_end_at) * 1000
                         break
                     elif kind == "error":
                         raise RuntimeError(
@@ -191,7 +226,18 @@ class _STTClientBase(BaseLLMClient):
                 except asyncio.CancelledError:
                     pass
 
-        return ttfc, chunk_count, len(pcm_bytes)
+        if not final_transcript:
+            final_transcript = _clean_transcript("".join(transcript_chunks))
+
+        return STTStreamResult(
+            ttfc=ttfc,
+            time_to_first_partial=time_to_first_partial,
+            time_to_final_transcript=time_to_final_transcript,
+            partial_transcript=partial_transcript,
+            final_transcript=final_transcript,
+            chunk_count=chunk_count,
+            pcm_byte_count=len(pcm_bytes),
+        )
 
     # ------------------------------------------------------------------
     # Request lifecycle (shared)
@@ -242,18 +288,13 @@ class _STTClientBase(BaseLLMClient):
 
         error_msg: Optional[str] = None
         error_code: Optional[int] = None
-        ttfc: Optional[float] = None
-        transcript_chunks: list[str] = []
-        chunk_count = 0
-        pcm_byte_count = 0
+        stream_result: Optional[STTStreamResult] = None
 
         t_start = time.monotonic()
 
         try:
             async with asyncio.timeout(self._request_timeout):
-                ttfc, chunk_count, pcm_byte_count = await self._stream(
-                    audio_path, t_start, transcript_chunks
-                )
+                stream_result = await self._stream(audio_path, t_start)
         except TimeoutError:
             error_code = 408
             error_msg = f"STT request timed out after {self._request_timeout}s"
@@ -276,36 +317,44 @@ class _STTClientBase(BaseLLMClient):
         total_latency_ms = (completed_at - t_start) * 1000
         success = error_msg is None and error_code is None
 
-        full_transcript = _clean_transcript("".join(transcript_chunks))
-
         channels = {}
-        if success:
+        if success and stream_result is not None:
             input_audio_duration_ms = _pcm_duration_ms(
-                pcm_byte_count, self._sample_rate
+                stream_result.pcm_byte_count, self._sample_rate
             )
             # Report the input clip's byte count; the evaluator derives
             # duration/RTF from pcm_byte_count + sample_rate.
             metrics_dict: dict = {
                 "audio_task": AudioTask.STT,
-                "ttfc": round(ttfc or 0.0, 3),
+                "ttfc": round(stream_result.ttfc or 0.0, 3),
                 "end_to_end_latency": round(total_latency_ms, 3),
-                "chunk_count": chunk_count,
-                "pcm_byte_count": pcm_byte_count,
+                "time_to_first_partial": (
+                    round(stream_result.time_to_first_partial, 3)
+                    if stream_result.time_to_first_partial is not None
+                    else None
+                ),
+                "time_to_final_transcript": (
+                    round(stream_result.time_to_final_transcript, 3)
+                    if stream_result.time_to_final_transcript is not None
+                    else None
+                ),
+                "chunk_count": stream_result.chunk_count,
+                "pcm_byte_count": stream_result.pcm_byte_count,
                 "raw_pcm": True,
-                "input_tokens": len(full_transcript.split()),
+                "input_tokens": len(stream_result.final_transcript.split()),
                 "sample_rate": self._sample_rate,
                 "input_audio_duration_ms": round(input_audio_duration_ms, 3),
-                "transcript": full_transcript,
+                "partial_transcript": stream_result.partial_transcript,
+                "final_transcript": stream_result.final_transcript,
             }
 
-            # Ground truth is guaranteed by the audio trace generator.
-            metrics_dict["expected_transcript"] = request.metadata[
-                "expected_transcript"
-            ]
+            # Ground truth and dataset metadata are guaranteed by the trace generator.
+            for key, value in request.metadata.items():
+                metrics_dict.setdefault(key, value)
 
             channels[ChannelModality.AUDIO] = ChannelResponse(
                 modality=ChannelModality.AUDIO,
-                content=full_transcript,
+                content=stream_result.final_transcript,
                 metrics=metrics_dict,
             )
 

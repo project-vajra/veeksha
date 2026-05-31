@@ -1,4 +1,4 @@
-"""Performance evaluator for TTS audio generation metrics."""
+"""Performance evaluator for audio request metrics."""
 
 import json
 import os
@@ -6,15 +6,17 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-import jiwer
-
 from veeksha.config.evaluator import (
     AudioChannelPerformanceConfig,
     PerformanceEvaluatorConfig,
 )
 from veeksha.evaluator.base import EvaluationResult
 from veeksha.evaluator.cdf_sketch import CDFSketch
-from veeksha.evaluator.performance.asr_normalizer import EnglishTextNormalizer
+from veeksha.evaluator.performance.asr import (
+    ASRMetricAccumulator,
+    ASRRequestMetrics,
+    score_asr_request,
+)
 from veeksha.logger import init_logger
 from veeksha.types import AudioTask, ChannelModality
 
@@ -23,23 +25,6 @@ logger = init_logger(__name__)
 DEFAULT_AUDIO_SAMPLE_RATE = 24000
 BYTES_PER_SAMPLE = 2
 WAV_HEADER_BYTES = 44
-
-# ---- WER via the vendored Open ASR Leaderboard normalizer ----
-#
-# Score transcripts with the leaderboard's Whisper EnglishTextNormalizer
-# (vendored under asr_normalizer/) and compute the edit distance with jiwer, so
-# WER matches the leaderboard.
-
-_normalizer = EnglishTextNormalizer()
-
-
-def _compute_wer(reference: str, hypothesis: str) -> float:
-    """WER (%) using the leaderboard normalizer + jiwer."""
-    ref = _normalizer(reference)
-    hyp = _normalizer(hypothesis)
-    if not ref.strip():
-        return 0.0 if not hyp.strip() else 100.0
-    return jiwer.wer(ref, hyp) * 100
 
 
 def _pcm_byte_count(total_bytes: int, *, raw_pcm: bool) -> int:
@@ -57,7 +42,7 @@ def _audio_duration_ms(
 
 @dataclass
 class AudioRequestMetrics:
-    """Metrics for a single audio (TTS) request."""
+    """Metrics for a single audio request."""
 
     request_id: int
     session_id: int
@@ -72,9 +57,7 @@ class AudioRequestMetrics:
     input_chars: int = 0
     input_tokens: int = 0
     audio_task: Optional[AudioTask] = None
-    wer: Optional[float] = None
-    transcript: Optional[str] = None
-    expected_transcript: Optional[str] = None
+    asr: Optional[ASRRequestMetrics] = None
     input_text: str = ""
     session_total_requests: Optional[int] = None
 
@@ -97,7 +80,7 @@ class AudioPerformanceEvaluator:
         self.benchmark_start_time = benchmark_start_time
         self.lock = threading.Lock()
 
-        # CDF sketches for aggregate metrics
+        # CDF sketches for aggregate metrics.
         self.summaries: Dict[str, CDFSketch] = {
             "ttfc": CDFSketch("ttfc", unit="ms"),
             "end_to_end_latency": CDFSketch("end_to_end_latency", unit="ms"),
@@ -107,10 +90,17 @@ class AudioPerformanceEvaluator:
             "rtf": CDFSketch("rtf"),
             "chunk_count": CDFSketch("chunk_count"),
             "input_tokens": CDFSketch("input_tokens", unit="tokens"),
-            "wer": CDFSketch("wer", unit="%"),
             "session_size": CDFSketch("session_size"),
             "session_duration": CDFSketch("session_duration", unit="ms"),
         }
+        self.asr_latency_summaries: Dict[str, CDFSketch] = {
+            "time_to_first_partial": CDFSketch("time_to_first_partial", unit="ms"),
+            "time_to_final_transcript": CDFSketch(
+                "time_to_final_transcript", unit="ms"
+            ),
+        }
+        self._asr_metrics = ASRMetricAccumulator()
+        self._stt_request_count = 0
 
         # Request dispatch tracking (like text.py _pending_requests)
         self._pending_requests: Dict[int, Dict[str, Any]] = {}
@@ -181,7 +171,7 @@ class AudioPerformanceEvaluator:
             # STT measures the input clip (reported via pcm_byte_count);
             # TTS / LLM_AUDIO measure generated output audio bytes.
             audio_task = cm.get("audio_task")
-            if audio_task is AudioTask.STT:
+            if audio_task == AudioTask.STT:
                 total_bytes = int(cm["pcm_byte_count"])
             elif audio_task in (AudioTask.TTS, AudioTask.LLM_AUDIO):
                 audio_content = channel_response.content
@@ -206,18 +196,15 @@ class AudioPerformanceEvaluator:
 
             session_total_requests = getattr(response, "session_total_requests", None)
 
-            # WER is STT-only, and mandatory for every STT request.
-            transcript = cm.get("transcript")
-            expected_transcript = cm.get("expected_transcript")
-            wer_value: Optional[float] = None
-            if audio_task is AudioTask.STT:
-                if transcript is None or expected_transcript is None:
-                    raise ValueError(
-                        f"STT response for request {request_id} missing "
-                        f"transcript={transcript!r} / "
-                        f"expected_transcript={expected_transcript!r}."
-                    )
-                wer_value = _compute_wer(expected_transcript, transcript)
+            asr_metrics = None
+            if audio_task == AudioTask.STT:
+                self._stt_request_count += 1
+                asr_metrics = score_asr_request(
+                    request_id=request_id,
+                    channel_metrics=cm,
+                    duration_s=generated_audio_duration / 1000.0,
+                    accumulator=self._asr_metrics,
+                )
 
             metrics = AudioRequestMetrics(
                 request_id=request_id,
@@ -233,9 +220,7 @@ class AudioPerformanceEvaluator:
                 input_chars=input_chars,
                 input_tokens=input_tokens,
                 audio_task=audio_task,
-                wer=wer_value,
-                transcript=transcript,
-                expected_transcript=expected_transcript,
+                asr=asr_metrics,
                 input_text=input_text,
                 session_total_requests=session_total_requests,
             )
@@ -245,9 +230,15 @@ class AudioPerformanceEvaluator:
             # Update aggregate throughput accumulators
             self._total_input_chars += input_chars
             self._total_generated_audio_duration_ms += generated_audio_duration
-            if self._first_dispatch_at is None or dispatched_at < self._first_dispatch_at:
+            if (
+                self._first_dispatch_at is None
+                or dispatched_at < self._first_dispatch_at
+            ):
                 self._first_dispatch_at = dispatched_at
-            if self._last_completion_at is None or completed_at > self._last_completion_at:
+            if (
+                self._last_completion_at is None
+                or completed_at > self._last_completion_at
+            ):
                 self._last_completion_at = completed_at
 
             # Store lifecycle timestamps (matching text.py pattern)
@@ -283,8 +274,15 @@ class AudioPerformanceEvaluator:
             self.summaries["rtf"].put(rtf)
             self.summaries["chunk_count"].put(chunk_count)
             self.summaries["input_tokens"].put(input_tokens)
-            if wer_value is not None:
-                self.summaries["wer"].put(wer_value)
+            if asr_metrics is not None:
+                if asr_metrics.time_to_first_partial is not None:
+                    self.asr_latency_summaries["time_to_first_partial"].put(
+                        asr_metrics.time_to_first_partial
+                    )
+                if asr_metrics.time_to_final_transcript is not None:
+                    self.asr_latency_summaries["time_to_final_transcript"].put(
+                        asr_metrics.time_to_final_transcript
+                    )
 
     def record_session_completed(
         self,
@@ -306,6 +304,11 @@ class AudioPerformanceEvaluator:
         perf_summary: Dict[str, Optional[float]] = {}
         for cdf_sketch in self.summaries.values():
             perf_summary.update(cdf_sketch.get_summary())
+        if self._stt_request_count > 0:
+            for cdf_sketch in self.asr_latency_summaries.values():
+                if len(cdf_sketch) > 0:
+                    perf_summary.update(cdf_sketch.get_summary())
+            perf_summary.update(self._asr_metrics.get_summary())
 
         wall_s = 0.0
         if self._first_dispatch_at is not None and self._last_completion_at is not None:
@@ -390,11 +393,10 @@ class AudioPerformanceEvaluator:
                 "input_chars": m.input_chars,
                 "input_tokens": m.input_tokens,
                 "input_text": m.input_text,
+                "audio_task": str(m.audio_task) if m.audio_task is not None else None,
             }
-            if m.audio_task is AudioTask.STT:
-                row_dict["transcript"] = m.transcript
-                row_dict["expected_transcript"] = m.expected_transcript
-                row_dict["wer"] = round(m.wer, 3) if m.wer is not None else None
+            if m.asr is not None:
+                row_dict.update(m.asr.to_request_row())
             rows.append(row_dict)
         return rows
 
@@ -407,7 +409,16 @@ class AudioPerformanceEvaluator:
                 f.write(json.dumps(row) + "\n")
 
     def _save_cdf_csvs(self, output_dir: str) -> None:
-        for metric_name, cdf_sketch in self.summaries.items():
+        summaries = dict(self.summaries)
+        if self._stt_request_count > 0:
+            summaries.update(
+                {
+                    name: sketch
+                    for name, sketch in self.asr_latency_summaries.items()
+                    if len(sketch) > 0
+                }
+            )
+        for metric_name, cdf_sketch in summaries.items():
             df = cdf_sketch._to_df()
             df.to_csv(
                 os.path.join(output_dir, f"audio_{metric_name}.csv"),
@@ -415,7 +426,16 @@ class AudioPerformanceEvaluator:
             )
 
     def _plot_cdfs(self, output_dir: str) -> None:
-        for metric_name, cdf_sketch in self.summaries.items():
+        summaries = dict(self.summaries)
+        if self._stt_request_count > 0:
+            summaries.update(
+                {
+                    name: sketch
+                    for name, sketch in self.asr_latency_summaries.items()
+                    if len(sketch) > 0
+                }
+            )
+        for metric_name, cdf_sketch in summaries.items():
             try:
                 cdf_sketch.plot_cdf(output_dir, f"audio_{metric_name}")
             except Exception as e:
