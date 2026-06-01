@@ -88,6 +88,7 @@ class ASRScoredSample:
 
 @dataclass
 class ASRParentChunk:
+    request_id: int
     chunk_index: int
     duration_s: float
     final_transcript: str
@@ -101,7 +102,9 @@ class ASRParentGroup:
     reference: str
     parent_duration_s: float
     expected_num_chunks: Optional[int]
-    chunks: Dict[int, ASRParentChunk] = field(default_factory=dict)
+    chunk_occurrences: DefaultDict[int, List[ASRParentChunk]] = field(
+        default_factory=lambda: defaultdict(list)
+    )
 
 
 @dataclass
@@ -142,6 +145,7 @@ class ASRMetricAccumulator:
         reference: str,
         parent_duration_s: float,
         expected_num_chunks: Optional[int],
+        request_id: int,
         chunk_index: int,
         duration_s: float,
         final_transcript: str,
@@ -158,43 +162,60 @@ class ASRMetricAccumulator:
                 expected_num_chunks=expected_num_chunks,
             )
             self._parent_groups[group_key] = group
-        group.chunks[chunk_index] = ASRParentChunk(
-            chunk_index=chunk_index,
-            duration_s=duration_s,
-            final_transcript=final_transcript,
-            partial_transcript=partial_transcript,
+        group.chunk_occurrences[chunk_index].append(
+            ASRParentChunk(
+                request_id=request_id,
+                chunk_index=chunk_index,
+                duration_s=duration_s,
+                final_transcript=final_transcript,
+                partial_transcript=partial_transcript,
+            )
         )
 
     def _iter_samples(self) -> List[ASRScoredSample]:
         samples = list(self._clip_samples)
         for group in self._parent_groups.values():
-            if (
-                group.expected_num_chunks is not None
-                and len(group.chunks) < group.expected_num_chunks
-            ):
-                continue
-            chunks = [group.chunks[index] for index in sorted(group.chunks)]
-            if not chunks:
-                continue
-            duration_s = group.parent_duration_s or sum(c.duration_s for c in chunks)
-            final_hypothesis = " ".join(c.final_transcript for c in chunks)
-            final_stats = compute_wer_stats(group.reference, final_hypothesis)
+            attempts: DefaultDict[int, Dict[int, ASRParentChunk]] = defaultdict(dict)
+            for chunk_index, chunks in group.chunk_occurrences.items():
+                for occurrence, chunk in enumerate(
+                    sorted(chunks, key=lambda c: c.request_id)
+                ):
+                    attempts[occurrence][chunk_index] = chunk
 
-            partial_stats = None
-            if all(c.partial_transcript for c in chunks):
-                partial_hypothesis = " ".join(
-                    c.partial_transcript or "" for c in chunks
+            for chunks_by_index in attempts.values():
+                if (
+                    group.expected_num_chunks is not None
+                    and len(chunks_by_index) < group.expected_num_chunks
+                ):
+                    continue
+                chunks = [
+                    chunks_by_index[index] for index in sorted(chunks_by_index)
+                ]
+                if not chunks:
+                    continue
+                duration_s = group.parent_duration_s or sum(
+                    c.duration_s for c in chunks
                 )
-                partial_stats = compute_wer_stats(group.reference, partial_hypothesis)
+                final_hypothesis = " ".join(c.final_transcript for c in chunks)
+                final_stats = compute_wer_stats(group.reference, final_hypothesis)
 
-            samples.append(
-                ASRScoredSample(
-                    dataset=group.dataset,
-                    duration_s=duration_s,
-                    final_stats=final_stats,
-                    partial_stats=partial_stats,
+                partial_stats = None
+                if all(c.partial_transcript for c in chunks):
+                    partial_hypothesis = " ".join(
+                        c.partial_transcript or "" for c in chunks
+                    )
+                    partial_stats = compute_wer_stats(
+                        group.reference, partial_hypothesis
+                    )
+
+                samples.append(
+                    ASRScoredSample(
+                        dataset=group.dataset,
+                        duration_s=duration_s,
+                        final_stats=final_stats,
+                        partial_stats=partial_stats,
+                    )
                 )
-            )
         return samples
 
     def get_summary(self) -> Dict[str, Optional[float]]:
@@ -336,6 +357,7 @@ def score_asr_request(
             reference=str(parent_reference),
             parent_duration_s=parent_duration_s,
             expected_num_chunks=expected_num_chunks,
+            request_id=request_id,
             chunk_index=chunk_index,
             duration_s=duration_s,
             final_transcript=str(final_transcript),
