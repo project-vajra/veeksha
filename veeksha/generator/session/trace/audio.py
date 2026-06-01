@@ -11,8 +11,9 @@ containing the file path in ``AudioChannelRequestContent.input_audio``.
 """
 
 import os
-from typing import List
+from typing import Any, List
 
+import numpy as np
 import pandas as pd
 
 from veeksha.config.generator.session import (
@@ -69,12 +70,21 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
                 f"expected_transcript (e.g. {examples})."
             )
 
-        # Resolve relative paths against audio_dir if provided
-        if flavor_config.audio_dir:
-            self.trace_df["audio_file"] = self.trace_df["audio_file"].apply(
-                lambda p: p if os.path.isabs(p) else os.path.join(
-                    flavor_config.audio_dir, p
-                )
+        # Resolve relative paths against audio_dir when provided, otherwise
+        # against the manifest directory so manifests are portable.
+        trace_dir = os.path.dirname(os.path.abspath(config.trace_file))
+        audio_base = flavor_config.audio_dir or trace_dir
+        if not os.path.isabs(audio_base):
+            audio_base = os.path.join(trace_dir, audio_base)
+        self.trace_df["audio_file"] = self.trace_df["audio_file"].apply(
+            lambda p: p if os.path.isabs(str(p)) else os.path.join(audio_base, str(p))
+        )
+        missing_audio = ~self.trace_df["audio_file"].apply(os.path.exists)
+        if missing_audio.any():
+            examples = self.trace_df.loc[missing_audio, "audio_file"].head(3).tolist()
+            raise FileNotFoundError(
+                f"{int(missing_audio.sum())} audio trace file(s) missing "
+                f"(e.g. {examples})."
             )
 
         logger.info(
@@ -106,9 +116,7 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
             )
         }
 
-        metadata: dict = {
-            "expected_transcript": str(row["expected_transcript"]),
-        }
+        metadata = self._row_metadata(row)
 
         request = Request(
             id=self._next_request_id(),
@@ -127,6 +135,21 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
             session_graph=graph,
             requests={0: request},
         )
+
+    def _row_metadata(self, row: pd.Series) -> dict:
+        """Pass manifest metadata through to the STT client/evaluator."""
+        metadata: dict[str, Any] = {}
+        for column in self.trace_df.columns:
+            if column in {"session_id", "audio_file"}:
+                continue
+            value = row[column]
+            if pd.isna(value):
+                continue
+            if isinstance(value, np.generic):
+                value = value.item()
+            metadata[column] = value
+        metadata["expected_transcript"] = str(metadata["expected_transcript"])
+        return metadata
 
     def wrap(self) -> pd.DataFrame:
         """Wrap trace for new epoch with shuffled session order."""
