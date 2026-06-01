@@ -1,25 +1,5 @@
 #!/usr/bin/env python3
-"""Build portable STT benchmark manifests from public ASR datasets.
-
-The generated manifest is JSONL with one row per source utterance:
-
-    {"session_id": 0, "audio_file": "audio/aa_voxpopuli/clip_00000.wav",
-     "expected_transcript": "...", "dataset": "aa_voxpopuli", "duration_s": 8.42}
-
-``audio_file`` is written relative to the manifest directory so generated traces
-can move with the repository/workspace.
-
-Examples:
-
-    # Artificial Analysis public datasets: cleaned VoxPopuli + cleaned Earnings22.
-    python scripts/prepare_audio_traces.py
-
-    # Fast local smoke trace from LibriSpeech.
-    python scripts/prepare_audio_traces.py --preset smoke --clips-per-dataset 8
-
-    # Larger public ASR mix.
-    python scripts/prepare_audio_traces.py --preset public_asr --clips-per-dataset 64
-"""
+"""Build portable ASR traces from the public Artificial Analysis datasets."""
 
 from __future__ import annotations
 
@@ -29,7 +9,6 @@ import json
 import os
 import re
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -37,261 +16,143 @@ import numpy as np
 import soundfile as sf
 
 TRACES_ROOT = Path(__file__).resolve().parent.parent / "traces"
+DEFAULT_OUTPUT_DIR = TRACES_ROOT / "asr" / "aa_public"
 DEFAULT_SAMPLE_RATE = 16000
+EARNINGS22_CHUNK_SECONDS = 30.0
 
-
-@dataclass(frozen=True)
-class DatasetSpec:
-    key: str
-    hf_name: str
-    config: str | None
-    split: str
-    text_columns: tuple[str, ...]
-    audio_column: str | None = "audio"
-    url_column: str | None = None
-    reference_scope: str = "clip"
-    chunk_seconds: float | None = None
-
-
-DATASETS: dict[str, DatasetSpec] = {
-    "aa_voxpopuli": DatasetSpec(
-        key="aa_voxpopuli",
-        hf_name="ArtificialAnalysis/VoxPopuli-Cleaned-AA",
-        config=None,
-        split="test",
-        text_columns=("transcript",),
-        audio_column=None,
-        url_column="url",
-    ),
-    "aa_earnings22": DatasetSpec(
-        key="aa_earnings22",
-        hf_name="ArtificialAnalysis/Earnings22-Cleaned-AA",
-        config=None,
-        split="test",
-        text_columns=("transcript",),
-        audio_column=None,
-        url_column="url",
-        reference_scope="parent",
-        chunk_seconds=30.0,
-    ),
-    "librispeech": DatasetSpec(
-        key="librispeech",
-        hf_name="openslr/librispeech_asr",
-        config=None,
-        split="test.clean",
-        text_columns=("text",),
-    ),
-    "voxpopuli": DatasetSpec(
-        key="voxpopuli",
-        hf_name="facebook/voxpopuli",
-        config="en",
-        split="test",
-        text_columns=("normalized_text", "raw_text", "text"),
-    ),
-    "earnings22": DatasetSpec(
-        key="earnings22",
-        hf_name="distil-whisper/earnings22",
-        config="chunked",
-        split="test",
-        text_columns=("transcription", "text"),
-    ),
-}
-
-PRESETS: dict[str, tuple[str, ...]] = {
-    "aa_public": ("aa_voxpopuli", "aa_earnings22"),
-    "public_asr": ("librispeech", "voxpopuli", "earnings22"),
-    "smoke": ("librispeech",),
+DATASETS: dict[str, dict[str, Any]] = {
+    "aa_voxpopuli": {
+        "repo": "ArtificialAnalysis/VoxPopuli-Cleaned-AA",
+        "split": "test",
+        "parent_scoped": False,
+    },
+    "aa_earnings22": {
+        "repo": "ArtificialAnalysis/Earnings22-Cleaned-AA",
+        "split": "test",
+        "parent_scoped": True,
+    },
 }
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "--preset",
-        choices=sorted(PRESETS),
-        default="aa_public",
-        help="Dataset preset to generate. Default: aa_public.",
-    )
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--datasets",
-        help=(
-            "Comma-separated dataset keys overriding --preset. "
-            f"Supported: {', '.join(sorted(DATASETS))}."
-        ),
+        default=",".join(DATASETS),
+        help=f"Comma-separated subset to build. Supported: {', '.join(DATASETS)}.",
     )
     parser.add_argument(
         "--clips-per-dataset",
         type=int,
         default=16,
-        help="Maximum utterances to keep per dataset. Use 0 for all matching rows.",
+        help="Maximum clips per dataset. Use 0 for all rows.",
     )
     parser.add_argument(
         "--min-duration",
         type=float,
         default=0.25,
-        help="Skip utterances shorter than this many seconds.",
+        help="Skip clips shorter than this many seconds.",
     )
     parser.add_argument(
         "--max-duration",
         type=float,
         default=60.0,
-        help="Skip utterances longer than this many seconds.",
+        help="Skip non-parent clips longer than this many seconds.",
     )
-    parser.add_argument(
-        "--sample-rate",
-        type=int,
-        default=DEFAULT_SAMPLE_RATE,
-        help=f"Output WAV sample rate in Hz. Default: {DEFAULT_SAMPLE_RATE}.",
-    )
+    parser.add_argument("--sample-rate", type=int, default=DEFAULT_SAMPLE_RATE)
     parser.add_argument(
         "--shuffle-buffer",
         type=int,
         default=0,
         help="If >0, shuffle each streaming dataset with this buffer size.",
     )
-    parser.add_argument("--seed", type=int, default=42, help="Shuffle seed.")
-    parser.add_argument(
-        "--output-dir",
-        help=(
-            "Output directory. Defaults to traces/asr/<preset>. "
-            "The manifest and audio/ subdirectory are written here."
-        ),
-    )
-    parser.add_argument(
-        "--manifest-name",
-        default="manifest.jsonl",
-        help="Manifest filename inside the output directory.",
-    )
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
+    parser.add_argument("--manifest-name", default="manifest.jsonl")
     return parser.parse_args()
 
 
-def _dataset_keys(args: argparse.Namespace) -> list[str]:
-    raw_keys = args.datasets.split(",") if args.datasets else PRESETS[args.preset]
-    keys = [key.strip() for key in raw_keys if key.strip()]
+def selected_dataset_keys(raw_datasets: str) -> list[str]:
+    keys = [key.strip() for key in raw_datasets.split(",") if key.strip()]
     unknown = [key for key in keys if key not in DATASETS]
     if unknown:
-        supported = ", ".join(sorted(DATASETS))
-        raise SystemExit(f"Unknown dataset key(s): {unknown}. Supported: {supported}")
+        raise SystemExit(
+            f"Unknown dataset key(s): {unknown}. Supported: {', '.join(DATASETS)}"
+        )
     return keys
 
 
-def _load_dataset(spec: DatasetSpec):
+def load_dataset_stream(key: str):
     try:
-        from datasets import Audio, load_dataset
+        from datasets import load_dataset
     except ImportError as exc:
-        raise SystemExit(
-            "ERROR: 'datasets' is required. Install veeksha deps."
-        ) from exc
+        raise SystemExit("ERROR: 'datasets' is required. Install veeksha deps.") from exc
 
-    args = [spec.hf_name]
-    if spec.config is not None:
-        args.append(spec.config)
-    dataset = load_dataset(*args, split=spec.split, streaming=True)
-    if spec.audio_column is None:
-        return dataset
-    return dataset.cast_column(spec.audio_column, Audio(decode=False))
+    spec = DATASETS[key]
+    return load_dataset(spec["repo"], split=spec["split"], streaming=True)
 
 
-def _normalize_text(text: Any) -> str:
-    return re.sub(r"\s+", " ", str(text or "")).strip()
+def fetch_audio(row: dict[str, Any], repo: str) -> str | bytes:
+    url = row.get("url")
+    if not url:
+        raise ValueError("row has no url column")
 
-
-def _sample_text(sample: dict[str, Any], spec: DatasetSpec) -> str:
-    for column in spec.text_columns:
-        if column in sample:
-            text = _normalize_text(sample[column])
-            if text:
-                return text
-    return ""
-
-
-def _audio_source(sample: dict[str, Any], spec: DatasetSpec) -> Any:
-    if spec.audio_column is not None:
-        if spec.audio_column not in sample:
-            raise ValueError(f"row has no audio column {spec.audio_column!r}")
-        return sample[spec.audio_column]
-
-    if spec.url_column is None or spec.url_column not in sample:
-        raise ValueError("row has no audio column or URL column")
-    url = str(sample[spec.url_column])
-    if url.startswith("http://") or url.startswith("https://"):
+    url = str(url)
+    if url.startswith(("http://", "https://")):
         import urllib.request
 
-        with urllib.request.urlopen(url) as response:
-            return {"bytes": response.read(), "path": url}
+        with urllib.request.urlopen(url, timeout=60) as response:
+            return response.read()
 
     from huggingface_hub import hf_hub_download
 
-    return hf_hub_download(repo_id=spec.hf_name, repo_type="dataset", filename=url)
+    return hf_hub_download(repo_id=repo, repo_type="dataset", filename=url)
 
 
-def _resample(audio: np.ndarray, source_sr: int, target_sr: int) -> np.ndarray:
+def resample(audio: np.ndarray, source_sr: int, target_sr: int) -> np.ndarray:
     if source_sr == target_sr:
         return audio.astype(np.float32, copy=False)
+
+    import librosa
+
+    return librosa.resample(
+        audio.astype(np.float32, copy=False),
+        orig_sr=source_sr,
+        target_sr=target_sr,
+    ).astype(np.float32)
+
+
+def decode_audio(source: str | bytes, target_sr: int) -> np.ndarray:
+    audio_input: str | io.BytesIO
+    audio_input = io.BytesIO(source) if isinstance(source, bytes) else source
+
     try:
-        import resampy
+        audio, sample_rate = sf.read(audio_input, dtype="float32")
+    except Exception:
+        import librosa
 
-        return resampy.resample(audio, source_sr, target_sr).astype(np.float32)
-    except ImportError:
-        try:
-            import librosa
-
-            return librosa.resample(
-                audio.astype(np.float32, copy=False),
-                orig_sr=source_sr,
-                target_sr=target_sr,
-            ).astype(np.float32)
-        except ImportError as exc:
-            raise RuntimeError(
-                f"Audio sample rate {source_sr} != {target_sr}; install resampy "
-                "or librosa to resample."
-            ) from exc
-
-
-def _decode_audio_value(audio_value: Any, target_sr: int) -> tuple[np.ndarray, int]:
-    if isinstance(audio_value, dict) and audio_value.get("array") is not None:
-        audio = np.asarray(audio_value["array"], dtype=np.float32)
-        sr = int(audio_value["sampling_rate"])
-    else:
-        audio_bytes = None
-        audio_path = None
-        if isinstance(audio_value, dict):
-            audio_bytes = audio_value.get("bytes")
-            audio_path = audio_value.get("path")
-        elif isinstance(audio_value, (str, Path)):
-            audio_path = str(audio_value)
-
-        source = io.BytesIO(audio_bytes) if audio_bytes is not None else audio_path
-        if source is None:
-            raise ValueError("audio sample has neither decoded array, bytes, nor path")
-
-        try:
-            audio, sr = sf.read(source, dtype="float32")
-        except Exception:
-            try:
-                import librosa
-
-                audio, sr = librosa.load(source, sr=None, mono=False)
-            except ImportError as exc:
-                raise RuntimeError(
-                    "Failed to decode audio with soundfile; install librosa for "
-                    "fallback decoding."
-                ) from exc
+        audio, sample_rate = librosa.load(audio_input, sr=None, mono=False)
 
     if audio.ndim > 1:
-        channel_axis = (
-            0 if audio.shape[0] <= 8 and audio.shape[0] < audio.shape[-1] else 1
-        )
-        audio = audio.mean(axis=channel_axis)
-    audio = _resample(audio, int(sr), target_sr)
-    return np.asarray(audio, dtype=np.float32), target_sr
+        axis = 0 if audio.shape[0] <= 8 and audio.shape[0] < audio.shape[-1] else 1
+        audio = audio.mean(axis=axis)
+    return resample(np.asarray(audio, dtype=np.float32), int(sample_rate), target_sr)
 
 
-def _iter_samples(
-    spec: DatasetSpec,
+def clean_text(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def source_id(row: dict[str, Any]) -> str:
+    for key in ("id", "audio_id", "file", "file_name", "path", "url"):
+        value = row.get(key)
+        if value:
+            return str(value)
+    return f"source-{row['row_index']}"
+
+
+def iter_audio_rows(
+    key: str,
     *,
     sample_rate: int,
     min_duration: float,
@@ -299,124 +160,80 @@ def _iter_samples(
     shuffle_buffer: int,
     seed: int,
 ) -> Iterable[tuple[np.ndarray, str, float, dict[str, Any]]]:
-    dataset = _load_dataset(spec)
+    spec = DATASETS[key]
+    dataset = load_dataset_stream(key)
     if shuffle_buffer > 0:
         dataset = dataset.shuffle(seed=seed, buffer_size=shuffle_buffer)
 
-    for source_index, sample in enumerate(dataset):
-        text = _sample_text(sample, spec)
-        if not text:
+    for row_index, sample in enumerate(dataset):
+        transcript = clean_text(sample.get("transcript"))
+        if not transcript:
             continue
+
         try:
-            audio, sr = _decode_audio_value(_audio_source(sample, spec), sample_rate)
+            audio = decode_audio(fetch_audio(sample, spec["repo"]), sample_rate)
         except Exception as exc:
-            print(
-                f"  WARNING: skipping {spec.key} row {source_index}: {exc}",
-                file=sys.stderr,
-            )
+            print(f"  WARNING: skipping {key} row {row_index}: {exc}", file=sys.stderr)
             continue
-        duration_s = len(audio) / float(sr)
+
+        duration_s = len(audio) / float(sample_rate)
         if duration_s < min_duration:
             continue
-        if spec.reference_scope != "parent" and duration_s > max_duration:
+        if not spec["parent_scoped"] and duration_s > max_duration:
             continue
-        yield audio, text, duration_s, {"source_index": source_index, **sample}
+        yield audio, transcript, duration_s, {"row_index": row_index, **sample}
 
 
-def _source_id(sample: dict[str, Any]) -> str | None:
-    for key in ("id", "audio_id", "file", "file_name", "path"):
-        value = sample.get(key)
-        if value:
-            return str(value)
-    audio = sample.get("audio")
-    if isinstance(audio, dict) and audio.get("path"):
-        return str(audio["path"])
-    return None
-
-
-@dataclass(frozen=True)
-class PreparedClip:
-    audio: np.ndarray
-    expected_transcript: str
-    duration_s: float
-    metadata: dict[str, Any]
-
-
-def _clip_sample_id(spec: DatasetSpec, sample: dict[str, Any], fallback: int) -> str:
-    return _source_id(sample) or f"{spec.key}-{fallback}"
-
-
-def _make_clips(
-    spec: DatasetSpec,
-    *,
+def iter_clips(
+    key: str,
     audio: np.ndarray,
-    text: str,
-    source_duration_s: float,
-    sample: dict[str, Any],
+    transcript: str,
+    duration_s: float,
+    row: dict[str, Any],
+    *,
     sample_rate: int,
     min_duration: float,
-) -> list[PreparedClip]:
-    source_id = _clip_sample_id(spec, sample, int(sample.get("source_index", 0)))
-    common = {
-        "source_dataset": spec.hf_name,
-        "source_config": spec.config,
-        "source_split": spec.split,
-        "source_id": source_id,
-        "reference_scope": spec.reference_scope,
+) -> Iterable[tuple[np.ndarray, float, dict[str, Any]]]:
+    spec = DATASETS[key]
+    parent_scoped = bool(spec["parent_scoped"])
+    sample_id = source_id(row)
+    common_metadata = {
+        "source_dataset": spec["repo"],
+        "source_split": spec["split"],
+        "source_id": sample_id,
+        "reference_scope": "parent" if parent_scoped else "clip",
     }
 
-    if spec.reference_scope != "parent":
-        return [
-            PreparedClip(
-                audio=audio,
-                expected_transcript=text,
-                duration_s=source_duration_s,
-                metadata={
-                    **common,
-                    "sample_id": source_id,
-                },
-            )
-        ]
+    if not parent_scoped:
+        yield audio, duration_s, {**common_metadata, "sample_id": sample_id}
+        return
 
-    if spec.chunk_seconds is None or spec.chunk_seconds <= 0:
-        raise ValueError(f"{spec.key} parent-scoped dataset requires chunk_seconds")
-
-    chunk_samples = int(round(spec.chunk_seconds * sample_rate))
-    chunks: list[PreparedClip] = []
-    raw_chunks: list[tuple[int, int, np.ndarray]] = []
+    chunk_samples = int(round(EARNINGS22_CHUNK_SECONDS * sample_rate))
+    chunks: list[tuple[int, int, np.ndarray]] = []
     for chunk_index, start in enumerate(range(0, len(audio), chunk_samples)):
-        end = min(start + chunk_samples, len(audio))
-        chunk = audio[start:end]
-        if len(chunk) / float(sample_rate) < min_duration:
-            continue
-        raw_chunks.append((chunk_index, start, chunk))
+        chunk = audio[start : start + chunk_samples]
+        if len(chunk) / sample_rate >= min_duration:
+            chunks.append((chunk_index, start, chunk))
 
-    for chunk_index, start, chunk in raw_chunks:
-        duration_s = len(chunk) / float(sample_rate)
+    for chunk_index, start, chunk in chunks:
         end = start + len(chunk)
-        chunks.append(
-            PreparedClip(
-                audio=chunk,
-                expected_transcript=text,
-                duration_s=duration_s,
-                metadata={
-                    **common,
-                    "sample_id": f"{source_id}:{chunk_index}",
-                    "parent_id": source_id,
-                    "parent_expected_transcript": text,
-                    "parent_duration_s": round(source_duration_s, 3),
-                    "parent_num_chunks": len(raw_chunks),
-                    "chunk_index": chunk_index,
-                    "chunk_start_s": round(start / sample_rate, 3),
-                    "chunk_end_s": round(end / sample_rate, 3),
-                },
-            )
+        yield (
+            chunk,
+            len(chunk) / float(sample_rate),
+            {
+                **common_metadata,
+                "sample_id": f"{sample_id}:{chunk_index}",
+                "parent_id": sample_id,
+                "parent_duration_s": round(duration_s, 3),
+                "parent_num_chunks": len(chunks),
+                "chunk_index": chunk_index,
+                "chunk_start_s": round(start / sample_rate, 3),
+                "chunk_end_s": round(end / sample_rate, 3),
+            },
         )
-    return chunks
 
 
-def main() -> None:
-    args = parse_args()
+def validate_args(args: argparse.Namespace) -> None:
     if args.clips_per_dataset < 0:
         raise SystemExit("--clips-per-dataset must be >= 0")
     if args.sample_rate <= 0:
@@ -426,99 +243,109 @@ def main() -> None:
     if args.min_duration > args.max_duration:
         raise SystemExit("--min-duration must be <= --max-duration")
 
-    dataset_keys = _dataset_keys(args)
-    output_dir = (
-        Path(args.output_dir) if args.output_dir else TRACES_ROOT / "asr" / args.preset
-    )
+
+def should_stop_before_sample(
+    key: str, produced: int, num_clips: int, clip_limit: int | None
+) -> bool:
+    if clip_limit is None:
+        return False
+    if not DATASETS[key]["parent_scoped"]:
+        return produced >= clip_limit
+    if produced > 0 and produced + num_clips > clip_limit:
+        return True
+    if produced == 0 and num_clips > clip_limit:
+        print(
+            "  WARNING: first parent sample expands to "
+            f"{num_clips} chunks, exceeding --clips-per-dataset {clip_limit} "
+            "to preserve parent-level WER.",
+            file=sys.stderr,
+        )
+    return False
+
+
+def main() -> None:
+    args = parse_args()
+    validate_args(args)
+
+    output_dir = Path(args.output_dir)
     audio_root = output_dir / "audio"
     manifest_path = output_dir / args.manifest_name
     output_dir.mkdir(parents=True, exist_ok=True)
     audio_root.mkdir(parents=True, exist_ok=True)
 
-    print(f"Building ASR trace preset={args.preset} datasets={','.join(dataset_keys)}")
+    dataset_keys = selected_dataset_keys(args.datasets)
+    clip_limit = None if args.clips_per_dataset == 0 else args.clips_per_dataset
+    rows: list[dict[str, Any]] = []
+    session_id = 0
+
+    print(f"Building public AA ASR trace: {', '.join(dataset_keys)}")
     print(f"  Output: {output_dir}")
     print(f"  Manifest: {manifest_path}")
 
-    rows: list[dict[str, Any]] = []
-    session_id = 0
-    clip_limit = None if args.clips_per_dataset == 0 else args.clips_per_dataset
-
     for key in dataset_keys:
-        spec = DATASETS[key]
-        dataset_audio_dir = audio_root / spec.key
+        dataset_audio_dir = audio_root / key
         dataset_audio_dir.mkdir(parents=True, exist_ok=True)
         produced = 0
-        print(f"  Loading {spec.key}: {spec.hf_name} split={spec.split}")
 
-        for audio, text, duration_s, sample in _iter_samples(
-            spec,
+        print(f"  Loading {key}: {DATASETS[key]['repo']} split={DATASETS[key]['split']}")
+        for audio, transcript, duration_s, row in iter_audio_rows(
+            key,
             sample_rate=args.sample_rate,
             min_duration=args.min_duration,
             max_duration=args.max_duration,
             shuffle_buffer=args.shuffle_buffer,
             seed=args.seed,
         ):
-            clips = _make_clips(
-                spec,
-                audio=audio,
-                text=text,
-                source_duration_s=duration_s,
-                sample=sample,
-                sample_rate=args.sample_rate,
-                min_duration=args.min_duration,
+            clips = list(
+                iter_clips(
+                    key,
+                    audio,
+                    transcript,
+                    duration_s,
+                    row,
+                    sample_rate=args.sample_rate,
+                    min_duration=args.min_duration,
+                )
             )
             if not clips:
                 continue
-            if clip_limit is not None:
-                if spec.reference_scope == "parent":
-                    if produced > 0 and produced + len(clips) > clip_limit:
-                        break
-                    if produced == 0 and len(clips) > clip_limit:
-                        print(
-                            "  WARNING: first parent sample expands to "
-                            f"{len(clips)} chunks, exceeding --clips-per-dataset "
-                            f"{clip_limit} to preserve parent-level WER.",
-                            file=sys.stderr,
-                        )
-                elif produced >= clip_limit:
-                    break
+            if should_stop_before_sample(key, produced, len(clips), clip_limit):
+                break
 
-            for clip in clips:
+            for clip_audio, clip_duration_s, metadata in clips:
                 if (
                     clip_limit is not None
-                    and spec.reference_scope != "parent"
+                    and not DATASETS[key]["parent_scoped"]
                     and produced >= clip_limit
                 ):
                     break
 
                 wav_path = dataset_audio_dir / f"clip_{produced:05d}.wav"
-                sf.write(
-                    str(wav_path), np.clip(clip.audio, -1.0, 1.0), args.sample_rate
+                sf.write(str(wav_path), np.clip(clip_audio, -1.0, 1.0), args.sample_rate)
+                rows.append(
+                    {
+                        "session_id": session_id,
+                        "audio_file": wav_path.relative_to(output_dir).as_posix(),
+                        "expected_transcript": transcript,
+                        "dataset": key,
+                        "duration_s": round(clip_duration_s, 3),
+                        "sample_rate": args.sample_rate,
+                        **metadata,
+                    }
                 )
-                row = {
-                    "session_id": session_id,
-                    "audio_file": wav_path.relative_to(output_dir).as_posix(),
-                    "expected_transcript": clip.expected_transcript,
-                    "dataset": spec.key,
-                    "duration_s": round(clip.duration_s, 3),
-                    "sample_rate": args.sample_rate,
-                }
-                row.update(clip.metadata)
-                rows.append(row)
                 session_id += 1
                 produced += 1
                 print(
                     f"    [{produced}] {wav_path.relative_to(output_dir)} "
-                    f"({clip.duration_s:.2f}s)"
+                    f"({clip_duration_s:.2f}s)"
                 )
 
         if produced == 0:
-            print(f"  WARNING: no clips produced for {spec.key}", file=sys.stderr)
+            print(f"  WARNING: no clips produced for {key}", file=sys.stderr)
 
-    with manifest_path.open("w", encoding="utf-8") as f:
+    with manifest_path.open("w", encoding="utf-8") as manifest:
         for row in rows:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
-
+            manifest.write(json.dumps(row, ensure_ascii=False) + "\n")
     print(f"\nWrote {len(rows)} clips -> {manifest_path}")
 
 
