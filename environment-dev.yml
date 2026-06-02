@@ -1,0 +1,18 @@
+name: veeksha-dev
+channels:
+  - conda-forge
+dependencies:
+  - boost-cpp
+  - ccache
+  - clang-tools
+  - cmake>=4.0
+  - cpplint
+  - gcc=13.2
+  - gxx
+  - make
+  - ninja
+  - nlohmann_json
+  - openssl
+  - pip
+  - pkg-config
+  - python=3.12
