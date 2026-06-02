@@ -111,7 +111,7 @@ known_third_party = "wandb"
 extend_skip = ["veeksha/_version.py"]
 
 [tool.pyright]
-include = ["veeksha"]
+include = ["veeksha", "veeksha_launcher"]
 exclude = [
     "**/__pycache__",
     "veeksha/cli/config_docs_generator.py",

@@ -10,6 +10,10 @@ Examples
     python scripts/plot_sweep.py --sweep-type input --plot-type report \\
         --engine1-dir benchmark_output/vajra_qwen3tts_new_server_input_async \\
         --engine2-dir benchmark_output/vllm_omni_sweep_input
+
+    # Hide the near-1x TTFC multiplier callouts until concurrency reaches 8:
+    python scripts/plot_sweep.py --sweep-type conc --plot-type report \\
+        --engine1-dir ... --engine2-dir ... --ttfc-delta-min-conc 8
 """
 
 from __future__ import annotations
@@ -74,6 +78,9 @@ DARK_COLORS = {
 }
 DEFAULT_ENGINE1_COLOR = "#73D0FF"
 DEFAULT_ENGINE2_COLOR = "#FFA759"
+# Multiplier/delta callouts in the report plots are the headline number, so
+# they're drawn much larger than the small value labels.
+REPORT_DELTA_FONTSIZE = 14
 
 
 def _theme_colors(dark_mode: bool) -> Dict[str, str]:
@@ -119,8 +126,29 @@ def _format_delta(winner: float, loser: float, delta_style: str) -> str:
     if winner <= 0:
         return ""
     if delta_style == "multiplier":
-        return f"{loser / winner:.2f}x"
+        # Always express the gap as the larger-over-smaller ratio (>= 1) so it
+        # reads as an advantage regardless of metric direction: for lower-is-
+        # better metrics winner == min (so this is loser/winner, unchanged),
+        # for higher-is-better (e.g. throughput) it becomes winner/loser.
+        hi, lo = max(winner, loser), min(winner, loser)
+        return f"{hi / lo:.2f}x" if lo > 0 else ""
     return f"Δ {abs(loser - winner) / winner * 100.0:.1f}%"
+
+
+def _delta_suppressed(axis_value, delta_min_axis: float | None) -> bool:
+    """Whether the multiplier/delta callout for this x position should be hidden.
+
+    Returns True only when a threshold is set AND the axis value (e.g. the
+    concurrency) parses to a number below it. Any unset threshold or
+    unparseable axis value falls through to False so the callout is drawn —
+    the gate never silently swallows a comparison it can't reason about.
+    """
+    if delta_min_axis is None:
+        return False
+    try:
+        return float(str(axis_value)) < delta_min_axis
+    except (TypeError, ValueError):
+        return False
 
 
 def _annotate_bar_axes(
@@ -132,6 +160,9 @@ def _annotate_bar_axes(
     compare_pairs: bool,
     delta_style: str = "pct",
     show_value_labels: bool = True,
+    axis_values: Sequence | None = None,
+    delta_min_axis: float | None = None,
+    delta_fontsize: int = 8,
 ) -> None:
     theme = _theme_colors(dark_mode)
     bars = [patch for patch in ax.patches if isinstance(patch, Rectangle)]
@@ -174,6 +205,17 @@ def _annotate_bar_axes(
             left, right = bars_sorted[i], bars_sorted[i + 1]
             if _bar_is_missing(left) or _bar_is_missing(right):
                 continue
+            # Each grouped pair maps to one ordered axis category (the grid is
+            # complete, so pair ordinal i//2 == category index). Gate the delta
+            # callout on that axis value while still drawing the value labels.
+            ordinal = i // 2
+            axis_value = (
+                axis_values[ordinal]
+                if axis_values is not None and ordinal < len(axis_values)
+                else None
+            )
+            if _delta_suppressed(axis_value, delta_min_axis):
+                continue
             left_h, right_h = left.get_height(), right.get_height()
             winner = min(left_h, right_h) if lower_is_better else max(left_h, right_h)
             loser = max(left_h, right_h) if lower_is_better else min(left_h, right_h)
@@ -199,18 +241,19 @@ def _annotate_bar_axes(
                 label,
                 ha="center",
                 va="bottom",
-                fontsize=8,
+                fontsize=delta_fontsize,
                 fontweight="bold",
                 color=color,
                 bbox=dict(
-                    boxstyle="round,pad=0.15",
+                    boxstyle="round,pad=0.2",
                     facecolor=theme["delta_box_face"],
                     edgecolor=color,
-                    linewidth=0.8,
+                    linewidth=1.0,
                     alpha=0.85,
                 ),
             )
-    ax.set_ylim(top=y_max * 1.28)
+    # Larger callout boxes need more headroom so they aren't clipped at the top.
+    ax.set_ylim(top=y_max * (1.40 if delta_fontsize >= 12 else 1.28))
 
 
 def _annotate_line_axes(
@@ -224,6 +267,11 @@ def _annotate_line_axes(
     dark_mode: bool,
     compare_pairs: bool,
     delta_style: str = "pct",
+    delta_min_axis: float | None = None,
+    show_value_labels: bool = True,
+    transparent_box: bool = False,
+    delta_fontsize: int = 7,
+    log_y: bool = False,
 ) -> None:
     if sub.empty or not isinstance(sub[axis_col].dtype, pd.CategoricalDtype):
         return
@@ -244,20 +292,21 @@ def _annotate_line_axes(
     y_max = max(valid)
     y_pad = y_max * 0.018
 
-    for idx, axis_value in enumerate(axis_values):
-        for system in systems:
-            value = lookup.get((str(system), str(axis_value)), float("nan"))
-            if pd.isna(value) or value <= 0:
-                continue
-            ax.text(
-                idx,
-                value + y_pad,
-                value_fmt.format(value),
-                ha="center",
-                va="bottom",
-                fontsize=7,
-                color=theme["value_text"],
-            )
+    if show_value_labels:
+        for idx, axis_value in enumerate(axis_values):
+            for system in systems:
+                value = lookup.get((str(system), str(axis_value)), float("nan"))
+                if pd.isna(value) or value <= 0:
+                    continue
+                ax.text(
+                    idx,
+                    value + y_pad,
+                    value_fmt.format(value),
+                    ha="center",
+                    va="bottom",
+                    fontsize=7,
+                    color=theme["value_text"],
+                )
 
     if compare_pairs and len(systems) >= 2:
         first, second = str(systems[0]), str(systems[1])
@@ -265,6 +314,8 @@ def _annotate_line_axes(
             first_v = lookup.get((first, str(axis_value)), float("nan"))
             second_v = lookup.get((second, str(axis_value)), float("nan"))
             if pd.isna(first_v) or pd.isna(second_v) or first_v <= 0 or second_v <= 0:
+                continue
+            if _delta_suppressed(axis_value, delta_min_axis):
                 continue
             winner = min(first_v, second_v) if lower_is_better else max(first_v, second_v)
             loser = max(first_v, second_v) if lower_is_better else min(first_v, second_v)
@@ -279,24 +330,40 @@ def _annotate_line_axes(
                 if first_v == second_v
                 else theme["delta_win"] if winner_is_first else theme["delta_lose"]
             )
+            # Represent the delta as a dotted vertical line joining the two
+            # runs' points at this x (its length is the gap; the curve markers
+            # already sit at each end), with the Nx multiplier boxed on it.
+            lo, hi = sorted((first_v, second_v))
+            # Center the label at the geometric midpoint on a log axis so it
+            # sits visually between the two points (arithmetic mean drifts up).
+            mid_y = (lo * hi) ** 0.5 if log_y else (lo + hi) / 2
+            ax.plot(
+                [idx, idx], [lo, hi],
+                color=color, linewidth=1.4, alpha=0.9, linestyle=":", zorder=4,
+            )
             ax.text(
                 idx,
-                max(first_v, second_v) + y_pad * 5,
+                mid_y,
                 label,
                 ha="center",
-                va="bottom",
-                fontsize=7,
+                va="center",
+                fontsize=delta_fontsize,
                 fontweight="bold",
                 color=color,
+                zorder=5,
                 bbox=dict(
-                    boxstyle="round,pad=0.15",
-                    facecolor=theme["delta_box_face"],
+                    boxstyle="round,pad=0.2",
+                    facecolor="none" if transparent_box else theme["delta_box_face"],
                     edgecolor=color,
-                    linewidth=0.8,
+                    linewidth=1.0,
                     alpha=0.85,
                 ),
             )
-    ax.set_ylim(top=y_max * 1.35)
+    if log_y:
+        ax.set_yscale("log")
+        ax.set_ylim(top=y_max * 1.6)
+    else:
+        ax.set_ylim(top=y_max * 1.35)
 
 
 def _value_fmt(series: pd.Series) -> str:
@@ -324,6 +391,7 @@ def plot_metric_sweep(
     systems: Sequence[str],
     dark_mode: bool,
     transparent: bool,
+    delta_min_axis: float | None = None,
 ) -> None:
     sub = df[df["metric"] == metric_display].copy()
     if sub.empty:
@@ -333,6 +401,11 @@ def plot_metric_sweep(
     sub_bar = sub.copy()
     sub_bar.loc[pd.isna(sub_bar["value"]), "value"] = 0.0
     value_fmt = _value_fmt(sub["value"])
+    axis_values = (
+        list(sub[axis_col].cat.categories)
+        if isinstance(sub[axis_col].dtype, pd.CategoricalDtype)
+        else None
+    )
 
     if compare_pairs:
         fig = rk.bar(
@@ -379,6 +452,8 @@ def plot_metric_sweep(
             lower_is_better=lower_is_better,
             dark_mode=dark_mode,
             compare_pairs=compare_pairs,
+            axis_values=axis_values,
+            delta_min_axis=delta_min_axis,
         )
     path = output_dir / f"{metric_key}_bar_{sweep_type}_sweep.png"
     fig.save(str(path), transparent=transparent)
@@ -423,6 +498,8 @@ def plot_metric_report(
     dark_mode: bool,
     transparent: bool,
     color_mapping: Dict[str, str],
+    delta_min_axis: float | None = None,
+    log_yscale: bool = False,
 ) -> None:
     compare_pairs = len(systems) >= 2
     for percentile in PERCENTILES:
@@ -433,6 +510,11 @@ def plot_metric_report(
         sub_bar.loc[pd.isna(sub_bar["value"]), "value"] = 0.0
         value_fmt = _value_fmt(sub["value"])
         tag = percentile.lower()
+        axis_values = (
+            list(sub[axis_col].cat.categories)
+            if isinstance(sub[axis_col].dtype, pd.CategoricalDtype)
+            else None
+        )
 
         fig = rk.bar(
             sub_bar,
@@ -458,6 +540,9 @@ def plot_metric_report(
                 compare_pairs=compare_pairs,
                 delta_style="multiplier",
                 show_value_labels=metric_display != "RTF",
+                axis_values=axis_values,
+                delta_min_axis=delta_min_axis,
+                delta_fontsize=REPORT_DELTA_FONTSIZE,
             )
             ax.set_title("")
         path = output_dir / f"{metric_key}_{tag}_bar_{sweep_type}_report.png"
@@ -491,11 +576,88 @@ def plot_metric_report(
                 dark_mode=dark_mode,
                 compare_pairs=compare_pairs,
                 delta_style="multiplier",
+                delta_min_axis=delta_min_axis,
+                show_value_labels=False,
+                transparent_box=metric_display == "RTF",
+                delta_fontsize=REPORT_DELTA_FONTSIZE,
+                log_y=log_yscale,
             )
             ax.set_title("")
         path = output_dir / f"{metric_key}_{tag}_line_{sweep_type}_report.png"
         fig.save(str(path), transparent=transparent)
         print(f"Wrote {path}")
+
+
+def plot_throughput_report(
+    df: pd.DataFrame,
+    *,
+    axis_col: str,
+    sweep_type: str,
+    output_dir: Path,
+    systems: Sequence[str],
+    dark_mode: bool,
+    transparent: bool,
+    color_mapping: Dict[str, str],
+) -> None:
+    """Report-style throughput bar: aggregate chars/sec per (system, axis).
+
+    Throughput is higher-is-better, so the multiplier reads as the winner's
+    advantage. The plot is skipped entirely when chars_per_sec_aggregate
+    carries no usable data (every value missing or <= 0) so we never emit an
+    empty or all-zero throughput chart.
+    """
+    value_col = "chars_per_sec_aggregate"
+    if value_col not in df.columns:
+        return
+    sub = df[["system", axis_col, value_col]].drop_duplicates().copy()
+    values = pd.to_numeric(sub[value_col], errors="coerce")
+    if not bool((values.notna() & (values > 0)).any()):
+        print(
+            f"[info] throughput ({value_col}) has no usable data; "
+            "skipping report plot."
+        )
+        return
+
+    compare_pairs = len(systems) >= 2
+    sub_bar = sub.copy()
+    sub_bar[value_col] = values.fillna(0.0)
+    value_fmt = _value_fmt(values)
+    axis_values = (
+        list(sub_bar[axis_col].cat.categories)
+        if isinstance(sub_bar[axis_col].dtype, pd.CategoricalDtype)
+        else None
+    )
+
+    fig = rk.bar(
+        sub_bar,
+        x=axis_col,
+        y=value_col,
+        color="system",
+        palette="cool",
+        color_mapping=color_mapping,
+        barmode="group",
+        bar_edge=True,
+        figsize=(11, 5.0),
+        dark_mode=dark_mode,
+        xlabel=_axis_label(sweep_type),
+        ylabel="Throughput (chars/sec)",
+        color_label="System",
+    )
+    for ax in fig.get_axes():
+        _annotate_bar_axes(
+            ax,
+            value_fmt,
+            lower_is_better=False,
+            dark_mode=dark_mode,
+            compare_pairs=compare_pairs,
+            delta_style="multiplier",
+            axis_values=axis_values,
+            delta_fontsize=REPORT_DELTA_FONTSIZE,
+        )
+        ax.set_title("")
+    path = output_dir / f"throughput_bar_{sweep_type}_report.png"
+    fig.save(str(path), transparent=transparent)
+    print(f"Wrote {path}")
 
 
 def plot_auxiliary_sweep(
@@ -653,6 +815,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only plot x-axis values present for every provided engine.",
     )
     parser.add_argument(
+        "--ttfc-delta-min-conc",
+        type=float,
+        default=None,
+        metavar="CONC",
+        help="Only draw the TTFC multiplier (Nx) comparison callouts at "
+        "concurrencies >= CONC; below it the bars/lines and raw TTFC value "
+        "labels still render, but the delta boxes are hidden (they hover near "
+        "1x at low concurrency and just add clutter). Applies to the TTFC "
+        "metric on concurrency sweeps only; default shows them at every conc.",
+    )
+    parser.add_argument(
+        "--ttfc-log-scale",
+        action="store_true",
+        help="Use a log y-axis for the TTFC report LINE plot (TTFC spans a wide "
+        "range across concurrency, so log reads more clearly). The TTFC bar plot "
+        "stays linear since bars imply a zero baseline.",
+    )
+    parser.add_argument(
         "--exp-name",
         help="Copy selected run data under --benchmarks-dir using sweep/{conc|input}/{engine}/{axis=value}.",
     )
@@ -713,6 +893,13 @@ def main() -> int:
 
     color_mapping = _color_mapping(args, systems)
     for key, display, units, lower_is_better in metrics:
+        # The TTFC multiplier gate is concurrency-oriented, so it only kicks in
+        # for the TTFC metric on conc sweeps; everything else draws deltas as before.
+        ttfc_delta_min_axis = (
+            args.ttfc_delta_min_conc
+            if key == "ttfc" and args.sweep_type == "conc"
+            else None
+        )
         if args.plot_type == "report":
             plot_metric_report(
                 df,
@@ -727,6 +914,8 @@ def main() -> int:
                 dark_mode=args.dark_mode,
                 transparent=args.transparent,
                 color_mapping=color_mapping,
+                delta_min_axis=ttfc_delta_min_axis,
+                log_yscale=args.ttfc_log_scale and key == "ttfc",
             )
         else:
             plot_metric_sweep(
@@ -741,9 +930,21 @@ def main() -> int:
                 systems=systems,
                 dark_mode=args.dark_mode,
                 transparent=args.transparent,
+                delta_min_axis=ttfc_delta_min_axis,
             )
 
-    if args.plot_type == "sweep":
+    if args.plot_type == "report":
+        plot_throughput_report(
+            df,
+            axis_col=axis_col,
+            sweep_type=args.sweep_type,
+            output_dir=output_dir,
+            systems=systems,
+            dark_mode=args.dark_mode,
+            transparent=args.transparent,
+            color_mapping=color_mapping,
+        )
+    elif args.plot_type == "sweep":
         plot_auxiliary_sweep(
             df,
             axis_col=axis_col,

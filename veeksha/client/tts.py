@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, AsyncIterator, List, Optional
 from urllib.parse import urljoin
 
 import httpx
@@ -45,6 +47,19 @@ class TTSProviderAdapter(ABC):
     @abstractmethod
     def build_request(self, text: str) -> TTSProviderRequest:
         """Build a streaming HTTP request for a text input."""
+
+    async def iter_audio_chunks(
+        self, response: httpx.Response, chunk_size: int
+    ) -> AsyncIterator[bytes]:
+        """Yield decoded audio chunks from a streaming response.
+
+        Default: the provider streams raw audio bytes (PCM or WAV) directly in
+        the response body. Providers with a different wire format (e.g. SSE)
+        override this to decode chunks before yielding them.
+        """
+        async for chunk in response.aiter_bytes(chunk_size=chunk_size):
+            if chunk:
+                yield chunk
 
     @staticmethod
     def _join_url(api_base: str, endpoint: str) -> str:
@@ -94,11 +109,63 @@ class VLLMOmniTTSProviderAdapter(TTSProviderAdapter):
         )
 
 
+class SGLangOmniTTSProviderAdapter(TTSProviderAdapter):
+
+    @property
+    def raw_pcm(self) -> bool:
+        return True
+
+    def build_request(self, text: str) -> TTSProviderRequest:
+        api_base = str(self.config.api_base)
+        endpoint = (
+            "audio/speech"
+            if api_base.rstrip("/").endswith("/v1")
+            else "v1/audio/speech"
+        )
+        payload: dict = {
+            "input": text,
+            "model": self.config.model,
+            "response_format": "pcm",
+            "stream": True,
+        }
+        if self.config.voice_id:
+            payload["voice"] = self.config.voice_id
+        headers = {"Content-Type": "application/json"}
+        if self.config.api_key:
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
+        return TTSProviderRequest(
+            url=self._join_url(api_base, endpoint),
+            headers=headers,
+            payload=payload,
+        )
+
+    async def iter_audio_chunks(
+        self, response: httpx.Response, chunk_size: int
+    ) -> AsyncIterator[bytes]:
+        async for line in response.aiter_lines():
+            line = line.strip()
+            if not line.startswith("data:"):
+                continue
+            data = line[len("data:") :].strip()
+            if data == "[DONE]":
+                break
+            event = json.loads(data)
+            audio = event.get("audio")
+            if not isinstance(audio, dict):
+                continue
+            encoded = audio.get("data")
+            if not encoded:
+                continue
+            yield base64.b64decode(encoded)
+
+
 def _build_provider_adapter(config: TTSClientConfig) -> TTSProviderAdapter:
     if config.provider == "vajra":
         return VajraTTSProviderAdapter(config)
     if config.provider == "vllm_omni":
         return VLLMOmniTTSProviderAdapter(config)
+    if config.provider == "sglang_omni":
+        return SGLangOmniTTSProviderAdapter(config)
     raise ValueError(f"Unsupported TTS provider: {config.provider}")
 
 
@@ -168,14 +235,15 @@ class TTSClient(BaseLLMClient):
             ) as response:
                 response.raise_for_status()
 
-                async for chunk in response.aiter_bytes(chunk_size=self._chunk_size):
-                    if chunk:
-                        receive_time = time.monotonic()
-                        if ttfc is None:
-                            ttfc = (receive_time - t_start) * 1000
+                async for chunk in self._provider_adapter.iter_audio_chunks(
+                    response, self._chunk_size
+                ):
+                    receive_time = time.monotonic()
+                    if ttfc is None:
+                        ttfc = (receive_time - t_start) * 1000
 
-                        audio_chunks.append(chunk)
-                        chunk_count += 1
+                    audio_chunks.append(chunk)
+                    chunk_count += 1
 
         except httpx.HTTPStatusError as e:
             error_code = e.response.status_code if e.response else 500

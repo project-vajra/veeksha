@@ -268,7 +268,9 @@ class AudioQualityEvaluatorConfig(BaseEvaluatorConfig):
 
     target_channels: list = field(
         default_factory=lambda: ["audio"],
-        metadata={"help": "List of modalities whose output quality should be evaluated."},
+        metadata={
+            "help": "List of modalities whose output quality should be evaluated."
+        },
     )
     slos: list[BaseSloConfig] = field(
         default_factory=list,

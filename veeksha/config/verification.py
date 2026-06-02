@@ -52,7 +52,9 @@ class WERVerifierConfig:
 
     enabled: bool = field(
         default=False,
-        metadata={"help": "Enable WER verification using inline Whisper transcription."},
+        metadata={
+            "help": "Enable WER verification using inline Whisper transcription."
+        },
     )
     threshold: float = field(
         default=0.05,

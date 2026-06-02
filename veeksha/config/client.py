@@ -160,7 +160,7 @@ class OpenAIRouterClientConfig(OpenAIChatCompletionsClientConfig):
 
 @frozen_dataclass
 class TTSClientConfig(BaseClientConfig):
-    """TTS client configuration for Vajra and vLLM Omni streaming APIs.
+    """TTS client configuration for Vajra, vLLM Omni and sglang-omni streaming APIs.
 
     `client.type: tts` sends text to a TTS API and measures audio generation
     metrics from the streamed audio response.
@@ -169,7 +169,8 @@ class TTSClientConfig(BaseClientConfig):
     provider: str = field(
         default="",
         metadata={
-            "help": "TTS provider name. Supported: 'vajra', 'vllm_omni'."
+            "help": "TTS provider name. Supported: 'vajra', 'vllm_omni', "
+            "'sglang_omni'."
         },
     )
     voice_id: str = field(
@@ -202,7 +203,7 @@ class TTSClientConfig(BaseClientConfig):
     def get_type(cls) -> ClientType:
         return ClientType.TTS
 
-    _SUPPORTED_PROVIDERS = ("vajra", "vllm_omni")
+    _SUPPORTED_PROVIDERS = ("vajra", "vllm_omni", "sglang_omni")
 
     def __post_init__(self):
         super().__post_init__()

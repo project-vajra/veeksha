@@ -190,9 +190,15 @@ class AudioPerformanceEvaluator:
             # Update aggregate throughput accumulators
             self._total_input_chars += input_chars
             self._total_generated_audio_duration_ms += generated_audio_duration
-            if self._first_dispatch_at is None or dispatched_at < self._first_dispatch_at:
+            if (
+                self._first_dispatch_at is None
+                or dispatched_at < self._first_dispatch_at
+            ):
                 self._first_dispatch_at = dispatched_at
-            if self._last_completion_at is None or completed_at > self._last_completion_at:
+            if (
+                self._last_completion_at is None
+                or completed_at > self._last_completion_at
+            ):
                 self._last_completion_at = completed_at
 
             # Store lifecycle timestamps (matching text.py pattern)

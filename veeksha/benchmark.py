@@ -60,7 +60,6 @@ def _maybe_pregenerate_sessions(benchmark_config, session_generator) -> Optional
     return pregenerated_sessions
 
 
-
 def _run_main_loop(
     session_generator,
     traffic_scheduler,

@@ -26,65 +26,44 @@ Examples
 from __future__ import annotations
 
 import argparse
-import copy
 import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import List, Optional, Tuple
 
-import yaml
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-CONFIG_DIR = REPO_ROOT / "configs"
-
-CONCURRENCY_SWEEP = "concurrency"
-INPUT_SWEEP = "input"
-
-TRACE_SHAREGPT = "sharegpt"
-TRACE_SEED_TTS = "seed_tts"
-TRACE_ALIASES = {
-    "sharegpt": TRACE_SHAREGPT,
-    "share_gpt": TRACE_SHAREGPT,
-    "seed_tts": TRACE_SEED_TTS,
-    "seedtts": TRACE_SEED_TTS,
-    "seed_tts_text": TRACE_SEED_TTS,
-}
-
-MODEL_ALIASES = {
-    "qwen-tts": "qwen-tts",
-    "qwen3-tts": "qwen-tts",
-    "tts": "qwen-tts",
-    "qwen3-omni": "qwen3-omni",
-    "omni": "qwen3-omni",
-    "vibe-voice": "vibe-voice",
-    "vibe": "vibe-voice",
-}
-
-
-@dataclass(frozen=True)
-class SweepSpec:
-    sweep_type: str
-    engine: str
-    model: str
-    config_name: str
-    temp_prefix: str
-    run_config_template: str
-    run_name_template: str
-    default_concurrencies: Tuple[int, ...] = ()
-    default_concurrency: Optional[int] = None
-    default_range_start: Optional[int] = None
-    default_range_end: Optional[int] = None
-    default_step: Optional[int] = None
-    write_runtime_limits: bool = True
-    disable_audio_for_input: bool = False
-
-    @property
-    def config_path(self) -> Path:
-        return CONFIG_DIR / self.config_name
+from veeksha.sweeps.config import (
+    DEFAULT_COOLDOWN_SECONDS,
+    DEFAULT_MAX_SESSIONS,
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_MIN_TOKENS,
+    DEFAULT_TIMEOUT_SECONDS,
+    TRACE_ALIASES,
+    TRACE_SHAREGPT,
+    SweepConfig,
+    SweepConfigError,
+)
+from veeksha.sweeps.specs import (
+    CONCURRENCY_SWEEP,
+    INPUT_SWEEP,
+    MODEL_ALIASES,
+    REPO_ROOT,
+    SPECS,
+    SweepSpec,
+    supported_combinations,
+)
+from veeksha.sweeps.utils import (
+    apply_trace_source,
+    benchmark_command,
+    build_run_config,
+    format_template,
+    input_sizes,
+    load_config,
+    override_client_api_base,
+    write_config,
+)
 
 
 @dataclass(frozen=True)
@@ -112,109 +91,6 @@ class SweepPlan:
         for child in self.tmp_parent.iterdir():
             child.unlink()
         self.tmp_parent.rmdir()
-
-
-SPECS: Dict[Tuple[str, str, str], SweepSpec] = {
-    (CONCURRENCY_SWEEP, "vajra", "qwen-tts"): SweepSpec(
-        sweep_type=CONCURRENCY_SWEEP,
-        engine="vajra",
-        model="qwen-tts",
-        config_name="vajra.yaml",
-        temp_prefix="vajra_qwen_tts_sweep",
-        run_config_template="vajra_qwen_c{concurrency}.yaml",
-        run_name_template="vajra_qwen3tts_c_{concurrency}_10_minutes",
-        default_concurrencies=(1, 2, 4, 8, 16, 32, 64),
-    ),
-    (CONCURRENCY_SWEEP, "vllm", "qwen-tts"): SweepSpec(
-        sweep_type=CONCURRENCY_SWEEP,
-        engine="vllm",
-        model="qwen-tts",
-        config_name="tts_vllm_omni.yaml",
-        temp_prefix="tts_vllm_omni_sweep",
-        run_config_template="tts_vllm_omni_c{concurrency}.yaml",
-        run_name_template="tts_vllm_omni_c_{concurrency}_10_minutes",
-        default_concurrencies=(1, 2, 4, 8, 16, 32, 64, 128),
-    ),
-    (CONCURRENCY_SWEEP, "vajra", "qwen3-omni"): SweepSpec(
-        sweep_type=CONCURRENCY_SWEEP,
-        engine="vajra",
-        model="qwen3-omni",
-        config_name="vajra_qwen.yaml",
-        temp_prefix="vajra_qwen3_omni_sweep",
-        run_config_template="vajra_qwen3_omni_c{concurrency}.yaml",
-        run_name_template="vajra_qwen3_omni_c_{concurrency}_10_minutes",
-        default_concurrencies=(1, 2, 4, 8, 16, 32, 64, 128),
-    ),
-    (CONCURRENCY_SWEEP, "vllm", "qwen3-omni"): SweepSpec(
-        sweep_type=CONCURRENCY_SWEEP,
-        engine="vllm",
-        model="qwen3-omni",
-        config_name="qwen3_omni.yaml",
-        temp_prefix="vllm_qwen3_omni_sweep",
-        run_config_template="vllm_qwen3_omni_c{concurrency}.yaml",
-        run_name_template="vllm_qwen3_omni_c_{concurrency}_10_minutes",
-        default_concurrencies=(1, 2, 4, 8, 16, 32, 64, 128),
-    ),
-    (CONCURRENCY_SWEEP, "vajra", "vibe-voice"): SweepSpec(
-        sweep_type=CONCURRENCY_SWEEP,
-        engine="vajra",
-        model="vibe-voice",
-        config_name="vajra_vibe_voice.yaml",
-        temp_prefix="vajra_vibe_voice_0_5_sweep",
-        run_config_template="vajra_vibe_voice_c{concurrency}.yaml",
-        run_name_template="vj_vibe_voice_0.5_{date_tag}_c={concurrency}",
-        default_concurrencies=(1, 2, 4, 8),
-        write_runtime_limits=False,
-    ),
-    (INPUT_SWEEP, "vajra", "qwen-tts"): SweepSpec(
-        sweep_type=INPUT_SWEEP,
-        engine="vajra",
-        model="qwen-tts",
-        config_name="vajra.yaml",
-        temp_prefix="vajra_qwen_tts_inputsweep",
-        run_config_template="vajra_qwen_c{concurrency}_chars{input_size}.yaml",
-        run_name_template=(
-            "vajra_qwen3tts_c_{concurrency}_chars_{input_size}_10_minutes"
-        ),
-        default_concurrency=64,
-        default_range_start=380,
-        default_range_end=500,
-        default_step=40,
-        disable_audio_for_input=True,
-    ),
-    (INPUT_SWEEP, "vllm", "qwen-tts"): SweepSpec(
-        sweep_type=INPUT_SWEEP,
-        engine="vllm",
-        model="qwen-tts",
-        config_name="tts_vllm_omni.yaml",
-        temp_prefix="vllm_qwen_tts_inputsweep",
-        run_config_template="vllm_qwen_tts_c{concurrency}_chars{input_size}.yaml",
-        run_name_template=(
-            "vllm_qwen3tts_c_{concurrency}_chars_{input_size}_10_minutes"
-        ),
-        default_concurrency=16,
-        default_range_start=180,
-        default_range_end=500,
-        default_step=40,
-        disable_audio_for_input=True,
-    ),
-    (INPUT_SWEEP, "vllm", "qwen3-omni"): SweepSpec(
-        sweep_type=INPUT_SWEEP,
-        engine="vllm",
-        model="qwen3-omni",
-        config_name="qwen3_omni.yaml",
-        temp_prefix="vllm_qwen3_omni_inputsweep",
-        run_config_template="vllm_qwen3_omni_c{concurrency}_chars{input_size}.yaml",
-        run_name_template=(
-            "vllm_qwen3_omni_c_{concurrency}_chars_{input_size}_10_minutes"
-        ),
-        default_concurrency=16,
-        default_range_start=20,
-        default_range_end=500,
-        default_step=40,
-        disable_audio_for_input=True,
-    ),
-}
 
 
 def _parse_csv_ints(raw: str, *, name: str) -> Tuple[int, ...]:
@@ -253,318 +129,67 @@ def _parse_trace(raw: str) -> str:
     return TRACE_ALIASES[key]
 
 
-def _supported_combinations() -> str:
-    rows = sorted(SPECS)
-    return "\n".join(
-        f"  {kind:11s} {engine:8s} {model}" for kind, engine, model in rows
-    )
-
-
 def _normalize_model(raw: str) -> str:
     key = raw.strip().lower()
     if key not in MODEL_ALIASES:
-        raise SystemExit(
-            f"Unsupported model: {raw}\nSupported combinations:\n{_supported_combinations()}"
+        raise SweepConfigError(
+            f"Unsupported model: {raw}\nSupported combinations:\n{supported_combinations()}"
         )
     return MODEL_ALIASES[key]
 
 
-def _load_config(path: Path) -> Dict[str, Any]:
-    if not path.is_file():
-        raise FileNotFoundError(f"Base config not found: {path}")
-    with path.open("r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    if not isinstance(data, dict):
-        raise ValueError(f"Base config must be a YAML mapping: {path}")
-    return data
-
-
-def _write_config(path: Path, config: Dict[str, Any]) -> None:
-    with path.open("w", encoding="utf-8") as f:
-        yaml.safe_dump(config, f, sort_keys=False, width=1_000_000)
-
-
-def _mapping_at(config: Dict[str, Any], path: Sequence[str]) -> Dict[str, Any]:
-    node: Any = config
-    for key in path:
-        if not isinstance(node, dict) or key not in node:
-            dotted = ".".join(path)
-            raise KeyError(f"Missing YAML mapping: {dotted}")
-        node = node[key]
-    if not isinstance(node, dict):
-        dotted = ".".join(path)
-        raise TypeError(f"Expected YAML mapping at {dotted}")
-    return node
-
-
-def _set_required(config: Dict[str, Any], path: Sequence[str], value: Any) -> None:
-    parent = _mapping_at(config, path[:-1])
-    key = path[-1]
-    if key not in parent:
-        raise KeyError(f"Missing YAML key: {'.'.join(path)}")
-    parent[key] = value
-
-
-def _set_mapping_value(config: Dict[str, Any], path: Sequence[str], value: Any) -> None:
-    parent = _mapping_at(config, path[:-1])
-    parent[path[-1]] = value
-
-
-def _disable_audio_saving(config: Dict[str, Any]) -> None:
-    evaluators = config.get("evaluators")
-    if not isinstance(evaluators, list):
-        return
-    for evaluator in evaluators:
-        if not isinstance(evaluator, dict):
-            continue
-        if evaluator.get("type") == "audio_quality" and "save_audio_files" in evaluator:
-            evaluator["save_audio_files"] = False
-
-
-def _apply_trace_source(config: Dict[str, Any], args: argparse.Namespace) -> None:
-    session_generator = _mapping_at(config, ("session_generator",))
-    if session_generator.get("type") != "trace":
-        raise ValueError(
-            "--trace can only be used with trace session generator configs"
-        )
-
-    flavor = session_generator.get("flavor")
-    if not isinstance(flavor, dict):
-        raise TypeError("Expected YAML mapping at session_generator.flavor")
-
-    if args.trace == TRACE_SHAREGPT:
-        flavor["type"] = "sharegpt"
-        if "assistant_role" not in flavor:
-            flavor["assistant_role"] = "gpt"
-        return
-
-    if args.trace != TRACE_SEED_TTS:
-        raise ValueError(f"Unsupported trace source: {args.trace}")
-
-    seed_flavor = {"type": "seed_tts_text"}
-
-    for key in ("min_tokens", "max_tokens", "min_chars", "max_chars"):
-        if key in flavor:
-            seed_flavor[key] = flavor[key]
-
-    session_generator["trace_file"] = ""
-    session_generator["flavor"] = seed_flavor
-
-
-def _date_tag() -> str:
-    return datetime.now().strftime("%m_%d")
-
-
-def _format_template(
-    template: str, *, concurrency: int, input_size: Optional[int] = None
-) -> str:
-    return template.format(
-        concurrency=concurrency,
-        input_size=input_size,
-        date_tag=_date_tag(),
-    )
-
-
-def _format_output_dir(
-    template: str,
-    spec: SweepSpec,
-    *,
-    concurrency: int,
-    input_size: Optional[int],
-    run_name: str,
-) -> str:
-    try:
-        return template.format(
-            concurrency=concurrency,
-            input_size=input_size,
-            run_name=run_name,
-            date_tag=_date_tag(),
-            engine=spec.engine,
-            model=spec.model,
-            sweep_type=spec.sweep_type,
-        )
-    except KeyError as exc:
-        raise ValueError(f"Unknown --output-dir template field: {exc.args[0]}") from exc
-
-
-def _clear_length_bounds(flavor: Dict[str, Any]) -> None:
-    for key in ("min_tokens", "max_tokens", "min_chars", "max_chars"):
-        flavor.pop(key, None)
-
-
-def _apply_length_bounds(
-    config: Dict[str, Any],
-    *,
-    min_tokens: Optional[int],
-    max_tokens: Optional[int],
-    min_chars: Optional[int],
-    max_chars: Optional[int],
-) -> None:
-    flavor = _mapping_at(config, ("session_generator", "flavor"))
-    _clear_length_bounds(flavor)
-
-    if min_chars is not None and max_chars is not None:
-        flavor["min_chars"] = min_chars
-        flavor["max_chars"] = max_chars
-        return
-
-    if min_tokens is None or max_tokens is None:
-        raise ValueError("min_tokens and max_tokens must be set together")
-    flavor["min_tokens"] = min_tokens
-    flavor["max_tokens"] = max_tokens
-
-
-def _input_sizes(args: argparse.Namespace, spec: SweepSpec) -> Tuple[int, ...]:
-    if args.sizes:
-        return args.sizes
-
-    start = (
-        args.range_start if args.range_start is not None else spec.default_range_start
-    )
-    end = args.range_end if args.range_end is not None else spec.default_range_end
-    step = args.step if args.step is not None else spec.default_step
-    if start is None or end is None or step is None:
-        raise ValueError("Input sweep requires --sizes or range defaults")
-    if start <= 0 or end <= 0 or step <= 0:
-        raise ValueError("--range-start, --range-end, and --step must be positive")
-    if start > end:
-        raise ValueError("--range-start must be <= --range-end")
-    return tuple(range(start, end + 1, step))
-
-
-def _build_run_config(
-    base_config: Dict[str, Any],
-    spec: SweepSpec,
-    *,
-    concurrency: int,
-    input_size: Optional[int],
-    timeout_seconds: int,
-    max_sessions: int,
-    output_dir_template: Optional[str],
-    min_tokens: Optional[int],
-    max_tokens: Optional[int],
-    min_chars: Optional[int],
-    max_chars: Optional[int],
-) -> Dict[str, Any]:
-    config = copy.deepcopy(base_config)
-
-    _set_required(
-        config,
-        ("traffic_scheduler", "target_concurrent_sessions"),
-        concurrency,
-    )
-    _set_required(config, ("runtime", "num_client_threads"), concurrency)
-    if spec.write_runtime_limits:
-        _set_required(config, ("runtime", "benchmark_timeout"), timeout_seconds)
-        _set_required(config, ("runtime", "max_sessions"), max_sessions)
-
-    run_name = _format_template(
-        spec.run_name_template,
-        concurrency=concurrency,
-        input_size=input_size,
-    )
-    _set_required(config, ("wandb", "run_name"), run_name)
-
-    if output_dir_template:
-        config["output_dir"] = _format_output_dir(
-            output_dir_template,
-            spec,
-            concurrency=concurrency,
-            input_size=input_size,
-            run_name=run_name,
-        )
-
-    if spec.sweep_type == INPUT_SWEEP:
-        if input_size is None:
-            raise ValueError("input_size is required for input sweeps")
-        flavor = _mapping_at(config, ("session_generator", "flavor"))
-        _clear_length_bounds(flavor)
-        flavor["min_chars"] = input_size
-        flavor["max_chars"] = input_size
-        if spec.disable_audio_for_input:
-            _disable_audio_saving(config)
-    else:
-        _apply_length_bounds(
-            config,
-            min_tokens=min_tokens,
-            max_tokens=max_tokens,
-            min_chars=min_chars,
-            max_chars=max_chars,
-        )
-
-    return config
-
-
-def _benchmark_command(config_path: Path) -> List[str]:
-    return [
-        "python",
-        "-Xgil=0",
-        "-m",
-        "veeksha.benchmark",
-        "--benchmark-config-from-file",
-        str(config_path),
-    ]
-
-
-def _override_client_api_base(config: Dict[str, Any], api_base: Optional[str]) -> None:
-    if api_base is None:
-        return
-    client = _mapping_at(config, ("client",))
-    client["api_base"] = api_base
-
-
 def _build_sweep_plan(
-    args: argparse.Namespace,
+    sweep_config: SweepConfig,
     spec: SweepSpec,
     *,
     client_api_base: Optional[str] = None,
     tmp_parent: Optional[Path] = None,
 ) -> SweepPlan:
-    base_config = _load_config(spec.config_path)
-    _apply_trace_source(base_config, args)
+    base_config = load_config(spec.config_path)
+    apply_trace_source(base_config, sweep_config)
     if tmp_parent is None:
         tmp_parent = Path(tempfile.mkdtemp(prefix=f"{spec.temp_prefix}."))
     else:
         tmp_parent.mkdir(parents=True, exist_ok=True)
 
     if spec.sweep_type == CONCURRENCY_SWEEP:
-        concurrencies = args.concurrencies or spec.default_concurrencies
+        concurrencies = sweep_config.concurrencies or spec.default_concurrencies
         work_items = [(concurrency, None) for concurrency in concurrencies]
     else:
-        concurrency = args.concurrency or spec.default_concurrency
+        concurrency = sweep_config.concurrency or spec.default_concurrency
         if concurrency is None:
             raise ValueError("Input sweep requires --concurrency")
-        work_items = [(concurrency, size) for size in _input_sizes(args, spec)]
+        work_items = [(concurrency, size) for size in input_sizes(sweep_config, spec)]
 
     runs: List[SweepRunDescriptor] = []
     run_count = len(work_items)
     for index, (concurrency, input_size) in enumerate(work_items, start=1):
-        config_name = _format_template(
+        config_name = format_template(
             spec.run_config_template,
             concurrency=concurrency,
             input_size=input_size,
         )
         run_config = tmp_parent / config_name
-        run_name = _format_template(
+        run_name = format_template(
             spec.run_name_template,
             concurrency=concurrency,
             input_size=input_size,
         )
-        run_cfg = _build_run_config(
+        run_cfg = build_run_config(
             base_config,
             spec,
             concurrency=concurrency,
             input_size=input_size,
-            timeout_seconds=args.timeout_seconds,
-            max_sessions=args.max_sessions,
-            output_dir_template=args.output_dir,
-            min_tokens=args.min_tokens,
-            max_tokens=args.max_tokens,
-            min_chars=args.min_chars,
-            max_chars=args.max_chars,
+            timeout_seconds=sweep_config.timeout_seconds,
+            max_sessions=sweep_config.max_sessions,
+            output_dir_template=sweep_config.output_dir,
+            min_tokens=sweep_config.min_tokens,
+            max_tokens=sweep_config.max_tokens,
+            min_chars=sweep_config.min_chars,
+            max_chars=sweep_config.max_chars,
         )
-        _override_client_api_base(run_cfg, client_api_base)
-        _write_config(run_config, run_cfg)
+        override_client_api_base(run_cfg, client_api_base)
+        write_config(run_config, run_cfg)
         runs.append(
             SweepRunDescriptor(
                 run_index=index,
@@ -574,10 +199,10 @@ def _build_sweep_plan(
                 run_config=run_config,
                 run_name=run_name,
                 output_dir=run_cfg.get("output_dir"),
-                command=_benchmark_command(run_config),
-                timeout_seconds=args.timeout_seconds,
-                max_sessions=args.max_sessions,
-                trace_source=args.trace,
+                command=benchmark_command(run_config),
+                timeout_seconds=sweep_config.timeout_seconds,
+                max_sessions=sweep_config.max_sessions,
+                trace_source=sweep_config.trace,
             )
         )
 
@@ -620,8 +245,8 @@ def _print_run_header(
     print("=" * 62)
 
 
-def _run_sweep(args: argparse.Namespace, spec: SweepSpec) -> int:
-    plan = _build_sweep_plan(args, spec)
+def _run_sweep(sweep_config: SweepConfig, spec: SweepSpec, *, dry_run: bool) -> int:
+    plan = _build_sweep_plan(sweep_config, spec)
     try:
         for run in plan.runs:
             _print_run_header(
@@ -634,18 +259,20 @@ def _run_sweep(args: argparse.Namespace, spec: SweepSpec) -> int:
                 run_name=run.run_name,
                 timeout_seconds=run.timeout_seconds,
                 max_sessions=run.max_sessions,
-                dry_run=args.dry_run,
+                dry_run=dry_run,
                 trace_source=run.trace_source,
                 output_dir=run.output_dir,
             )
             print(" ".join(run.command))
-            if not args.dry_run:
+            if not dry_run:
                 subprocess.run(run.command, cwd=REPO_ROOT, check=True)
-                if run.run_index < run.run_count and args.cooldown_seconds > 0:
-                    print(f"-- cooldown {args.cooldown_seconds}s before next run --")
-                    time.sleep(args.cooldown_seconds)
+                if run.run_index < run.run_count and sweep_config.cooldown_seconds > 0:
+                    print(
+                        f"-- cooldown {sweep_config.cooldown_seconds}s before next run --"
+                    )
+                    time.sleep(sweep_config.cooldown_seconds)
     finally:
-        if args.dry_run:
+        if dry_run:
             print(f"Dry-run configs left in: {plan.tmp_parent}")
         else:
             plan.cleanup()
@@ -670,9 +297,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--sweep-type", choices=(CONCURRENCY_SWEEP, INPUT_SWEEP), required=True
     )
-    parser.add_argument(
-        "--engine", choices=("vajra", "vllm"), required=True
-    )
+    parser.add_argument("--engine", choices=("vajra", "vllm", "sglang"), required=True)
     parser.add_argument(
         "--model",
         choices=tuple(sorted(MODEL_ALIASES)),
@@ -731,9 +356,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--range-start", type=int, help="Input sweep range start.")
     parser.add_argument("--range-end", type=int, help="Input sweep range end.")
     parser.add_argument("--step", type=int, help="Input sweep range step.")
-    parser.add_argument("--timeout-seconds", type=int, default=600)
-    parser.add_argument("--cooldown-seconds", type=int, default=120)
-    parser.add_argument("--max-sessions", type=int, default=20000)
+    parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument(
+        "--cooldown-seconds", type=int, default=DEFAULT_COOLDOWN_SECONDS
+    )
+    parser.add_argument("--max-sessions", type=int, default=DEFAULT_MAX_SESSIONS)
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -742,48 +369,124 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _validate_length_args(
-    parser: argparse.ArgumentParser, args: argparse.Namespace
-) -> None:
-    char_pair = (args.min_chars is not None, args.max_chars is not None)
-    token_pair = (args.min_tokens is not None, args.max_tokens is not None)
+def _sweep_config_from_args(args: argparse.Namespace) -> SweepConfig:
+    return SweepConfig(
+        sweep_type=args.sweep_type,
+        engine=args.engine,
+        model=args.model,
+        trace=args.trace,
+        output_dir=args.output_dir,
+        min_tokens=args.min_tokens,
+        max_tokens=args.max_tokens,
+        min_chars=args.min_chars,
+        max_chars=args.max_chars,
+        concurrencies=args.concurrencies,
+        concurrency=args.concurrency,
+        sizes=args.sizes,
+        range_start=args.range_start,
+        range_end=args.range_end,
+        step=args.step,
+        timeout_seconds=args.timeout_seconds,
+        cooldown_seconds=args.cooldown_seconds,
+        max_sessions=args.max_sessions,
+    )
+
+
+def _validate_length_config(sweep_config: SweepConfig) -> SweepConfig:
+    char_pair = (sweep_config.min_chars is not None, sweep_config.max_chars is not None)
+    token_pair = (
+        sweep_config.min_tokens is not None,
+        sweep_config.max_tokens is not None,
+    )
     has_chars = any(char_pair)
     has_tokens = any(token_pair)
 
-    if args.sweep_type == INPUT_SWEEP:
+    if sweep_config.sweep_type == INPUT_SWEEP:
         if has_chars or has_tokens:
-            parser.error(
-                "input sweeps derive min_chars/max_chars from --sizes; do not pass "
-                "--min-tokens/--max-tokens or --min-chars/--max-chars"
+            raise SweepConfigError(
+                "input sweeps derive min_chars/max_chars from sizes; do not pass "
+                "min_tokens/max_tokens or min_chars/max_chars"
             )
-        return
+        return sweep_config
 
     if has_chars and has_tokens:
-        parser.error(
-            "--min-chars/--max-chars and --min-tokens/--max-tokens are mutually "
-            "exclusive"
+        raise SweepConfigError(
+            "min_chars/max_chars and min_tokens/max_tokens are mutually exclusive"
         )
     if has_chars and not all(char_pair):
-        parser.error("--min-chars and --max-chars must be specified together")
+        raise SweepConfigError("min_chars and max_chars must be specified together")
     if has_tokens and not all(token_pair):
-        parser.error("--min-tokens and --max-tokens must be specified together")
+        raise SweepConfigError("min_tokens and max_tokens must be specified together")
 
     if has_chars:
-        if args.min_chars <= 0 or args.max_chars <= 0:
-            parser.error("--min-chars and --max-chars must be positive")
-        if args.min_chars > args.max_chars:
-            parser.error("--min-chars must be <= --max-chars")
-        return
+        min_chars = sweep_config.min_chars
+        max_chars = sweep_config.max_chars
+        if min_chars is None or max_chars is None:
+            raise SweepConfigError("min_chars and max_chars must be specified together")
+        if min_chars <= 0 or max_chars <= 0:
+            raise SweepConfigError("min_chars and max_chars must be positive")
+        if min_chars > max_chars:
+            raise SweepConfigError("min_chars must be <= max_chars")
+        return sweep_config
 
     if has_tokens:
-        if args.min_tokens <= 0 or args.max_tokens <= 0:
-            parser.error("--min-tokens and --max-tokens must be positive")
-        if args.min_tokens > args.max_tokens:
-            parser.error("--min-tokens must be <= --max-tokens")
-        return
+        min_tokens = sweep_config.min_tokens
+        max_tokens = sweep_config.max_tokens
+        if min_tokens is None or max_tokens is None:
+            raise SweepConfigError(
+                "min_tokens and max_tokens must be specified together"
+            )
+        if min_tokens <= 0 or max_tokens <= 0:
+            raise SweepConfigError("min_tokens and max_tokens must be positive")
+        if min_tokens > max_tokens:
+            raise SweepConfigError("min_tokens must be <= max_tokens")
+        return sweep_config
 
-    args.min_tokens = 20
-    args.max_tokens = 150
+    return replace(
+        sweep_config,
+        min_tokens=DEFAULT_MIN_TOKENS,
+        max_tokens=DEFAULT_MAX_TOKENS,
+    )
+
+
+def validate_sweep_config(sweep_config: SweepConfig) -> SweepConfig:
+    """Validate and normalize a typed sweep config."""
+    if sweep_config.timeout_seconds <= 0:
+        raise SweepConfigError("timeout_seconds must be positive")
+    if sweep_config.cooldown_seconds < 0:
+        raise SweepConfigError("cooldown_seconds must be non-negative")
+    if sweep_config.max_sessions <= 0:
+        raise SweepConfigError("max_sessions must be positive")
+    if sweep_config.concurrency is not None and sweep_config.concurrency <= 0:
+        raise SweepConfigError("concurrency must be positive")
+
+    sweep_config = _validate_length_config(sweep_config)
+
+    if sweep_config.sweep_type == CONCURRENCY_SWEEP:
+        disallowed = []
+        for name, value in (
+            ("concurrency", sweep_config.concurrency),
+            ("sizes", sweep_config.sizes),
+            ("range_start", sweep_config.range_start),
+            ("range_end", sweep_config.range_end),
+            ("step", sweep_config.step),
+        ):
+            if value is not None:
+                disallowed.append(name)
+        if disallowed:
+            raise SweepConfigError(
+                "concurrency sweeps do not accept input-sweep options: "
+                + ", ".join(disallowed)
+            )
+    elif sweep_config.sweep_type == INPUT_SWEEP:
+        if sweep_config.concurrencies is not None:
+            raise SweepConfigError("input sweeps use concurrency, not concurrencies")
+    else:
+        raise SweepConfigError(
+            f"sweep_type must be one of: {CONCURRENCY_SWEEP}, {INPUT_SWEEP}"
+        )
+
+    return sweep_config
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -791,56 +494,44 @@ def build_parser() -> argparse.ArgumentParser:
     return _build_parser()
 
 
-def validate_sweep_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
-    """Validate normalized sweep CLI/API arguments."""
-    if args.timeout_seconds <= 0:
-        parser.error("--timeout-seconds must be positive")
-    if args.cooldown_seconds < 0:
-        parser.error("--cooldown-seconds must be non-negative")
-    if args.max_sessions <= 0:
-        parser.error("--max-sessions must be positive")
-    if args.concurrency is not None and args.concurrency <= 0:
-        parser.error("--concurrency must be positive")
-    _validate_length_args(parser, args)
+def validate_sweep_args(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> None:
+    """Validate CLI arguments through the typed sweep config boundary."""
+    try:
+        validate_sweep_config(_sweep_config_from_args(args))
+    except SweepConfigError as exc:
+        parser.error(str(exc))
 
-    if args.sweep_type == CONCURRENCY_SWEEP:
-        disallowed = [
-            name
-            for name in (
-                "--concurrency",
-                "--sizes",
-                "--range-start",
-                "--range-end",
-                "--step",
-            )
-            if getattr(args, name.lstrip("-").replace("-", "_")) is not None
-        ]
-        if disallowed:
-            parser.error(
-                "concurrency sweeps do not accept input-sweep options: "
-                + ", ".join(disallowed)
-            )
-    elif args.concurrencies is not None:
-        parser.error("input sweeps use --concurrency, not --concurrencies")
+
+def resolve_sweep_config(config: SweepConfig) -> Tuple[SweepConfig, SweepSpec]:
+    """Resolve a typed sweep config to a normalized config and sweep spec."""
+    config = validate_sweep_config(config)
+    model = _normalize_model(config.model)
+    config = replace(config, model=model)
+    spec = SPECS.get((config.sweep_type, config.engine, model))
+    if spec is None:
+        raise SweepConfigError(
+            "Unsupported sweep combination:\n"
+            f"  {config.sweep_type} {config.engine} {model}\n"
+            f"Supported combinations:\n{supported_combinations()}"
+        )
+    return config, spec
 
 
 def resolve_sweep_spec(
     parser: argparse.ArgumentParser, args: argparse.Namespace
 ) -> SweepSpec:
-    """Resolve validated arguments to a sweep specification."""
-    model = _normalize_model(args.model)
-    spec = SPECS.get((args.sweep_type, args.engine, model))
-    if spec is None:
-        parser.error(
-            "Unsupported sweep combination:\n"
-            f"  {args.sweep_type} {args.engine} {model}\n"
-            f"Supported combinations:\n{_supported_combinations()}"
-        )
+    """Resolve CLI arguments to a sweep specification."""
+    try:
+        _, spec = resolve_sweep_config(_sweep_config_from_args(args))
+    except SweepConfigError as exc:
+        parser.error(str(exc))
     return spec
 
 
 def build_sweep_plan(
-    args: argparse.Namespace,
+    sweep_config: SweepConfig,
     spec: SweepSpec,
     *,
     client_api_base: Optional[str] = None,
@@ -848,21 +539,36 @@ def build_sweep_plan(
 ) -> SweepPlan:
     """Build a concrete set of benchmark runs for a resolved sweep spec."""
     return _build_sweep_plan(
-        args, spec, client_api_base=client_api_base, tmp_parent=tmp_parent
+        sweep_config, spec, client_api_base=client_api_base, tmp_parent=tmp_parent
     )
 
 
-def run_sweep(args: argparse.Namespace, spec: SweepSpec) -> int:
+def build_sweep_plan_from_config(
+    config: SweepConfig,
+    *,
+    client_api_base: Optional[str] = None,
+    tmp_parent: Optional[Path] = None,
+) -> SweepPlan:
+    """Build a concrete sweep plan from a typed programmatic config."""
+    config, spec = resolve_sweep_config(config)
+    return build_sweep_plan(
+        config, spec, client_api_base=client_api_base, tmp_parent=tmp_parent
+    )
+
+
+def run_sweep(sweep_config: SweepConfig, spec: SweepSpec, *, dry_run: bool) -> int:
     """Execute a resolved sweep plan."""
-    return _run_sweep(args, spec)
+    return _run_sweep(sweep_config, spec, dry_run=dry_run)
 
 
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
-    validate_sweep_args(parser, args)
-    spec = resolve_sweep_spec(parser, args)
-    return run_sweep(args, spec)
+    try:
+        sweep_config, spec = resolve_sweep_config(_sweep_config_from_args(args))
+    except SweepConfigError as exc:
+        parser.error(str(exc))
+    return run_sweep(sweep_config, spec, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

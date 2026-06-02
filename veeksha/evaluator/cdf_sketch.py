@@ -2,10 +2,10 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
-import rekha as rk
 import wandb
 from ddsketch import DDSketch
 
+import rekha as rk
 from veeksha.evaluator.plot_utils import (
     apply_axis_scale,
     format_axis_label,

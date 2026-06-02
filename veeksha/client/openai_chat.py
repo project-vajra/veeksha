@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+import base64
 import time
 from typing import TYPE_CHECKING, Any, List, Optional
-
-import base64
 
 import httpx  # type: ignore
 

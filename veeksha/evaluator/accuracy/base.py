@@ -18,7 +18,6 @@ from typing import Any, Dict, Optional, Set, Tuple, cast
 from veeksha.config.evaluator import BaseEvaluatorConfig, LMEvalAccuracyEvaluatorConfig
 from veeksha.core.seeding import SeedManager
 from veeksha.evaluator.base import BaseEvaluator, EvaluationResult
-from veeksha.generator.session.lmeval import LMEvalSessionGenerator
 from veeksha.logger import init_logger
 from veeksha.types import ChannelModality, LMEvalOutputType
 
@@ -63,6 +62,8 @@ class LMEvalAccuracyEvaluator(BaseAccuracyEvaluator):
             output_dir=output_dir,
             benchmark_start_time=benchmark_start_time,
         )
+
+        from veeksha.generator.session.lmeval import LMEvalSessionGenerator
 
         if not isinstance(session_generator, LMEvalSessionGenerator):
             raise ValueError(
