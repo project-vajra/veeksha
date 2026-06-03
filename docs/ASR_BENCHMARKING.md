@@ -2,6 +2,13 @@
 
 ## Trace Generation
 
+Create the repo-local environment once:
+
+```bash
+mamba env create -p ./env -f environment.yml
+mamba activate ./env
+```
+
 Generate the public ASR trace with:
 
 ```bash
@@ -11,12 +18,48 @@ python scripts/prepare_audio_traces.py --clips-per-dataset 128
 This writes `traces/asr/aa_public/manifest.jsonl` plus WAV files under
 `traces/asr/aa_public/audio/`.
 
+To select only complete clips up to a maximum length, add `--max-duration`:
+
+```bash
+python scripts/prepare_audio_traces.py \
+  --clips-per-dataset 128 \
+  --max-duration 30
+```
+
+This skips longer source clips rather than trimming them. When
+`--clips-per-dataset` is nonzero, trace generation fails explicitly if any
+selected dataset cannot provide that many eligible clips.
+
+To add word-level reference timings for the interactivity metric, keep using the
+same entry point and enable NeMo forced alignment:
+
+```bash
+python scripts/prepare_audio_traces.py \
+  --clips-per-dataset 128 \
+  --nemo-align-script /path/to/NeMo/tools/nemo_forced_aligner/align.py
+```
+
+When `--nemo-align-script` is set, the script calls
+`scripts/align_audio_trace.py` internally and rewrites the manifest with
+`reference_word_timestamps`.
+
+AMI can be prepared through the same script when local AMI audio and
+`*.words.xml` annotation files are available:
+
+```bash
+python scripts/prepare_audio_traces.py \
+  --datasets ami_word_timed \
+  --ami-audio-dir /path/to/ami/audio \
+  --ami-words-dir /path/to/ami/words
+```
+
 The trace uses the public Artificial Analysis cleaned datasets, VoxPopuli and
-Earnings22, as a recognizable external point of reference. It does not attempt
-to reproduce the full Artificial Analysis benchmark exactly: the proprietary
-AA-AgentTalk dataset is not available, their custom normalizer is not open
-sourced, and Veeksha measures behavior across engines so any point of difference
-is fine as long as it's consistent for all engines.
+Earnings22, as a recognizable external point of reference. Earnings22 examples
+are kept as full, potentially long requests rather than being chunked. The trace
+does not attempt to reproduce the full Artificial Analysis benchmark exactly:
+the proprietary AA-AgentTalk dataset is not available, their custom normalizer
+is not open sourced, and Veeksha measures behavior across engines so any point
+of difference is fine as long as it's consistent for all engines.
 
 ## Request Metrics
 
@@ -47,11 +90,16 @@ ASR-specific metrics:
   partial WER.
 - `final_transcript`: final transcript returned by the provider.
 - `expected_transcript`: reference transcript from the trace row.
+- `interactivity`: mean latency between when matched reference words finish in
+  the audio and when they first appear in the streamed client transcript, in
+  milliseconds. This requires `reference_word_timestamps` in the manifest and is
+  most meaningful with realtime audio pacing enabled.
+- `interactivity_word_count`: number of matched words used for the per-request
+  `interactivity` value.
 - `partial_wer`: WER for `partial_transcript` against `expected_transcript`.
-  Present for clip-scoped rows when a partial transcript is available.
+  Present when a partial transcript is available.
 - `final_wer`: WER for `final_transcript` against `expected_transcript`.
-  Present for clip-scoped rows. For Earnings22 parent-scoped rows, final WER is
-  computed after regrouping chunks, so per-request `final_wer` is left null.
+  Present for every completed STT request with a reference transcript.
 
 ## Partials and Finals
 
@@ -74,10 +122,12 @@ General audio aggregates are percentile summaries over request-level values:
 - `chunk_count (Mean/P50/P90/P99)`
 - `time_to_first_partial (Mean/P50/P90/P99)`, for STT runs when available
 - `time_to_final_transcript (Mean/P50/P90/P99)`, for STT runs when available
+- `interactivity (Mean/P50/P90/P99)`, for STT runs with word-timestamped
+  references
 
 ASR WER aggregates:
 
-- `asr_final_sample_count`: number of scored ASR samples after parent regrouping.
+- `asr_final_sample_count`: number of scored ASR request samples.
 - `asr_final_sample_mean_wer`: unweighted mean WER across scored samples.
 - `asr_final_corpus_wer`: corpus-level WER from summed edit counts and summed
   reference words.
@@ -100,19 +150,10 @@ Each manifest row represents one audio request. Key fields:
 - `dataset`: source dataset key, such as `aa_voxpopuli` or `aa_earnings22`.
 - `expected_transcript`: reference transcript used for WER.
 - `duration_s`: clip duration in seconds.
-- `reference_scope`: `clip` for independently scored clips, `parent` for
-  Earnings22 chunks that must be regrouped before WER is computed.
-- `sample_id`: unique row/chunk identifier.
-- `parent_id`: original Earnings22 call identifier for parent-scoped rows.
-- `chunk_index`: zero-based chunk index within the parent call.
-- `parent_num_chunks`: expected number of chunks for the complete parent call.
-
-Earnings22 rows deliberately repeat the full parent `expected_transcript` on
-each chunk. The evaluator uses `parent_id`, `chunk_index`, and
-`parent_num_chunks` to concatenate chunk transcripts back into the original call
-before computing parent-level WER. This also supports wrapped traces: if the
-same parent appears multiple times in one run, the evaluator groups the first
-occurrence of every chunk together, then the second occurrence, and so on.
+- `sample_id`: unique row identifier.
+- `reference_word_timestamps`: optional list of reference word timings relative
+  to the request audio start, e.g.
+  `{"word": "hello", "start_ms": 120.0, "end_ms": 340.0}`.
 
 ## References
 

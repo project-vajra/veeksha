@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 logger = init_logger(__name__)
 
 BYTES_PER_SAMPLE = 2
+TranscriptSnapshotRow = dict[str, float | str]
 
 # Voxtral streaming tokens injected by the model that should be stripped.
 _STREAMING_TOKEN_RE = re.compile(r"\[STREAMING_(?:PAD|WORD)\]")
@@ -72,8 +73,42 @@ class STTStreamResult:
     time_to_final_transcript: Optional[float]
     partial_transcript: Optional[str]
     final_transcript: str
+    transcript_snapshots: list[TranscriptSnapshotRow]
     chunk_count: int
     pcm_byte_count: int
+
+
+class TranscriptSnapshotRecorder:
+    """Records evolving transcripts relative to first sent audio byte."""
+
+    def __init__(self, request_started_at: float) -> None:
+        self._request_started_at = request_started_at
+        self._audio_started_at: Optional[float] = None
+        self._snapshots: list[TranscriptSnapshotRow] = []
+
+    @property
+    def snapshots(self) -> list[TranscriptSnapshotRow]:
+        return self._snapshots
+
+    def mark_audio_started(self, now: float) -> None:
+        if self._audio_started_at is None:
+            self._audio_started_at = now
+
+    def add(self, now: float, transcript: str) -> None:
+        if not transcript:
+            return
+        if self._snapshots and self._snapshots[-1]["transcript"] == transcript:
+            return
+        self._snapshots.append(
+            {
+                "elapsed_ms": round(self._elapsed_ms(now), 3),
+                "transcript": transcript,
+            }
+        )
+
+    def _elapsed_ms(self, now: float) -> float:
+        start = self._audio_started_at or self._request_started_at
+        return (now - start) * 1000
 
 
 class _STTClientBase(BaseLLMClient):
@@ -164,6 +199,7 @@ class _STTClientBase(BaseLLMClient):
         final_transcript = ""
         chunk_count = 0
         transcript_chunks: list[str] = []
+        snapshots = TranscriptSnapshotRecorder(t_start)
         pcm_bytes = _audio_to_pcm16_bytes(audio_path, self._sample_rate)
 
         async with websockets.connect(self._ws_url) as ws:
@@ -173,6 +209,7 @@ class _STTClientBase(BaseLLMClient):
                 nonlocal audio_end_at
                 for i in range(0, len(pcm_bytes), self._ws_chunk_size):
                     chunk = pcm_bytes[i : i + self._ws_chunk_size]
+                    snapshots.mark_audio_started(time.monotonic())
                     await ws.send(self._encode_chunk(chunk))
                     await self._maybe_pace(len(chunk))
                 await ws.send(self._eof())
@@ -191,6 +228,7 @@ class _STTClientBase(BaseLLMClient):
                         current_transcript = _clean_transcript(
                             "".join(transcript_chunks)
                         )
+                        snapshots.add(now, current_transcript)
                         if (
                             audio_end_at is not None
                             and time_to_first_partial is None
@@ -202,6 +240,7 @@ class _STTClientBase(BaseLLMClient):
                         final_transcript = _clean_transcript(
                             text or "".join(transcript_chunks)
                         )
+                        snapshots.add(now, final_transcript)
                         if final_transcript:
                             if ttfc is None:
                                 ttfc = (now - t_start) * 1000
@@ -235,6 +274,7 @@ class _STTClientBase(BaseLLMClient):
             time_to_final_transcript=time_to_final_transcript,
             partial_transcript=partial_transcript,
             final_transcript=final_transcript,
+            transcript_snapshots=snapshots.snapshots,
             chunk_count=chunk_count,
             pcm_byte_count=len(pcm_bytes),
         )
@@ -346,6 +386,7 @@ class _STTClientBase(BaseLLMClient):
                 "input_audio_duration_ms": round(input_audio_duration_ms, 3),
                 "partial_transcript": stream_result.partial_transcript,
                 "final_transcript": stream_result.final_transcript,
+                "transcript_snapshots": stream_result.transcript_snapshots,
             }
 
             # Ground truth and dataset metadata are guaranteed by the trace generator.

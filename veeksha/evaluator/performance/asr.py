@@ -8,6 +8,7 @@ from typing import Any, DefaultDict, Dict, List, Optional
 
 import jiwer
 
+from veeksha.evaluator.performance.asr_interactivity import compute_interactivity_stats
 from veeksha.evaluator.performance.asr_normalizer import EnglishTextNormalizer
 
 _normalizer = EnglishTextNormalizer()
@@ -87,38 +88,16 @@ class ASRScoredSample:
 
 
 @dataclass
-class ASRParentChunk:
-    request_id: int
-    chunk_index: int
-    duration_s: float
-    final_transcript: str
-    partial_transcript: Optional[str]
-
-
-@dataclass
-class ASRParentGroup:
-    dataset: str
-    parent_id: str
-    reference: str
-    parent_duration_s: float
-    expected_num_chunks: Optional[int]
-    chunk_occurrences: DefaultDict[int, List[ASRParentChunk]] = field(
-        default_factory=lambda: defaultdict(list)
-    )
-
-
-@dataclass
 class ASRDatasetAggregates:
     final: WERAggregate = field(default_factory=WERAggregate)
     partial: WERAggregate = field(default_factory=WERAggregate)
 
 
 class ASRMetricAccumulator:
-    """Builds ASR WER summaries across clip- and parent-scoped samples."""
+    """Builds ASR WER summaries across request-scoped ASR samples."""
 
     def __init__(self) -> None:
-        self._clip_samples: List[ASRScoredSample] = []
-        self._parent_groups: Dict[str, ASRParentGroup] = {}
+        self._samples: List[ASRScoredSample] = []
 
     def add_clip_sample(
         self,
@@ -128,7 +107,7 @@ class ASRMetricAccumulator:
         final_stats: WERStats,
         partial_stats: Optional[WERStats],
     ) -> None:
-        self._clip_samples.append(
+        self._samples.append(
             ASRScoredSample(
                 dataset=dataset,
                 duration_s=duration_s,
@@ -137,89 +116,8 @@ class ASRMetricAccumulator:
             )
         )
 
-    def add_parent_chunk(
-        self,
-        *,
-        dataset: str,
-        parent_id: str,
-        reference: str,
-        parent_duration_s: float,
-        expected_num_chunks: Optional[int],
-        request_id: int,
-        chunk_index: int,
-        duration_s: float,
-        final_transcript: str,
-        partial_transcript: Optional[str],
-    ) -> None:
-        group_key = f"{dataset}:{parent_id}"
-        group = self._parent_groups.get(group_key)
-        if group is None:
-            group = ASRParentGroup(
-                dataset=dataset,
-                parent_id=parent_id,
-                reference=reference,
-                parent_duration_s=parent_duration_s,
-                expected_num_chunks=expected_num_chunks,
-            )
-            self._parent_groups[group_key] = group
-        group.chunk_occurrences[chunk_index].append(
-            ASRParentChunk(
-                request_id=request_id,
-                chunk_index=chunk_index,
-                duration_s=duration_s,
-                final_transcript=final_transcript,
-                partial_transcript=partial_transcript,
-            )
-        )
-
-    def _iter_samples(self) -> List[ASRScoredSample]:
-        samples = list(self._clip_samples)
-        for group in self._parent_groups.values():
-            attempts: DefaultDict[int, Dict[int, ASRParentChunk]] = defaultdict(dict)
-            for chunk_index, chunks in group.chunk_occurrences.items():
-                for occurrence, chunk in enumerate(
-                    sorted(chunks, key=lambda c: c.request_id)
-                ):
-                    attempts[occurrence][chunk_index] = chunk
-
-            for chunks_by_index in attempts.values():
-                if (
-                    group.expected_num_chunks is not None
-                    and len(chunks_by_index) < group.expected_num_chunks
-                ):
-                    continue
-                chunks = [
-                    chunks_by_index[index] for index in sorted(chunks_by_index)
-                ]
-                if not chunks:
-                    continue
-                duration_s = group.parent_duration_s or sum(
-                    c.duration_s for c in chunks
-                )
-                final_hypothesis = " ".join(c.final_transcript for c in chunks)
-                final_stats = compute_wer_stats(group.reference, final_hypothesis)
-
-                partial_stats = None
-                if all(c.partial_transcript for c in chunks):
-                    partial_hypothesis = " ".join(
-                        c.partial_transcript or "" for c in chunks
-                    )
-                    partial_stats = compute_wer_stats(
-                        group.reference, partial_hypothesis
-                    )
-
-                samples.append(
-                    ASRScoredSample(
-                        dataset=group.dataset,
-                        duration_s=duration_s,
-                        final_stats=final_stats,
-                        partial_stats=partial_stats,
-                    )
-                )
-        return samples
-
     def get_summary(self) -> Dict[str, Optional[float]]:
-        samples = self._iter_samples()
+        samples = self._samples
         if not samples:
             return {}
 
@@ -263,20 +161,16 @@ class ASRRequestMetrics:
     dataset: str
     source_id: Optional[str]
     sample_id: Optional[str]
-    reference_scope: str
-    parent_id: Optional[str]
-    chunk_index: Optional[int]
     time_to_first_partial: Optional[float]
     time_to_final_transcript: Optional[float]
+    interactivity: Optional[float]
+    interactivity_word_count: int
 
     def to_request_row(self) -> Dict[str, Any]:
         return {
             "dataset": self.dataset,
             "source_id": self.source_id,
             "sample_id": self.sample_id,
-            "reference_scope": self.reference_scope,
-            "parent_id": self.parent_id,
-            "chunk_index": self.chunk_index,
             "time_to_first_partial": (
                 round(self.time_to_first_partial, 3)
                 if self.time_to_first_partial is not None
@@ -287,6 +181,10 @@ class ASRRequestMetrics:
                 if self.time_to_final_transcript is not None
                 else None
             ),
+            "interactivity": (
+                round(self.interactivity, 3) if self.interactivity is not None else None
+            ),
+            "interactivity_word_count": self.interactivity_word_count,
             "partial_transcript": self.partial_transcript,
             "final_transcript": self.final_transcript,
             "expected_transcript": self.expected_transcript,
@@ -320,64 +218,35 @@ def score_asr_request(
     dataset = str(channel_metrics.get("dataset") or "unknown")
     source_id = _optional_str(channel_metrics.get("source_id"))
     sample_id = _optional_str(channel_metrics.get("sample_id"))
-    reference_scope = str(channel_metrics.get("reference_scope") or "clip")
-    parent_id = _optional_str(channel_metrics.get("parent_id"))
-    chunk_index = _optional_int(channel_metrics.get("chunk_index"))
     time_to_first_partial = _optional_float(
         channel_metrics.get("time_to_first_partial")
     )
     time_to_final_transcript = _optional_float(
         channel_metrics.get("time_to_final_transcript")
     )
+    interactivity_stats = compute_interactivity_stats(channel_metrics)
+    interactivity = (
+        interactivity_stats.mean_latency_ms if interactivity_stats is not None else None
+    )
+    interactivity_word_count = (
+        interactivity_stats.word_count if interactivity_stats is not None else 0
+    )
 
-    final_wer: Optional[float] = None
-    partial_wer: Optional[float] = None
-
-    if reference_scope == "parent":
-        parent_reference = channel_metrics.get(
-            "parent_expected_transcript", expected_transcript
+    final_stats = compute_wer_stats(str(expected_transcript), str(final_transcript))
+    final_wer = final_stats.wer
+    partial_stats = None
+    partial_wer = None
+    if partial_transcript:
+        partial_stats = compute_wer_stats(
+            str(expected_transcript), str(partial_transcript)
         )
-        parent_duration_s = float(
-            channel_metrics.get("parent_duration_s") or duration_s
-        )
-        expected_num_chunks = _optional_int(channel_metrics.get("parent_num_chunks"))
-        if parent_id is None:
-            raise ValueError(
-                f"STT response for request {request_id} has "
-                "reference_scope='parent' but no parent_id."
-            )
-        if chunk_index is None:
-            raise ValueError(
-                f"STT response for request {request_id} has "
-                "reference_scope='parent' but no chunk_index."
-            )
-        accumulator.add_parent_chunk(
-            dataset=dataset,
-            parent_id=parent_id,
-            reference=str(parent_reference),
-            parent_duration_s=parent_duration_s,
-            expected_num_chunks=expected_num_chunks,
-            request_id=request_id,
-            chunk_index=chunk_index,
-            duration_s=duration_s,
-            final_transcript=str(final_transcript),
-            partial_transcript=partial_transcript,
-        )
-    else:
-        final_stats = compute_wer_stats(str(expected_transcript), str(final_transcript))
-        final_wer = final_stats.wer
-        partial_stats = None
-        if partial_transcript:
-            partial_stats = compute_wer_stats(
-                str(expected_transcript), str(partial_transcript)
-            )
-            partial_wer = partial_stats.wer
-        accumulator.add_clip_sample(
-            dataset=dataset,
-            duration_s=duration_s,
-            final_stats=final_stats,
-            partial_stats=partial_stats,
-        )
+        partial_wer = partial_stats.wer
+    accumulator.add_clip_sample(
+        dataset=dataset,
+        duration_s=duration_s,
+        final_stats=final_stats,
+        partial_stats=partial_stats,
+    )
 
     return ASRRequestMetrics(
         final_transcript=str(final_transcript),
@@ -388,11 +257,10 @@ def score_asr_request(
         dataset=dataset,
         source_id=source_id,
         sample_id=sample_id,
-        reference_scope=reference_scope,
-        parent_id=parent_id,
-        chunk_index=chunk_index,
         time_to_first_partial=time_to_first_partial,
         time_to_final_transcript=time_to_final_transcript,
+        interactivity=interactivity,
+        interactivity_word_count=interactivity_word_count,
     )
 
 
@@ -400,12 +268,6 @@ def _optional_float(value: Any) -> Optional[float]:
     if value is None:
         return None
     return float(value)
-
-
-def _optional_int(value: Any) -> Optional[int]:
-    if value is None:
-        return None
-    return int(value)
 
 
 def _optional_str(value: Any) -> Optional[str]:

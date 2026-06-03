@@ -98,6 +98,7 @@ class AudioPerformanceEvaluator:
             "time_to_final_transcript": CDFSketch(
                 "time_to_final_transcript", unit="ms"
             ),
+            "interactivity": CDFSketch("interactivity", unit="ms"),
         }
         self._asr_metrics = ASRMetricAccumulator()
         self._stt_request_count = 0
@@ -282,6 +283,10 @@ class AudioPerformanceEvaluator:
                 if asr_metrics.time_to_final_transcript is not None:
                     self.asr_latency_summaries["time_to_final_transcript"].put(
                         asr_metrics.time_to_final_transcript
+                    )
+                if asr_metrics.interactivity is not None:
+                    self.asr_latency_summaries["interactivity"].put(
+                        asr_metrics.interactivity
                     )
 
     def record_session_completed(

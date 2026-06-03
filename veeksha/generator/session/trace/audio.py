@@ -143,7 +143,7 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
             if column in {"session_id", "audio_file"}:
                 continue
             value = row[column]
-            if pd.isna(value):
+            if not isinstance(value, (dict, list)) and pd.isna(value):
                 continue
             if isinstance(value, np.generic):
                 value = value.item()

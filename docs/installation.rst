@@ -1,27 +1,18 @@
 Installation
 ============
 
-We recommend using `uv <https://github.com/astral-sh/uv>`_ for managing environments and dependencies.
-For optimal performance and true worker parallelism, it is recommended to use **Python 3.14 free-threaded**.
+We recommend using `mamba <https://mamba.readthedocs.io/>`_ for managing
+environments and dependencies.
 
 Prerequisites
 -------------
 
-If you haven't installed ``uv`` yet, you can do so with:
+If you haven't installed ``mamba`` yet, install Miniforge:
 
 .. code-block:: bash
 
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-
-Environment setup
------------------
-
-Create and activate a virtual environment with Python 3.14t:
-
-.. code-block:: bash
-
-   uv venv --python 3.14t
-   source .venv/bin/activate
+   curl -L -O https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+   bash Miniforge3-Linux-x86_64.sh
 
 Install Veeksha
 ---------------
@@ -29,11 +20,13 @@ Install Veeksha
 From PyPI
 ~~~~~~~~~
 
-You can install the latest stable version of ``veeksha`` directly using ``uv``:
+You can install the latest stable version of ``veeksha`` directly with ``pip``:
 
 .. code-block:: bash
 
-   uv pip install veeksha
+   mamba create -p ./env python=3.12 pip
+   mamba activate ./env
+   pip install veeksha
 
 From source
 ~~~~~~~~~~~
@@ -44,4 +37,5 @@ If you want to install from the latest source code or contribute to development:
 
    git clone https://github.com/project-vajra/veeksha.git
    cd veeksha
-   uv pip install -e .
+   mamba env create -p ./env -f environment.yml
+   mamba activate ./env
