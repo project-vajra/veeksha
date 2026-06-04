@@ -39,25 +39,26 @@ def compute_interactivity_stats(
     """Compute word visibility latency for one STT request.
 
     Missing ``reference_word_timestamps`` means the trace does not support this
-    metric, so this returns ``None``. If reference timestamps are present, the
-    runtime must also provide well-formed ``transcript_snapshots``.
+    metric, so this returns ``None``. Missing or empty snapshots mean the metric
+    is unavailable for this request.
     """
     if channel_metrics.get("reference_word_timestamps") is None:
         return None
 
-    reference_words = _parse_reference_words(
-        channel_metrics["reference_word_timestamps"]
+    reference_words = _expand_reference_words(
+        _parse_reference_words(channel_metrics["reference_word_timestamps"])
     )
-    snapshots = _parse_transcript_snapshots(
-        channel_metrics.get("transcript_snapshots")
-    )
+    snapshot_rows = channel_metrics.get("transcript_snapshots")
+    if snapshot_rows is None:
+        return None
+    snapshots = _parse_transcript_snapshots(snapshot_rows)
     if not snapshots:
-        raise ValueError(
-            "reference_word_timestamps were provided, but transcript_snapshots "
-            "is empty."
-        )
+        return None
 
-    reference_tokens = [_single_normalized_word(word.word) for word in reference_words]
+    if not reference_words:
+        return None
+
+    reference_tokens = [word.word for word in reference_words]
     first_seen_ms: list[Optional[float]] = [None] * len(reference_tokens)
 
     for snapshot in sorted(snapshots, key=lambda item: item.elapsed_ms):
@@ -147,14 +148,18 @@ def _expect_float(item: dict[str, Any], field: str, index: int) -> float:
         raise TypeError(f"{field} at index {index} must be numeric.") from exc
 
 
-def _single_normalized_word(text: str) -> str:
-    words = _normalize_words(text)
-    if len(words) != 1:
-        raise ValueError(
-            "Each reference_word_timestamps entry must normalize to exactly "
-            f"one word; got {text!r} -> {words!r}."
+def _expand_reference_words(words: list[ReferenceWord]) -> list[ReferenceWord]:
+    expanded: list[ReferenceWord] = []
+    for word in words:
+        expanded.extend(
+            ReferenceWord(
+                word=token,
+                start_ms=word.start_ms,
+                end_ms=word.end_ms,
+            )
+            for token in _normalize_words(word.word)
         )
-    return words[0]
+    return expanded
 
 
 def _normalize_words(text: str) -> list[str]:
