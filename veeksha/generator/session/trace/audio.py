@@ -117,6 +117,7 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
         }
 
         metadata = self._row_metadata(row)
+        metadata["audio_file"] = audio_file
 
         request = Request(
             id=self._next_request_id(),

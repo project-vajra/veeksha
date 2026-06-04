@@ -153,9 +153,12 @@ def _metric_slug(value: str) -> str:
 class ASRRequestMetrics:
     """Request-level ASR fields persisted into request_level_metrics.jsonl."""
 
+    audio_file: Optional[str]
     final_transcript: str
     expected_transcript: str
     partial_transcript: Optional[str]
+    reference_word_timestamps: Optional[List[Dict[str, Any]]]
+    transcript_snapshots: List[Dict[str, Any]]
     final_wer: Optional[float]
     partial_wer: Optional[float]
     dataset: str
@@ -171,6 +174,7 @@ class ASRRequestMetrics:
             "dataset": self.dataset,
             "source_id": self.source_id,
             "sample_id": self.sample_id,
+            "audio_file": self.audio_file,
             "time_to_first_partial": (
                 round(self.time_to_first_partial, 3)
                 if self.time_to_first_partial is not None
@@ -188,6 +192,8 @@ class ASRRequestMetrics:
             "partial_transcript": self.partial_transcript,
             "final_transcript": self.final_transcript,
             "expected_transcript": self.expected_transcript,
+            "reference_word_timestamps": self.reference_word_timestamps,
+            "transcript_snapshots": self.transcript_snapshots,
             "partial_wer": (
                 round(self.partial_wer, 3) if self.partial_wer is not None else None
             ),
@@ -216,8 +222,15 @@ def score_asr_request(
 
     partial_transcript = channel_metrics.get("partial_transcript")
     dataset = str(channel_metrics.get("dataset") or "unknown")
+    audio_file = _optional_str(channel_metrics.get("audio_file"))
     source_id = _optional_str(channel_metrics.get("source_id"))
     sample_id = _optional_str(channel_metrics.get("sample_id"))
+    reference_word_timestamps = _optional_list_of_dicts(
+        channel_metrics.get("reference_word_timestamps")
+    )
+    transcript_snapshots = _list_of_dicts_or_empty(
+        channel_metrics.get("transcript_snapshots")
+    )
     time_to_first_partial = _optional_float(
         channel_metrics.get("time_to_first_partial")
     )
@@ -249,9 +262,12 @@ def score_asr_request(
     )
 
     return ASRRequestMetrics(
+        audio_file=audio_file,
         final_transcript=str(final_transcript),
         expected_transcript=str(expected_transcript),
         partial_transcript=partial_transcript,
+        reference_word_timestamps=reference_word_timestamps,
+        transcript_snapshots=transcript_snapshots,
         final_wer=final_wer,
         partial_wer=partial_wer,
         dataset=dataset,
@@ -268,6 +284,18 @@ def _optional_float(value: Any) -> Optional[float]:
     if value is None:
         return None
     return float(value)
+
+
+def _optional_list_of_dicts(value: Any) -> Optional[List[Dict[str, Any]]]:
+    if value is None:
+        return None
+    return _list_of_dicts_or_empty(value)
+
+
+def _list_of_dicts_or_empty(value: Any) -> List[Dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]
 
 
 def _optional_str(value: Any) -> Optional[str]:
