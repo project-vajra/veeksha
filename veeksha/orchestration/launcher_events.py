@@ -12,7 +12,7 @@ from veeksha.orchestration.launcher_progress import (
 
 
 def sweep_plan_payload(plan: Any, generated_config_dir: Path) -> dict:
-    return {
+    payload = {
         "runs": len(plan.runs),
         "generated_config_dir": str(generated_config_dir),
         "sweep_type": plan.spec.sweep_type,
@@ -25,6 +25,9 @@ def sweep_plan_payload(plan: Any, generated_config_dir: Path) -> dict:
             {run.input_size for run in plan.runs if run.input_size is not None}
         ),
     }
+    if getattr(plan, "endpoint", None) is not None:
+        payload["endpoint"] = plan.endpoint.to_dict()
+    return payload
 
 
 def run_event_payload(spec: Any, run: Any, *, completed_runs: int) -> dict:
@@ -61,7 +64,9 @@ def console_message(event: str, payload: dict) -> Optional[str]:
             f"base_config={payload['base_config']}"
         )
     if event == "engine_unmanaged":
-        return "no managed engine configured; running sweep against config api_base"
+        return "no server or endpoint configured; running sweep against config api_base"
+    if event == "endpoint_external":
+        return f"using external endpoint: {_endpoint_details(payload)}"
     if event == "engine_start":
         return f"starting engine: {_engine_details(payload)}"
     if event == "engine_ready":
@@ -180,10 +185,26 @@ def _format_values(value: object) -> str:
 def _engine_details(payload: dict) -> str:
     parts = [
         f"runner={payload['runner']}",
+        f"engine_type={payload.get('engine_type', 'unknown')}",
+        f"model={payload.get('model', 'unknown')}",
         f"api_base={payload['api_base']}",
         f"health={payload['health_url']}",
         f"logs={payload['engine_log_dir']}",
     ]
     if payload.get("container"):
         parts.append(f"container={payload['container']}")
+    return " ".join(parts)
+
+
+def _endpoint_details(payload: dict) -> str:
+    parts = [
+        f"engine_type={payload.get('engine_type', 'unknown')}",
+        f"model={payload.get('model', 'unknown')}",
+        f"api_base={payload['api_base']}",
+    ]
+    if payload.get("health_url") is not None:
+        parts.append(f"health={payload['health_url']}")
+    if payload.get("port"):
+        parts.append(f"host={payload.get('host', 'unknown')}")
+        parts.append(f"port={payload['port']}")
     return " ".join(parts)

@@ -34,6 +34,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from veeksha.config.endpoint import EndpointConfig
 from veeksha.sweeps.config import (
     DEFAULT_COOLDOWN_SECONDS,
     DEFAULT_MAX_SESSIONS,
@@ -55,13 +56,13 @@ from veeksha.sweeps.specs import (
     supported_combinations,
 )
 from veeksha.sweeps.utils import (
+    apply_endpoint,
     apply_trace_source,
     benchmark_command,
     build_run_config,
     format_template,
     input_sizes,
     load_config,
-    override_client_api_base,
     write_config,
 )
 
@@ -86,6 +87,7 @@ class SweepPlan:
     spec: SweepSpec
     tmp_parent: Path
     runs: Tuple[SweepRunDescriptor, ...]
+    endpoint: Optional[EndpointConfig] = None
 
     def cleanup(self) -> None:
         for child in self.tmp_parent.iterdir():
@@ -142,7 +144,7 @@ def _build_sweep_plan(
     sweep_config: SweepConfig,
     spec: SweepSpec,
     *,
-    client_api_base: Optional[str] = None,
+    endpoint: Optional[EndpointConfig] = None,
     tmp_parent: Optional[Path] = None,
 ) -> SweepPlan:
     base_config = load_config(spec.config_path)
@@ -188,7 +190,7 @@ def _build_sweep_plan(
             min_chars=sweep_config.min_chars,
             max_chars=sweep_config.max_chars,
         )
-        override_client_api_base(run_cfg, client_api_base)
+        apply_endpoint(run_cfg, endpoint)
         write_config(run_config, run_cfg)
         runs.append(
             SweepRunDescriptor(
@@ -206,7 +208,12 @@ def _build_sweep_plan(
             )
         )
 
-    return SweepPlan(spec=spec, tmp_parent=tmp_parent, runs=tuple(runs))
+    return SweepPlan(
+        spec=spec,
+        tmp_parent=tmp_parent,
+        runs=tuple(runs),
+        endpoint=endpoint,
+    )
 
 
 def _print_run_header(
@@ -534,26 +541,24 @@ def build_sweep_plan(
     sweep_config: SweepConfig,
     spec: SweepSpec,
     *,
-    client_api_base: Optional[str] = None,
+    endpoint: Optional[EndpointConfig] = None,
     tmp_parent: Optional[Path] = None,
 ) -> SweepPlan:
     """Build a concrete set of benchmark runs for a resolved sweep spec."""
     return _build_sweep_plan(
-        sweep_config, spec, client_api_base=client_api_base, tmp_parent=tmp_parent
+        sweep_config, spec, endpoint=endpoint, tmp_parent=tmp_parent
     )
 
 
 def build_sweep_plan_from_config(
     config: SweepConfig,
     *,
-    client_api_base: Optional[str] = None,
+    endpoint: Optional[EndpointConfig] = None,
     tmp_parent: Optional[Path] = None,
 ) -> SweepPlan:
     """Build a concrete sweep plan from a typed programmatic config."""
     config, spec = resolve_sweep_config(config)
-    return build_sweep_plan(
-        config, spec, client_api_base=client_api_base, tmp_parent=tmp_parent
-    )
+    return build_sweep_plan(config, spec, endpoint=endpoint, tmp_parent=tmp_parent)
 
 
 def run_sweep(sweep_config: SweepConfig, spec: SweepSpec, *, dry_run: bool) -> int:

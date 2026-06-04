@@ -251,7 +251,7 @@ class SeedTTSTextTraceFlavorGenerator(TraceFlavorGeneratorBase):
             prompt_text=text,
             target_output_tokens=1,
             wait_after_ready=0.0,
-            parent_node=None,
+            parent_nodes=[],
             target_prompt_tokens=target_prompt_tokens,
         )
         request.metadata.update(

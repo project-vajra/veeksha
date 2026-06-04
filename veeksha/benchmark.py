@@ -13,6 +13,7 @@ from veeksha.benchmark_utils import (
 )
 from veeksha.client.registry import ClientRegistry
 from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.endpoint import EndpointConfig
 from veeksha.core.seeding import SeedManager
 from veeksha.core.thread_pool import ThreadPoolManager
 from veeksha.core.trace_recorder import TraceRecorder
@@ -312,6 +313,17 @@ def _run_benchmark(
     return result
 
 
+def _with_endpoint(
+    benchmark_config: BenchmarkConfig, endpoint: EndpointConfig
+) -> BenchmarkConfig:
+    return replace(
+        benchmark_config,
+        client=endpoint.apply_to_client_config(benchmark_config.client),
+        endpoint=endpoint,
+        server=None,
+    )
+
+
 def manage_benchmark_run(
     benchmark_config: BenchmarkConfig,
 ):
@@ -338,20 +350,10 @@ def manage_benchmark_run(
             with managed_server(
                 benchmark_config.server, output_dir=benchmark_config.output_dir
             ) as server_info:
-                logger.info(f"Server ready at {server_info['api_base']}")
+                endpoint = server_info["endpoint"]
+                logger.info(f"Server ready at {endpoint.api_base}")
 
-                # server dictates client
-                updated_client_config = replace(
-                    benchmark_config.client,
-                    api_base=server_info["api_base"],
-                    api_key=server_info["api_key"],
-                    model=benchmark_config.server.model,
-                )
-                updated_benchmark_config = replace(
-                    benchmark_config,
-                    client=updated_client_config,
-                    server=None,
-                )
+                updated_benchmark_config = _with_endpoint(benchmark_config, endpoint)
 
                 maybe_init_wandb_run(updated_benchmark_config, run_kind="benchmark")
                 try:
@@ -366,6 +368,10 @@ def manage_benchmark_run(
             if updated_benchmark_config is not None:
                 maybe_finish_wandb_run(updated_benchmark_config.output_dir)
     else:
+        if benchmark_config.endpoint is not None:
+            benchmark_config = _with_endpoint(
+                benchmark_config, benchmark_config.endpoint
+            )
         maybe_init_wandb_run(benchmark_config, run_kind="benchmark")
         try:
             result = _run_benchmark(benchmark_config)

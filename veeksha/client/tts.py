@@ -8,7 +8,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, AsyncIterator, List, Optional
+from typing import TYPE_CHECKING, AsyncIterator, Callable, List, Optional
 from urllib.parse import urljoin
 
 import httpx
@@ -208,6 +208,8 @@ class TTSClient(BaseLLMClient):
         request: Request,
         session_id: int,
         session_total_requests: int = 1,
+        on_request_sent: Optional[Callable[[], None]] = None,
+        on_request_dispatched: Optional[Callable[[], None]] = None,
     ) -> RequestResult:
         """Send a streaming TTS request and collect audio metrics."""
         text_content = request.channels.get(ChannelModality.TEXT)
@@ -250,16 +252,25 @@ class TTSClient(BaseLLMClient):
                 timeout=self.config.request_timeout,
             ) as response:
                 response.raise_for_status()
+                if on_request_dispatched is not None:
+                    on_request_dispatched()
 
+                sent_notified = False
                 async for chunk in self._provider_adapter.iter_audio_chunks(
                     response, self._chunk_size
                 ):
                     receive_time = time.monotonic()
                     if ttfc is None:
                         ttfc = (receive_time - t_start) * 1000
+                    if not sent_notified and on_request_sent is not None:
+                        on_request_sent()
+                        sent_notified = True
 
                     audio_chunks.append(chunk)
                     chunk_count += 1
+
+                if not sent_notified and on_request_sent is not None:
+                    on_request_sent()
 
         except httpx.HTTPStatusError as e:
             error_code = e.response.status_code if e.response else 500

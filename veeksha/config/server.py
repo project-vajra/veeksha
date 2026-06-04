@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, TypeAlias, Union
 
 from vidhi import BasePolyConfig, field, frozen_dataclass
 
+from veeksha.config.endpoint import EndpointConfig
 from veeksha.types import ServerType
 
 _DEFAULT_MODEL = "meta-llama/Meta-Llama-3-8B-Instruct"
@@ -36,7 +37,9 @@ class BaseServerConfig(BasePolyConfig):
     env_path: Optional[str] = field(
         None, help="Path to a Python environment directory (virtualenv/conda)."
     )
-    model: str = field(_DEFAULT_MODEL, help="Model name exposed to the benchmark client.")
+    model: str = field(
+        _DEFAULT_MODEL, help="Model name exposed to the benchmark client."
+    )
     host: str = field("localhost", help="Host address for the server")
     port: int = field(8000, help="Port number for the server")
     api_key: str = field("token-abc123", help="API key for server authentication")
@@ -61,18 +64,12 @@ class BaseServerConfig(BasePolyConfig):
         "{}",
         help="Additional engine-specific arguments as JSON string, dict, or None.",
     )
-    api_base: Optional[str] = field(
-        None, help="External API base URL for the managed engine."
-    )
-    health_url: Optional[str] = field(
-        None, help="Health endpoint URL for the managed engine."
-    )
+    api_base: Optional[str] = field(None, help="External API base URL for the server.")
+    health_url: Optional[str] = field(None, help="Health endpoint URL for the server.")
     setup_dir: Optional[str] = field(
         None, help="Source checkout used by subprocess engines."
     )
-    max_restarts: int = field(
-        3, help="Maximum managed engine restarts per sweep run."
-    )
+    max_restarts: int = field(3, help="Maximum server restarts per sweep run.")
 
     def __post_init__(self) -> None:
         if self.port <= 0:
@@ -97,6 +94,17 @@ class BaseServerConfig(BasePolyConfig):
         if self.health_url:
             return self.health_url
         return f"http://{self.host}:{self.port}/health"
+
+    def get_endpoint(self) -> EndpointConfig:
+        return EndpointConfig(
+            engine_type=self.get_type(),
+            model=self.model,
+            api_base=self.get_api_base_url(),
+            api_key=self.api_key,
+            health_url=self.get_health_check_url(),
+            host=self.host,
+            port=self.port,
+        )
 
     def get_gpu_env_var(self) -> Optional[str]:
         """Get CUDA_VISIBLE_DEVICES value if gpu_ids is specified."""
@@ -123,12 +131,12 @@ class BaseServerConfig(BasePolyConfig):
 
     @property
     def api_base_url(self) -> str:
-        """Compatibility accessor for launcher-managed engines."""
+        """Accessor for the server API base URL."""
         return self.get_api_base_url()
 
     @property
     def health_check_url(self) -> str:
-        """Compatibility accessor for launcher-managed engines."""
+        """Accessor for the server health check URL."""
         return self.get_health_check_url()
 
 
@@ -152,6 +160,8 @@ class VajraServerConfig(BaseServerConfig):
                 "vajra requires server.setup_dir (the Vajra source checkout, "
                 "used to record the engine git commit)"
             )
+        if self.model == _DEFAULT_MODEL:
+            raise ValueError("vajra requires server.model for the endpoint")
 
     def get_api_base_url(self) -> str:
         if self.api_base:
@@ -183,13 +193,14 @@ class VllmServerConfig(BaseServerConfig):
         return ServerType.VLLM
 
     def __post_init__(self) -> None:
+        if self.model == _DEFAULT_MODEL and self.hf_model:
+            self.model = self.hf_model
         super().__post_init__()
         _validate_docker_engine_config(self)
         if not self.hf_model:
             raise ValueError("vllm requires server.hf_model")
         if not self.deploy_config:
             raise ValueError("vllm requires server.deploy_config")
-        _set_default_client_model(self, self.hf_model)
 
     def get_api_base_url(self) -> str:
         if self.api_base:
@@ -255,6 +266,8 @@ class SglangServerConfig(BaseServerConfig):
         return ServerType.SGLANG
 
     def __post_init__(self) -> None:
+        if self.model == _DEFAULT_MODEL and (self.model_name or self.model_path):
+            self.model = self.model_name or self.model_path
         super().__post_init__()
         _validate_docker_engine_config(self)
         if not self.model_path:
@@ -267,7 +280,6 @@ class SglangServerConfig(BaseServerConfig):
                 "(the default bootstrap installs sglang-omni from the mounted "
                 "source checkout); set server.bootstrap to '' to disable"
             )
-        _set_default_client_model(self, self.model_name or self.model_path)
 
     def get_api_base_url(self) -> str:
         if self.api_base:
@@ -307,25 +319,15 @@ class SglangServerConfig(BaseServerConfig):
         )
 
 
-def _set_default_client_model(config: BaseServerConfig, server_model: str) -> None:
-    if config.model == _DEFAULT_MODEL:
-        object.__setattr__(config, "model", server_model)
-
-
-def _validate_docker_engine_config(config: VllmServerConfig | SglangServerConfig) -> None:
+def _validate_docker_engine_config(
+    config: VllmServerConfig | SglangServerConfig,
+) -> None:
     if config.container_port is not None and config.container_port <= 0:
         raise ValueError("server.container_port must be positive")
     if config.docker_gpus is not None and config.gpu_ids is not None:
         raise ValueError("use either server.docker_gpus or server.gpu_ids, not both")
 
 
-LauncherEngineConfig: TypeAlias = VajraServerConfig | VllmServerConfig | SglangServerConfig
-ManagedEngineConfig: TypeAlias = LauncherEngineConfig
-
-# Backward-compatible import aliases for the transitional launcher names.
-VajraSubprocessServerConfig = VajraServerConfig
-VllmOmniDockerServerConfig = VllmServerConfig
-SglangOmniDockerServerConfig = SglangServerConfig
-VajraSubprocessEngineConfig = VajraServerConfig
-VllmOmniDockerEngineConfig = VllmServerConfig
-SglangOmniDockerEngineConfig = SglangServerConfig
+ManagedServerConfig: TypeAlias = (
+    VajraServerConfig | VllmServerConfig | SglangServerConfig
+)

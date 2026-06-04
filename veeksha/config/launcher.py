@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Any, Mapping, Optional
 
 import yaml
-
-from veeksha.config.server import BaseServerConfig, LauncherEngineConfig
 from vidhi import create_class_from_dict
 from vidhi.utils import get_all_subclasses
+
+from veeksha.config.endpoint import EndpointConfig
+from veeksha.config.server import BaseServerConfig, ManagedServerConfig
 from veeksha.sweeps import planner as sweep_planner
 
 
@@ -19,13 +20,7 @@ class LauncherConfigError(ValueError):
     """Raised when a launcher YAML file is invalid."""
 
 
-_ENGINE_TYPE_ALIASES = {
-    "vajra_subprocess": "vajra",
-    "vllm_omni_docker": "vllm",
-    "sglang_omni_docker": "sglang",
-}
-
-_ENGINE_TYPE_ERROR = "engine.type must be one of: vajra, vllm, sglang"
+_SERVER_TYPE_ERROR = "server.type must be one of: vajra, vllm, sglang"
 
 
 @dataclass(frozen=True)
@@ -42,9 +37,16 @@ class RetryConfig:
 @dataclass(frozen=True)
 class LauncherConfig:
     sweep: sweep_planner.SweepConfig
-    engine: Optional[LauncherEngineConfig] = None
+    server: Optional[ManagedServerConfig] = None
+    endpoint: Optional[EndpointConfig] = None
     retry: RetryConfig = field(default_factory=RetryConfig)
     output_dir: str = field(default_factory=lambda: _default_output_dir())
+
+    def __post_init__(self) -> None:
+        if self.server is not None and self.endpoint is not None:
+            raise LauncherConfigError(
+                "launcher config accepts either server or endpoint, not both"
+            )
 
     @classmethod
     def from_file(cls, path: str | Path) -> "LauncherConfig":
@@ -58,7 +60,7 @@ class LauncherConfig:
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any]) -> "LauncherConfig":
         _reject_unknown_keys(
-            raw, {"engine", "sweep", "retry", "output_dir"}, "launcher"
+            raw, {"server", "endpoint", "sweep", "retry", "output_dir"}, "launcher"
         )
 
         sweep_raw = raw.get("sweep")
@@ -66,16 +68,33 @@ class LauncherConfig:
             raise LauncherConfigError("launcher config requires a sweep mapping")
         try:
             sweep = sweep_planner.SweepConfig.from_mapping(sweep_raw)
-            sweep_planner.resolve_sweep_config(sweep)
+            sweep, _ = sweep_planner.resolve_sweep_config(sweep)
         except sweep_planner.SweepConfigError as exc:
             raise LauncherConfigError(str(exc)) from exc
 
-        engine_raw = raw.get("engine")
-        engine = None
-        if engine_raw is not None:
-            if not isinstance(engine_raw, Mapping):
-                raise LauncherConfigError("engine must be a mapping when provided")
-            engine = _engine_config_from_mapping(engine_raw)
+        server_raw = raw.get("server")
+        endpoint_raw = raw.get("endpoint")
+        if server_raw is not None and endpoint_raw is not None:
+            raise LauncherConfigError(
+                "launcher config accepts either server or endpoint, not both"
+            )
+
+        server = None
+        endpoint = None
+        if server_raw is not None:
+            if not isinstance(server_raw, Mapping):
+                raise LauncherConfigError("server must be a mapping when provided")
+            server = _server_config_from_mapping(server_raw)
+            _validate_endpoint_matches_sweep(
+                server.get_endpoint(), sweep.engine, "server.type"
+            )
+        if endpoint_raw is not None:
+            if not isinstance(endpoint_raw, Mapping):
+                raise LauncherConfigError("endpoint must be a mapping when provided")
+            endpoint = _endpoint_config_from_mapping(endpoint_raw)
+            _validate_endpoint_matches_sweep(
+                endpoint, sweep.engine, "endpoint.engine_type"
+            )
 
         retry_raw = raw.get("retry", {})
         if not isinstance(retry_raw, Mapping):
@@ -86,7 +105,13 @@ class LauncherConfig:
         if not isinstance(output_dir, str):
             raise LauncherConfigError("output_dir must be a string")
 
-        return cls(sweep=sweep, engine=engine, retry=retry, output_dir=output_dir)
+        return cls(
+            sweep=sweep,
+            server=server,
+            endpoint=endpoint,
+            retry=retry,
+            output_dir=output_dir,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return _to_plain_data(self)
@@ -97,10 +122,10 @@ def _default_output_dir() -> str:
     return f"benchmark_output/veeksha_launcher_{timestamp}"
 
 
-def _engine_config_from_mapping(raw: Mapping[str, Any]) -> LauncherEngineConfig:
+def _server_config_from_mapping(raw: Mapping[str, Any]) -> ManagedServerConfig:
     engine_type = raw.get("type")
-    config_cls = _engine_config_class_from_type(engine_type)
-    data = _coerce_engine_dict(raw, config_cls)
+    config_cls = _server_config_class_from_type(engine_type)
+    data = _coerce_server_dict(raw, config_cls)
     data.pop("type", None)
     try:
         return create_class_from_dict(config_cls, data)
@@ -108,12 +133,30 @@ def _engine_config_from_mapping(raw: Mapping[str, Any]) -> LauncherEngineConfig:
         raise LauncherConfigError(str(exc)) from exc
 
 
-def _engine_config_class_from_type(engine_type: object) -> type[BaseServerConfig]:
-    if not isinstance(engine_type, str):
-        raise LauncherConfigError(_ENGINE_TYPE_ERROR)
-    normalized_engine_type = _ENGINE_TYPE_ALIASES.get(
-        engine_type.lower(), engine_type.lower()
+def _endpoint_config_from_mapping(raw: Mapping[str, Any]) -> EndpointConfig:
+    _reject_unknown_keys(
+        raw, {field.name for field in fields(EndpointConfig)}, "endpoint"
     )
+    try:
+        return create_class_from_dict(EndpointConfig, dict(raw))
+    except (TypeError, ValueError) as exc:
+        raise LauncherConfigError(str(exc)) from exc
+
+
+def _validate_endpoint_matches_sweep(
+    endpoint: EndpointConfig, sweep_engine: str, source: str
+) -> None:
+    if endpoint.engine_type != sweep_engine:
+        raise LauncherConfigError(
+            f"{source} must match sweep.engine "
+            f"({source}={endpoint.engine_type}, sweep.engine={sweep_engine})"
+        )
+
+
+def _server_config_class_from_type(engine_type: object) -> type[BaseServerConfig]:
+    if not isinstance(engine_type, str):
+        raise LauncherConfigError(_SERVER_TYPE_ERROR)
+    normalized_engine_type = engine_type.lower()
     for subclass in get_all_subclasses(BaseServerConfig):
         try:
             subtype = subclass.get_type()
@@ -123,14 +166,14 @@ def _engine_config_class_from_type(engine_type: object) -> type[BaseServerConfig
             return subclass
         if str(subtype).lower() == normalized_engine_type:
             return subclass
-    raise LauncherConfigError(_ENGINE_TYPE_ERROR)
+    raise LauncherConfigError(_SERVER_TYPE_ERROR)
 
 
-def _coerce_engine_dict(
+def _coerce_server_dict(
     raw: Mapping[str, Any], config_cls: type[BaseServerConfig]
 ) -> dict[str, Any]:
     allowed = {field.name for field in fields(config_cls)} | {"type"}
-    _reject_unknown_keys(raw, allowed, "engine")
+    _reject_unknown_keys(raw, allowed, "server")
     data = dict(raw)
 
     for key in ("host", "type", "api_key", "dtype"):
@@ -204,14 +247,14 @@ def _coerce_present_str(data: dict[str, Any], key: str) -> None:
     if key not in data:
         return
     if not isinstance(data[key], str):
-        raise LauncherConfigError(f"engine.{key} must be a string")
+        raise LauncherConfigError(f"server.{key} must be a string")
 
 
 def _coerce_optional_str(data: dict[str, Any], key: str) -> None:
     if key not in data or data[key] is None:
         return
     if not isinstance(data[key], str):
-        raise LauncherConfigError(f"engine.{key} must be a string")
+        raise LauncherConfigError(f"server.{key} must be a string")
 
 
 def _coerce_default_str(data: dict[str, Any], key: str) -> None:
@@ -219,21 +262,21 @@ def _coerce_default_str(data: dict[str, Any], key: str) -> None:
         data.pop(key, None)
         return
     if not isinstance(data[key], str):
-        raise LauncherConfigError(f"engine.{key} must be a string")
+        raise LauncherConfigError(f"server.{key} must be a string")
 
 
 def _coerce_present_int(data: dict[str, Any], key: str) -> None:
     if key not in data:
         return
     if isinstance(data[key], bool) or not isinstance(data[key], int):
-        raise LauncherConfigError(f"engine.{key} must be an integer")
+        raise LauncherConfigError(f"server.{key} must be an integer")
 
 
 def _coerce_optional_int(data: dict[str, Any], key: str) -> None:
     if key not in data or data[key] is None:
         return
     if isinstance(data[key], bool) or not isinstance(data[key], int):
-        raise LauncherConfigError(f"engine.{key} must be an integer")
+        raise LauncherConfigError(f"server.{key} must be an integer")
 
 
 def _coerce_default_int(data: dict[str, Any], key: str) -> None:
@@ -241,7 +284,7 @@ def _coerce_default_int(data: dict[str, Any], key: str) -> None:
         data.pop(key, None)
         return
     if isinstance(data[key], bool) or not isinstance(data[key], int):
-        raise LauncherConfigError(f"engine.{key} must be an integer")
+        raise LauncherConfigError(f"server.{key} must be an integer")
 
 
 def _coerce_default_float(data: dict[str, Any], key: str) -> None:
@@ -249,7 +292,7 @@ def _coerce_default_float(data: dict[str, Any], key: str) -> None:
         data.pop(key, None)
         return
     if isinstance(data[key], bool) or not isinstance(data[key], (int, float)):
-        raise LauncherConfigError(f"engine.{key} must be a number")
+        raise LauncherConfigError(f"server.{key} must be a number")
     data[key] = float(data[key])
 
 
@@ -259,7 +302,7 @@ def _coerce_string_list(data: dict[str, Any], key: str) -> None:
         data.pop(key, None)
         return
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise LauncherConfigError(f"engine.{key} must be a list of strings")
+        raise LauncherConfigError(f"server.{key} must be a list of strings")
 
 
 def _coerce_int_list(data: dict[str, Any], key: str) -> None:
@@ -269,7 +312,7 @@ def _coerce_int_list(data: dict[str, Any], key: str) -> None:
     if not isinstance(value, list) or not all(
         isinstance(item, int) and not isinstance(item, bool) for item in value
     ):
-        raise LauncherConfigError(f"engine.{key} must be a list of integers")
+        raise LauncherConfigError(f"server.{key} must be a list of integers")
 
 
 def _coerce_bool(data: dict[str, Any], key: str) -> None:
@@ -277,7 +320,7 @@ def _coerce_bool(data: dict[str, Any], key: str) -> None:
     if value is None:
         return
     if not isinstance(value, bool):
-        raise LauncherConfigError(f"engine.{key} must be a boolean")
+        raise LauncherConfigError(f"server.{key} must be a boolean")
 
 
 def _coerce_string_mapping(data: dict[str, Any], key: str) -> None:
@@ -286,7 +329,7 @@ def _coerce_string_mapping(data: dict[str, Any], key: str) -> None:
         data.pop(key, None)
         return
     if not isinstance(value, Mapping):
-        raise LauncherConfigError(f"engine.{key} must be a mapping")
+        raise LauncherConfigError(f"server.{key} must be a mapping")
     data[key] = {str(k): str(v) for k, v in value.items()}
 
 

@@ -1,4 +1,4 @@
-"""Orchestrator that runs a sweep under an optional managed engine."""
+"""Orchestrator that runs a sweep under an optional managed server."""
 
 from __future__ import annotations
 
@@ -14,26 +14,27 @@ from typing import Callable, Optional
 
 import yaml
 
-from veeksha.sweeps import planner as sweep_planner
+from veeksha.config.endpoint import EndpointConfig
 from veeksha.config.launcher import LauncherConfig
-from veeksha.orchestration.managed_engines import (
-    BaseEngineRunner,
-    EngineRestartLimitExceeded,
-    create_engine_runner,
-)
 from veeksha.orchestration.launcher_events import (
     attempt_log_name,
     console_message,
     run_event_payload,
     sweep_plan_payload,
 )
-from veeksha.orchestration.processes import ProcessTerminator
 from veeksha.orchestration.launcher_progress import (
     BenchmarkProgressReader,
     BenchmarkRequestProgress,
     LauncherProgressReporter,
     request_progress_payload,
 )
+from veeksha.orchestration.managed_engines import (
+    BaseEngineRunner,
+    EngineRestartLimitExceeded,
+    create_engine_runner,
+)
+from veeksha.orchestration.processes import ProcessTerminator
+from veeksha.sweeps import planner as sweep_planner
 
 _BENCHMARK_PROGRESS_INTERVAL_SECONDS = 30.0
 
@@ -60,7 +61,7 @@ class LauncherOrchestrator:
     ):
         self.config = config
         self.output_dir = Path(config.output_dir)
-        self.engine_output_dir = self.output_dir / "engine"
+        self.server_output_dir = self.output_dir / "server"
         self.benchmark_log_dir = self.output_dir / "benchmark_logs"
         self.generated_config_dir = self.output_dir / "generated_configs"
         self._engine = engine_runner
@@ -92,9 +93,13 @@ class LauncherOrchestrator:
             )
 
             engine = self._resolve_engine()
+            endpoint = self.config.endpoint
+            if engine is not None:
+                endpoint = engine.get_endpoint()
+            self._validate_endpoint(endpoint)
             plan = sweep_planner.build_sweep_plan_from_config(
                 self.config.sweep,
-                client_api_base=engine.get_api_base() if engine is not None else None,
+                endpoint=endpoint,
                 tmp_parent=self.generated_config_dir,
             )
             self._record_event(
@@ -107,6 +112,10 @@ class LauncherOrchestrator:
                 engine.start()
                 stack.callback(self._stop_engine, engine)
                 self._record_event("engine_ready", **self._engine_event_payload(engine))
+            elif endpoint is not None:
+                self._record_event(
+                    "endpoint_external", **self._endpoint_event_payload(endpoint)
+                )
             else:
                 self._record_event("engine_unmanaged")
             for run in plan.runs:
@@ -124,22 +133,45 @@ class LauncherOrchestrator:
     def _resolve_engine(self) -> Optional[BaseEngineRunner]:
         if self._engine is not None:
             return self._engine
-        if self.config.engine is None:
+        if self.config.server is None:
             return None
-        self.engine_output_dir.mkdir(parents=True, exist_ok=True)
-        return create_engine_runner(self.config.engine, self.engine_output_dir)
+        self.server_output_dir.mkdir(parents=True, exist_ok=True)
+        return create_engine_runner(self.config.server, self.server_output_dir)
 
-    def _engine_event_payload(self, engine: BaseEngineRunner) -> dict[str, str]:
+    def _validate_endpoint(self, endpoint: Optional[EndpointConfig]) -> None:
+        if endpoint is None:
+            return
+        if endpoint.engine_type != self.config.sweep.engine:
+            raise RuntimeError(
+                "endpoint engine_type must match sweep.engine "
+                f"(endpoint.engine_type={endpoint.engine_type}, "
+                f"sweep.engine={self.config.sweep.engine})"
+            )
+
+    def _engine_event_payload(self, engine: BaseEngineRunner) -> dict[str, object]:
+        endpoint = engine.get_endpoint()
         payload = {
             "runner": engine.__class__.__name__,
-            "api_base": engine.get_api_base(),
-            "health_url": engine.config.health_check_url,
+            "engine_type": endpoint.engine_type,
+            "model": endpoint.model,
+            "api_base": endpoint.api_base,
+            "health_url": endpoint.health_url or engine.config.health_check_url,
             "engine_log_dir": str(engine.output_dir),
         }
         container_name = getattr(engine, "container_name", None)
         if isinstance(container_name, str):
             payload["container"] = container_name
         return payload
+
+    def _endpoint_event_payload(self, endpoint: EndpointConfig) -> dict[str, object]:
+        return {
+            "engine_type": endpoint.engine_type,
+            "model": endpoint.model,
+            "api_base": endpoint.api_base,
+            "health_url": endpoint.health_url,
+            "host": endpoint.host,
+            "port": endpoint.port,
+        }
 
     def _run_descriptor(
         self,

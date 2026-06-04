@@ -237,7 +237,7 @@ class ShareGPTTraceFlavorGenerator(TraceFlavorGeneratorBase):
             prompt_text=text,
             target_output_tokens=1,  # TTS doesn't use output tokens
             wait_after_ready=0.0,
-            parent_node=None,
+            parent_nodes=[],
             target_prompt_tokens=actual_tokens,
         )
         graph = self._build_linear_session_graph(1, [0.0])

@@ -1,4 +1,4 @@
-"""Managed engine lifecycle runners for orchestrated Veeksha sweeps."""
+"""Managed server lifecycle runners for orchestrated Veeksha sweeps."""
 
 from __future__ import annotations
 
@@ -16,11 +16,10 @@ from typing import IO, Optional
 import requests
 
 from veeksha.config.server import (
-    LauncherEngineConfig,
-    ManagedEngineConfig,
-    SglangOmniDockerEngineConfig,
-    VajraSubprocessEngineConfig,
-    VllmOmniDockerEngineConfig,
+    ManagedServerConfig,
+    SglangServerConfig,
+    VajraServerConfig,
+    VllmServerConfig,
 )
 from veeksha.orchestration.processes import ProcessTerminator
 from veeksha.orchestration.server_manager import BaseServerManager
@@ -39,7 +38,7 @@ class EngineRestartLimitExceeded(EngineError):
 class BaseEngineRunner(BaseServerManager, ABC):
     def __init__(
         self,
-        config: ManagedEngineConfig,
+        config: ManagedServerConfig,
         output_dir: str | Path,
         *,
         terminator: Optional[ProcessTerminator] = None,
@@ -51,30 +50,34 @@ class BaseEngineRunner(BaseServerManager, ABC):
 
     @property
     def is_running(self) -> bool:
-        return self.is_alive()
+        raise EngineError(
+            "managed server lifecycle uses is_alive(); is_running is invalid"
+        )
 
     def get_api_base(self) -> str:
-        return self.config.api_base_url
+        return self.get_endpoint().api_base
+
+    def get_endpoint(self):
+        return self.config.get_endpoint()
 
     def launch(self) -> tuple[bool, Optional[str]]:
-        try:
-            self.start()
-        except Exception as exc:
-            return False, str(exc)
-        return True, None
+        raise EngineError("managed server lifecycle uses start(); launch is invalid")
 
     def shutdown(self, force: bool = False) -> bool:
-        try:
-            self.stop()
-        except Exception:
-            return False
-        return True
+        raise EngineError("managed server lifecycle uses stop(); shutdown is invalid")
 
     def get_server_logs(self, lines: int = 50) -> tuple[str, str]:
         return self.tail_logs(lines), ""
 
     def _build_launch_command(self) -> list[str]:
         return []
+
+    def _ensure_managed_port_available(self) -> None:
+        if self._is_port_in_use():
+            raise EngineError(
+                f"port {self.config.port} on host {self.config.host!r} is already in use; "
+                "refusing to attach managed server health checks to an existing listener"
+            )
 
     @abstractmethod
     def start(self) -> None:
@@ -152,7 +155,7 @@ class BaseEngineRunner(BaseServerManager, ABC):
 class VajraSubprocessRunner(BaseEngineRunner):
     def __init__(
         self,
-        config: VajraSubprocessEngineConfig,
+        config: VajraServerConfig,
         output_dir: str | Path,
         *,
         terminator: Optional[ProcessTerminator] = None,
@@ -168,6 +171,7 @@ class VajraSubprocessRunner(BaseEngineRunner):
     def start(self) -> None:
         if self.is_alive():
             return
+        self._ensure_managed_port_available()
         allocation_success, allocation_error = self._ensure_gpu_allocation()
         if not allocation_success:
             raise EngineError(allocation_error or "failed to allocate GPUs")
@@ -279,7 +283,7 @@ class VajraSubprocessRunner(BaseEngineRunner):
 class VllmOmniDockerRunner(BaseEngineRunner):
     def __init__(
         self,
-        config: VllmOmniDockerEngineConfig | SglangOmniDockerEngineConfig,
+        config: VllmServerConfig | SglangServerConfig,
         output_dir: str | Path,
         *,
         terminator: Optional[ProcessTerminator] = None,
@@ -298,6 +302,7 @@ class VllmOmniDockerRunner(BaseEngineRunner):
     def start(self) -> None:
         if self.is_alive():
             return
+        self._ensure_managed_port_available()
         allocation_success, allocation_error = self._ensure_gpu_allocation()
         if not allocation_success:
             raise EngineError(allocation_error or "failed to allocate GPUs")
@@ -423,7 +428,7 @@ class VllmOmniDockerRunner(BaseEngineRunner):
 
     def _build_server_cmd(self) -> list[str]:
         # Base command is vLLM-specific; SglangOmniDockerRunner overrides this.
-        assert isinstance(self.config, VllmOmniDockerEngineConfig)
+        assert isinstance(self.config, VllmServerConfig)
         serve = [
             "vllm",
             "serve",
@@ -526,7 +531,7 @@ class SglangOmniDockerRunner(VllmOmniDockerRunner):
 
     def __init__(
         self,
-        config: SglangOmniDockerEngineConfig,
+        config: SglangServerConfig,
         output_dir: str | Path,
         *,
         terminator: Optional[ProcessTerminator] = None,
@@ -577,7 +582,7 @@ def _unique_container_name(prefix: str) -> str:
 
 
 def create_engine_runner(
-    config: LauncherEngineConfig, output_dir: str | Path
+    config: ManagedServerConfig, output_dir: str | Path
 ) -> BaseEngineRunner:
     from veeksha.orchestration.registry import ServerManagerRegistry
 

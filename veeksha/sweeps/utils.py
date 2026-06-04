@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import copy
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 import yaml
 
+from veeksha.config.endpoint import EndpointConfig
 from veeksha.sweeps.config import TRACE_SEED_TTS, TRACE_SHAREGPT, SweepConfig
 from veeksha.sweeps.specs import INPUT_SWEEP, SweepSpec
 
@@ -177,20 +179,21 @@ def build_run_config(
 
 def benchmark_command(config_path: Path) -> list[str]:
     return [
-        "python",
+        sys.executable,
         "-Xgil=0",
         "-m",
         "veeksha.benchmark",
-        "--benchmark-config-from-file",
+        "--config",
         str(config_path),
     ]
 
 
-def override_client_api_base(config: Dict[str, Any], api_base: Optional[str]) -> None:
-    if api_base is None:
+def apply_endpoint(config: Dict[str, Any], endpoint: Optional[EndpointConfig]) -> None:
+    if endpoint is None:
         return
+    config["endpoint"] = endpoint.to_dict()
     client = mapping_at(config, ("client",))
-    client["api_base"] = api_base
+    endpoint.apply_to_client_mapping(client)
 
 
 def _date_tag() -> str:
