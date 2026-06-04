@@ -181,6 +181,9 @@ java/**/pom.xml
 # python virtual env
 venv
 
+# Local NeMo checkout used while experimenting with forced alignment.
+/src/nemo-toolkit/
+
 # pyenv version file
 .python-version
 

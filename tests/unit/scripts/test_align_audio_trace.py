@@ -1,68 +1,93 @@
 import json
 
-import numpy as np
 import pytest
-import soundfile as sf
 
-from scripts.align_audio_trace import (
-    NeMoForcedAligner,
-    attach_word_timings,
-    build_alignment_plan,
+from scripts.prepare_audio_traces import (
+    NEMO_MODEL,
+    NemoItem,
+    NeMoDockerAligner,
+    read_nemo_word_timings,
 )
 
 
 @pytest.mark.unit
 def test_attach_word_timings_maps_ctm_to_manifest_row(tmp_path) -> None:
-    trace_dir = tmp_path / "trace"
-    trace_dir.mkdir()
-    sf.write(trace_dir / "clip.wav", np.zeros(16000, dtype=np.float32), 16000)
-
-    manifest = trace_dir / "manifest.jsonl"
-    rows = [
-        {
-            "audio_file": "clip.wav",
-            "dataset": "toy",
-            "expected_transcript": "hello world",
-        },
-    ]
-    manifest.write_text(
-        "".join(json.dumps(row) + "\n" for row in rows),
-        encoding="utf-8",
-    )
-
-    plan = build_alignment_plan(manifest, tmp_path / "alignment")
-    assert len(plan.items) == 1
-    assert plan.items[0].row_index == 0
-
-    plan.nemo_output_dir.mkdir()
-    ctm_path = plan.nemo_output_dir / "clip.ctm"
+    nemo_output_dir = tmp_path / "nemo_output"
+    nemo_output_dir.mkdir()
+    nemo_manifest = tmp_path / "nemo_manifest.jsonl"
+    nemo_manifest.write_text("", encoding="utf-8")
+    ctm_path = nemo_output_dir / "clip.ctm"
     ctm_path.write_text(
         "utt 1 0.100 0.200 hello\n" "utt 1 1.200 0.300 world\n",
         encoding="utf-8",
     )
-    (plan.nemo_output_dir / "nemo_manifest_with_output_file_paths.json").write_text(
+    (nemo_output_dir / "nemo_manifest_with_output_file_paths.json").write_text(
         json.dumps({"word_ctm": str(ctm_path)}) + "\n",
         encoding="utf-8",
     )
 
-    aligned_rows = attach_word_timings(plan)
+    word_timings = read_nemo_word_timings(
+        nemo_output_dir,
+        nemo_manifest,
+        [NemoItem(row_index=7, audio_path=tmp_path / "clip.wav", text="hello world")],
+    )
 
-    assert aligned_rows[0]["reference_word_timestamps"] == [
-        {"word": "hello", "start_ms": 100.0, "end_ms": 300.0},
-        {"word": "world", "start_ms": 1200.0, "end_ms": 1500.0},
+    assert [(word.word, word.start_ms, word.end_ms) for word in word_timings[7]] == [
+        ("hello", 100.0, 300.0),
+        ("world", 1200.0, 1500.0),
     ]
 
 
 @pytest.mark.unit
-def test_nemo_forced_aligner_command_is_fixed_shape(tmp_path) -> None:
-    align_script = tmp_path / "align.py"
-    align_script.write_text("", encoding="utf-8")
-
-    command = NeMoForcedAligner(align_script).command(
-        tmp_path / "manifest.jsonl",
-        tmp_path / "out",
+def test_nemo_forced_aligner_command_owns_docker_lifecycle(tmp_path) -> None:
+    command = NeMoDockerAligner(
+        image="nemo:test",
+        gpus="device=0",
+        cache_dir=tmp_path / "cache",
+        extra_mounts=("/outside:/outside:ro",),
+        repo_root=tmp_path,
+    ).command(
+        manifest_path=tmp_path / "manifest.jsonl",
+        output_dir=tmp_path / "alignment" / "nemo_output",
+        alignment_output_dir=tmp_path / "alignment",
     )
 
-    assert str(align_script) in command
-    assert "pretrained_name=stt_en_fastconformer_hybrid_large_pc" in command
-    assert 'save_output_file_formats=["ctm"]' in command
+    assert command[:2] == ["docker", "run"]
+    assert "--gpus" in command
+    assert "device=0" in command
+    assert "nemo:test" in command
+    assert "/outside:/outside:ro" in command
+    assert f"pretrained_name={NEMO_MODEL}" in command
+
+
+@pytest.mark.unit
+def test_parse_nemo_output_path_that_is_relative_to_working_directory(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    nemo_output_dir = tmp_path / "alignment" / "nemo_output"
+    nemo_output_dir.mkdir(parents=True)
+    nemo_manifest = tmp_path / "alignment" / "nemo_manifest.jsonl"
+    nemo_manifest.write_text("", encoding="utf-8")
+    ctm_path = nemo_output_dir / "ctm" / "words" / "clip.ctm"
+    ctm_path.parent.mkdir(parents=True)
+    ctm_path.write_text("utt 1 0.100 0.200 hello NA lex NA\n", encoding="utf-8")
+    (nemo_output_dir / "nemo_manifest_with_output_file_paths.json").write_text(
+        json.dumps(
+            {
+                "words_level_ctm_filepath": ctm_path.relative_to(tmp_path).as_posix(),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    word_timings = read_nemo_word_timings(
+        nemo_output_dir,
+        nemo_manifest,
+        [NemoItem(row_index=0, audio_path=tmp_path / "clip.wav", text="hello")],
+    )
+
+    assert [(word.word, word.start_ms, word.end_ms) for word in word_timings[0]] == [
+        ("hello", 100.0, 300.0),
+    ]
