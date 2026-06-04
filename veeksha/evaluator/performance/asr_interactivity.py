@@ -72,11 +72,14 @@ def compute_interactivity_stats(
             if tag != "equal":
                 continue
             for ref_index in range(ref_start, ref_end):
-                if first_seen_ms[ref_index] is None:
+                if (
+                    first_seen_ms[ref_index] is None
+                    and snapshot.elapsed_ms >= reference_words[ref_index].start_ms
+                ):
                     first_seen_ms[ref_index] = snapshot.elapsed_ms
 
     latencies = [
-        seen_ms - word.end_ms
+        max(0.0, seen_ms - word.end_ms)
         for seen_ms, word in zip(first_seen_ms, reference_words)
         if seen_ms is not None
     ]
