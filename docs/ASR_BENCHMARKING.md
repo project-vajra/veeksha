@@ -36,14 +36,16 @@ To skip word timestamping:
   --without-word-timestamping
 ```
 
-AMI can be prepared through the same script when local AMI audio and
-`*.words.xml` annotation files are available. Set `AMITraceSource.AUDIO_DIR` and
-`AMITraceSource.WORDS_DIR` in `scripts/prepare_audio_traces.py`, then run:
+AMI can be prepared through the same script. The script downloads and caches the
+AMI manual word annotations and Mix-Headset WAVs under `benchmark_output/`:
 
 ```bash
 .venv/bin/python scripts/prepare_audio_traces.py \
   --datasets ami_word_timed
 ```
+
+This writes `traces/asr/ami_word_timed/manifest.jsonl` plus WAV files under
+`traces/asr/ami_word_timed/audio/`.
 
 The trace uses the public Artificial Analysis cleaned datasets, VoxPopuli and
 Earnings22, as a recognizable external point of reference. Earnings22 examples

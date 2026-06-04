@@ -12,6 +12,10 @@ Examples:
   .venv/bin/python scripts/prepare_audio_traces.py \
     --clips-per-dataset 128 \
     --without-word-timestamping
+
+  .venv/bin/python scripts/prepare_audio_traces.py \
+    --datasets ami_word_timed \
+    --clips-per-dataset 128
 """
 
 from __future__ import annotations
@@ -26,6 +30,7 @@ import subprocess
 import sys
 import urllib.request
 import xml.etree.ElementTree as ET
+import zipfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -43,7 +48,8 @@ from huggingface_hub import hf_hub_download
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TRACES_ROOT = REPO_ROOT / "traces"
-DEFAULT_OUTPUT_DIR = TRACES_ROOT / "asr" / "aa_public"
+AA_TRACE_OUTPUT_DIR = TRACES_ROOT / "asr" / "aa_public"
+AMI_TRACE_OUTPUT_DIR = TRACES_ROOT / "asr" / "ami_word_timed"
 DEFAULT_DATASETS = "aa_voxpopuli,aa_earnings22"
 MANIFEST_NAME = "manifest.jsonl"
 
@@ -53,6 +59,13 @@ DEFAULT_MAX_DURATION_S = 30.0
 DEFAULT_SHUFFLE_BUFFER = 0
 DEFAULT_SEED = 42
 AMI_MAX_GAP_S = 1.5
+AMI_CACHE_DIR = REPO_ROOT / "benchmark_output" / "ami_cache"
+AMI_BASE_URL = "https://groups.inf.ed.ac.uk/ami"
+AMI_ANNOTATIONS_ARCHIVE = "ami_public_manual_1.6.2.zip"
+AMI_ANNOTATIONS_DIR = "ami_public_manual_1.6.2"
+AMI_MIX_HEADSET = "{meeting_id}.Mix-Headset.wav"
+AMI_DATASET_KEY = "ami_word_timed"
+AA_DATASET_KEYS = frozenset(("aa_voxpopuli", "aa_earnings22"))
 
 NEMO_MODEL = "stt_en_fastconformer_hybrid_large_pc"
 NEMO_DOCKER_IMAGE = "nvcr.io/nvidia/nemo:26.02"
@@ -156,7 +169,6 @@ def parse_args() -> argparse.Namespace:
             "split on word boundaries; untimestamped longer clips are skipped."
         ),
     )
-    parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument(
         "--without-word-timestamping",
         action="store_true",
@@ -170,7 +182,9 @@ def validate_args(args: argparse.Namespace) -> list[str]:
         raise SystemExit("--clips-per-dataset must be >= 0")
     if args.max_duration is not None and args.max_duration <= 0:
         raise SystemExit("--max-duration must be positive when set")
-    return selected_dataset_keys(args.datasets)
+    dataset_keys = selected_dataset_keys(args.datasets)
+    output_dir_for_dataset_keys(dataset_keys)
+    return dataset_keys
 
 
 ########################################################################
@@ -262,32 +276,31 @@ class AMITraceSource(ASRTraceSource):
 
     AUDIO_DIR = ""
     WORDS_DIR = ""
+    CACHE_DIR = AMI_CACHE_DIR
+    BASE_URL = AMI_BASE_URL
     AUDIO_GLOB = "{meeting_id}*.wav"
 
     def iter_clips(self) -> Iterable[TraceClip]:
-        if not self.AUDIO_DIR or not self.WORDS_DIR:
-            raise SystemExit(
-                "ami_word_timed requires AMITraceSource.AUDIO_DIR and "
-                "AMITraceSource.WORDS_DIR constants."
-            )
-
-        audio_dir = Path(self.AUDIO_DIR)
-        words_dir = Path(self.WORDS_DIR)
+        audio_dir = self.audio_dir
+        words_dir = self.words_dir
         word_files = sorted(words_dir.rglob("*.words.xml"))
         if not word_files:
             raise SystemExit(f"No AMI *.words.xml files found under {words_dir}")
 
+        audio_cache: dict[Path, np.ndarray] = {}
         for words_file in word_files:
             meeting_id, speaker_id = parse_ami_ids(words_file)
-            audio_path = self.find_audio_file(audio_dir, meeting_id, speaker_id)
-            words = parse_ami_words(words_file)
-            if not words:
-                continue
-
             try:
-                full_audio = decode_audio(str(audio_path), self.options)
+                audio_path = self.find_audio_file(audio_dir, meeting_id, speaker_id)
+                words = parse_ami_words(words_file)
+                if not words:
+                    continue
+                full_audio = audio_cache.get(audio_path)
+                if full_audio is None:
+                    full_audio = decode_audio(str(audio_path), self.options)
+                    audio_cache[audio_path] = full_audio
             except Exception as exc:
-                print(f"  WARNING: skipping {audio_path}: {exc}", file=sys.stderr)
+                print(f"  WARNING: skipping {words_file}: {exc}", file=sys.stderr)
                 continue
 
             for clip_index, clip_words in enumerate(
@@ -356,12 +369,27 @@ class AMITraceSource(ASRTraceSource):
             word_timestamps=relative_words,
         )
 
+    @property
+    def audio_dir(self) -> Path:
+        if self.AUDIO_DIR:
+            return Path(self.AUDIO_DIR)
+        return self.CACHE_DIR / "wav_db"
+
+    @property
+    def words_dir(self) -> Path:
+        if self.WORDS_DIR:
+            return Path(self.WORDS_DIR)
+        return self.ensure_annotations()
+
     def find_audio_file(
         self,
         audio_dir: Path,
         meeting_id: str,
         speaker_id: str,
     ) -> Path:
+        if not self.AUDIO_DIR:
+            return self.ensure_meeting_audio(meeting_id)
+
         glob_pattern = self.AUDIO_GLOB.format(
             meeting_id=meeting_id,
             speaker_id=speaker_id,
@@ -373,9 +401,50 @@ class AMITraceSource(ASRTraceSource):
             )
         return matches[0]
 
+    def ensure_annotations(self) -> Path:
+        words_dir = self.find_cached_words_dir()
+        if words_dir.exists() and any(words_dir.glob("*.words.xml")):
+            return words_dir
+
+        archive_path = self.CACHE_DIR / AMI_ANNOTATIONS_ARCHIVE
+        download_file(
+            f"{self.BASE_URL}/AMICorpusAnnotations/{AMI_ANNOTATIONS_ARCHIVE}",
+            archive_path,
+        )
+        safe_extract_zip(archive_path, self.CACHE_DIR)
+        words_dir = self.find_cached_words_dir()
+        if words_dir.exists() and any(words_dir.glob("*.words.xml")):
+            return words_dir
+        raise FileNotFoundError("Downloaded AMI annotations did not contain words XML")
+
+    def find_cached_words_dir(self) -> Path:
+        candidates = [
+            self.CACHE_DIR / "words",
+            self.CACHE_DIR / AMI_ANNOTATIONS_DIR / "words",
+        ]
+        for candidate in candidates:
+            if candidate.exists() and any(candidate.rglob("*.words.xml")):
+                return candidate
+        return candidates[0]
+
+    def ensure_meeting_audio(self, meeting_id: str) -> Path:
+        wav_name = AMI_MIX_HEADSET.format(meeting_id=meeting_id)
+        wav_path = self.CACHE_DIR / "wav_db" / meeting_id / "audio" / wav_name
+        if wav_path.exists():
+            return wav_path
+
+        download_file(
+            f"{self.BASE_URL}/AMICorpusMirror/amicorpus/"
+            f"{meeting_id}/audio/{wav_name}",
+            wav_path,
+        )
+        return wav_path
+
 
 def selected_dataset_keys(raw_datasets: str) -> list[str]:
     keys = [key.strip() for key in raw_datasets.split(",") if key.strip()]
+    if not keys:
+        raise SystemExit("--datasets must include at least one dataset")
     unknown = [key for key in keys if key not in DATASETS]
     if unknown:
         raise SystemExit(
@@ -384,14 +453,27 @@ def selected_dataset_keys(raw_datasets: str) -> list[str]:
     return keys
 
 
+def output_dir_for_dataset_keys(dataset_keys: Sequence[str]) -> Path:
+    key_set = set(dataset_keys)
+    if key_set == {AMI_DATASET_KEY}:
+        return AMI_TRACE_OUTPUT_DIR
+    if key_set.issubset(AA_DATASET_KEYS):
+        return AA_TRACE_OUTPUT_DIR
+    raise SystemExit(
+        "Run AMI separately from Artificial Analysis datasets: "
+        f"{AMI_DATASET_KEY} writes to {AMI_TRACE_OUTPUT_DIR}, while "
+        f"{', '.join(sorted(AA_DATASET_KEYS))} write to {AA_TRACE_OUTPUT_DIR}."
+    )
+
+
 def supported_dataset_keys() -> list[str]:
     return list(DATASETS)
 
 
 def build_trace_source(key: str, options: TraceSourceOptions) -> ASRTraceSource:
-    if key in ("aa_voxpopuli", "aa_earnings22"):
+    if key in AA_DATASET_KEYS:
         return AATraceSource(key, options)
-    if key == "ami_word_timed":
+    if key == AMI_DATASET_KEY:
         return AMITraceSource(key, options)
     raise ValueError(f"Unsupported ASR trace source: {key!r}")
 
@@ -424,6 +506,34 @@ def fetch_aa_audio(row: dict[str, Any], repo: str) -> str | bytes:
             return response.read()
 
     return hf_hub_download(repo_id=repo, repo_type="dataset", filename=url)
+
+
+def download_file(url: str, target: Path) -> None:
+    if target.exists():
+        return
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    partial = target.with_name(f"{target.name}.part")
+    print(f"  Downloading {url}")
+    try:
+        with urllib.request.urlopen(url, timeout=120) as response:
+            with partial.open("wb") as out:
+                shutil.copyfileobj(response, out)
+        partial.replace(target)
+    finally:
+        if partial.exists() and not target.exists():
+            partial.unlink()
+
+
+def safe_extract_zip(archive_path: Path, output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_root = output_dir.resolve()
+    with zipfile.ZipFile(archive_path) as archive:
+        for member in archive.infolist():
+            target = (output_root / member.filename).resolve()
+            if not is_relative_to(target, output_root):
+                raise ValueError(f"Refusing to extract unsafe zip path: {member.filename}")
+        archive.extractall(output_root)
 
 
 def decode_audio(source: str | bytes, options: TraceSourceOptions) -> np.ndarray:
@@ -954,7 +1064,7 @@ def main() -> None:
     args = parse_args()
     dataset_keys = validate_args(args)
 
-    output_dir = Path(args.output_dir)
+    output_dir = output_dir_for_dataset_keys(dataset_keys)
     audio_root = output_dir / "audio"
     manifest_path = output_dir / MANIFEST_NAME
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -988,7 +1098,10 @@ def main() -> None:
             ):
                 break
 
-        if timestamping_enabled:
+        needs_nemo = timestamping_enabled and any(
+            clip.word_timestamps is None for clip in source_clips
+        )
+        if needs_nemo:
             print(f"  Aligning {dataset_key} with NeMo Docker")
             source_clips = timestamp_provider.annotate(
                 dataset_key=dataset_key,
@@ -996,6 +1109,8 @@ def main() -> None:
                 alignment_output_dir=output_dir / "alignment",
                 options=source_options,
             )
+        elif timestamping_enabled and source_clips:
+            print(f"  Using native word timestamps for {dataset_key}")
 
         produced, session_id = write_trace_dataset(
             dataset_key=dataset_key,
