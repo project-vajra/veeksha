@@ -95,6 +95,32 @@ ASR-specific metrics:
 - `final_wer`: WER for `final_transcript` against `expected_transcript`.
   Present for every completed STT request with a reference transcript.
 
+## Replay Viewer
+
+For runs with `reference_word_timestamps` and `transcript_snapshots`, export a
+browser replay bundle:
+
+```bash
+.venv/bin/python tools/asr_replay_viewer/export_asr_replay.py \
+  benchmark_output/<run-dir>
+```
+
+Then serve the repo root and open the viewer:
+
+```bash
+.venv/bin/python -m http.server 8765 --bind 127.0.0.1
+```
+
+Open:
+
+```text
+http://127.0.0.1:8765/tools/asr_replay_viewer/?data=benchmark_output/<run-dir>/metrics/asr_replay.json
+```
+
+The viewer shows the ground-truth word timeline, the streamed transcript
+timeline, and an interactive latency graph. The graph loads ECharts from a
+pinned CDN URL at runtime, so the viewer needs network access when opened.
+
 ## Partials and Finals
 
 Streaming providers may emit many transcript deltas before the audio stream is
