@@ -403,7 +403,79 @@ class LMEvalAccuracyEvaluator(BaseAccuracyEvaluator):
         os.makedirs(output_dir, exist_ok=True)
         path = os.path.join(output_dir, "lmeval_results.json")
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(self._results_dict, f, indent=2)
+            json.dump(self._results_dict, f, indent=2, default=str)
+        self._log_wandb_metrics()
+
+    def _log_wandb_metrics(self) -> None:
+        """Log lm-eval accuracy metrics to Weights & Biases (if a run is active)."""
+        try:
+            from typing import Any as _Any
+
+            import wandb  # type: ignore[import-not-found]
+
+            wandb = cast(_Any, wandb)
+            if not getattr(wandb, "run", None):
+                return
+
+            results = self._results_dict
+            if not results:
+                return
+
+            # Per-task scalar metrics
+            flat_metrics: Dict[str, float] = {}
+            for task_name, task_results in results.get("results", {}).items():
+                if not isinstance(task_results, dict):
+                    continue
+                for metric_name, value in task_results.items():
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        clean_metric = metric_name.split(",")[0]
+                        flat_metrics[f"lmeval/{task_name}/{clean_metric}"] = float(
+                            value
+                        )
+
+            if flat_metrics:
+                wandb.log(flat_metrics)
+
+            # Results table
+            table_rows = []
+            for task_name, task_results in results.get("results", {}).items():
+                if not isinstance(task_results, dict):
+                    continue
+                for metric_name, value in task_results.items():
+                    if metric_name.startswith("alias"):
+                        continue
+                    table_rows.append(
+                        [
+                            task_name,
+                            metric_name.split(",")[0],
+                            metric_name.split(",")[1] if "," in metric_name else "none",
+                            value,
+                        ]
+                    )
+
+            if table_rows:
+                wandb.log(
+                    {
+                        "lmeval_results_table": wandb.Table(
+                            columns=["task", "metric", "filter", "value"],
+                            data=table_rows,
+                        )
+                    }
+                )
+
+            # Summary counts
+            wandb.log(
+                {
+                    "lmeval/num_completed_requests": self.num_completed_requests,
+                    "lmeval/num_errored_requests": self.num_errored_requests,
+                    "lmeval/num_tasks": len(results.get("results", {})),
+                }
+            )
+
+        except Exception as e:
+            from veeksha.logger import init_logger
+
+            init_logger(__name__).warning("Failed to log lm-eval wandb metrics: %s", e)
 
     # ---------------------------------------------------------------------
     # Progress tracking

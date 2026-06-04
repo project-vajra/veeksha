@@ -11,7 +11,7 @@ import yaml
 
 from veeksha.benchmark import manage_benchmark_run
 from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.config.utils import create_class_from_dict
+from vidhi import create_class_from_dict
 from veeksha.core.request_content import TextChannelRequestContent
 
 SAMPLE_CONFIG_PATH = "veeksha/sample_configs/managed_server.yml"

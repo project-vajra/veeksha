@@ -1,18 +1,16 @@
-from dataclasses import field
+from vidhi import BasePolyConfig, field, frozen_dataclass
 
-from veeksha.config.core.base_poly_config import BasePolyConfig
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.types import LengthGeneratorType
 
 
 @frozen_dataclass
 class BaseLengthGeneratorConfig(BasePolyConfig):
-    pass
+    """Length sampling strategy (fixed, uniform, zipf, or stair)."""
 
 
 @frozen_dataclass
 class FixedLengthGeneratorConfig(BaseLengthGeneratorConfig):
-    value: int = field(default=8, metadata={"help": "Value to generate."})
+    value: int = field(8, help="Value to generate.")
 
     @classmethod
     def get_type(cls) -> LengthGeneratorType:
@@ -27,20 +25,15 @@ class StairLengthGeneratorConfig(BaseLengthGeneratorConfig):
 
     values: list[int] = field(
         default_factory=lambda: [8, 16, 32, 64],
-        metadata={"help": "Ordered list of step values to emit."},
+        help="Ordered list of step values to emit.",
     )
     repeat_each: int = field(
-        default=1,
-        metadata={
-            "help": "Number of consecutive emissions per step value before advancing."
-        },
+        1, help="Number of consecutive emissions per step value before advancing."
     )
     wrap: bool = field(
-        default=True,
-        metadata={
-            "help": "If True, cycle back to the first value after the last. "
-            "If False, keep returning the last value."
-        },
+        True,
+        help="If True, cycle back to the first value after the last. "
+        "If False, keep returning the last value.",
     )
 
     @classmethod
@@ -58,11 +51,8 @@ class StairLengthGeneratorConfig(BaseLengthGeneratorConfig):
 
 @frozen_dataclass
 class UniformLengthGeneratorConfig(BaseLengthGeneratorConfig):
-    min: int = field(default=6, metadata={"help": "Minimum value to generate."})
-    max: int = field(
-        default=12,
-        metadata={"help": "Maximum value to generate."},
-    )
+    min: int = field(6, help="Minimum value to generate.")
+    max: int = field(12, help="Maximum value to generate.")
 
     @classmethod
     def get_type(cls) -> LengthGeneratorType:
@@ -79,17 +69,10 @@ class UniformLengthGeneratorConfig(BaseLengthGeneratorConfig):
 
 @frozen_dataclass
 class ZipfLengthGeneratorConfig(BaseLengthGeneratorConfig):
-    theta: float = field(
-        default=0.6, metadata={"help": "Theta parameter for the Zipf distribution."}
-    )
-    scramble: bool = field(
-        default=False, metadata={"help": "Whether to scramble the Zipf distribution."}
-    )
-    min: int = field(default=6, metadata={"help": "Minimum value to generate."})
-    max: int = field(
-        default=12,
-        metadata={"help": "Maximum value to generate."},
-    )
+    theta: float = field(0.6, help="Theta parameter for the Zipf distribution.")
+    scramble: bool = field(False, help="Whether to scramble the Zipf distribution.")
+    min: int = field(6, help="Minimum value to generate.")
+    max: int = field(12, help="Maximum value to generate.")
 
     @classmethod
     def get_type(cls) -> LengthGeneratorType:
@@ -102,3 +85,27 @@ class ZipfLengthGeneratorConfig(BaseLengthGeneratorConfig):
             raise ValueError("max must be > 0")
         if self.min > self.max:
             raise ValueError("min must be <= max")
+
+
+@frozen_dataclass
+class InverseGaussianLengthGeneratorConfig(BaseLengthGeneratorConfig):
+    mean: float = field(
+        default=500.0,
+        metadata={"help": "Mean parameter for the inverse Gaussian distribution."},
+    )
+    shape: float = field(
+        default=300.0,
+        metadata={
+            "help": "Shape (lambda) parameter for the inverse Gaussian distribution. Lower values mean more spread."
+        },
+    )
+
+    @classmethod
+    def get_type(cls) -> LengthGeneratorType:
+        return LengthGeneratorType.INVERSE_GAUSSIAN
+
+    def __post_init__(self):
+        if self.mean <= 0:
+            raise ValueError("mean must be > 0")
+        if self.shape <= 0:
+            raise ValueError("shape must be > 0")

@@ -25,6 +25,7 @@ class Request:
     session_context: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     requested_output: Optional[RequestedOutputSpec] = None
+    dispatch_ticket: int = 0
 
     def __str__(self) -> str:
         return f"RequestConfig(id={self.id})"

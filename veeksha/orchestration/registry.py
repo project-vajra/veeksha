@@ -16,7 +16,6 @@ ServerManagerRegistry.register(
         "VllmOmniDockerRunner",
     ),
 )
-
 ServerManagerRegistry.register(
     ServerType.VAJRA,
     _LazyLoader(
@@ -24,7 +23,6 @@ ServerManagerRegistry.register(
         "VajraSubprocessRunner",
     ),
 )
-
 ServerManagerRegistry.register(
     ServerType.SGLANG,
     _LazyLoader(

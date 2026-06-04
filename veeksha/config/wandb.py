@@ -1,10 +1,9 @@
-from dataclasses import field
 from typing import Optional
 
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from vidhi import field, frozen_dataclass
 
 
-@frozen_dataclass(allow_from_file=True)
+@frozen_dataclass
 class WandbConfig:
     """Configuration for Weights & Biases logging.
 
@@ -25,40 +24,26 @@ class WandbConfig:
         log_artifacts: If True, upload selected output files as a wandb Artifact.
     """
 
-    enabled: bool = field(
-        default=False, metadata={"help": "Enable Weights & Biases logging."}
-    )
+    enabled: bool = field(False, help="Enable Weights & Biases logging.")
     project: Optional[str] = field(
-        default=None,
-        metadata={"help": "WandB project name (or set WANDB_PROJECT)."},
+        None, help="WandB project name (or set WANDB_PROJECT)."
     )
-    entity: Optional[str] = field(
-        default=None,
-        metadata={"help": "WandB entity (team/user). Optional."},
-    )
+    entity: Optional[str] = field(None, help="WandB entity (team/user). Optional.")
     group: Optional[str] = field(
-        default=None,
-        metadata={"help": "WandB group name (for sweeps/capacity-search)."},
+        None, help="WandB group name (for sweeps/capacity-search)."
     )
     run_name: Optional[str] = field(
-        default=None,
-        metadata={"help": "WandB run name. Defaults to the resolved output dir name."},
+        None, help="WandB run name. Defaults to the resolved output dir name."
     )
     tags: list[str] = field(
         default_factory=list,
-        metadata={"help": "List of WandB tags to attach to the run."},
+        help="List of WandB tags to attach to the run.",
     )
-    notes: Optional[str] = field(
-        default=None,
-        metadata={"help": "Optional WandB notes for this run."},
-    )
+    notes: Optional[str] = field(None, help="Optional WandB notes for this run.")
     mode: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": "Optional wandb mode override: 'online', 'offline', or 'disabled'."
-        },
+        None,
+        help="Optional wandb mode override: 'online', 'offline', or 'disabled'.",
     )
     log_artifacts: bool = field(
-        default=True,
-        metadata={"help": "Upload selected output files as a wandb Artifact."},
+        True, help="Upload selected output files as a wandb Artifact."
     )

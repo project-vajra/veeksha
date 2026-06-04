@@ -10,14 +10,13 @@ The hierarchy follows the BasePolyConfig pattern used elsewhere in veeksha:
   - AudioQualityEvaluatorConfig (generated audio quality checks)
 """
 
-from dataclasses import field
 from typing import Optional, Union
 
-from veeksha.config.core.base_poly_config import BasePolyConfig
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from vidhi import BasePolyConfig, field, frozen_dataclass
+
 from veeksha.config.slo import BaseSloConfig, ConstantSloConfig
 from veeksha.config.verification import AudioVerificationConfig
-from veeksha.types import ChannelModality, EvaluationType, SloType
+from veeksha.types import ChannelModality, EvaluationType
 
 
 @frozen_dataclass
@@ -29,33 +28,25 @@ class DecodeWindowConfig:
     """
 
     min_active_requests: Union[int, str] = field(
-        default=1,
-        metadata={
-            "help": "Minimum number of simultaneously generating (decoding) requests "
-            "required for a time interval to be considered inside the decode window. "
-            "Use 'max_observed' to auto-detect the peak concurrent decoding count."
-        },
+        1,
+        help="Minimum number of simultaneously generating (decoding) requests "
+        "required for a time interval to be considered inside the decode window. "
+        "Use 'max_observed' to auto-detect the peak concurrent decoding count.",
     )
     selection_strategy: str = field(
-        default="longest",
-        metadata={
-            "help": "Which window(s) to analyze when multiple windows exist. "
-            "Supported: 'longest' (single longest), 'first' (single first), "
-            "'all' (aggregate all qualifying windows)."
-        },
+        "longest",
+        help="Which window(s) to analyze when multiple windows exist. "
+        "Supported: 'longest' (single longest), 'first' (single first), "
+        "'all' (aggregate all qualifying windows).",
     )
     anchor_to_client_pickup: bool = field(
-        default=True,
-        metadata={
-            "help": "If True, anchor per-request token times to client_picked_up_at "
-            "when available; otherwise use scheduler_dispatched_at."
-        },
+        True,
+        help="If True, anchor per-request token times to client_picked_up_at "
+        "when available; otherwise use scheduler_dispatched_at.",
     )
     require_streaming: bool = field(
-        default=True,
-        metadata={
-            "help": "If True, only streaming requests contribute to decode window analysis."
-        },
+        True,
+        help="If True, only streaming requests contribute to decode window analysis.",
     )
 
     def __post_init__(self):
@@ -78,9 +69,6 @@ class DecodeWindowConfig:
             )
 
 
-# ---- Channel-specific performance configs ----
-
-
 @frozen_dataclass
 class BaseChannelPerformanceConfig(BasePolyConfig):
     """Base config for channel-specific performance"""
@@ -90,12 +78,9 @@ class BaseChannelPerformanceConfig(BasePolyConfig):
 class TextChannelPerformanceConfig(BaseChannelPerformanceConfig):
     """Text channel performance configuration"""
 
-    decode_window_enabled: bool = field(
-        default=False, metadata={"help": "Enable decode window analysis"}
-    )
+    decode_window_enabled: bool = field(False, help="Enable decode window analysis")
     decode_window_config: Optional[DecodeWindowConfig] = field(
-        default=None,
-        metadata={"help": "Decode window configuration (required if enabled)"},
+        None, help="Decode window configuration (required if enabled)"
     )
 
     @classmethod
@@ -135,9 +120,6 @@ class VideoChannelPerformanceConfig(BaseChannelPerformanceConfig):
         return ChannelModality.VIDEO
 
 
-# ---- Base evaluator config ----
-
-
 def _default_slos() -> list[BaseSloConfig]:
     return [
         ConstantSloConfig(
@@ -155,27 +137,21 @@ def _default_slos() -> list[BaseSloConfig]:
     ]
 
 
-@frozen_dataclass(allow_from_file=True)
+@frozen_dataclass
 class BaseEvaluatorConfig(BasePolyConfig):
     """Base configuration for all evaluators (performance, accuracy)"""
 
     target_channels: list = field(
         default_factory=lambda: ["text"],
-        metadata={"help": "List of ChannelModality values to evaluate."},
+        help="List of ChannelModality values to evaluate.",
     )
-
     slos: list[BaseSloConfig] = field(
         default_factory=_default_slos,
-        metadata={
-            "help": f"List of SLO definitions to evaluate against request-level metrics. {SloType.help_str()}"
-        },
+        help="List of SLO definitions to evaluate against request-level metrics.",
     )
-
-    stream_metrics: bool = field(
-        default=True, metadata={"help": "Enable real-time metric streaming"}
-    )
+    stream_metrics: bool = field(True, help="Enable real-time metric streaming")
     stream_metrics_interval: float = field(
-        default=5.0, metadata={"help": "Interval for streaming metrics in seconds"}
+        5.0, help="Interval for streaming metrics in seconds"
     )
 
     def __post_init__(self):
@@ -189,28 +165,23 @@ class BaseEvaluatorConfig(BasePolyConfig):
             object.__setattr__(self, "target_channels", converted)
 
 
-# ---- Performance evaluator config ----
-
-
 @frozen_dataclass
 class PerformanceEvaluatorConfig(BaseEvaluatorConfig):
     """Configuration for system performance evaluation."""
 
     text_channel: TextChannelPerformanceConfig = field(
         default_factory=TextChannelPerformanceConfig,
-        metadata={"help": "Text channel performance configuration"},
+        help="Text channel performance configuration",
     )
     image_channel: ImageChannelPerformanceConfig = field(
         default_factory=ImageChannelPerformanceConfig,
-        metadata={"help": "Image channel performance configuration"},
+        help="Image channel performance configuration",
     )
-    audio_channel: AudioChannelPerformanceConfig = field(
-        default_factory=AudioChannelPerformanceConfig,
-        metadata={"help": "Audio channel performance configuration"},
+    audio_channel: Optional[AudioChannelPerformanceConfig] = field(
+        None, help="Audio channel performance configuration"
     )
     video_channel: Optional[VideoChannelPerformanceConfig] = field(
-        default=None,
-        metadata={"help": "Video channel performance configuration"},
+        None, help="Video channel performance configuration"
     )
 
     @classmethod
@@ -232,29 +203,20 @@ class PerformanceEvaluatorConfig(BaseEvaluatorConfig):
         return None
 
 
-# ---- Accuracy evaluator config(s) ----
-
-
 @frozen_dataclass
 class LMEvalAccuracyEvaluatorConfig(BaseEvaluatorConfig):
-    """Configuration for lm-eval accuracy evaluation (task-specific correctness).
-
-    IMPORTANT: For lm-eval accuracy evaluation, the content generation must use
-    `LMEvalSessionGenerator`. The generator owns the lm-eval Task/Instance objects,
-    and the evaluator binds responses to instances for evaluation.
-    """
+    """Configuration for lm-eval accuracy evaluation (task-specific correctness)."""
 
     slos: list[BaseSloConfig] = field(
         default_factory=list,
-        metadata={"help": "Accuracy evaluators do not use performance SLOs."},
+        help="Accuracy evaluators do not use performance SLOs.",
     )
     stream_metrics: bool = field(
-        default=False,
-        metadata={"help": "Accuracy evaluation does not stream incremental metrics."},
+        False,
+        help="Accuracy evaluation does not stream incremental metrics.",
     )
     bootstrap_iters: int = field(
-        default=100000,
-        metadata={"help": "Bootstrap iterations for confidence intervals"},
+        100000, help="Bootstrap iterations for confidence intervals"
     )
 
     @classmethod
@@ -268,25 +230,23 @@ class AudioQualityEvaluatorConfig(BaseEvaluatorConfig):
 
     target_channels: list = field(
         default_factory=lambda: ["audio"],
-        metadata={
-            "help": "List of modalities whose output quality should be evaluated."
-        },
+        help="List of modalities whose output quality should be evaluated.",
     )
     slos: list[BaseSloConfig] = field(
         default_factory=list,
-        metadata={"help": "Accuracy evaluators do not use performance SLOs."},
+        help="Accuracy evaluators do not use performance SLOs.",
     )
     stream_metrics: bool = field(
-        default=False,
-        metadata={"help": "Accuracy evaluation does not stream incremental metrics."},
+        False,
+        help="Accuracy evaluation does not stream incremental metrics.",
     )
     verification: AudioVerificationConfig = field(
         default_factory=AudioVerificationConfig,
-        metadata={"help": "Generated audio verification configuration."},
+        help="Generated audio verification configuration.",
     )
     save_audio_files: bool = field(
-        default=True,
-        metadata={"help": "Whether to persist audio artifacts for quality evaluation."},
+        True,
+        help="Whether to persist audio artifacts for quality evaluation.",
     )
 
     @classmethod

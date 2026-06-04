@@ -1,7 +1,7 @@
-"""CLI runner for `python -m veeksha.new`.
+"""CLI runner for Veeksha benchmark invocations.
 
-We keep the module entrypoint (`veeksha/new/__main__.py`) intentionally thin and
-centralize orchestration logic here for readability and reuse.
+We keep the CLI entrypoint intentionally thin and centralize orchestration
+logic here for readability and reuse.
 """
 
 from __future__ import annotations
@@ -80,5 +80,10 @@ class BenchmarkCliRunner:
             )
 
 
+def run_cli(configs: list[BenchmarkConfig]) -> None:
+    """Run benchmark configs parsed from CLI."""
+    BenchmarkCliRunner(configs).run_all()
+
+
 def main() -> None:
-    BenchmarkCliRunner.from_cli().run_all()
+    run_cli(BenchmarkConfig.create_from_cli_args())

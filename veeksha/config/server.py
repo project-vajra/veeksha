@@ -4,12 +4,11 @@ Server configuration for launcher-managed inference systems.
 
 from __future__ import annotations
 
-from dataclasses import field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TypeAlias, Union
 
-from veeksha.config.core.base_poly_config import BasePolyConfig
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from vidhi import BasePolyConfig, field, frozen_dataclass
+
 from veeksha.types import ServerType
 
 _DEFAULT_MODEL = "meta-llama/Meta-Llama-3-8B-Instruct"
@@ -30,86 +29,49 @@ else
 fi"""
 
 
-@frozen_dataclass(allow_from_file=True)
+@frozen_dataclass
 class BaseServerConfig(BasePolyConfig):
     """Base configuration for a managed inference server."""
 
     env_path: Optional[str] = field(
-        default=None,
-        metadata={"help": "Path to a Python environment directory (virtualenv/conda)."},
+        None, help="Path to a Python environment directory (virtualenv/conda)."
     )
-
-    model: str = field(
-        default=_DEFAULT_MODEL,
-        metadata={"help": "Model name exposed to the benchmark client."},
-    )
-
-    host: str = field(
-        default="localhost", metadata={"help": "Host address for the server"}
-    )
-
-    port: int = field(default=8000, metadata={"help": "Port number for the server"})
-
-    api_key: str = field(
-        default="token-abc123", metadata={"help": "API key for server authentication"}
-    )
-
+    model: str = field(_DEFAULT_MODEL, help="Model name exposed to the benchmark client.")
+    host: str = field("localhost", help="Host address for the server")
+    port: int = field(8000, help="Port number for the server")
+    api_key: str = field("token-abc123", help="API key for server authentication")
     gpu_ids: Optional[List[int]] = field(
-        default=None,
-        metadata={"help": "List of GPU IDs to use (None means auto-assign)"},
+        None, help="List of GPU IDs to use (None means auto-assign)"
     )
-
-    startup_timeout: float = field(
-        default=300.0, metadata={"help": "Timeout in seconds for server startup"}
-    )
-
+    startup_timeout: float = field(300.0, help="Timeout in seconds for server startup")
     health_check_interval: float = field(
-        default=2.0, metadata={"help": "Interval in seconds between health checks"}
+        2.0, help="Interval in seconds between health checks"
     )
-
     require_contiguous_gpus: bool = field(
-        default=True,
-        metadata={
-            "help": "Require contiguous GPU allocation (e.g., GPUs 0,1,2 instead of 0,2,5)"
-        },
+        True,
+        help="Require contiguous GPU allocation (e.g., GPUs 0,1,2 instead of 0,2,5)",
     )
-
-    tensor_parallel_size: int = field(
-        default=1, metadata={"help": "Number of GPUs for tensor parallelism"}
-    )
-
+    tensor_parallel_size: int = field(1, help="Number of GPUs for tensor parallelism")
     dtype: str = field(
-        default="auto",
-        metadata={
-            "help": "Data type for model weights (auto, float16, bfloat16, etc.)"
-        },
+        "auto",
+        help="Data type for model weights (auto, float16, bfloat16, etc.)",
     )
-
-    max_model_len: Optional[int] = field(
-        default=None, metadata={"help": "Maximum model context length"}
-    )
-
+    max_model_len: Optional[int] = field(None, help="Maximum model context length")
     additional_args: Union[str, Dict[str, Any], None] = field(
-        default="{}",
-        metadata={
-            "help": "Additional engine-specific arguments as JSON string, dict, or None."
-        },
+        "{}",
+        help="Additional engine-specific arguments as JSON string, dict, or None.",
     )
-
     api_base: Optional[str] = field(
-        default=None,
-        metadata={"help": "External API base URL for the managed engine."},
+        None, help="External API base URL for the managed engine."
     )
     health_url: Optional[str] = field(
-        default=None,
-        metadata={"help": "Health endpoint URL for the managed engine."},
+        None, help="Health endpoint URL for the managed engine."
     )
     setup_dir: Optional[str] = field(
-        default=None,
-        metadata={"help": "Source checkout used by subprocess engines."},
+        None, help="Source checkout used by subprocess engines."
     )
     max_restarts: int = field(
-        default=3, metadata={"help": "Maximum managed engine restarts per sweep run."}
+        3, help="Maximum managed engine restarts per sweep run."
     )
 
     def __post_init__(self) -> None:
@@ -201,7 +163,7 @@ class VajraServerConfig(BaseServerConfig):
 class VllmServerConfig(BaseServerConfig):
     """vLLM Omni Docker server config."""
 
-    image: str = field(default=VLLM_OMNI_DEFAULT_IMAGE)
+    image: str = field(VLLM_OMNI_DEFAULT_IMAGE)
     container_name: Optional[str] = None
     container_port: Optional[int] = None
     engine_args: List[str] = field(default_factory=list)
@@ -267,7 +229,7 @@ class VllmServerConfig(BaseServerConfig):
 class SglangServerConfig(BaseServerConfig):
     """SGLang Omni Docker server config."""
 
-    image: str = field(default=SGLANG_OMNI_DEFAULT_IMAGE)
+    image: str = field(SGLANG_OMNI_DEFAULT_IMAGE)
     container_name: Optional[str] = None
     container_port: Optional[int] = None
     engine_args: List[str] = field(default_factory=list)

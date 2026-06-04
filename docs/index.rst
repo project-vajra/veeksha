@@ -14,8 +14,9 @@ microbenchmarks. One tool, any workload.
 
 **From isolated requests to complex agentic sessions, Veeksha captures the full complexity of modern LLM workloads.**
 
-👉 **New here?** Start with :doc:`why_veeksha` to learn what
-sets Veeksha apart.
+👉 **New here?** Start with :doc:`getting_started/common_benchmarks` if you want
+the shortest path to the most common benchmark recipes. Read
+:doc:`getting_started/why_veeksha` to understand the model behind them.
 
 .. note::
 
@@ -58,47 +59,46 @@ Key features
 Quick example
 -------------
 
-Run a simple benchmark against a running OpenAI-compatible endpoint::
+Run a simple benchmark with `uvx <https://docs.astral.sh/uv/>`_ against a running OpenAI-compatible endpoint::
 
-    python -Xgil=0 -m veeksha.benchmark \
-        --client-type openai_chat_completions \
-        --openai-chat-completions-client-api-base http://localhost:8000/v1 \
-        --openai-chat-completions-client-model meta-llama/Llama-3.2-1B-Instruct \
-        --traffic-scheduler-type rate \
-        --rate-traffic-scheduler-interval-generator-type poisson \
-        --rate-traffic-scheduler-poisson-interval-generator-arrival-rate 2.0 \
-        --runtime-benchmark-timeout 30
+    uvx -p 3.14t veeksha benchmark \
+        --client.type openai_chat_completions \
+        --client.api_base http://localhost:8000/v1 \
+        --client.model meta-llama/Llama-3.2-1B-Instruct \
+        --traffic_scheduler.type rate \
+        --traffic_scheduler.interval_generator.type poisson \
+        --traffic_scheduler.interval_generator.arrival_rate 2.0 \
+        --runtime.benchmark_timeout 30
 
 Or use a YAML configuration file::
 
-    python -Xgil=0 -m veeksha.benchmark --benchmark-config-from-file my_benchmark.veeksha.yml
+    uvx -p 3.14t veeksha benchmark --config my_benchmark.veeksha.yml
 
+Veeksha requires free-threaded Python 3.14 or newer.
 
 Documentation
 -------------
 
 .. toctree::
    :maxdepth: 2
-   :caption: Getting started
+   :caption: Getting Started
 
-   why_veeksha
-   installation
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Core concepts
-
-   understanding_veeksha/index
+   getting_started/index
 
 .. toctree::
    :maxdepth: 2
-   :caption: Tutorials
+   :caption: User Guide
 
-   basic_usage/index
-   advanced_usage/index
+   user_guide/index
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Design
+
+   design/index
 
 .. toctree::
    :maxdepth: 2
    :caption: Reference
 
-   config_reference/index
+   reference/index

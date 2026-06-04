@@ -1,7 +1,5 @@
-from dataclasses import field
+from vidhi import BasePolyConfig, field, frozen_dataclass
 
-from veeksha.config.core.base_poly_config import BasePolyConfig
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.types import VerificationType
 
 
@@ -10,8 +8,8 @@ class BaseVerificationConfig(BasePolyConfig):
     """Base class for post-run verification configuration."""
 
     fail_on_threshold: bool = field(
-        default=False,
-        metadata={"help": "If True, fail the run when verification thresholds fail."},
+        False,
+        help="If True, fail the run when verification thresholds fail.",
     )
 
     def is_enabled(self) -> bool:
@@ -23,18 +21,16 @@ class WhisperTranscriptionConfig:
     """Whisper transcription configuration used by WER verification."""
 
     model: str = field(
-        default="large-v3",
-        metadata={"help": "Whisper model identifier passed to faster-whisper."},
+        "large-v3",
+        help="Whisper model identifier passed to faster-whisper.",
     )
     device: str = field(
-        default="cuda",
-        metadata={"help": "Device passed to faster-whisper, e.g. 'cuda' or 'cpu'."},
+        "cuda",
+        help="Device passed to faster-whisper, e.g. 'cuda' or 'cpu'.",
     )
     compute_type: str = field(
-        default="float16",
-        metadata={
-            "help": "Compute type passed to faster-whisper, e.g. 'float16' or 'int8'."
-        },
+        "float16",
+        help="Compute type passed to faster-whisper, e.g. 'float16' or 'int8'.",
     )
 
     def __post_init__(self):
@@ -51,18 +47,16 @@ class WERVerifierConfig:
     """WER verifier configuration for generated speech."""
 
     enabled: bool = field(
-        default=False,
-        metadata={
-            "help": "Enable WER verification using inline Whisper transcription."
-        },
+        False,
+        help="Enable WER verification using inline Whisper transcription.",
     )
     threshold: float = field(
-        default=0.05,
-        metadata={"help": "Per-request WER threshold for pass/fail classification."},
+        0.05,
+        help="Per-request WER threshold for pass/fail classification.",
     )
     whisper: WhisperTranscriptionConfig = field(
         default_factory=WhisperTranscriptionConfig,
-        metadata={"help": "Inline Whisper transcription configuration."},
+        help="Inline Whisper transcription configuration.",
     )
 
     def __post_init__(self):
@@ -75,22 +69,20 @@ class UTMOSVerifierConfig:
     """UTMOS predicted MOS verifier configuration."""
 
     enabled: bool = field(
-        default=False,
-        metadata={"help": "Enable UTMOS predicted MOS scoring for generated audio."},
+        False,
+        help="Enable UTMOS predicted MOS scoring for generated audio.",
     )
     hf_repo: str = field(
-        default="balacoon/utmos",
-        metadata={"help": "Hugging Face model repo containing the UTMOS JIT file."},
+        "balacoon/utmos",
+        help="Hugging Face model repo containing the UTMOS JIT file.",
     )
     jit_file: str = field(
-        default="utmos.jit",
-        metadata={"help": "TorchScript filename to load from the UTMOS HF repo."},
+        "utmos.jit",
+        help="TorchScript filename to load from the UTMOS HF repo.",
     )
     device: str = field(
-        default="cuda:0",
-        metadata={
-            "help": "Device for UTMOS TorchScript inference, e.g. 'cuda:0' or 'cpu'."
-        },
+        "cuda:0",
+        help="Device for UTMOS TorchScript inference, e.g. 'cuda:0' or 'cpu'.",
     )
 
     def __post_init__(self):
@@ -107,18 +99,16 @@ class AudioVerificationConfig(BaseVerificationConfig):
     """Post-run verification for generated audio artifacts."""
 
     max_requests: int = field(
-        default=2000,
-        metadata={
-            "help": "Maximum number of request rows to verify. Use 0 or less to verify all rows."
-        },
+        2000,
+        help="Maximum number of request rows to verify. Use 0 or less to verify all rows.",
     )
     wer: WERVerifierConfig = field(
         default_factory=WERVerifierConfig,
-        metadata={"help": "WER verifier configuration."},
+        help="WER verifier configuration.",
     )
     utmos: UTMOSVerifierConfig = field(
         default_factory=UTMOSVerifierConfig,
-        metadata={"help": "UTMOS verifier configuration."},
+        help="UTMOS verifier configuration.",
     )
 
     @classmethod

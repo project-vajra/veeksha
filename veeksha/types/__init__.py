@@ -5,6 +5,7 @@ from veeksha.types.base_int_enum import BaseIntEnum
 class TrafficType(BaseIntEnum):
     RATE = 1
     CONCURRENT = 2
+    SEQUENTIAL_LAUNCH = 3
 
 
 # ----- Interval / length generators -----
@@ -19,6 +20,7 @@ class LengthGeneratorType(BaseIntEnum):
     UNIFORM = 2
     FIXED = 3
     FIXED_STAIR = 4
+    INVERSE_GAUSSIAN = 5
 
 
 # ----- Content -----
@@ -29,11 +31,13 @@ class SessionGeneratorType(BaseIntEnum):
 
 
 class TraceFlavorType(BaseIntEnum):
-    CLAUDE_CODE = 1
-    MOONCAKE_CONV = 2
+    TIMED_SYNTHETIC_SESSION = 1
+    SHARED_PREFIX = 2
     RAG = 3
-    SHAREGPT = 4
-    SEED_TTS_TEXT = 5
+    REQUEST_LOG = 4
+    UNTIMED_CONTENT_MULTI_TURN = 5
+    SHAREGPT = 6
+    SEED_TTS_TEXT = 7
 
 
 class ChannelModality(BaseIntEnum):
@@ -67,8 +71,8 @@ class ClientType(BaseIntEnum):
 # ----- Server -----
 class ServerType(BaseIntEnum):
     VLLM = 1
-    VAJRA = 2
-    SGLANG = 3
+    SGLANG = 2
+    VAJRA = 3
 
 
 # ----- Verification -----

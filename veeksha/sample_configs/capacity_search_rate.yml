@@ -1,3 +1,4 @@
+# to run with `veeksha capacity-search`
 output_dir: capacity_search_output
 start_value: 5
 max_value: 100

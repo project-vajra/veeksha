@@ -1,7 +1,5 @@
-from dataclasses import field
+from vidhi import BasePolyConfig, field, frozen_dataclass
 
-from veeksha.config.core.base_poly_config import BasePolyConfig
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
 from veeksha.config.generator.channel import (
     BaseChannelGeneratorConfig,
     TextChannelGeneratorConfig,
@@ -12,16 +10,14 @@ from veeksha.config.generator.session_graph import (
     LinearSessionGraphGeneratorConfig,
 )
 from veeksha.types import (
-    ChannelModality,
     SessionGeneratorType,
-    SessionGraphType,
     TraceFlavorType,
 )
 
 
-@frozen_dataclass(allow_from_file=True)
+@frozen_dataclass
 class BaseSessionGeneratorConfig(BasePolyConfig):
-    pass
+    """Session generator strategy (synthetic, trace, or lm-eval)."""
 
 
 @frozen_dataclass
@@ -36,21 +32,15 @@ class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
 
     session_graph: BaseSessionGraphGeneratorConfig = field(
         default_factory=LinearSessionGraphGeneratorConfig,
-        metadata={
-            "help": f"The generator for the session graphs. {SessionGraphType.help_str()}"
-        },
+        help="The generator for the session graphs.",
     )
     channels: list[BaseChannelGeneratorConfig] = field(
         default_factory=lambda: [TextChannelGeneratorConfig()],
-        metadata={
-            "help": f"The modality channels for the input content of each request. {ChannelModality.help_str()}"
-        },
+        help="The modality channels for the input content of each request.",
     )
     output_spec: OutputSpecConfig = field(
         default_factory=OutputSpecConfig,
-        metadata={
-            "help": "Specification for expected output from the model, for supported modalities (e.g., output token length, image count)."
-        },
+        help="Specification for expected output from the model, for supported modalities (e.g., output token length, image count).",
     )
 
     @classmethod
@@ -70,11 +60,10 @@ class SyntheticSessionGeneratorConfig(BaseSessionGeneratorConfig):
 class LmevalSessionGeneratorConfig(BaseSessionGeneratorConfig):
     tasks: list[str] = field(
         default_factory=lambda: ["hellaswag"],
-        metadata={"help": "The lm-eval tasks to evaluate the model on."},
+        help="The lm-eval tasks to evaluate the model on.",
     )
     num_fewshot: int = field(
-        default=1,
-        metadata={"help": "The number of fewshot examples to use for the tasks."},
+        1, help="The number of fewshot examples to use for the tasks."
     )
     # NOTE: We intentionally do not expose a separate `limit` knob here.
     # Control total evaluated sessions via `runtime.max_sessions` (and wall time via
@@ -98,56 +87,86 @@ class BaseTraceFlavorConfig(BasePolyConfig):
 
 
 @frozen_dataclass
-class ClaudeCodeTraceFlavorConfig(BaseTraceFlavorConfig):
-    """Context-cached trace flavor configuration."""
+class TimedSyntheticSessionTraceFlavorConfig(BaseTraceFlavorConfig):
+    """Timed synthetic session trace flavor configuration with context caching."""
 
-    # TODO global corpus file
     corpus_file: str = field(
-        default="traces/corpus.txt",
-        metadata={"help": "Path to corpus file for prompt padding"},
+        "traces/corpus.txt", help="Path to corpus file for prompt padding"
     )
     page_size: int = field(
-        default=16,
-        metadata={"help": "Number of unique tokens per session prefix"},
+        16, help="Number of unique tokens per history-lineage prefix"
     )
 
     @classmethod
     def get_type(cls):
-        return TraceFlavorType.CLAUDE_CODE
+        return TraceFlavorType.TIMED_SYNTHETIC_SESSION
 
 
 @frozen_dataclass
-class MooncakeConvTraceFlavorConfig(BaseTraceFlavorConfig):
-    """Mooncake conversation trace flavor configuration."""
+class SharedPrefixTraceFlavorConfig(BaseTraceFlavorConfig):
+    """Shared-prefix trace flavor configuration with hash-based content sharing."""
 
     corpus_file: str = field(
-        default="traces/corpus.txt",
-        metadata={"help": "Path to corpus file for prompt padding"},
+        "traces/corpus.txt", help="Path to corpus file for prompt padding"
     )
     block_size: int = field(
-        default=512,
-        metadata={
-            "help": "Number of tokens per hash id block. Only used for hash ids of first-in-session requests."
-        },
+        512,
+        help="Number of tokens per hash id block. Only used for hash ids of first-in-session requests.",
     )
 
     @classmethod
     def get_type(cls):
-        return TraceFlavorType.MOONCAKE_CONV
+        return TraceFlavorType.SHARED_PREFIX
 
 
 @frozen_dataclass
 class RAGTraceFlavorConfig(BaseTraceFlavorConfig):
     """RAG trace flavor configuration."""
 
-    num_documents: int = field(
-        default=10,
-        metadata={"help": "Number of top documents to include for warmup"},
-    )
+    num_documents: int = field(10, help="Number of top documents to include for warmup")
 
     @classmethod
     def get_type(cls):
         return TraceFlavorType.RAG
+
+
+@frozen_dataclass
+class RequestLogTraceFlavorConfig(BaseTraceFlavorConfig):
+    """Request log trace flavor: independent requests with token lengths only.
+
+    Each row is a standalone request with input_length and output_length.
+    No session structure, no corpus files, no prompt materialization.
+    Supports CSV and JSONL trace files.
+    """
+
+    @classmethod
+    def get_type(cls):
+        return TraceFlavorType.REQUEST_LOG
+
+
+@frozen_dataclass
+class UntimedContentMultiTurnTraceFlavorConfig(BaseTraceFlavorConfig):
+    """Untimed content multi-turn trace flavor: replay datasets with actual message content.
+
+    Supports datasets like ShareGPT, LMSYS-Chat, etc. where each row
+    contains a full conversation with actual text content.
+    """
+
+    conversation_column: str = field(
+        "conversations", help="Column containing the list of conversation messages"
+    )
+    role_key: str = field("from", help="Key for the role field in each message dict")
+    content_key: str = field(
+        "value", help="Key for the content field in each message dict"
+    )
+    user_role_value: str = field("human", help="Role value indicating user messages")
+    assistant_role_value: str = field(
+        "gpt", help="Role value indicating assistant messages"
+    )
+
+    @classmethod
+    def get_type(cls):
+        return TraceFlavorType.UNTIMED_CONTENT_MULTI_TURN
 
 
 @frozen_dataclass
@@ -156,60 +175,39 @@ class ShareGPTTraceFlavorConfig(BaseTraceFlavorConfig):
 
     Reads ShareGPT-format conversations and uses assistant turn text
     as TTS input. Each assistant turn becomes a single-request session.
-
-    Two mutually-exclusive ways to control input length:
-      - Token mode (default): truncate to a token length sampled uniformly
-        between min_tokens and max_tokens.
-      - Char mode: set min_chars/max_chars to non-negative values; min_tokens
-        and max_tokens are ignored and text is truncated to a char length
-        sampled uniformly between min_chars and max_chars.
-    Turns shorter than the minimum (tokens or chars, depending on mode) are
-    skipped during flattening.
     """
 
     assistant_role: str = field(
-        default="gpt",
-        metadata={
-            "help": "Role name for assistant turns in the ShareGPT data "
-            "(common values: 'gpt', 'assistant')."
-        },
+        "gpt",
+        help="Role name for assistant turns in the ShareGPT data "
+        "(common values: 'gpt', 'assistant').",
     )
     min_tokens: int = field(
-        default=20,
-        metadata={
-            "help": "Minimum input token count. Turns shorter than this are skipped. "
-            "Ignored when min_chars/max_chars are set."
-        },
+        20,
+        help="Minimum input token count. Turns shorter than this are skipped. "
+        "Ignored when min_chars/max_chars are set.",
     )
     max_tokens: int = field(
-        default=100,
-        metadata={
-            "help": "Maximum input token count. Text is truncated to sampled length. "
-            "Ignored when min_chars/max_chars are set."
-        },
+        100,
+        help="Maximum input token count. Text is truncated to sampled length. "
+        "Ignored when min_chars/max_chars are set.",
     )
     min_chars: int = field(
-        default=-1,
-        metadata={
-            "help": "If >= 0, enables char-based input length control (mutually exclusive "
-            "with min_tokens/max_tokens). Turns with fewer than this many chars are skipped."
-        },
+        -1,
+        help="If >= 0, enables char-based input length control (mutually exclusive "
+        "with min_tokens/max_tokens). Turns with fewer than this many chars are skipped.",
     )
     max_chars: int = field(
-        default=-1,
-        metadata={
-            "help": "If >= 0, enables char-based input length control (mutually exclusive "
-            "with min_tokens/max_tokens). Text is truncated to a char length sampled "
-            "uniformly in [min_chars, max_chars]."
-        },
+        -1,
+        help="If >= 0, enables char-based input length control (mutually exclusive "
+        "with min_tokens/max_tokens). Text is truncated to a char length sampled "
+        "uniformly in [min_chars, max_chars].",
     )
     min_alpha_ratio: float = field(
-        default=0.5,
-        metadata={
-            "help": "Minimum ratio of alphabetic characters to total non-space characters. "
-            "Filters out junk entries like number sequences or code snippets. "
-            "Set to 0.0 to disable."
-        },
+        0.5,
+        help="Minimum ratio of alphabetic characters to total non-space characters. "
+        "Filters out junk entries like number sequences or code snippets. "
+        "Set to 0.0 to disable.",
     )
 
     @property
@@ -217,7 +215,6 @@ class ShareGPTTraceFlavorConfig(BaseTraceFlavorConfig):
         return self.min_chars >= 0 and self.max_chars >= 0
 
     def __post_init__(self):
-        # Mutex: chars must be set together or not at all.
         one_set = (self.min_chars >= 0) != (self.max_chars >= 0)
         if one_set:
             raise ValueError(
@@ -229,11 +226,10 @@ class ShareGPTTraceFlavorConfig(BaseTraceFlavorConfig):
                 raise ValueError(
                     f"min_chars ({self.min_chars}) must be <= max_chars ({self.max_chars})"
                 )
-        else:
-            if self.min_tokens > self.max_tokens:
-                raise ValueError(
-                    f"min_tokens ({self.min_tokens}) must be <= max_tokens ({self.max_tokens})"
-                )
+        elif self.min_tokens > self.max_tokens:
+            raise ValueError(
+                f"min_tokens ({self.min_tokens}) must be <= max_tokens ({self.max_tokens})"
+            )
 
     @classmethod
     def get_type(cls):
@@ -249,62 +245,43 @@ class SeedTTSTextTraceFlavorConfig(BaseTraceFlavorConfig):
     """
 
     dataset_name: str = field(
-        default="TwinkStart/Seed-TTS-Eval",
-        metadata={"help": "Hugging Face dataset name used when local_path is empty."},
+        "TwinkStart/Seed-TTS-Eval",
+        help="Hugging Face dataset name used when local_path is empty.",
     )
-    subset: str = field(
-        default="en",
-        metadata={"help": "Dataset subset/config name. Defaults to English."},
-    )
-    split: str = field(
-        default="train",
-        metadata={"help": "Dataset split to load."},
-    )
+    subset: str = field("en", help="Dataset subset/config name. Defaults to English.")
+    split: str = field("train", help="Dataset split to load.")
     text_column: str = field(
-        default="text",
-        metadata={"help": "Column containing the target TTS synthesis text."},
+        "text", help="Column containing the target TTS synthesis text."
     )
     id_column: str = field(
-        default="filename",
-        metadata={
-            "help": "Optional source row identifier column copied into request metadata."
-        },
+        "filename",
+        help="Optional source row identifier column copied into request metadata.",
     )
     local_path: str = field(
-        default="",
-        metadata={
-            "help": "Optional local dataset path. Supports saved HF datasets and common "
-            "data files such as JSON/JSONL, CSV, and Parquet."
-        },
+        "",
+        help="Optional local dataset path. Supports saved HF datasets and common "
+        "data files such as JSON/JSONL, CSV, and Parquet.",
     )
     min_tokens: int = field(
-        default=20,
-        metadata={
-            "help": "Minimum input word count. Rows with fewer words are skipped. "
-            "Ignored when min_chars/max_chars are set."
-        },
+        20,
+        help="Minimum input word count. Rows with fewer words are skipped. "
+        "Ignored when min_chars/max_chars are set.",
     )
     max_tokens: int = field(
-        default=150,
-        metadata={
-            "help": "Maximum input word count. Text is truncated to a sampled word "
-            "count in [min_tokens, max_tokens]. Ignored when min_chars/max_chars "
-            "are set."
-        },
+        150,
+        help="Maximum input word count. Text is truncated to a sampled word "
+        "count in [min_tokens, max_tokens]. Ignored when min_chars/max_chars "
+        "are set.",
     )
     min_chars: int = field(
-        default=-1,
-        metadata={
-            "help": "If >= 0, enables char-based input length control. Rows with "
-            "fewer chars are skipped."
-        },
+        -1,
+        help="If >= 0, enables char-based input length control. Rows with "
+        "fewer chars are skipped.",
     )
     max_chars: int = field(
-        default=-1,
-        metadata={
-            "help": "If >= 0, enables char-based input length control. Text is "
-            "truncated to a sampled char count in [min_chars, max_chars]."
-        },
+        -1,
+        help="If >= 0, enables char-based input length control. Text is "
+        "truncated to a sampled char count in [min_chars, max_chars].",
     )
 
     @property
@@ -322,27 +299,23 @@ class SeedTTSTextTraceFlavorConfig(BaseTraceFlavorConfig):
             raise ValueError(
                 "SeedTTSTextTraceFlavorConfig requires dataset_name or local_path."
             )
-
         one_char_bound_set = (self.min_chars >= 0) != (self.max_chars >= 0)
         if one_char_bound_set:
             raise ValueError(
                 "min_chars and max_chars must both be set (>= 0) or both left "
-                f"unset (-1); got min_chars={self.min_chars}, "
-                f"max_chars={self.max_chars}"
+                f"unset (-1); got min_chars={self.min_chars}, max_chars={self.max_chars}"
             )
         if self.use_chars:
             if self.min_chars > self.max_chars:
                 raise ValueError(
-                    f"min_chars ({self.min_chars}) must be <= max_chars "
-                    f"({self.max_chars})"
+                    f"min_chars ({self.min_chars}) must be <= max_chars ({self.max_chars})"
                 )
         else:
             if self.min_tokens < 0 or self.max_tokens < 0:
                 raise ValueError("min_tokens and max_tokens must be non-negative.")
             if self.min_tokens > self.max_tokens:
                 raise ValueError(
-                    f"min_tokens ({self.min_tokens}) must be <= max_tokens "
-                    f"({self.max_tokens})"
+                    f"min_tokens ({self.min_tokens}) must be <= max_tokens ({self.max_tokens})"
                 )
 
 
@@ -353,17 +326,13 @@ class SeedTTSTextTraceFlavorConfig(BaseTraceFlavorConfig):
 class TraceSessionGeneratorConfig(BaseSessionGeneratorConfig):
     """Trace-driven session generator configuration."""
 
-    trace_file: str = field(
-        default="",
-        metadata={"help": "Path to the JSONL trace file"},
-    )
+    trace_file: str = field("", help="Path to the trace file (JSONL or CSV)")
     wrap_mode: bool = field(
-        default=True,
-        metadata={"help": "Whether to wrap/loop over the trace indefinitely"},
+        True, help="Whether to wrap/loop over the trace indefinitely"
     )
     flavor: BaseTraceFlavorConfig = field(
-        default_factory=ClaudeCodeTraceFlavorConfig,
-        metadata={"help": f"Trace flavor configuration. {TraceFlavorType.help_str()}"},
+        default_factory=TimedSyntheticSessionTraceFlavorConfig,
+        help="Trace flavor configuration.",
     )
 
     @classmethod

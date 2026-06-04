@@ -1,3 +1,8 @@
+# to run with `veeksha benchmark`
+
+# `veeksha benchmark` is general enough to run decode microbenchmarks
+# although we prefer `veeksha decode` in most cases
+
 # sweeps over len(target_concurrent_sessions) * len(body_length_generator.value) = 4 runs
 
 seed: 42

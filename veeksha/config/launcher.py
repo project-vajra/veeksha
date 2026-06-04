@@ -10,7 +10,8 @@ from typing import Any, Mapping, Optional
 import yaml
 
 from veeksha.config.server import BaseServerConfig, LauncherEngineConfig
-from veeksha.config.utils import create_class_from_dict, get_all_subclasses
+from vidhi import create_class_from_dict
+from vidhi.utils import get_all_subclasses
 from veeksha.sweeps import planner as sweep_planner
 
 

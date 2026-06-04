@@ -5,15 +5,14 @@ Output specifications are separate from input channel generators to support
 cross-modal benchmarks (e.g., text-to-image, image-to-text).
 """
 
-from dataclasses import field
 from typing import Optional
 
-from veeksha.config.core.frozen_dataclass import frozen_dataclass
+from vidhi import field, frozen_dataclass
+
 from veeksha.config.generator.length import (
     BaseLengthGeneratorConfig,
     UniformLengthGeneratorConfig,
 )
-from veeksha.types import LengthGeneratorType
 
 
 @frozen_dataclass
@@ -26,9 +25,7 @@ class TextOutputSpecConfig:
 
     output_length_generator: BaseLengthGeneratorConfig = field(
         default_factory=UniformLengthGeneratorConfig,
-        metadata={
-            "help": f"The generator for the output length. {LengthGeneratorType.help_str()}"
-        },
+        help="The generator for the output length.",
     )
 
 
@@ -42,17 +39,10 @@ class ImageOutputSpecConfig:
         quality: Image quality setting (e.g., "hd", "standard").
     """
 
-    num_images: int = field(
-        default=1,
-        metadata={"help": "Number of images to generate per request."},
-    )
-    size: Optional[str] = field(
-        default=None,
-        metadata={"help": "Image dimensions (e.g., '1024x1024')."},
-    )
+    num_images: int = field(1, help="Number of images to generate per request.")
+    size: Optional[str] = field(None, help="Image dimensions (e.g., '1024x1024').")
     quality: Optional[str] = field(
-        default=None,
-        metadata={"help": "Image quality setting (e.g., 'hd', 'standard')."},
+        None, help="Image quality setting (e.g., 'hd', 'standard')."
     )
 
 
@@ -93,17 +83,14 @@ class OutputSpecConfig:
 
     text: Optional[TextOutputSpecConfig] = field(
         default_factory=TextOutputSpecConfig,
-        metadata={"help": "Configuration for expected text output."},
+        help="Configuration for expected text output.",
     )
     image: Optional[ImageOutputSpecConfig] = field(
-        default=None,
-        metadata={"help": "Configuration for expected image output."},
+        None, help="Configuration for expected image output."
     )
     audio: Optional[AudioOutputSpecConfig] = field(
-        default=None,
-        metadata={"help": "Configuration for expected audio output."},
+        None, help="Configuration for expected audio output."
     )
     video: Optional[VideoOutputSpecConfig] = field(
-        default=None,
-        metadata={"help": "Configuration for expected video output."},
+        None, help="Configuration for expected video output."
     )
