@@ -1,4 +1,4 @@
-"""Progress parsing and rendering for veeksha_launcher."""
+"""Progress parsing and rendering for orchestrated launcher runs."""
 
 from __future__ import annotations
 

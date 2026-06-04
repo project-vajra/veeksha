@@ -72,10 +72,26 @@ class VajraTTSProviderAdapter(TTSProviderAdapter):
         return self.config.raw_pcm
 
     def build_request(self, text: str) -> TTSProviderRequest:
+        api_base = str(self.config.api_base)
+        endpoint = (
+            "audio/speech"
+            if api_base.rstrip("/").endswith("/v1")
+            else "v1/audio/speech"
+        )
+        payload: dict = {
+            "input": text,
+            "response_format": "pcm" if self.config.raw_pcm else "wav",
+            "stream": True,
+        }
+        if self.config.voice_id:
+            payload["voice"] = self.config.voice_id
+        headers = {"Content-Type": "application/json"}
+        if self.config.api_key:
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
         return TTSProviderRequest(
-            url=self._join_url(str(self.config.api_base), "synthesize/stream"),
-            headers={"Content-Type": "application/json"},
-            payload={"text": text},
+            url=self._join_url(api_base, endpoint),
+            headers=headers,
+            payload=payload,
         )
 
 

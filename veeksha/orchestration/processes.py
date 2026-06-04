@@ -1,4 +1,4 @@
-"""Subprocess lifecycle helpers for veeksha_launcher."""
+"""Subprocess lifecycle helpers for Veeksha orchestration."""
 
 from __future__ import annotations
 

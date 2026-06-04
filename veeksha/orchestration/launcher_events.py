@@ -1,11 +1,14 @@
-"""Launcher event payloads and console messages."""
+"""Launcher event payloads and console messages for orchestration."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Optional
 
-from veeksha_launcher.progress import positive_int_or_none, progress_percentage
+from veeksha.orchestration.launcher_progress import (
+    positive_int_or_none,
+    progress_percentage,
+)
 
 
 def sweep_plan_payload(plan: Any, generated_config_dir: Path) -> dict:

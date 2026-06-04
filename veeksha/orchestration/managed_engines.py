@@ -1,4 +1,4 @@
-"""Engine lifecycle runners used by veeksha_launcher."""
+"""Managed engine lifecycle runners for orchestrated Veeksha sweeps."""
 
 from __future__ import annotations
 
@@ -15,14 +15,15 @@ from typing import IO, Optional
 
 import requests
 
-from veeksha_launcher.config import (
+from veeksha.config.server import (
     LauncherEngineConfig,
     ManagedEngineConfig,
     SglangOmniDockerEngineConfig,
     VajraSubprocessEngineConfig,
     VllmOmniDockerEngineConfig,
 )
-from veeksha_launcher.processes import ProcessTerminator
+from veeksha.orchestration.processes import ProcessTerminator
+from veeksha.orchestration.server_manager import BaseServerManager
 
 _ENGINE_DETAILS_FILENAME = "engine_details.json"
 
@@ -35,7 +36,7 @@ class EngineRestartLimitExceeded(EngineError):
     """Raised when the configured restart budget is exhausted."""
 
 
-class BaseEngineRunner(ABC):
+class BaseEngineRunner(BaseServerManager, ABC):
     def __init__(
         self,
         config: ManagedEngineConfig,
@@ -43,14 +44,37 @@ class BaseEngineRunner(ABC):
         *,
         terminator: Optional[ProcessTerminator] = None,
     ):
-        self.config = config
+        super().__init__(config, output_dir=str(output_dir))
         self.output_dir = Path(output_dir)
-        self.restart_count = 0
-        self.start_count = 0
+        self._delete_log_file_on_cleanup = False
         self._terminator = terminator or ProcessTerminator()
+
+    @property
+    def is_running(self) -> bool:
+        return self.is_alive()
 
     def get_api_base(self) -> str:
         return self.config.api_base_url
+
+    def launch(self) -> tuple[bool, Optional[str]]:
+        try:
+            self.start()
+        except Exception as exc:
+            return False, str(exc)
+        return True, None
+
+    def shutdown(self, force: bool = False) -> bool:
+        try:
+            self.stop()
+        except Exception:
+            return False
+        return True
+
+    def get_server_logs(self, lines: int = 50) -> tuple[str, str]:
+        return self.tail_logs(lines), ""
+
+    def _build_launch_command(self) -> list[str]:
+        return []
 
     @abstractmethod
     def start(self) -> None:
@@ -75,9 +99,17 @@ class BaseEngineRunner(ABC):
         except requests.RequestException:
             return False
 
-    def wait_for_ready(self) -> None:
+    def wait_for_ready(self, timeout: Optional[int] = None) -> bool:
+        try:
+            self._wait_for_ready_or_raise(timeout=timeout)
+        except (EngineError, TimeoutError):
+            return False
+        return True
+
+    def _wait_for_ready_or_raise(self, timeout: Optional[float] = None) -> None:
+        startup_timeout = self.config.startup_timeout if timeout is None else timeout
         start = time.monotonic()
-        while time.monotonic() - start < self.config.startup_timeout:
+        while time.monotonic() - start < startup_timeout:
             if not self.is_alive():
                 raise EngineError(
                     "engine exited before becoming ready\n" + self.tail_logs()
@@ -86,7 +118,7 @@ class BaseEngineRunner(ABC):
                 return
             time.sleep(self.config.health_check_interval)
         raise TimeoutError(
-            f"engine did not become ready within {self.config.startup_timeout}s\n"
+            f"engine did not become ready within {startup_timeout}s\n"
             + self.tail_logs()
         )
 
@@ -136,24 +168,28 @@ class VajraSubprocessRunner(BaseEngineRunner):
     def start(self) -> None:
         if self.is_alive():
             return
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.start_count += 1
-        self._write_engine_details(self._build_git_details())
-        self._stdout_path = self.output_dir / f"vajra_stdout_{self.start_count}.log"
-        self._stderr_path = self.output_dir / f"vajra_stderr_{self.start_count}.log"
-        self._stdout_file = self._stdout_path.open("w", encoding="utf-8")
-        self._stderr_file = self._stderr_path.open("w", encoding="utf-8")
-        self._process = subprocess.Popen(
-            list(self.config.command),
-            cwd=str(self._setup_dir()),
-            stdout=self._stdout_file,
-            stderr=self._stderr_file,
-            start_new_session=True,
-            env=self._build_env(),
-            text=True,
-        )
+        allocation_success, allocation_error = self._ensure_gpu_allocation()
+        if not allocation_success:
+            raise EngineError(allocation_error or "failed to allocate GPUs")
+
         try:
-            self.wait_for_ready()
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            self.start_count += 1
+            self._write_engine_details(self._build_git_details())
+            self._stdout_path = self.output_dir / f"vajra_stdout_{self.start_count}.log"
+            self._stderr_path = self.output_dir / f"vajra_stderr_{self.start_count}.log"
+            self._stdout_file = self._stdout_path.open("w", encoding="utf-8")
+            self._stderr_file = self._stderr_path.open("w", encoding="utf-8")
+            self._process = subprocess.Popen(
+                list(self.config.command),
+                cwd=str(self._setup_dir()),
+                stdout=self._stdout_file,
+                stderr=self._stderr_file,
+                start_new_session=True,
+                env=self._build_env(),
+                text=True,
+            )
+            self._wait_for_ready_or_raise()
         except BaseException:
             self.stop()
             raise
@@ -165,6 +201,7 @@ class VajraSubprocessRunner(BaseEngineRunner):
         finally:
             self._close_logs()
             self._process = None
+            self._release_allocated_resources()
 
     def is_alive(self) -> bool:
         return self._process is not None and self._process.poll() is None
@@ -205,7 +242,7 @@ class VajraSubprocessRunner(BaseEngineRunner):
 
     def _setup_dir(self) -> Path:
         if not self.config.setup_dir:
-            raise EngineError("vajra_subprocess engine.setup_dir is required")
+            raise EngineError("vajra server.setup_dir is required")
         return Path(self.config.setup_dir).expanduser()
 
     def _close_logs(self) -> None:
@@ -261,40 +298,47 @@ class VllmOmniDockerRunner(BaseEngineRunner):
     def start(self) -> None:
         if self.is_alive():
             return
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.start_count += 1
-        cmd = self._build_docker_run_cmd()
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise EngineError(
-                "docker run failed "
-                f"(rc={result.returncode})\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-            )
-        self._container_id = result.stdout.strip()
+        allocation_success, allocation_error = self._ensure_gpu_allocation()
+        if not allocation_success:
+            raise EngineError(allocation_error or "failed to allocate GPUs")
+
         try:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            self.start_count += 1
+            cmd = self._build_docker_run_cmd()
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise EngineError(
+                    "docker run failed "
+                    f"(rc={result.returncode})\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+                )
+            self._container_id = result.stdout.strip()
             self._write_engine_details(self._build_docker_details())
             self._start_log_streamer()
-            self.wait_for_ready()
+            self._wait_for_ready_or_raise()
         except BaseException:
             self.stop()
             raise
 
     def stop(self) -> None:
-        self._stop_log_streamer()
-        if self._container_id is None and not self.is_alive():
-            return
         try:
+            self._stop_log_streamer()
+            if self._container_id is None and not self.is_alive():
+                return
+            try:
+                subprocess.run(
+                    ["docker", "stop", self._container_name],
+                    capture_output=True,
+                    timeout=60,
+                )
+            except subprocess.TimeoutExpired:
+                pass
             subprocess.run(
-                ["docker", "stop", self._container_name],
-                capture_output=True,
-                timeout=60,
+                ["docker", "rm", "-f", self._container_name], capture_output=True
             )
-        except subprocess.TimeoutExpired:
-            pass
-        subprocess.run(
-            ["docker", "rm", "-f", self._container_name], capture_output=True
-        )
-        self._container_id = None
+            self._container_id = None
+        finally:
+            self._release_allocated_resources()
 
     def is_alive(self) -> bool:
         result = subprocess.run(
@@ -380,7 +424,7 @@ class VllmOmniDockerRunner(BaseEngineRunner):
     def _build_server_cmd(self) -> list[str]:
         # Base command is vLLM-specific; SglangOmniDockerRunner overrides this.
         assert isinstance(self.config, VllmOmniDockerEngineConfig)
-        return [
+        serve = [
             "vllm",
             "serve",
             self.config.hf_model,
@@ -391,6 +435,11 @@ class VllmOmniDockerRunner(BaseEngineRunner):
             self.config.resolved_container_deploy_config,
             *self.config.engine_args,
         ]
+        if not self.config.uses_bootstrap:
+            return serve
+        serve_line = "exec " + " ".join(shlex.quote(part) for part in serve)
+        script = self.config.resolved_bootstrap + "\n" + serve_line
+        return ["bash", "-lc", script]
 
     def _extra_run_args(self) -> list[str]:
         """Extra ``docker run`` flags inserted before the port mapping."""
@@ -530,10 +579,11 @@ def _unique_container_name(prefix: str) -> str:
 def create_engine_runner(
     config: LauncherEngineConfig, output_dir: str | Path
 ) -> BaseEngineRunner:
-    if isinstance(config, VajraSubprocessEngineConfig):
-        return VajraSubprocessRunner(config, output_dir)
-    if isinstance(config, SglangOmniDockerEngineConfig):
-        return SglangOmniDockerRunner(config, output_dir)
-    if isinstance(config, VllmOmniDockerEngineConfig):
-        return VllmOmniDockerRunner(config, output_dir)
-    raise EngineError(f"unsupported engine config: {type(config).__name__}")
+    from veeksha.orchestration.registry import ServerManagerRegistry
+
+    manager = ServerManagerRegistry.get(
+        config.get_type(), config=config, output_dir=str(output_dir)
+    )
+    if not isinstance(manager, BaseEngineRunner):
+        raise EngineError(f"unsupported engine manager: {type(manager).__name__}")
+    return manager

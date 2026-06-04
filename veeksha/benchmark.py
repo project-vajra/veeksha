@@ -19,7 +19,7 @@ from veeksha.core.trace_recorder import TraceRecorder
 from veeksha.generator.session.registry import SessionGeneratorRegistry
 from veeksha.health import HealthChecker
 from veeksha.logger import init_logger
-from veeksha.orchestration import managed_server
+from veeksha.orchestration.benchmark_orchestrator import managed_server
 from veeksha.traffic.registry import TrafficSchedulerRegistry
 from veeksha.wandb_integration import (
     maybe_finish_wandb_run,

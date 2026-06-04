@@ -7,7 +7,7 @@ import time
 from copy import deepcopy
 from dataclasses import fields, is_dataclass
 from importlib.resources.abc import Traversable
-from typing import Any, Dict, List, Union, get_args, get_origin
+from typing import Any, Dict, List, Union, get_args, get_origin, get_type_hints
 
 import yaml
 
@@ -269,6 +269,10 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
         )
 
     kwargs: dict[str, Any] = {}
+    try:
+        type_hints = get_type_hints(cls)
+    except Exception:
+        type_hints = {}
 
     for f in fields(cls):
         if f.name not in config_dict:
@@ -279,7 +283,7 @@ def create_class_from_dict(cls: type, config_dict: dict | None):
             continue
 
         raw_value = config_dict[f.name]
-        field_type = _strip_optional(f.type)
+        field_type = _strip_optional(type_hints.get(f.name, f.type))
 
         # Handle list/tuple/dict containers with potential dataclass items
         origin = get_origin(field_type)

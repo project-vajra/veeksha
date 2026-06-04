@@ -15,20 +15,20 @@ from typing import Callable, Optional
 import yaml
 
 from veeksha.sweeps import planner as sweep_planner
-from veeksha_launcher.config import LauncherConfig
-from veeksha_launcher.engines import (
+from veeksha.config.launcher import LauncherConfig
+from veeksha.orchestration.managed_engines import (
     BaseEngineRunner,
     EngineRestartLimitExceeded,
     create_engine_runner,
 )
-from veeksha_launcher.events import (
+from veeksha.orchestration.launcher_events import (
     attempt_log_name,
     console_message,
     run_event_payload,
     sweep_plan_payload,
 )
-from veeksha_launcher.processes import ProcessTerminator
-from veeksha_launcher.progress import (
+from veeksha.orchestration.processes import ProcessTerminator
+from veeksha.orchestration.launcher_progress import (
     BenchmarkProgressReader,
     BenchmarkRequestProgress,
     LauncherProgressReporter,

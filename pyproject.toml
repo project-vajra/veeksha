@@ -46,7 +46,7 @@ dependencies = [
 veeksha = "veeksha.__main__:main"
 "veeksha.benchmark" = "veeksha.cli.benchmarks:main"
 "veeksha.config" = "veeksha.cli.config:main"
-"veeksha-launcher" = "veeksha_launcher.__main__:main"
+"veeksha-launcher" = "veeksha.launcher:main"
 
 [project.urls]
 Homepage = "https://github.com/project-vajra/veeksha"
@@ -88,7 +88,7 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["veeksha*", "veeksha_launcher*"]
+include = ["veeksha*"]
 exclude = ["tests*", "docs*"]
 
 [tool.setuptools.package-data]
@@ -111,7 +111,7 @@ known_third_party = "wandb"
 extend_skip = ["veeksha/_version.py"]
 
 [tool.pyright]
-include = ["veeksha", "veeksha_launcher"]
+include = ["veeksha"]
 exclude = [
     "**/__pycache__",
     "veeksha/cli/config_docs_generator.py",

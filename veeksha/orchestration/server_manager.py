@@ -47,6 +47,8 @@ class BaseServerManager(abc.ABC):
         self._delete_log_file_on_cleanup = True
         self.resource_manager = ResourceManager()
         self._allocated_job_id: Optional[str] = None  # Track allocated resources
+        self.restart_count = 0
+        self.start_count = 0
 
     @property
     def is_running(self) -> bool:
@@ -64,6 +66,66 @@ class BaseServerManager(abc.ABC):
         Returns:
             List of command arguments
         """
+
+    def _should_auto_allocate_gpus(self) -> bool:
+        if self.config.gpu_ids is not None:
+            return False
+        # Docker configs may ask Docker itself for a device set/count, e.g.
+        # ``--gpus all`` or ``--gpus 2``. Treat that as an explicit override.
+        if getattr(self.config, "docker_gpus", None):
+            return False
+        return True
+
+    def _ensure_gpu_allocation(self) -> tuple[bool, Optional[str]]:
+        if not self._should_auto_allocate_gpus():
+            return True, None
+
+        num_gpus = self.config.get_num_gpus()
+        job_id = f"server_{self.config.host}_{self.config.port}_{int(time.time())}"
+        resource_mapping = self.resource_manager.wait_for_resources(
+            num_gpus=num_gpus,
+            timeout=300,
+            job_id=job_id,
+            contiguous=self.config.require_contiguous_gpus,
+        )
+
+        if resource_mapping is None:
+            logger.error(f"Failed to allocate {num_gpus} GPUs for server")
+            return False, f"Failed to allocate {num_gpus} GPUs for server"
+
+        self._allocated_job_id = job_id
+        gpu_ids = [gpu_id for _, gpu_id in resource_mapping]
+        self.config = replace(self.config, gpu_ids=gpu_ids)
+        return True, None
+
+    def _release_allocated_resources(self) -> None:
+        if self._allocated_job_id is None:
+            return
+        try:
+            self.resource_manager.release_resources(self._allocated_job_id)
+        except Exception as e:
+            logger.error(f"Error releasing resources: {e}")
+        finally:
+            self._allocated_job_id = None
+
+    def start(self) -> None:
+        success, error = self.launch()
+        if not success:
+            raise RuntimeError(error or "failed to launch server")
+
+    def stop(self) -> None:
+        self.shutdown()
+
+    def restart(self) -> None:
+        max_restarts = getattr(self.config, "max_restarts", None)
+        if max_restarts is not None and self.restart_count >= max_restarts:
+            raise RuntimeError(f"server restart budget exhausted ({max_restarts})")
+        self.restart_count += 1
+        self.stop()
+        self.start()
+
+    def reset_restart_budget(self) -> None:
+        self.restart_count = 0
 
     def _create_log_file(self) -> IO[str]:
         """Create a log file for the server process."""
@@ -118,27 +180,9 @@ class BaseServerManager(abc.ABC):
             return False, error_msg
 
         try:
-            # auto-allocate if not specified
-            if self.config.gpu_ids is None:
-                num_gpus = self.config.get_num_gpus()
-
-                job_id = (
-                    f"server_{self.config.host}_{self.config.port}_{int(time.time())}"
-                )
-                resource_mapping = self.resource_manager.wait_for_resources(
-                    num_gpus=num_gpus,
-                    timeout=300,  # 5 minute timeout
-                    job_id=job_id,
-                    contiguous=self.config.require_contiguous_gpus,
-                )
-
-                if resource_mapping is None:
-                    logger.error(f"Failed to allocate {num_gpus} GPUs for server")
-                    return False, f"Failed to allocate {num_gpus} GPUs for server"
-
-                self._allocated_job_id = job_id
-                gpu_ids = [gpu_id for _, gpu_id in resource_mapping]
-                self.config = replace(self.config, gpu_ids=gpu_ids)
+            allocation_success, allocation_error = self._ensure_gpu_allocation()
+            if not allocation_success:
+                return False, allocation_error
 
             command = self._build_launch_command()
             logger.info(f"Launching server with command: {' '.join(command)}")
@@ -174,15 +218,13 @@ class BaseServerManager(abc.ABC):
                 text=True,
             )
 
+            self.start_count += 1
             logger.info(f"Server process started with PID: {self.process.pid}")
             self._is_running = True
             return True, None
 
         except Exception as e:
-            # release GPUs
-            if self._allocated_job_id is not None:
-                self.resource_manager.release_resources(self._allocated_job_id)
-                self._allocated_job_id = None
+            self._release_allocated_resources()
             if self._log_file is not None:
                 self._log_file.close()
                 self._log_file = None
@@ -360,13 +402,7 @@ class BaseServerManager(abc.ABC):
             # reset state and clean up resources, even with exceptions
             self._is_running = False
 
-            if self._allocated_job_id is not None:
-                try:
-                    self.resource_manager.release_resources(self._allocated_job_id)
-                except Exception as e:
-                    logger.error(f"Error releasing resources: {e}")
-                finally:
-                    self._allocated_job_id = None
+            self._release_allocated_resources()
 
             if self._log_file:
                 try:

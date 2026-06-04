@@ -9,7 +9,7 @@ from argparse import (
 from collections import defaultdict, deque
 from dataclasses import MISSING, fields, make_dataclass
 from itertools import product
-from typing import Any, Dict, List, Optional, Tuple, get_args
+from typing import Any, Dict, List, Optional, Tuple, get_args, get_type_hints
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.utils import (
@@ -31,6 +31,16 @@ from veeksha.logger import init_logger
 from veeksha.version import __version__
 
 logger = init_logger(__name__)
+
+
+def _poly_config_type_key(config_class: Any) -> str:
+    """Return a stable string key for enum- or string-backed config types."""
+    type_value = config_class.get_type()
+    return getattr(type_value, "name", str(type_value)).lower()
+
+
+def _poly_config_type_matches(config_class: Any, type_name: str) -> bool:
+    return _poly_config_type_key(config_class).upper() == type_name.upper()
 
 
 def explode_dict(
@@ -449,6 +459,33 @@ def reconstruct_original_dataclass(self) -> Any:
             for dependency in dependencies:
                 classes_to_skip.add(dependency)
 
+    # For polymorphic configs, only the selected child should be reconstructed.
+    # Unselected children may have required fields and validation in __post_init__.
+    for prefixed_field_name, type_to_child in self.base_poly_children_types.items():
+        config_type = getattr(self, f"{prefixed_field_name}_type", None)
+        if config_type is None:
+            continue
+
+        type_key = str(config_type).lower()
+        if type_key in {"none", "null", ""}:
+            selected_child = None
+        else:
+            selected_child = type_to_child.get(type_key)
+            if selected_child is None:
+                continue
+
+        for child_node_name in type_to_child.values():
+            if child_node_name != selected_child:
+                classes_to_skip.add(child_node_name)
+
+    skip_queue = deque(classes_to_skip)
+    while skip_queue:
+        skipped_cls = skip_queue.popleft()
+        for dependency in self.dataclass_dependencies.get(skipped_cls, []):
+            if dependency not in classes_to_skip:
+                classes_to_skip.add(dependency)
+                skip_queue.append(dependency)
+
     filtered_dependencies = {}
     for cls, dependencies in self.dataclass_dependencies.items():
         if cls not in classes_to_skip:
@@ -559,10 +596,7 @@ def init_iterable_args(loaded_configs, cli_provided_args, list_fields):
                         is_match = False
                         # linear matching... do we assume there is a registry?
                         for subclass in subclasses:
-                            if (
-                                subclass.get_type().name.upper()
-                                == raw_value["type"].upper()
-                            ):
+                            if _poly_config_type_matches(subclass, raw_value["type"]):
                                 subclass_kwargs = {
                                     k: v for k, v in raw_value.items() if k != "type"
                                 }
@@ -671,7 +705,10 @@ def _add_field_to_parser(
 
     nargs = None
     action = None
-    field_type = field.type
+    try:
+        field_type = get_type_hints(cls).get(field.name, field.type)
+    except Exception:
+        field_type = field.type
 
     # extract metadata
     help_text = cls.metadata_mapping[field.name].get("help", None)
@@ -686,9 +723,9 @@ def _add_field_to_parser(
         argnames_to_field_names[argname] = field.name
 
     # handle optional types
-    is_field_optional = is_optional(field.type)
+    is_field_optional = is_optional(field_type)
     if is_field_optional:
-        field_type = get_inner_type(field.type)
+        field_type = get_inner_type(field_type)
 
     # configure type-specific parameters
     if is_list(field_type):
@@ -920,7 +957,7 @@ def _merge_args_with_configs(
 
 def get_config_class_by_type_name(config_class: Any, type_name: str) -> Any:
     for subclass in get_all_subclasses(config_class):
-        if subclass.get_type().name.upper() == type_name.upper():
+        if _poly_config_type_matches(subclass, type_name):
             return subclass
 
     raise ValueError(f"Config class with name {type_name} not found.")
@@ -954,11 +991,12 @@ def _add_file_argument(state, target_cls, file_field_name: str):
     state["file_fields"][target_cls] = file_field_name
 
 
-def _get_field_type_info(field):
+def _get_field_type_info(field, resolved_type=None):
     """Extract type information from a dataclass field."""
-    if is_optional(field.type):
-        return get_inner_type(field.type), True
-    return field.type, False
+    field_type = field.type if resolved_type is None else resolved_type
+    if is_optional(field_type):
+        return get_inner_type(field_type), True
+    return field_type, False
 
 
 def _get_default_value_for_poly_field(field, field_type):
@@ -1001,7 +1039,7 @@ def _handle_polymorphic_config_field(
     # process all subclasses of the polymorphic config
     assert hasattr(field_type, "__dataclass_fields__")
     for subclass in get_all_subclasses(field_type):
-        type_key = subclass.get_type().name.lower()
+        type_key = _poly_config_type_key(subclass)
         child_node_name = f"{prefix}{to_snake_case(type_key)}_{field.name}"
         # map the child node name to the subclass
         state["base_poly_children"][prefixed_name][child_node_name] = subclass
@@ -1075,10 +1113,17 @@ def _process_single_dataclass(state, input_dataclass, prefix=""):
         )
         _add_file_argument(state, input_dataclass, file_field_name)
 
+    try:
+        type_hints = get_type_hints(input_dataclass)
+    except Exception:
+        type_hints = {}
+
     # process each field in the dataclass
     for field in fields(input_dataclass):
         prefixed_name = f"{prefix}{field.name}"
-        field_type, _ = _get_field_type_info(field)
+        field_type, _ = _get_field_type_info(
+            field, type_hints.get(field.name, field.type)
+        )
 
         # Skip fields that are not part of __init__ (e.g., init=False fields)
         if not field.init:
