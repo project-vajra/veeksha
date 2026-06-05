@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ASR Interactivity Replay</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Veeksha STT benchmark</p>
+          <h1>Realtime transcript timing</h1>
+        </div>
+        <div class="loader">
+          <input
+            id="data-url"
+            type="text"
+            placeholder="benchmark_output/.../metrics/asr_replay.json"
+          />
+          <button id="load-url" type="button">Load</button>
+          <label class="file-button">
+            File
+            <input id="file-input" type="file" accept="application/json,.json" />
+          </label>
+        </div>
+      </header>
+
+      <section class="hero">
+        <div class="hero-copy">
+          <p id="run-subtitle" class="eyebrow">No run loaded</p>
+          <h2 id="request-title">Live call</h2>
+          <p id="request-meta">
+            Load a replay export to compare when words are spoken with when
+            Veeksha receives them from the server.
+          </p>
+        </div>
+
+        <div id="latency-panel" class="latency-panel">
+          <span>Mean word latency</span>
+          <strong id="latency-value">n/a</strong>
+          <p id="latency-detail">No request selected</p>
+        </div>
+      </section>
+
+      <section class="demo-stage">
+        <section class="call-card" aria-label="Realtime ASR replay">
+          <div class="card-head">
+            <div>
+              <span class="status-dot"></span>
+              <span class="card-label">Live call</span>
+            </div>
+            <span id="time-label" class="time-label">0 ms</span>
+          </div>
+
+          <div class="latency-chart-wrap">
+            <div class="chart-toolbar">
+              <div>
+                <span class="chart-title">Latency over time</span>
+                <small>word points and running mean</small>
+              </div>
+              <div class="chart-stats">
+                <span id="chart-live-mean">mean n/a</span>
+                <span id="chart-latest">latest n/a</span>
+                <span id="chart-count">0 words</span>
+              </div>
+            </div>
+            <div id="latency-chart" role="img" aria-label="Latency graph"></div>
+            <div id="latency-chart-empty" class="latency-chart-empty">
+              Latency points appear as transcript words arrive
+            </div>
+          </div>
+
+          <div class="controls">
+            <button id="play-button" type="button">Play</button>
+            <button id="pause-button" type="button">Pause</button>
+            <input id="time-slider" type="range" min="0" value="0" step="10" />
+            <span id="duration-label">0 ms</span>
+          </div>
+
+          <audio id="audio-player" preload="metadata"></audio>
+
+          <div class="stream-grid">
+            <section class="stream-block">
+              <div class="stream-head">
+                <span>Ground truth</span>
+                <small>dataset word timestamps</small>
+              </div>
+              <div id="reference-stream" class="word-stream"></div>
+            </section>
+
+            <section class="stream-block">
+              <div class="stream-head">
+                <span>Veeksha transcript</span>
+                <small>first received by client</small>
+              </div>
+              <div id="transcript-stream" class="word-stream"></div>
+            </section>
+          </div>
+
+          <p id="replay-warning" class="replay-warning"></p>
+        </section>
+
+        <aside class="side-panel">
+          <section class="metrics-card">
+            <h3>Request Metrics</h3>
+            <div id="metric-strip" class="metric-strip"></div>
+          </section>
+
+          <section class="request-picker">
+            <div class="picker-head">
+              <h3>Samples</h3>
+              <select id="sort-select" aria-label="Sort requests">
+                <option value="interactivity_desc">Worst latency</option>
+                <option value="final_wer_desc">Worst WER</option>
+                <option value="rtf_desc">Worst RTF</option>
+                <option value="request_id_asc">Request order</option>
+              </select>
+            </div>
+            <div id="request-table" class="request-table"></div>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -117,6 +117,7 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
         }
 
         metadata = self._row_metadata(row)
+        metadata["audio_file"] = audio_file
 
         request = Request(
             id=self._next_request_id(),
@@ -143,7 +144,7 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
             if column in {"session_id", "audio_file"}:
                 continue
             value = row[column]
-            if pd.isna(value):
+            if not isinstance(value, (dict, list)) and pd.isna(value):
                 continue
             if isinstance(value, np.generic):
                 value = value.item()

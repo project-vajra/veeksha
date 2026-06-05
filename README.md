@@ -15,7 +15,7 @@ microbenchmarks. One tool, any workload.
 
 ## Quick start
 
-In a fresh environment (Python 3.14t recommended for true parallelism):
+In a fresh environment:
 
 Install from PyPI:
 
@@ -48,11 +48,6 @@ python -Xgil=0 -m veeksha.benchmark --benchmark-config-from-file my_benchmark.ve
 git clone https://github.com/project-vajra/veeksha.git
 cd veeksha
 
-# Install uv if needed
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Create environment (Python 3.14t recommended for true parallelism)
-uv venv --python 3.14t
-source .venv/bin/activate
-uv pip install -e .
+mamba env create -p ./env -f environment.yml
+mamba activate ./env
 ```
