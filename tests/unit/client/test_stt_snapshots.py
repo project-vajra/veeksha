@@ -5,10 +5,10 @@ from veeksha.client.stt import TranscriptSnapshotRecorder
 
 @pytest.mark.unit
 def test_transcript_snapshot_recorder_dedupes_and_uses_audio_start() -> None:
-    recorder = TranscriptSnapshotRecorder(request_started_at=100.0)
+    recorder = TranscriptSnapshotRecorder()
 
-    recorder.add(100.5, "")
     recorder.mark_audio_started(101.0)
+    recorder.add(100.5, "")
     recorder.add(101.25, "hello")
     recorder.add(101.30, "hello")
     recorder.add(101.50, "hello world")
