@@ -4,12 +4,22 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+from veeksha.evaluator.performance.asr_interactivity import (  # noqa: E402
+    _expand_reference_words,
+    _normalize_words,
+    _parse_reference_words,
+    _parse_transcript_snapshots,
+)
 DEFAULT_TRACE_MANIFESTS = (
     REPO_ROOT / "traces" / "asr" / "aa_public" / "manifest.jsonl",
     REPO_ROOT / "traces" / "asr" / "ami_word_timed" / "manifest.jsonl",
@@ -65,7 +75,7 @@ def main() -> None:
     ]
 
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_dir": repo_relative_or_absolute(run_dir),
         "metrics_file": repo_relative_or_absolute(metrics_path),
         "summary": summary,
@@ -73,7 +83,7 @@ def main() -> None:
     }
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    output_path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
     print(f"Wrote {len(requests)} ASR replay rows -> {output_path}")
 
 
@@ -144,9 +154,16 @@ def build_replay_request(
         audio_url = optional_str(trace_row.get("audio_url"))
         audio_file = audio_file or optional_str(trace_row.get("audio_file"))
 
-    reference_words = list_or_empty(row.get("reference_word_timestamps"))
-    if not reference_words and trace_row is not None:
-        reference_words = list_or_empty(trace_row.get("reference_word_timestamps"))
+    raw_reference_words = list_or_empty(row.get("reference_word_timestamps"))
+    if not raw_reference_words and trace_row is not None:
+        raw_reference_words = list_or_empty(trace_row.get("reference_word_timestamps"))
+
+    reference_words, received_words = build_word_timings(
+        raw_reference_words,
+        list_or_empty(row.get("transcript_snapshots")),
+    )
+    latencies = [word["latency_ms"] for word in received_words]
+    interactivity = sum(latencies) / len(latencies) if latencies else row.get("interactivity")
 
     request = {
         "request_id": row.get("request_id"),
@@ -157,27 +174,78 @@ def build_replay_request(
         "audio_file": audio_file,
         "audio_url": audio_url,
         "duration_ms": row.get("generated_audio_duration"),
-        "expected_transcript": row.get("expected_transcript") or "",
-        "partial_transcript": row.get("partial_transcript") or "",
-        "final_transcript": row.get("final_transcript") or "",
-        "reference_word_timestamps": reference_words,
-        "transcript_snapshots": list_or_empty(row.get("transcript_snapshots")),
+        "reference_words": reference_words,
+        "received_words": received_words,
         "metrics": {
             "ttfc": row.get("ttfc"),
             "time_to_first_partial": row.get("time_to_first_partial"),
             "time_to_final_transcript": row.get("time_to_final_transcript"),
-            "interactivity": row.get("interactivity"),
-            "interactivity_word_count": row.get("interactivity_word_count"),
+            "interactivity": interactivity,
+            "interactivity_word_count": len(received_words),
             "partial_wer": row.get("partial_wer"),
             "final_wer": row.get("final_wer"),
             "rtf": row.get("rtf"),
             "chunk_count": row.get("chunk_count"),
         },
     }
-    request["has_replay"] = bool(
-        request["reference_word_timestamps"] and request["transcript_snapshots"]
-    )
+    request["has_replay"] = bool(reference_words and received_words)
     return request
+
+
+def build_word_timings(
+    raw_reference_words: list[dict[str, Any]],
+    raw_snapshots: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if not raw_reference_words:
+        return [], []
+
+    reference_words = _expand_reference_words(_parse_reference_words(raw_reference_words))
+    reference_payload = [
+        {
+            "word": word.word,
+            "start_ms": round(word.start_ms, 3),
+            "end_ms": round(word.end_ms, 3),
+        }
+        for word in reference_words
+    ]
+    if not raw_snapshots:
+        return reference_payload, []
+
+    first_seen_ms: list[float | None] = [None] * len(reference_words)
+    reference_tokens = [word.word for word in reference_words]
+    for snapshot in sorted(
+        _parse_transcript_snapshots(raw_snapshots),
+        key=lambda item: item.elapsed_ms,
+    ):
+        matcher = difflib.SequenceMatcher(
+            a=reference_tokens,
+            b=_normalize_words(snapshot.transcript),
+            autojunk=False,
+        )
+        for tag, ref_start, ref_end, _hyp_start, _hyp_end in matcher.get_opcodes():
+            if tag != "equal":
+                continue
+            for ref_index in range(ref_start, ref_end):
+                if (
+                    first_seen_ms[ref_index] is None
+                    and snapshot.elapsed_ms >= reference_words[ref_index].start_ms
+                ):
+                    first_seen_ms[ref_index] = snapshot.elapsed_ms
+
+    received_words = []
+    for word, seen_ms in zip(reference_words, first_seen_ms):
+        if seen_ms is None:
+            continue
+        received_words.append(
+            {
+                "word": word.word,
+                "time_ms": round(seen_ms, 3),
+                "reference_start_ms": round(word.start_ms, 3),
+                "reference_end_ms": round(word.end_ms, 3),
+                "latency_ms": round(max(0.0, seen_ms - word.end_ms), 3),
+            }
+        )
+    return reference_payload, received_words
 
 
 def audio_url_from_row(audio_file: str | None) -> str | None:

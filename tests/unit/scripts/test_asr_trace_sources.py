@@ -53,7 +53,71 @@ def test_aa_source_filters_complete_clips_by_max_duration(monkeypatch) -> None:
 
 
 @pytest.mark.unit
-def test_ami_word_timed_source_yields_relative_word_timestamps(tmp_path) -> None:
+def test_target_duration_repeats_before_and_truncates_after_alignment() -> None:
+    sample_rate = 2
+    clip = prepare_audio_traces.TraceClip(
+        audio=np.arange(4, dtype=np.float32),
+        transcript="hello world",
+        duration_s=2.0,
+        metadata={"sample_id": "source"},
+    )
+
+    repeated = prepare_audio_traces.repeat_clip_to_cover_target_duration(
+        clip,
+        target_duration_s=5.0,
+        sample_rate=sample_rate,
+    )
+
+    assert repeated.duration_s == 6.0
+    assert repeated.transcript == "hello world hello world hello world"
+    assert repeated.word_timestamps is None
+    assert repeated.target_duration_s == 5.0
+    assert repeated.audio.tolist() == [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3]
+
+    aligned = prepare_audio_traces.TraceClip(
+        audio=repeated.audio,
+        transcript=repeated.transcript,
+        duration_s=repeated.duration_s,
+        metadata=repeated.metadata,
+        target_duration_s=repeated.target_duration_s,
+        word_timestamps=[
+            prepare_audio_traces.WordTiming("hello", 0.0, 500.0),
+            prepare_audio_traces.WordTiming("world", 800.0, 1500.0),
+            prepare_audio_traces.WordTiming("hello", 2000.0, 2500.0),
+            prepare_audio_traces.WordTiming("world", 2800.0, 3500.0),
+            prepare_audio_traces.WordTiming("hello", 4000.0, 4500.0),
+            prepare_audio_traces.WordTiming("world", 4800.0, 5500.0),
+        ],
+    )
+
+    final_clips = list(
+        prepare_audio_traces.finalize_clips(
+            [aligned],
+            max_duration_s=None,
+            target_duration_s=99.0,
+            sample_rate=sample_rate,
+        )
+    )
+
+    assert len(final_clips) == 1
+    final_clip = final_clips[0]
+    assert final_clip.duration_s == 5.0
+    assert final_clip.audio.tolist() == [0, 1, 2, 3, 0, 1, 2, 3, 0, 1]
+    assert final_clip.transcript == "hello world hello world hello"
+    assert [word.word for word in final_clip.word_timestamps or []] == [
+        "hello",
+        "world",
+        "hello",
+        "world",
+        "hello",
+    ]
+
+
+@pytest.mark.unit
+def test_ami_word_timed_source_yields_relative_word_timestamps(
+    tmp_path,
+    monkeypatch,
+) -> None:
     audio_dir = tmp_path / "audio"
     words_dir = tmp_path / "words"
     audio_dir.mkdir()

@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import math
 import os
 import re
 import shutil
@@ -58,6 +59,7 @@ DEFAULT_MIN_DURATION_S = 0.25
 DEFAULT_MAX_DURATION_S = 30.0
 DEFAULT_SHUFFLE_BUFFER = 0
 DEFAULT_SEED = 42
+TARGET_DURATION_DEVIATION_FRACTION = 0.10
 AMI_MAX_GAP_S = 1.5
 AMI_CACHE_DIR = REPO_ROOT / "benchmark_output" / "ami_cache"
 AMI_BASE_URL = "https://groups.inf.ed.ac.uk/ami"
@@ -132,6 +134,7 @@ class TraceClip:
     duration_s: float
     metadata: dict[str, Any]
     word_timestamps: list[WordTiming] | None = None
+    target_duration_s: float | None = None
 
 
 @dataclass(frozen=True)
@@ -160,13 +163,23 @@ def parse_args() -> argparse.Namespace:
         default=16,
         help="Requested final clips per dataset. Use 0 for all clips.",
     )
-    parser.add_argument(
+    duration_group = parser.add_mutually_exclusive_group()
+    duration_group.add_argument(
         "--max-duration",
         type=float,
-        default=DEFAULT_MAX_DURATION_S,
+        default=None,
         help=(
             "Maximum final clip duration in seconds. Timestamped clips are "
             "split on word boundaries; untimestamped longer clips are skipped."
+        ),
+    )
+    duration_group.add_argument(
+        "--target-duration",
+        type=float,
+        default=None,
+        help=(
+            "Target final clip duration in seconds. Source clips are repeated "
+            "before NeMo alignment and truncated after alignment."
         ),
     )
     parser.add_argument(
@@ -174,7 +187,10 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip NeMo word timestamping.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.target_duration is None and args.max_duration is None:
+        args.max_duration = DEFAULT_MAX_DURATION_S
+    return args
 
 
 def validate_args(args: argparse.Namespace) -> list[str]:
@@ -182,6 +198,10 @@ def validate_args(args: argparse.Namespace) -> list[str]:
         raise SystemExit("--clips-per-dataset must be >= 0")
     if args.max_duration is not None and args.max_duration <= 0:
         raise SystemExit("--max-duration must be positive when set")
+    if args.target_duration is not None and args.target_duration <= 0:
+        raise SystemExit("--target-duration must be positive when set")
+    if args.target_duration is not None and args.without_word_timestamping:
+        raise SystemExit("--target-duration requires word timestamping")
     dataset_keys = selected_dataset_keys(args.datasets)
     output_dir_for_dataset_keys(dataset_keys)
     return dataset_keys
@@ -887,14 +907,82 @@ def finalize_clips(
     clips: Iterable[TraceClip],
     *,
     max_duration_s: float | None,
+    target_duration_s: float | None = None,
     sample_rate: int,
 ) -> Iterable[TraceClip]:
     for clip in clips:
+        clip_target_duration_s = clip.target_duration_s or target_duration_s
+        if clip_target_duration_s is not None:
+            target_clip = truncate_clip_to_target_duration(
+                clip,
+                target_duration_s=clip_target_duration_s,
+                sample_rate=sample_rate,
+            )
+            if target_clip is not None:
+                yield target_clip
+            continue
+
         yield from split_or_filter_clip(
             clip,
             max_duration_s=max_duration_s,
             sample_rate=sample_rate,
         )
+
+
+def repeat_clip_to_cover_target_duration(
+    clip: TraceClip,
+    *,
+    target_duration_s: float,
+    sample_rate: int,
+) -> TraceClip:
+    if len(clip.audio) == 0:
+        return replace(
+            clip,
+            word_timestamps=None,
+            target_duration_s=target_duration_s,
+        )
+
+    source_duration_s = len(clip.audio) / sample_rate
+    repeat_count = max(1, math.ceil(target_duration_s / source_duration_s))
+    audio = np.tile(clip.audio, repeat_count)
+    return replace(
+        clip,
+        audio=audio,
+        transcript=" ".join([clip.transcript] * repeat_count),
+        duration_s=len(audio) / sample_rate,
+        word_timestamps=None,
+        target_duration_s=target_duration_s,
+    )
+
+
+def truncate_clip_to_target_duration(
+    clip: TraceClip,
+    *,
+    target_duration_s: float,
+    sample_rate: int,
+) -> TraceClip | None:
+    target_samples = max(1, int(round(target_duration_s * sample_rate)))
+    end_sample = min(len(clip.audio), target_samples)
+    if end_sample <= 0:
+        return None
+
+    duration_s = end_sample / sample_rate
+    word_timestamps = clip.word_timestamps
+    transcript = clip.transcript
+    if word_timestamps is not None:
+        target_end_ms = duration_s * 1000
+        word_timestamps = [
+            word for word in word_timestamps if word.end_ms <= target_end_ms
+        ]
+        transcript = " ".join(word.word for word in word_timestamps)
+
+    return replace(
+        clip,
+        audio=clip.audio[:end_sample],
+        transcript=transcript,
+        duration_s=duration_s,
+        word_timestamps=word_timestamps,
+    )
 
 
 def split_or_filter_clip(
@@ -1071,7 +1159,14 @@ def main() -> None:
     audio_root.mkdir(parents=True, exist_ok=True)
 
     clip_limit = None if args.clips_per_dataset == 0 else args.clips_per_dataset
+    target_duration_s = args.target_duration
+    target_duration_deviation_s = (
+        target_duration_s * TARGET_DURATION_DEVIATION_FRACTION
+        if target_duration_s is not None
+        else None
+    )
     source_options = TraceSourceOptions(max_duration_s=args.max_duration)
+    target_duration_rng = np.random.default_rng(source_options.seed)
     timestamping_enabled = not args.without_word_timestamping
     timestamp_provider = NeMoDockerWordTimestampProvider()
     rows: list[dict[str, Any]] = []
@@ -1080,6 +1175,12 @@ def main() -> None:
     print(f"Building ASR trace: {', '.join(dataset_keys)}")
     print(f"  Output: {output_dir}")
     print(f"  Manifest: {manifest_path}")
+    if target_duration_s is not None and target_duration_deviation_s is not None:
+        print(
+            "  Target-duration clips will be generated with "
+            f"mean {target_duration_s:g}s and standard deviation "
+            f"{target_duration_deviation_s:g}s"
+        )
 
     for dataset_key in dataset_keys:
         source = build_trace_source(dataset_key, source_options)
@@ -1087,7 +1188,9 @@ def main() -> None:
 
         source_clips: list[TraceClip] = []
         collect_all = clip_limit is None or (
-            timestamping_enabled and dataset_key == "aa_earnings22"
+            timestamping_enabled
+            and dataset_key == "aa_earnings22"
+            and target_duration_s is None
         )
         for clip in source.iter_clips():
             source_clips.append(clip)
@@ -1098,8 +1201,34 @@ def main() -> None:
             ):
                 break
 
-        needs_nemo = timestamping_enabled and any(
-            clip.word_timestamps is None for clip in source_clips
+        if target_duration_s is not None:
+            print(
+                f"  Repeating {dataset_key} clips to cover "
+                "sampled target durations before alignment"
+            )
+            target_durations_s = [
+                float(max(DEFAULT_MIN_DURATION_S, duration_s))
+                for duration_s in target_duration_rng.normal(
+                    target_duration_s,
+                    target_duration_deviation_s,
+                    len(source_clips),
+                )
+            ]
+            source_clips = [
+                repeat_clip_to_cover_target_duration(
+                    clip,
+                    target_duration_s=sampled_target_duration_s,
+                    sample_rate=source_options.sample_rate,
+                )
+                for clip, sampled_target_duration_s in zip(
+                    source_clips,
+                    target_durations_s,
+                )
+            ]
+
+        needs_nemo = timestamping_enabled and (
+            target_duration_s is not None
+            or any(clip.word_timestamps is None for clip in source_clips)
         )
         if needs_nemo:
             print(f"  Aligning {dataset_key} with NeMo Docker")
@@ -1117,6 +1246,7 @@ def main() -> None:
             clips=finalize_clips(
                 source_clips,
                 max_duration_s=source_options.max_duration_s,
+                target_duration_s=target_duration_s,
                 sample_rate=source_options.sample_rate,
             ),
             output_dir=output_dir,
@@ -1131,6 +1261,8 @@ def main() -> None:
             duration_filter = (
                 f" matching --max-duration <= {source_options.max_duration_s:g}s"
                 if source_options.max_duration_s is not None
+                else f" matching --target-duration {target_duration_s:g}s"
+                if target_duration_s is not None
                 else ""
             )
             raise SystemExit(
