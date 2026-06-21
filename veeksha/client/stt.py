@@ -81,8 +81,7 @@ class STTStreamResult:
 class TranscriptSnapshotRecorder:
     """Records evolving transcripts relative to first sent audio byte."""
 
-    def __init__(self, request_started_at: float) -> None:
-        self._request_started_at = request_started_at
+    def __init__(self) -> None:
         self._audio_started_at: Optional[float] = None
         self._snapshots: list[TranscriptSnapshotRow] = []
 
@@ -107,8 +106,10 @@ class TranscriptSnapshotRecorder:
         )
 
     def _elapsed_ms(self, now: float) -> float:
-        start = self._audio_started_at or self._request_started_at
-        return (now - start) * 1000
+        assert (
+            self._audio_started_at is not None
+        ), "snapshot recorded before any audio was sent"
+        return (now - self._audio_started_at) * 1000
 
 
 class _STTClientBase(BaseLLMClient):
@@ -180,17 +181,19 @@ class _STTClientBase(BaseLLMClient):
 
     async def _stream(
         self,
-        audio_path: str,
-        t_start: float,
+        pcm_bytes: bytes,
     ) -> STTStreamResult:
-        """Stream PCM16 to the provider and collect the transcript.
+        """Stream pre-decoded PCM16 to the provider and collect the transcript.
 
         The sender and receiver run concurrently so partial transcripts are
-        timed when they arrive, not after the (paced) upload completes.
+        timed when they arrive, not after the (paced) upload completes. ``ttfc``
+        is anchored to ``audio_started_at`` (the first audio byte on the wire),
+        so clip decode, connect, and handshake latency are excluded.
         """
         import websockets
 
         ttfc: Optional[float] = None
+        audio_started_at: Optional[float] = None
         audio_end_at: Optional[float] = None
         time_to_first_partial: Optional[float] = None
         time_to_final_transcript: Optional[float] = None
@@ -198,15 +201,13 @@ class _STTClientBase(BaseLLMClient):
         final_transcript = ""
         chunk_count = 0
         transcript_chunks: list[str] = []
-        snapshots = TranscriptSnapshotRecorder(t_start)
-        pcm_bytes = _audio_to_pcm16_bytes(audio_path, self._sample_rate)
+        snapshots = TranscriptSnapshotRecorder()
 
         async with websockets.connect(self._ws_url) as ws:
             await self._open_session(ws)
 
             async def _send() -> None:
-                nonlocal audio_end_at
-                audio_started_at: Optional[float] = None
+                nonlocal audio_end_at, audio_started_at
                 for byte_offset in range(0, len(pcm_bytes), self._ws_chunk_size):
                     if audio_started_at is None:
                         audio_started_at = time.monotonic()
@@ -232,14 +233,20 @@ class _STTClientBase(BaseLLMClient):
                     kind, text = self._parse_message(json.loads(await ws.recv()))
                     now = time.monotonic()
                     if kind == "delta":
-                        if ttfc is None:
-                            ttfc = (now - t_start) * 1000
                         transcript_chunks.append(text)
                         chunk_count += 1
                         current_transcript = _clean_transcript(
                             "".join(transcript_chunks)
                         )
                         snapshots.add(now, current_transcript)
+                        # Anchor TTFC to the first delta carrying real content;
+                        # empty/control-token deltas (e.g. Voxtral streaming
+                        # pads) are skipped so TTFC tracks first transcribed text.
+                        if ttfc is None and current_transcript:
+                            assert (
+                                audio_started_at is not None
+                            ), "transcript arrived before any audio was sent"
+                            ttfc = (now - audio_started_at) * 1000
                         if (
                             audio_end_at is not None
                             and time_to_first_partial is None
@@ -254,7 +261,10 @@ class _STTClientBase(BaseLLMClient):
                         snapshots.add(now, final_transcript)
                         if final_transcript:
                             if ttfc is None:
-                                ttfc = (now - t_start) * 1000
+                                assert (
+                                    audio_started_at is not None
+                                ), "transcript arrived before any audio was sent"
+                                ttfc = (now - audio_started_at) * 1000
                             if chunk_count == 0:
                                 chunk_count = 1
                         if audio_end_at is not None:
@@ -341,11 +351,25 @@ class _STTClientBase(BaseLLMClient):
         error_code: Optional[int] = None
         stream_result: Optional[STTStreamResult] = None
 
+        # Decode before the latency clock so file I/O and DSP don't inflate TTFC.
+        try:
+            pcm_bytes = _audio_to_pcm16_bytes(audio_path, self._sample_rate)
+        except Exception as e:
+            return RequestResult(
+                request_id=request.id,
+                session_id=session_id,
+                session_total_requests=session_total_requests,
+                success=False,
+                error_code=422,
+                error_msg=f"Failed to decode audio file {audio_path}: {e}",
+                client_completed_at=time.monotonic(),
+            )
+
         t_start = time.monotonic()
 
         try:
             async with asyncio.timeout(self._request_timeout):
-                stream_result = await self._stream(audio_path, t_start)
+                stream_result = await self._stream(pcm_bytes)
         except TimeoutError:
             error_code = 408
             error_msg = f"STT request timed out after {self._request_timeout}s"
