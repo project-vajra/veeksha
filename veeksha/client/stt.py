@@ -170,14 +170,13 @@ class _STTClientBase(BaseLLMClient):
             base = "ws://" + base[len("http://") :]
         return f"{base}{path}"
 
-    async def _maybe_pace(self, n_bytes: int) -> None:
-        """Sleep one chunk's playback duration when realtime pacing is on.
-
-        Simulates live-microphone cadence (1x playback). PCM16 mono:
-        ``n_bytes / 2 / sample_rate`` seconds.
-        """
-        if self._pacing:
-            await asyncio.sleep(n_bytes / BYTES_PER_SAMPLE / self._sample_rate)
+    async def _maybe_pace_until(self, target_at: float) -> None:
+        """Sleep until an absolute audio schedule time when pacing is on."""
+        if not self._pacing:
+            return
+        delay_s = target_at - time.monotonic()
+        if delay_s > 0:
+            await asyncio.sleep(delay_s)
 
     async def _stream(
         self,
@@ -207,11 +206,23 @@ class _STTClientBase(BaseLLMClient):
 
             async def _send() -> None:
                 nonlocal audio_end_at
-                for i in range(0, len(pcm_bytes), self._ws_chunk_size):
-                    chunk = pcm_bytes[i : i + self._ws_chunk_size]
-                    snapshots.mark_audio_started(time.monotonic())
+                audio_started_at: Optional[float] = None
+                for byte_offset in range(0, len(pcm_bytes), self._ws_chunk_size):
+                    if audio_started_at is None:
+                        audio_started_at = time.monotonic()
+                        snapshots.mark_audio_started(audio_started_at)
+                    else:
+                        await self._maybe_pace_until(
+                            audio_started_at
+                            + byte_offset / BYTES_PER_SAMPLE / self._sample_rate
+                        )
+                    chunk = pcm_bytes[byte_offset : byte_offset + self._ws_chunk_size]
                     await ws.send(self._encode_chunk(chunk))
-                    await self._maybe_pace(len(chunk))
+                if audio_started_at is not None:
+                    await self._maybe_pace_until(
+                        audio_started_at
+                        + len(pcm_bytes) / BYTES_PER_SAMPLE / self._sample_rate
+                    )
                 await ws.send(self._eof())
                 audio_end_at = time.monotonic()
 
