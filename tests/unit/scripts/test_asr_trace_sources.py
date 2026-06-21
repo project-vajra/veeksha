@@ -71,6 +71,7 @@ def test_target_duration_repeats_before_and_truncates_after_alignment() -> None:
     assert repeated.duration_s == 6.0
     assert repeated.transcript == "hello world hello world hello world"
     assert repeated.word_timestamps is None
+    assert repeated.target_duration_s == 5.0
     assert repeated.audio.tolist() == [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3]
 
     aligned = prepare_audio_traces.TraceClip(
@@ -78,6 +79,7 @@ def test_target_duration_repeats_before_and_truncates_after_alignment() -> None:
         transcript=repeated.transcript,
         duration_s=repeated.duration_s,
         metadata=repeated.metadata,
+        target_duration_s=repeated.target_duration_s,
         word_timestamps=[
             prepare_audio_traces.WordTiming("hello", 0.0, 500.0),
             prepare_audio_traces.WordTiming("world", 800.0, 1500.0),
@@ -92,7 +94,7 @@ def test_target_duration_repeats_before_and_truncates_after_alignment() -> None:
         prepare_audio_traces.finalize_clips(
             [aligned],
             max_duration_s=None,
-            target_duration_s=5.0,
+            target_duration_s=99.0,
             sample_rate=sample_rate,
         )
     )
@@ -112,7 +114,10 @@ def test_target_duration_repeats_before_and_truncates_after_alignment() -> None:
 
 
 @pytest.mark.unit
-def test_ami_word_timed_source_yields_relative_word_timestamps(tmp_path) -> None:
+def test_ami_word_timed_source_yields_relative_word_timestamps(
+    tmp_path,
+    monkeypatch,
+) -> None:
     audio_dir = tmp_path / "audio"
     words_dir = tmp_path / "words"
     audio_dir.mkdir()
