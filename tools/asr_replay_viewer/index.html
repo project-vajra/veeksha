@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ASR Interactivity Replay</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=3" />
   </head>
   <body>
     <main class="shell">
@@ -67,14 +67,28 @@
               </div>
             </div>
             <div id="latency-chart" role="img" aria-label="Latency graph"></div>
+            <div id="chart-playhead" class="chart-playhead">
+              <span id="chart-playhead-label">0 ms</span>
+            </div>
             <div id="latency-chart-empty" class="latency-chart-empty">
               Latency points appear as transcript words arrive
             </div>
           </div>
 
           <div class="controls">
-            <button id="play-button" type="button">Play</button>
-            <button id="pause-button" type="button">Pause</button>
+            <button id="play-toggle" class="icon-button" type="button" aria-label="Play" title="Play">
+              <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8 5v14l11-7z"></path>
+              </svg>
+              <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 5h4v14H7zM13 5h4v14h-4z"></path>
+              </svg>
+            </button>
+            <button id="replay-button" class="icon-button" type="button" aria-label="Replay from start" title="Replay from start">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 7h8a5 5 0 1 1-4.6 7H8.2a7 7 0 1 0 1.2-7H6l4-4 4 4H7z"></path>
+              </svg>
+            </button>
             <input id="time-slider" type="range" min="0" value="0" step="10" />
             <span id="duration-label">0 ms</span>
           </div>
@@ -124,6 +138,6 @@
       </section>
     </main>
 
-    <script src="./app.js"></script>
+    <script src="./app.js?v=7"></script>
   </body>
 </html>

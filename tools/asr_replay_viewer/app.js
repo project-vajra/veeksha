@@ -2,13 +2,21 @@ const state = {
   data: null,
   selected: null,
   sortedRequests: [],
+  referenceTokens: [],
+  receivedTokens: [],
+  referenceWordEls: [],
+  receivedWordEls: [],
+  referenceActiveCount: 0,
+  receivedActiveCount: 0,
   replayTimeMs: 0,
   replayMaxMs: 0,
   replayPlaying: false,
   replayStartedAt: 0,
   replayBaseMs: 0,
+  audioSeekToken: 0,
   raf: null,
   latencyChart: null,
+  chartSeries: null,
   chartLibraryFailed: false,
 };
 
@@ -26,8 +34,8 @@ const els = {
   latencyPanel: document.getElementById("latency-panel"),
   metricStrip: document.getElementById("metric-strip"),
   audio: document.getElementById("audio-player"),
-  playButton: document.getElementById("play-button"),
-  pauseButton: document.getElementById("pause-button"),
+  playToggle: document.getElementById("play-toggle"),
+  replayButton: document.getElementById("replay-button"),
   timeSlider: document.getElementById("time-slider"),
   timeLabel: document.getElementById("time-label"),
   durationLabel: document.getElementById("duration-label"),
@@ -36,6 +44,8 @@ const els = {
   chartLiveMean: document.getElementById("chart-live-mean"),
   chartLatest: document.getElementById("chart-latest"),
   chartCount: document.getElementById("chart-count"),
+  chartPlayhead: document.getElementById("chart-playhead"),
+  chartPlayheadLabel: document.getElementById("chart-playhead-label"),
   referenceStream: document.getElementById("reference-stream"),
   transcriptStream: document.getElementById("transcript-stream"),
   replayWarning: document.getElementById("replay-warning"),
@@ -43,13 +53,12 @@ const els = {
   requestTable: document.getElementById("request-table"),
 };
 
-const replayStatsCache = new WeakMap();
 let chartLibraryLoad = null;
 
 els.loadUrl.addEventListener("click", () => loadFromUrl(els.dataUrl.value.trim()));
 els.fileInput.addEventListener("change", loadFromFile);
-els.playButton.addEventListener("click", startReplay);
-els.pauseButton.addEventListener("click", pauseReplay);
+els.playToggle.addEventListener("click", toggleReplay);
+els.replayButton.addEventListener("click", replayFromStart);
 els.sortSelect.addEventListener("change", () => {
   sortRequests();
   renderRequestTable();
@@ -57,11 +66,12 @@ els.sortSelect.addEventListener("change", () => {
 els.timeSlider.addEventListener("input", () => {
   pauseReplay();
   setReplayTime(Number(els.timeSlider.value));
-  syncAudioToTime();
+  seekAudioToReplayTime();
 });
 window.addEventListener("resize", () => {
   state.latencyChart?.resize();
   renderLatencyChart();
+  updateLatencyChartProgress();
 });
 
 ensureLatencyChartLibrary().catch(() => {});
@@ -96,21 +106,15 @@ function loadFromFile(event) {
 
 function loadData(data) {
   state.data = data;
-  state.selected = data.requests?.[0] || null;
   els.runSubtitle.textContent = `${data.run_dir || "run"} · ${data.requests?.length || 0} ASR requests`;
   sortRequests();
-  renderRequestTable();
-  selectRequest(state.selected);
+  selectRequest(state.sortedRequests[0] || null);
 }
 
 function sortRequests() {
   const requests = [...(state.data?.requests || [])];
   const sortKey = els.sortSelect.value;
   const metric = (request, name) => Number(request.metrics?.[name] ?? -Infinity);
-  const interactivity = (request) => {
-    const replayStats = replayInteractivityStats(request);
-    return replayStats?.mean_latency_ms ?? metric(request, "interactivity");
-  };
   requests.sort((a, b) => {
     if (sortKey === "request_id_asc") {
       return Number(a.request_id ?? 0) - Number(b.request_id ?? 0);
@@ -121,7 +125,7 @@ function sortRequests() {
     if (sortKey === "rtf_desc") {
       return metric(b, "rtf") - metric(a, "rtf");
     }
-    return interactivity(b) - interactivity(a);
+    return metric(b, "interactivity") - metric(a, "interactivity");
   });
   state.sortedRequests = requests;
 }
@@ -134,7 +138,7 @@ function renderRequestTable() {
         <button class="request-row${selected}" type="button" data-request-id="${escapeHtml(request.request_id)}">
           <span class="request-number">#${escapeHtml(request.request_id)}</span>
           <span class="request-text">${escapeHtml(request.dataset || "")} · ${escapeHtml(request.sample_id || "")}</span>
-          <span class="request-latency">${formatMetric(replayInteractivityStats(request)?.mean_latency_ms ?? request.metrics?.interactivity, "ms")}</span>
+          <span class="request-latency">${formatMetric(request.metrics?.interactivity, "ms")}</span>
         </button>
       `;
     })
@@ -151,6 +155,13 @@ function renderRequestTable() {
 function selectRequest(request) {
   pauseReplay();
   state.selected = request || null;
+  state.referenceTokens = buildReferenceTokens(request || {});
+  state.receivedTokens = buildReceivedTokens(request || {});
+  state.referenceWordEls = [];
+  state.receivedWordEls = [];
+  state.referenceActiveCount = 0;
+  state.receivedActiveCount = 0;
+  state.chartSeries = null;
   renderRequestTable();
   if (!request) {
     return;
@@ -164,16 +175,16 @@ function selectRequest(request) {
   renderMetricStrip(request);
   renderLatencyPanel(request);
   renderStreams();
+  renderLatencyChart(true);
   setReplayTime(0);
+  seekAudioToReplayTime();
 }
 
 function configureTimeline(request) {
-  const reference = request.reference_word_timestamps || [];
-  const transcript = buildTranscriptTokens(request);
   const durationMs = Number(request.duration_ms || 0);
-  const lastReferenceMs = Math.max(0, ...reference.map((word) => Number(word.end_ms || 0)));
-  const lastTranscriptMs = Math.max(0, ...transcript.map((word) => Number(word.time_ms || 0)));
-  state.replayMaxMs = Math.max(durationMs, lastReferenceMs, lastTranscriptMs) + 300;
+  const lastReferenceMs = Math.max(0, ...state.referenceTokens.map((word) => word.end_ms));
+  const lastReceivedMs = Math.max(0, ...state.receivedTokens.map((word) => word.time_ms));
+  state.replayMaxMs = Math.max(durationMs, lastReferenceMs, lastReceivedMs) + 300;
   els.timeSlider.max = String(Math.max(100, Math.ceil(state.replayMaxMs)));
   els.durationLabel.textContent = formatClock(state.replayMaxMs);
 }
@@ -201,9 +212,8 @@ function renderMetricStrip(request) {
 
 function renderLatencyPanel(request) {
   const metrics = request.metrics || {};
-  const replayStats = replayInteractivityStats(request);
-  const interactivity = replayStats?.mean_latency_ms ?? metrics.interactivity;
-  const wordCount = replayStats?.word_count ?? metrics.interactivity_word_count ?? 0;
+  const interactivity = metrics.interactivity;
+  const wordCount = metrics.interactivity_word_count ?? state.receivedTokens.length;
   els.latencyValue.textContent = formatMetric(interactivity, "ms");
   els.latencyDetail.textContent = `${wordCount} matched words · ${formatMetric(metrics.ttfc, "ms")} TTFC`;
   els.latencyPanel.className = `latency-panel ${latencyClass(interactivity)}`;
@@ -213,21 +223,36 @@ function setReplayTime(ms) {
   state.replayTimeMs = Math.max(0, Math.min(ms, state.replayMaxMs));
   els.timeSlider.value = String(Math.round(state.replayTimeMs));
   els.timeLabel.textContent = formatClock(state.replayTimeMs);
-  renderStreams();
-  renderLatencyChart();
+  updateStreamProgress();
+  updateLatencyChartProgress();
 }
 
-function startReplay() {
+function toggleReplay() {
+  if (state.replayPlaying) {
+    pauseReplay();
+  } else {
+    startReplay();
+  }
+}
+
+function replayFromStart() {
+  pauseReplay();
+  setReplayTime(0);
+  startReplay();
+}
+
+async function startReplay() {
   if (!state.selected) {
     return;
   }
   if (state.replayTimeMs >= state.replayMaxMs) {
     setReplayTime(0);
   }
+  await seekAudioToReplayTime();
   state.replayPlaying = true;
   state.replayBaseMs = state.replayTimeMs;
   state.replayStartedAt = performance.now();
-  syncAudioToTime();
+  updatePlaybackControls();
   if (els.audio.src) {
     els.audio.play().catch(() => {});
   }
@@ -241,14 +266,14 @@ function pauseReplay() {
     state.raf = null;
   }
   els.audio.pause();
+  updatePlaybackControls();
 }
 
 function tickReplay() {
   if (!state.replayPlaying) {
     return;
   }
-  const elapsed = performance.now() - state.replayStartedAt;
-  const nextMs = state.replayBaseMs + elapsed;
+  const nextMs = state.replayBaseMs + performance.now() - state.replayStartedAt;
   setReplayTime(nextMs);
   if (nextMs >= state.replayMaxMs) {
     pauseReplay();
@@ -257,32 +282,68 @@ function tickReplay() {
   state.raf = requestAnimationFrame(tickReplay);
 }
 
-function syncAudioToTime() {
+async function seekAudioToReplayTime() {
   if (!els.audio.src) {
     return;
   }
+  const token = ++state.audioSeekToken;
   const seconds = Math.max(0, state.replayTimeMs / 1000);
-  if (Number.isFinite(els.audio.duration)) {
-    els.audio.currentTime = Math.min(seconds, els.audio.duration);
-  } else {
-    els.audio.currentTime = seconds;
+  if (els.audio.readyState < 1) {
+    els.audio.load();
+    await new Promise((resolve) => {
+      els.audio.addEventListener("loadedmetadata", resolve, { once: true });
+    });
+    if (token !== state.audioSeekToken) {
+      return;
+    }
   }
+  await seekAudioToSeconds(seconds, token);
+}
+
+async function seekAudioToSeconds(seconds, token) {
+  if (!els.audio.src || token !== state.audioSeekToken) {
+    return;
+  }
+  const target = Number.isFinite(els.audio.duration)
+    ? Math.min(seconds, els.audio.duration)
+    : seconds;
+  if (Math.abs(els.audio.currentTime - target) < 0.05) {
+    return;
+  }
+  const seeked = new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timeout);
+      els.audio.removeEventListener("seeked", done);
+      resolve();
+    };
+    const timeout = setTimeout(done, 400);
+    els.audio.addEventListener("seeked", done);
+  });
+  if (Number.isFinite(els.audio.duration)) {
+    els.audio.currentTime = target;
+  } else {
+    els.audio.currentTime = target;
+  }
+  await seeked;
+}
+
+function updatePlaybackControls() {
+  els.playToggle.classList.toggle("is-playing", state.replayPlaying);
+  els.playToggle.setAttribute("aria-label", state.replayPlaying ? "Pause" : "Play");
+  els.playToggle.title = state.replayPlaying ? "Pause" : "Play";
 }
 
 function renderStreams() {
-  const request = state.selected;
-  if (!request) {
-    return;
-  }
-  const referenceTokens = buildReferenceTokens(request);
-  const transcriptTokens = buildTranscriptTokens(request);
-  els.referenceStream.innerHTML = renderTimedWords(referenceTokens, "reference");
-  els.transcriptStream.innerHTML = renderTimedWords(transcriptTokens, "transcript");
-
-  const hasReplay = Boolean(request.has_replay);
-  els.replayWarning.textContent = hasReplay
+  els.referenceStream.innerHTML = renderTimedWords(state.referenceTokens, "reference");
+  els.transcriptStream.innerHTML = renderTimedWords(state.receivedTokens, "received");
+  state.referenceWordEls = [...els.referenceStream.querySelectorAll(".stream-word")];
+  state.receivedWordEls = [...els.transcriptStream.querySelectorAll(".stream-word")];
+  state.referenceActiveCount = 0;
+  state.receivedActiveCount = 0;
+  updateStreamProgress();
+  els.replayWarning.textContent = state.selected?.has_replay
     ? ""
-    : "This row has scalar metrics but no transcript snapshots, so transcribed words cannot animate.";
+    : "This row has scalar metrics but no precomputed replay words.";
 }
 
 function renderTimedWords(tokens, kind) {
@@ -301,138 +362,51 @@ function renderTimedWords(tokens, kind) {
     .join(" ");
 }
 
+function updateStreamProgress() {
+  state.referenceActiveCount = updateActiveWords(
+    state.referenceWordEls,
+    state.referenceActiveCount,
+    upperBoundByTime(state.referenceTokens, state.replayTimeMs),
+  );
+  state.receivedActiveCount = updateActiveWords(
+    state.receivedWordEls,
+    state.receivedActiveCount,
+    upperBoundByTime(state.receivedTokens, state.replayTimeMs),
+  );
+}
+
+function updateActiveWords(elements, previousCount, nextCount) {
+  if (nextCount > previousCount) {
+    for (let index = previousCount; index < nextCount; index += 1) {
+      elements[index]?.classList.add("active");
+    }
+  } else if (nextCount < previousCount) {
+    for (let index = nextCount; index < previousCount; index += 1) {
+      elements[index]?.classList.remove("active");
+    }
+  }
+  return nextCount;
+}
+
 function buildReferenceTokens(request) {
-  return (request.reference_word_timestamps || []).map((word) => ({
+  return (request.reference_words || []).map((word) => ({
     word: String(word.word || ""),
     time_ms: Number(word.start_ms ?? word.end_ms ?? 0),
     end_ms: Number(word.end_ms ?? word.start_ms ?? 0),
   }));
 }
 
-function buildTranscriptTokens(request) {
-  const finalTokens = displayTokens(request.final_transcript || "");
-  if (finalTokens.length === 0) {
-    return [];
-  }
-
-  const normalizedFinal = finalTokens.map((token) => token.normalized);
-  const seen = Array(finalTokens.length).fill(null);
-  const snapshots = [...(request.transcript_snapshots || [])].sort(
-    (a, b) => Number(a.elapsed_ms || 0) - Number(b.elapsed_ms || 0),
-  );
-
-  for (const snapshot of snapshots) {
-    const hypothesis = displayTokens(snapshot.transcript || "").map((token) => token.normalized);
-    const pairs = lcsPairs(normalizedFinal, hypothesis);
-    for (const [finalIndex] of pairs) {
-      if (seen[finalIndex] === null) {
-        seen[finalIndex] = Number(snapshot.elapsed_ms || 0);
-      }
-    }
-  }
-
-  const reference = buildReferenceTokens(request);
-  return finalTokens.map((token, index) => {
-    const timeMs = seen[index] ?? Number.POSITIVE_INFINITY;
-    const referenceWord = reference[index];
-    const referenceEnd = Number(referenceWord?.end_ms ?? referenceWord?.time_ms ?? 0);
-    return {
-      word: token.display,
-      time_ms: timeMs,
-      latency_ms: Number.isFinite(timeMs) ? Math.max(0, timeMs - referenceEnd) : null,
-    };
-  });
-}
-
-function buildReferenceLatencyTokens(request) {
-  if (request && replayStatsCache.has(request)) {
-    return replayStatsCache.get(request).tokens;
-  }
-  const reference = buildReferenceTokens(request);
-  const normalizedReference = reference.map((word) => normalizeWord(word.word));
-  const firstSeenMs = Array(reference.length).fill(null);
-  const snapshots = [...(request.transcript_snapshots || [])].sort(
-    (a, b) => Number(a.elapsed_ms || 0) - Number(b.elapsed_ms || 0),
-  );
-
-  for (const snapshot of snapshots) {
-    const elapsedMs = Number(snapshot.elapsed_ms || 0);
-    const hypothesis = displayTokens(snapshot.transcript || "").map((token) => token.normalized);
-    const pairs = lcsPairs(normalizedReference, hypothesis);
-    for (const [referenceIndex] of pairs) {
-      if (
-        firstSeenMs[referenceIndex] === null
-        && elapsedMs >= Number(reference[referenceIndex]?.time_ms ?? 0)
-      ) {
-        firstSeenMs[referenceIndex] = elapsedMs;
-      }
-    }
-  }
-
-  const tokens = reference
-    .map((word, index) => {
-      const timeMs = firstSeenMs[index];
-      const endMs = Number(word.end_ms ?? word.time_ms ?? 0);
-      return {
-        word: word.word,
-        time_ms: timeMs,
-        reference_start_ms: Number(word.time_ms ?? 0),
-        reference_end_ms: endMs,
-        latency_ms: Number.isFinite(timeMs) ? Math.max(0, Number(timeMs) - endMs) : null,
-      };
-    })
-    .filter((word) => Number.isFinite(word.time_ms) && Number.isFinite(word.latency_ms));
-  if (request) {
-    const meanLatencyMs = tokens.length
-      ? tokens.reduce((sum, word) => sum + word.latency_ms, 0) / tokens.length
-      : null;
-    replayStatsCache.set(request, {
-      tokens,
-      mean_latency_ms: meanLatencyMs,
-      word_count: tokens.length,
-    });
-  }
-  return tokens;
-}
-
-function displayTokens(text) {
-  return String(text || "")
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((display) => ({
-      display,
-      normalized: normalizeWord(display),
+function buildReceivedTokens(request) {
+  return (request.received_words || [])
+    .map((word, index) => ({
+      index,
+      word: String(word.word || ""),
+      time_ms: Number(word.time_ms ?? 0),
+      reference_end_ms: Number(word.reference_end_ms ?? 0),
+      latency_ms: Number(word.latency_ms ?? 0),
     }))
-    .filter((token) => token.normalized);
-}
-
-function lcsPairs(a, b) {
-  const rows = a.length + 1;
-  const cols = b.length + 1;
-  const dp = Array.from({ length: rows }, () => Array(cols).fill(0));
-  for (let i = a.length - 1; i >= 0; i -= 1) {
-    for (let j = b.length - 1; j >= 0; j -= 1) {
-      dp[i][j] = a[i] === b[j]
-        ? dp[i + 1][j + 1] + 1
-        : Math.max(dp[i + 1][j], dp[i][j + 1]);
-    }
-  }
-
-  const pairs = [];
-  let i = 0;
-  let j = 0;
-  while (i < a.length && j < b.length) {
-    if (a[i] === b[j]) {
-      pairs.push([i, j]);
-      i += 1;
-      j += 1;
-    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      i += 1;
-    } else {
-      j += 1;
-    }
-  }
-  return pairs;
+    .filter((word) => Number.isFinite(word.time_ms) && Number.isFinite(word.latency_ms))
+    .sort((a, b) => a.time_ms - b.time_ms);
 }
 
 function initLatencyChart() {
@@ -453,7 +427,7 @@ function initLatencyChart() {
     }
     pauseReplay();
     setReplayTime(Number(value[0]));
-    syncAudioToTime();
+    seekAudioToReplayTime();
   });
 }
 
@@ -490,18 +464,14 @@ function ensureLatencyChartLibrary() {
 }
 
 function renderLatencyChart() {
-  const series = buildLatencySeries(state.selected);
-  const activePoints = runningMeanPoints(
-    series.points.filter((point) => point.time_ms <= state.replayTimeMs),
-  );
+  const series = getLatencySeries();
   els.latencyChartEmpty.textContent = state.chartLibraryFailed
     ? "Could not load chart library from CDN"
     : "Latency points appear as transcript words arrive";
   els.latencyChartEmpty.classList.toggle(
     "hidden",
-    !state.chartLibraryFailed && activePoints.length > 0,
+    !state.chartLibraryFailed && series.points.length > 0,
   );
-  updateChartStats(activePoints);
 
   if (!state.latencyChart) {
     ensureLatencyChartLibrary().catch(() => {});
@@ -510,28 +480,10 @@ function renderLatencyChart() {
     return;
   }
 
-  const pointData = activePoints.map((point) => [
-    point.time_ms,
-    point.latency_ms,
-    point.word,
-    point.reference_end_ms,
-    point.index,
-    point.mean_ms,
-  ]);
-  const meanData = activePoints.map((point) => [
-    point.time_ms,
-    point.mean_ms,
-    point.word,
-    point.latency_ms,
-    point.index,
-  ]);
-  const latestMean = meanData.length ? [meanData.at(-1)] : [];
-
   state.latencyChart.setOption(
     {
       backgroundColor: "#faf9f6",
-      animation: true,
-      animationDurationUpdate: state.replayPlaying ? 80 : 180,
+      animation: false,
       animationEasingUpdate: "cubicOut",
       grid: {
         left: 68,
@@ -582,7 +534,7 @@ function renderLatencyChart() {
         {
           name: "Word latency",
           type: "scatter",
-          data: pointData,
+          data: series.pointData,
           symbolSize: (value) => Math.max(9, Math.min(18, 9 + Math.abs(Number(value[1])) / 180)),
           itemStyle: {
             color: "#171717",
@@ -600,43 +552,11 @@ function renderLatencyChart() {
               shadowColor: "rgba(23, 23, 23, 0.28)",
             },
           },
-          markLine: {
-            silent: true,
-            symbol: ["none", "none"],
-            data: [
-              {
-                xAxis: state.replayTimeMs,
-                lineStyle: {
-                  color: "#171717",
-                  width: 2,
-                  type: "dashed",
-                  shadowBlur: 6,
-                  shadowColor: "rgba(23, 23, 23, 0.18)",
-                },
-                label: {
-                  formatter: formatClock(state.replayTimeMs),
-                  color: "#171717",
-                  backgroundColor: "#ffffff",
-                  borderColor: "rgba(23, 23, 23, 0.12)",
-                  borderWidth: 1,
-                  borderRadius: 8,
-                  padding: [3, 7],
-                  position: "insideEndTop",
-                },
-              },
-            ],
-            label: {
-              show: true,
-            },
-            lineStyle: {
-              color: "#171717",
-            },
-          },
         },
         {
           name: "Running mean",
           type: "line",
-          data: meanData,
+          data: series.meanData,
           showSymbol: false,
           smooth: 0.3,
           lineStyle: {
@@ -646,22 +566,6 @@ function renderLatencyChart() {
             shadowColor: "rgba(25, 94, 83, 0.22)",
           },
         },
-        {
-          name: "Current mean",
-          type: "effectScatter",
-          data: latestMean,
-          symbolSize: 12,
-          rippleEffect: {
-            brushType: "stroke",
-            scale: 2.8,
-          },
-          itemStyle: {
-            color: "#195e53",
-            borderColor: "#faf9f6",
-            borderWidth: 2,
-          },
-          zlevel: 2,
-        },
       ],
     },
     {
@@ -669,37 +573,52 @@ function renderLatencyChart() {
       lazyUpdate: true,
     },
   );
+  updateLatencyChartProgress();
 }
 
-function buildLatencySeries(request) {
-  const points = buildReferenceLatencyTokens(request || {})
-    .map((token, index) => ({
-      index,
-      word: token.word,
-      time_ms: Number(token.time_ms),
-      latency_ms: Number(token.latency_ms),
-      reference_end_ms: Number(token.reference_end_ms),
-    }))
-    .sort((a, b) => a.time_ms - b.time_ms);
+function getLatencySeries() {
+  if (state.chartSeries) {
+    return state.chartSeries;
+  }
+  const points = runningMeanPoints(state.receivedTokens.map((token, index) => ({
+    index,
+    word: token.word,
+    time_ms: token.time_ms,
+    latency_ms: token.latency_ms,
+    reference_end_ms: token.reference_end_ms,
+  })));
   const latencies = points.map((point) => point.latency_ms);
   const maxLatency = Math.max(500, ...latencies);
-  return {
+  state.chartSeries = {
     points,
+    pointData: points.map((point) => [
+      point.time_ms,
+      point.latency_ms,
+      point.word,
+      point.reference_end_ms,
+      point.index,
+      point.mean_ms,
+    ]),
+    meanData: points.map((point) => [
+      point.time_ms,
+      point.mean_ms,
+      point.word,
+      point.latency_ms,
+      point.index,
+    ]),
     xMax: Math.max(state.replayMaxMs, ...points.map((point) => point.time_ms), 1000),
     yMin: 0,
     yMax: Math.ceil((maxLatency + 150) / 100) * 100,
   };
+  return state.chartSeries;
 }
 
-function replayInteractivityStats(request) {
-  if (!request) {
-    return null;
-  }
-  if (!replayStatsCache.has(request)) {
-    buildReferenceLatencyTokens(request);
-  }
-  const stats = replayStatsCache.get(request);
-  return stats?.mean_latency_ms === null ? null : stats;
+function updateLatencyChartProgress() {
+  const series = getLatencySeries();
+  const activeCount = upperBoundByTime(series.points, state.replayTimeMs);
+  const activePoints = series.points.slice(0, activeCount);
+  updateChartStats(activePoints);
+  updateChartPlayhead(series);
 }
 
 function runningMeanPoints(points) {
@@ -711,6 +630,31 @@ function runningMeanPoints(points) {
       mean_ms: total / (index + 1),
     };
   });
+}
+
+function upperBoundByTime(points, timeMs) {
+  let lo = 0;
+  let hi = points.length;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (points[mid].time_ms <= timeMs) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  return lo;
+}
+
+function updateChartPlayhead(series) {
+  if (!els.chartPlayhead) {
+    return;
+  }
+  const chartRect = els.latencyChart.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, state.replayTimeMs / Math.max(series.xMax, 1)));
+  const x = 68 + ratio * Math.max(0, chartRect.width - 96);
+  els.chartPlayhead.style.transform = `translateX(${Math.round(x)}px)`;
+  els.chartPlayheadLabel.textContent = formatClock(state.replayTimeMs);
 }
 
 function formatChartTooltip(params) {
@@ -758,13 +702,6 @@ function updateChartStats(activePoints) {
   els.chartCount.textContent = `${activePoints.length} words`;
 }
 
-function normalizeWord(text) {
-  const matches = String(text || "")
-    .toLowerCase()
-    .match(/[a-z0-9]+(?:'[a-z0-9]+)?/g);
-  return matches ? matches.join("") : "";
-}
-
 function latencyClass(value) {
   const latency = Number(value);
   if (!Number.isFinite(latency)) {
@@ -787,7 +724,7 @@ function latencySuffix(value) {
 }
 
 function formatMetric(value, unit = "") {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) {
     return "n/a";
   }
   const number = Number(value);

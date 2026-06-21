@@ -326,6 +326,33 @@ select {
   display: block;
 }
 
+.chart-playhead {
+  position: absolute;
+  top: 74px;
+  bottom: 40px;
+  left: 0;
+  z-index: 3;
+  width: 0;
+  border-left: 2px dashed #171717;
+  filter: drop-shadow(0 0 6px rgba(23, 23, 23, 0.18));
+  pointer-events: none;
+  will-change: transform;
+}
+
+.chart-playhead span {
+  position: absolute;
+  top: -30px;
+  left: 8px;
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  border-radius: 8px;
+  background: #fff;
+  padding: 3px 7px;
+  color: #171717;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .latency-chart-empty {
   position: absolute;
   inset: 56px 0 0;
@@ -348,6 +375,31 @@ select {
   margin: 14px 0 18px;
 }
 
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+}
+
+.icon-button svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+.icon-button .icon-pause,
+.icon-button.is-playing .icon-play {
+  display: none;
+}
+
+.icon-button.is-playing .icon-pause {
+  display: block;
+}
+
 .controls input[type="range"] {
   width: 100%;
   accent-color: var(--ink);
@@ -362,6 +414,7 @@ select {
 
 .stream-grid {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -517,6 +570,10 @@ audio {
   .loader {
     width: 100%;
     grid-template-columns: 1fr auto auto;
+  }
+
+  .stream-grid {
+    grid-template-columns: 1fr;
   }
 
   .request-picker {
