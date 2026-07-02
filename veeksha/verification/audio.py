@@ -15,6 +15,7 @@ from typing import Any, Callable, Iterable, Optional
 import numpy as np
 
 from veeksha.config.verification import AudioVerificationConfig
+from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
@@ -58,7 +59,9 @@ class WERVerifier(AudioOutputVerifier):
 
     def verify(self, context: AudioVerifierContext) -> dict[str, Any]:
         if not context.reference_text:
-            return {"wer_error": "Missing input_text in request-level metrics"}
+            return {
+                "wer_error": f"Missing {AudioMetricKey.INPUT_TEXT.value} in request-level metrics"
+            }
         if not context.has_audio:
             return {"wer_error": f"Missing audio file: {context.audio_path}"}
         try:
@@ -100,8 +103,7 @@ class LocalWhisperTranscriber:
             from faster_whisper import WhisperModel
         except ImportError as exc:
             raise AudioVerificationError(
-                "WER verification requires faster-whisper. Install the "
-                "audio-verification extra."
+                "WER verification requires faster-whisper. Install the audio-verification extra."
             ) from exc
 
         self.model = WhisperModel(
@@ -358,7 +360,9 @@ def verify_audio_outputs(
             audio_path = audio_dir / f"request_{request_id}.wav"
             context = AudioVerifierContext(
                 request_id=int(request_id),
-                reference_text=str(metric_row.get("input_text") or ""),
+                reference_text=str(
+                    metric_row.get(AudioMetricKey.INPUT_TEXT.value) or ""
+                ),
                 audio_path=audio_path,
                 has_audio=audio_path.exists(),
             )

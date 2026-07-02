@@ -4,11 +4,17 @@ import json
 import os
 import threading
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from veeksha.config.evaluator import (
     AudioChannelPerformanceConfig,
     PerformanceEvaluatorConfig,
+)
+from veeksha.core.audio_contract import (
+    BYTES_PER_SAMPLE,
+    DEFAULT_AUDIO_SAMPLE_RATE,
+    WAV_HEADER_BYTES,
+    AudioMetricKey,
 )
 from veeksha.evaluator.base import EvaluationResult
 from veeksha.evaluator.cdf_sketch import CDFSketch
@@ -16,10 +22,6 @@ from veeksha.logger import init_logger
 from veeksha.types import ChannelModality
 
 logger = init_logger(__name__)
-
-DEFAULT_AUDIO_SAMPLE_RATE = 24000
-BYTES_PER_SAMPLE = 2
-WAV_HEADER_BYTES = 44
 
 
 def _pcm_byte_count(total_bytes: int, *, raw_pcm: bool) -> int:
@@ -52,7 +54,7 @@ class AudioRequestMetrics:
     input_chars: int = 0
     input_tokens: int = 0
     input_text: str = ""
-    session_total_requests: Optional[int] = None
+    session_total_requests: int | None = None
 
 
 class AudioPerformanceEvaluator:
@@ -65,7 +67,7 @@ class AudioPerformanceEvaluator:
     def __init__(
         self,
         config: PerformanceEvaluatorConfig,
-        channel_config: Optional[AudioChannelPerformanceConfig] = None,
+        channel_config: AudioChannelPerformanceConfig | None = None,
         benchmark_start_time: float = 0.0,
     ):
         self.config = config
@@ -74,33 +76,43 @@ class AudioPerformanceEvaluator:
         self.lock = threading.Lock()
 
         # CDF sketches for aggregate metrics
-        self.summaries: Dict[str, CDFSketch] = {
-            "ttfc": CDFSketch("ttfc", unit="ms"),
-            "end_to_end_latency": CDFSketch("end_to_end_latency", unit="ms"),
-            "generated_audio_duration": CDFSketch(
-                "generated_audio_duration", unit="ms"
+        self.summaries: dict[str, CDFSketch] = {
+            AudioMetricKey.TTFC.value: CDFSketch(AudioMetricKey.TTFC.value, unit="ms"),
+            AudioMetricKey.END_TO_END_LATENCY.value: CDFSketch(
+                AudioMetricKey.END_TO_END_LATENCY.value, unit="ms"
             ),
-            "rtf": CDFSketch("rtf"),
-            "chunk_count": CDFSketch("chunk_count"),
-            "input_tokens": CDFSketch("input_tokens", unit="tokens"),
-            "session_size": CDFSketch("session_size"),
-            "session_duration": CDFSketch("session_duration", unit="ms"),
+            AudioMetricKey.GENERATED_AUDIO_DURATION.value: CDFSketch(
+                AudioMetricKey.GENERATED_AUDIO_DURATION.value, unit="ms"
+            ),
+            AudioMetricKey.RTF.value: CDFSketch(AudioMetricKey.RTF.value),
+            AudioMetricKey.CHUNK_COUNT.value: CDFSketch(
+                AudioMetricKey.CHUNK_COUNT.value
+            ),
+            AudioMetricKey.INPUT_TOKENS.value: CDFSketch(
+                AudioMetricKey.INPUT_TOKENS.value, unit="tokens"
+            ),
+            AudioMetricKey.SESSION_SIZE.value: CDFSketch(
+                AudioMetricKey.SESSION_SIZE.value
+            ),
+            AudioMetricKey.SESSION_DURATION.value: CDFSketch(
+                AudioMetricKey.SESSION_DURATION.value, unit="ms"
+            ),
         }
 
         # Request dispatch tracking (like text.py _pending_requests)
-        self._pending_requests: Dict[int, Dict[str, Any]] = {}
+        self._pending_requests: dict[int, dict[str, Any]] = {}
 
         # Request-level storage for JSONL output
-        self._completed_metrics: List[AudioRequestMetrics] = []
-        self._lifecycle_timestamps: List[Dict[str, Optional[float]]] = []
+        self._completed_metrics: list[AudioRequestMetrics] = []
+        self._lifecycle_timestamps: list[dict[str, float | None]] = []
         self._request_rows_streamed: int = 0
         self._request_time_reference: float = self.benchmark_start_time
 
         # Running totals for aggregate throughput
         self._total_input_chars: int = 0
         self._total_generated_audio_duration_ms: float = 0.0
-        self._first_dispatch_at: Optional[float] = None
-        self._last_completion_at: Optional[float] = None
+        self._first_dispatch_at: float | None = None
+        self._last_completion_at: float | None = None
 
     def register_request(
         self,
@@ -148,11 +160,13 @@ class AudioPerformanceEvaluator:
                 return
 
             cm = channel_response.metrics or {}
-            ttfc = cm.get("ttfc", 0.0)
-            end_to_end_latency = cm.get("end_to_end_latency", 0.0)
-            chunk_count = cm.get("chunk_count", 0)
-            raw_pcm = bool(cm.get("raw_pcm", False))
-            sample_rate = int(cm.get("sample_rate", DEFAULT_AUDIO_SAMPLE_RATE))
+            ttfc = cm.get(AudioMetricKey.TTFC.value, 0.0)
+            end_to_end_latency = cm.get(AudioMetricKey.END_TO_END_LATENCY.value, 0.0)
+            chunk_count = cm.get(AudioMetricKey.CHUNK_COUNT.value, 0)
+            raw_pcm = bool(cm.get(AudioMetricKey.RAW_PCM.value, False))
+            sample_rate = int(
+                cm.get(AudioMetricKey.SAMPLE_RATE.value, DEFAULT_AUDIO_SAMPLE_RATE)
+            )
             audio_content = channel_response.content
             total_bytes = len(audio_content) if isinstance(audio_content, bytes) else 0
             pcm_byte_count = _pcm_byte_count(total_bytes, raw_pcm=raw_pcm)
@@ -162,9 +176,9 @@ class AudioPerformanceEvaluator:
                 if generated_audio_duration > 0
                 else float("inf")
             )
-            input_chars = cm.get("input_chars", 0)
-            input_tokens = cm.get("input_tokens", 0)
-            input_text = cm.get("input_text", "")
+            input_chars = cm.get(AudioMetricKey.INPUT_CHARS.value, 0)
+            input_tokens = cm.get(AudioMetricKey.INPUT_TOKENS.value, 0)
+            input_text = cm.get(AudioMetricKey.INPUT_TEXT.value, "")
 
             session_total_requests = getattr(response, "session_total_requests", None)
 
@@ -202,7 +216,7 @@ class AudioPerformanceEvaluator:
                 self._last_completion_at = completed_at
 
             # Store lifecycle timestamps (matching text.py pattern)
-            def normalize_ts(ts: Optional[float]) -> Optional[float]:
+            def normalize_ts(ts: float | None) -> float | None:
                 if ts is None:
                     return None
                 return round(max(0.0, ts - self._request_time_reference), 5)
@@ -228,31 +242,35 @@ class AudioPerformanceEvaluator:
             )
 
             # Update CDF sketches
-            self.summaries["ttfc"].put(ttfc)
-            self.summaries["end_to_end_latency"].put(end_to_end_latency)
-            self.summaries["generated_audio_duration"].put(generated_audio_duration)
-            self.summaries["rtf"].put(rtf)
-            self.summaries["chunk_count"].put(chunk_count)
-            self.summaries["input_tokens"].put(input_tokens)
+            self.summaries[AudioMetricKey.TTFC.value].put(ttfc)
+            self.summaries[AudioMetricKey.END_TO_END_LATENCY.value].put(
+                end_to_end_latency
+            )
+            self.summaries[AudioMetricKey.GENERATED_AUDIO_DURATION.value].put(
+                generated_audio_duration
+            )
+            self.summaries[AudioMetricKey.RTF.value].put(rtf)
+            self.summaries[AudioMetricKey.CHUNK_COUNT.value].put(chunk_count)
+            self.summaries[AudioMetricKey.INPUT_TOKENS.value].put(input_tokens)
 
     def record_session_completed(
         self,
         session_id: int,
         session_size: int,
-        first_dispatch_at: Optional[float],
-        last_completion_at: Optional[float],
+        first_dispatch_at: float | None,
+        last_completion_at: float | None,
     ) -> None:
         """Record session-level metrics."""
         with self.lock:
-            self.summaries["session_size"].put(session_size)
+            self.summaries[AudioMetricKey.SESSION_SIZE.value].put(session_size)
 
             if first_dispatch_at is not None and last_completion_at is not None:
                 duration = max(0.0, last_completion_at - first_dispatch_at)
-                self.summaries["session_duration"].put(duration)
+                self.summaries[AudioMetricKey.SESSION_DURATION.value].put(duration)
 
-    def get_summary(self) -> Dict[str, Optional[float]]:
+    def get_summary(self) -> dict[str, float | None]:
         """Get summary metrics from all CDF sketches."""
-        perf_summary: Dict[str, Optional[float]] = {}
+        perf_summary: dict[str, float | None] = {}
         for cdf_sketch in self.summaries.values():
             perf_summary.update(cdf_sketch.get_summary())
 
@@ -278,7 +296,7 @@ class AudioPerformanceEvaluator:
                 metrics=self.get_summary(),
             )
 
-    def get_streaming_metrics(self) -> Optional[Dict[str, Any]]:
+    def get_streaming_metrics(self) -> dict[str, Any] | None:
         """Return current metrics for streaming."""
         with self.lock:
             return self.get_summary()
@@ -309,7 +327,7 @@ class AudioPerformanceEvaluator:
             for row in rows:
                 f.write(json.dumps(row) + "\n")
 
-    def _export_request_rows(self, start_index: int = 0) -> List[Dict[str, Any]]:
+    def _export_request_rows(self, start_index: int = 0) -> list[dict[str, Any]]:
         rows = []
         for idx in range(start_index, len(self._completed_metrics)):
             m = self._completed_metrics[idx]
@@ -331,21 +349,25 @@ class AudioPerformanceEvaluator:
                     "client_picked_up_at": lifecycle["client_picked_up_at"],
                     "client_completed_at": round(normalized_completed, 5),
                     "result_processed_at": lifecycle["result_processed_at"],
-                    "ttfc": round(m.ttfc, 3),
-                    "end_to_end_latency": round(m.end_to_end_latency, 3),
-                    "generated_audio_duration": round(m.generated_audio_duration, 3),
-                    "rtf": round(m.rtf, 5),
-                    "chunk_count": m.chunk_count,
-                    "pcm_byte_count": m.pcm_byte_count,
-                    "input_chars": m.input_chars,
-                    "input_tokens": m.input_tokens,
-                    "input_text": m.input_text,
+                    AudioMetricKey.TTFC.value: round(m.ttfc, 3),
+                    AudioMetricKey.END_TO_END_LATENCY.value: round(
+                        m.end_to_end_latency, 3
+                    ),
+                    AudioMetricKey.GENERATED_AUDIO_DURATION.value: round(
+                        m.generated_audio_duration, 3
+                    ),
+                    AudioMetricKey.RTF.value: round(m.rtf, 5),
+                    AudioMetricKey.CHUNK_COUNT.value: m.chunk_count,
+                    AudioMetricKey.PCM_BYTE_COUNT.value: m.pcm_byte_count,
+                    AudioMetricKey.INPUT_CHARS.value: m.input_chars,
+                    AudioMetricKey.INPUT_TOKENS.value: m.input_tokens,
+                    AudioMetricKey.INPUT_TEXT.value: m.input_text,
                 }
             )
         return rows
 
     def _append_request_level_rows(
-        self, output_dir: str, rows: List[Dict[str, Any]]
+        self, output_dir: str, rows: list[dict[str, Any]]
     ) -> None:
         path = os.path.join(output_dir, "request_level_metrics.jsonl")
         with open(path, "a") as f:

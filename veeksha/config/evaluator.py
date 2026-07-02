@@ -137,6 +137,16 @@ def _default_slos() -> list[BaseSloConfig]:
     ]
 
 
+def _normalize_channel_modality(channel: object) -> ChannelModality:
+    if isinstance(channel, ChannelModality):
+        return channel
+    if isinstance(channel, str):
+        return ChannelModality.from_str(channel)
+    if isinstance(channel, int) and not isinstance(channel, bool):
+        return ChannelModality(channel)
+    raise ValueError(f"Invalid target channel modality: {channel!r}")
+
+
 @frozen_dataclass
 class BaseEvaluatorConfig(BasePolyConfig):
     """Base configuration for all evaluators (performance, accuracy)"""
@@ -156,13 +166,11 @@ class BaseEvaluatorConfig(BasePolyConfig):
 
     def __post_init__(self):
         if self.target_channels:
-            converted = []
-            for ch in self.target_channels:
-                if isinstance(ch, str):
-                    converted.append(ChannelModality.from_str(ch))
-                else:
-                    converted.append(ch)
-            object.__setattr__(self, "target_channels", converted)
+            object.__setattr__(
+                self,
+                "target_channels",
+                [_normalize_channel_modality(ch) for ch in self.target_channels],
+            )
 
 
 @frozen_dataclass
@@ -188,10 +196,18 @@ class PerformanceEvaluatorConfig(BaseEvaluatorConfig):
     def get_type(cls) -> EvaluationType:
         return EvaluationType.PERFORMANCE
 
+    def __post_init__(self):
+        super().__post_init__()
+        if ChannelModality.AUDIO in self.target_channels and self.audio_channel is None:
+            object.__setattr__(self, "audio_channel", AudioChannelPerformanceConfig())
+        if ChannelModality.VIDEO in self.target_channels and self.video_channel is None:
+            object.__setattr__(self, "video_channel", VideoChannelPerformanceConfig())
+
     def get_channel_config(
-        self, channel: ChannelModality
+        self, channel: ChannelModality | str | int
     ) -> Optional[BaseChannelPerformanceConfig]:
         """Get the performance config for a specific channel."""
+        channel = _normalize_channel_modality(channel)
         if channel == ChannelModality.TEXT:
             return self.text_channel
         elif channel == ChannelModality.IMAGE:

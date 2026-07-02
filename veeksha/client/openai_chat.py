@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable, List, Optional
 import httpx  # type: ignore
 
 from veeksha.client.openai_base import OpenAIBaseClient
+from veeksha.core.audio_contract import DEFAULT_AUDIO_SAMPLE_RATE, AudioMetricKey
 from veeksha.core.request import Request
 from veeksha.core.request_content import (
     AudioChannelRequestContent,
@@ -23,8 +24,6 @@ if TYPE_CHECKING:
     from veeksha.config.client import OpenAIChatCompletionsClientConfig
 
 logger = init_logger(__name__)
-
-AUDIO_SAMPLE_RATE = 24000
 
 
 class OpenAIChatCompletionsClient(OpenAIBaseClient):
@@ -514,11 +513,11 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
                 modality=ChannelModality.AUDIO,
                 content=audio_bytes,
                 metrics={
-                    "ttfc": round(audio_ttfc or 0.0, 3),
-                    "end_to_end_latency": round(total_latency_ms, 3),
-                    "chunk_count": audio_chunk_count,
-                    "raw_pcm": True,
-                    "sample_rate": AUDIO_SAMPLE_RATE,
+                    AudioMetricKey.TTFC.value: round(audio_ttfc or 0.0, 3),
+                    AudioMetricKey.END_TO_END_LATENCY.value: round(total_latency_ms, 3),
+                    AudioMetricKey.CHUNK_COUNT.value: audio_chunk_count,
+                    AudioMetricKey.RAW_PCM.value: True,
+                    AudioMetricKey.SAMPLE_RATE.value: DEFAULT_AUDIO_SAMPLE_RATE,
                 },
             )
 

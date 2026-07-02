@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
 from veeksha.config.evaluator import AudioQualityEvaluatorConfig
+from veeksha.core.audio_contract import DEFAULT_AUDIO_SAMPLE_RATE, AudioMetricKey
 from veeksha.core.request_content import TextChannelRequestContent
 from veeksha.core.seeding import SeedManager
 from veeksha.evaluator.accuracy.base import BaseAccuracyEvaluator
@@ -18,8 +19,6 @@ from veeksha.logger import init_logger
 from veeksha.types import ChannelModality
 
 logger = init_logger(__name__)
-
-DEFAULT_AUDIO_SAMPLE_RATE = 24000
 
 
 @dataclass
@@ -168,9 +167,13 @@ class AudioQualityEvaluator(BaseAccuracyEvaluator):
             if self._should_save_audio_files():
                 self._audio_buffers[request_id] = audio_content
                 self._audio_metadata[request_id] = {
-                    "raw_pcm": bool(metrics.get("raw_pcm", False)),
-                    "sample_rate": int(
-                        metrics.get("sample_rate", DEFAULT_AUDIO_SAMPLE_RATE)
+                    AudioMetricKey.RAW_PCM.value: bool(
+                        metrics.get(AudioMetricKey.RAW_PCM.value, False)
+                    ),
+                    AudioMetricKey.SAMPLE_RATE.value: int(
+                        metrics.get(
+                            AudioMetricKey.SAMPLE_RATE.value, DEFAULT_AUDIO_SAMPLE_RATE
+                        )
                     ),
                 }
 
@@ -248,8 +251,10 @@ class AudioQualityEvaluator(BaseAccuracyEvaluator):
         audio_dir.mkdir(parents=True, exist_ok=True)
         for request_id, audio_data in buffers.items():
             meta = metadata.get(request_id, {})
-            raw_pcm = bool(meta.get("raw_pcm", False))
-            sample_rate = int(meta.get("sample_rate", DEFAULT_AUDIO_SAMPLE_RATE))
+            raw_pcm = bool(meta.get(AudioMetricKey.RAW_PCM.value, False))
+            sample_rate = int(
+                meta.get(AudioMetricKey.SAMPLE_RATE.value, DEFAULT_AUDIO_SAMPLE_RATE)
+            )
             wav_path = audio_dir / f"request_{request_id}.wav"
             with wav_path.open("wb") as f:
                 if raw_pcm:

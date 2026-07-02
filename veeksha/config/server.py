@@ -4,6 +4,7 @@ Server configuration for launcher-managed inference systems.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TypeAlias, Union
 
@@ -43,6 +44,9 @@ class BaseServerConfig(BasePolyConfig):
     host: str = field("localhost", help="Host address for the server")
     port: int = field(8000, help="Port number for the server")
     api_key: str = field("token-abc123", help="API key for server authentication")
+    client_provider: Optional[str] = field(
+        None, help="Provider value to apply to provider-specific benchmark clients."
+    )
     gpu_ids: Optional[List[int]] = field(
         None, help="List of GPU IDs to use (None means auto-assign)"
     )
@@ -104,6 +108,7 @@ class BaseServerConfig(BasePolyConfig):
             health_url=self.get_health_check_url(),
             host=self.host,
             port=self.port,
+            client_provider=self.client_provider,
         )
 
     def get_gpu_env_var(self) -> Optional[str]:
@@ -140,6 +145,30 @@ class BaseServerConfig(BasePolyConfig):
         return self.get_health_check_url()
 
 
+def _validate_vajra_command_interpreter(command: List[str]) -> None:
+    """Reject Vajra module launches through the current Veeksha interpreter."""
+    if len(command) < 3 or "-m" not in command:
+        return
+    module_index = command.index("-m") + 1
+    if module_index >= len(command) or not command[module_index].startswith("vajra"):
+        return
+
+    interpreter = Path(command[0]).expanduser()
+    current_interpreter = Path(sys.executable).expanduser()
+    try:
+        same_interpreter = interpreter.resolve() == current_interpreter.resolve()
+    except OSError:
+        same_interpreter = str(interpreter) == str(current_interpreter)
+
+    ambiguous_interpreter = command[0] in {"python", "python3"}
+    if same_interpreter or ambiguous_interpreter:
+        raise ValueError(
+            "vajra server.command must use the Vajra Python environment, not the "
+            "current Veeksha interpreter or an ambiguous python executable. Use an "
+            "absolute path like /path/to/vajra/env/bin/python for server.command[0]."
+        )
+
+
 @frozen_dataclass
 class VajraServerConfig(BaseServerConfig):
     """Vajra subprocess server config."""
@@ -162,6 +191,7 @@ class VajraServerConfig(BaseServerConfig):
             )
         if self.model == _DEFAULT_MODEL:
             raise ValueError("vajra requires server.model for the endpoint")
+        _validate_vajra_command_interpreter(self.command)
 
     def get_api_base_url(self) -> str:
         if self.api_base:

@@ -6,14 +6,21 @@ import base64
 import json
 import threading
 import time
-from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, AsyncIterator, Callable, List, Optional
-from urllib.parse import urljoin
+from typing import TYPE_CHECKING
 
 import httpx
 
 from veeksha.client.base import BaseLLMClient
+from veeksha.core.audio_contract import (
+    AudioMetricKey,
+    TTSPayloadFormat,
+    TTSProviderEntry,
+    TTSStreamFormat,
+    build_tts_provider_url,
+    get_tts_provider_entry,
+)
 from veeksha.core.request import Request
 from veeksha.core.request_content import TextChannelRequestContent
 from veeksha.core.response import ChannelResponse, RequestResult
@@ -33,130 +40,64 @@ class TTSProviderRequest:
     payload: dict
 
 
-class TTSProviderAdapter(ABC):
-    """Provider-specific request adapter for streaming TTS endpoints."""
+class TTSProviderAdapter:
+    """Request adapter for a configured streaming TTS provider."""
 
-    def __init__(self, config: TTSClientConfig) -> None:
+    def __init__(
+        self, config: TTSClientConfig, provider_entry: TTSProviderEntry
+    ) -> None:
         self.config = config
+        self.provider_entry = provider_entry
 
     @property
-    @abstractmethod
     def raw_pcm(self) -> bool:
         """Whether the provider streams raw PCM bytes."""
+        return self.provider_entry.raw_pcm(self.config.raw_pcm)
 
-    @abstractmethod
     def build_request(self, text: str) -> TTSProviderRequest:
         """Build a streaming HTTP request for a text input."""
+        if self.provider_entry.payload_format is TTSPayloadFormat.VAJRA_SYNTHESIZE:
+            payload: dict = {"text": text}
+            if self.config.voice_id:
+                payload["speaker"] = self.config.voice_id
+        else:
+            payload = {
+                "input": text,
+                "response_format": self.provider_entry.response_format(
+                    self.config.raw_pcm
+                ),
+                "stream": True,
+            }
+            if self.provider_entry.include_model:
+                payload["model"] = self.config.model
+            if self.config.voice_id:
+                payload["voice"] = self.config.voice_id
+
+        headers = {"Content-Type": "application/json"}
+        if self.config.api_key:
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
+
+        return TTSProviderRequest(
+            url=build_tts_provider_url(str(self.config.api_base), self.provider_entry),
+            headers=headers,
+            payload=payload,
+        )
 
     async def iter_audio_chunks(
         self, response: httpx.Response, chunk_size: int
     ) -> AsyncIterator[bytes]:
-        """Yield decoded audio chunks from a streaming response.
+        """Yield decoded audio chunks from a streaming response."""
+        if self.provider_entry.stream_format is TTSStreamFormat.SSE_AUDIO_JSON:
+            async for chunk in self._iter_sse_audio_chunks(response):
+                yield chunk
+            return
 
-        Default: the provider streams raw audio bytes (PCM or WAV) directly in
-        the response body. Providers with a different wire format (e.g. SSE)
-        override this to decode chunks before yielding them.
-        """
         async for chunk in response.aiter_bytes(chunk_size=chunk_size):
             if chunk:
                 yield chunk
 
-    @staticmethod
-    def _join_url(api_base: str, endpoint: str) -> str:
-        return urljoin(api_base.rstrip("/") + "/", endpoint.lstrip("/"))
-
-
-class VajraTTSProviderAdapter(TTSProviderAdapter):
-    @property
-    def raw_pcm(self) -> bool:
-        return self.config.raw_pcm
-
-    def build_request(self, text: str) -> TTSProviderRequest:
-        api_base = str(self.config.api_base)
-        endpoint = (
-            "audio/speech"
-            if api_base.rstrip("/").endswith("/v1")
-            else "v1/audio/speech"
-        )
-        payload: dict = {
-            "input": text,
-            "response_format": "pcm" if self.config.raw_pcm else "wav",
-            "stream": True,
-        }
-        if self.config.voice_id:
-            payload["voice"] = self.config.voice_id
-        headers = {"Content-Type": "application/json"}
-        if self.config.api_key:
-            headers["Authorization"] = f"Bearer {self.config.api_key}"
-        return TTSProviderRequest(
-            url=self._join_url(api_base, endpoint),
-            headers=headers,
-            payload=payload,
-        )
-
-
-class VLLMOmniTTSProviderAdapter(TTSProviderAdapter):
-    @property
-    def raw_pcm(self) -> bool:
-        return True
-
-    def build_request(self, text: str) -> TTSProviderRequest:
-        api_base = str(self.config.api_base)
-        endpoint = (
-            "audio/speech"
-            if api_base.rstrip("/").endswith("/v1")
-            else "v1/audio/speech"
-        )
-        payload: dict = {
-            "input": text,
-            "model": self.config.model,
-            "response_format": "pcm",
-            "stream": True,
-        }
-        if self.config.voice_id:
-            payload["voice"] = self.config.voice_id
-        return TTSProviderRequest(
-            url=self._join_url(api_base, endpoint),
-            headers={
-                "Authorization": f"Bearer {self.config.api_key}",
-                "Content-Type": "application/json",
-            },
-            payload=payload,
-        )
-
-
-class SGLangOmniTTSProviderAdapter(TTSProviderAdapter):
-
-    @property
-    def raw_pcm(self) -> bool:
-        return True
-
-    def build_request(self, text: str) -> TTSProviderRequest:
-        api_base = str(self.config.api_base)
-        endpoint = (
-            "audio/speech"
-            if api_base.rstrip("/").endswith("/v1")
-            else "v1/audio/speech"
-        )
-        payload: dict = {
-            "input": text,
-            "model": self.config.model,
-            "response_format": "pcm",
-            "stream": True,
-        }
-        if self.config.voice_id:
-            payload["voice"] = self.config.voice_id
-        headers = {"Content-Type": "application/json"}
-        if self.config.api_key:
-            headers["Authorization"] = f"Bearer {self.config.api_key}"
-        return TTSProviderRequest(
-            url=self._join_url(api_base, endpoint),
-            headers=headers,
-            payload=payload,
-        )
-
-    async def iter_audio_chunks(
-        self, response: httpx.Response, chunk_size: int
+    async def _iter_sse_audio_chunks(
+        self, response: httpx.Response
     ) -> AsyncIterator[bytes]:
         async for line in response.aiter_lines():
             line = line.strip()
@@ -176,13 +117,7 @@ class SGLangOmniTTSProviderAdapter(TTSProviderAdapter):
 
 
 def _build_provider_adapter(config: TTSClientConfig) -> TTSProviderAdapter:
-    if config.provider == "vajra":
-        return VajraTTSProviderAdapter(config)
-    if config.provider == "vllm_omni":
-        return VLLMOmniTTSProviderAdapter(config)
-    if config.provider == "sglang_omni":
-        return SGLangOmniTTSProviderAdapter(config)
-    raise ValueError(f"Unsupported TTS provider: {config.provider}")
+    return TTSProviderAdapter(config, get_tts_provider_entry(config.provider))
 
 
 class TTSClient(BaseLLMClient):
@@ -208,8 +143,8 @@ class TTSClient(BaseLLMClient):
         request: Request,
         session_id: int,
         session_total_requests: int = 1,
-        on_request_sent: Optional[Callable[[], None]] = None,
-        on_request_dispatched: Optional[Callable[[], None]] = None,
+        on_request_sent: Callable[[], None] | None = None,
+        on_request_dispatched: Callable[[], None] | None = None,
     ) -> RequestResult:
         """Send a streaming TTS request and collect audio metrics."""
         text_content = request.channels.get(ChannelModality.TEXT)
@@ -235,11 +170,11 @@ class TTSClient(BaseLLMClient):
             input_text,
         )
 
-        error_msg: Optional[str] = None
-        error_code: Optional[int] = None
-        ttfc: Optional[float] = None
+        error_msg: str | None = None
+        error_code: int | None = None
+        ttfc: float | None = None
         chunk_count = 0
-        audio_chunks: List[bytes] = []
+        audio_chunks: list[bytes] = []
 
         t_start = time.monotonic()
 
@@ -300,14 +235,15 @@ class TTSClient(BaseLLMClient):
                 modality=ChannelModality.AUDIO,
                 content=audio_data,
                 metrics={
-                    "ttfc": round(ttfc or 0.0, 3),
-                    "end_to_end_latency": round(total_latency_ms, 3),
-                    "chunk_count": chunk_count,
-                    "raw_pcm": self._provider_adapter.raw_pcm,
-                    "sample_rate": self.config.sample_rate,
-                    "input_chars": len(input_text),
-                    "input_tokens": text_content.target_prompt_tokens or 0,
-                    "input_text": input_text,
+                    AudioMetricKey.TTFC.value: round(ttfc or 0.0, 3),
+                    AudioMetricKey.END_TO_END_LATENCY.value: round(total_latency_ms, 3),
+                    AudioMetricKey.CHUNK_COUNT.value: chunk_count,
+                    AudioMetricKey.RAW_PCM.value: self._provider_adapter.raw_pcm,
+                    AudioMetricKey.SAMPLE_RATE.value: self.config.sample_rate,
+                    AudioMetricKey.INPUT_CHARS.value: len(input_text),
+                    AudioMetricKey.INPUT_TOKENS.value: text_content.target_prompt_tokens
+                    or 0,
+                    AudioMetricKey.INPUT_TEXT.value: input_text,
                 },
             )
 

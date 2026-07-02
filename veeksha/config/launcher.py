@@ -178,7 +178,14 @@ def _coerce_server_dict(
 
     for key in ("host", "type", "api_key", "dtype"):
         _coerce_present_str(data, key)
-    for key in ("api_base", "health_url", "setup_dir", "env_path", "max_model_len"):
+    for key in (
+        "api_base",
+        "health_url",
+        "setup_dir",
+        "env_path",
+        "max_model_len",
+        "client_provider",
+    ):
         if key == "max_model_len":
             _coerce_optional_int(data, key)
         else:

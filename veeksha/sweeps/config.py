@@ -34,6 +34,7 @@ class SweepConfig:
     engine: str
     model: str
     trace: str = TRACE_SHAREGPT
+    base_config: Optional[str] = None
     output_dir: Optional[str] = None
     min_tokens: Optional[int] = None
     max_tokens: Optional[int] = None
@@ -76,6 +77,7 @@ class SweepConfig:
             engine=_required_str(raw, "engine"),
             model=_required_str(raw, "model"),
             trace=_normalize_trace(trace),
+            base_config=_optional_str(raw, "base_config"),
             output_dir=_optional_str(raw, "output_dir"),
             min_tokens=_optional_int(raw, "min_tokens"),
             max_tokens=_optional_int(raw, "max_tokens"),

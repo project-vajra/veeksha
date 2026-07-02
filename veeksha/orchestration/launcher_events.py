@@ -19,7 +19,7 @@ def sweep_plan_payload(plan: Any, generated_config_dir: Path) -> dict:
         "engine": plan.spec.engine,
         "model": plan.spec.model,
         "trace": plan.runs[0].trace_source if plan.runs else "unknown",
-        "base_config": str(plan.spec.config_path),
+        "base_config": str(plan.base_config_path),
         "concurrencies": sorted({run.concurrency for run in plan.runs}),
         "input_sizes": sorted(
             {run.input_size for run in plan.runs if run.input_size is not None}

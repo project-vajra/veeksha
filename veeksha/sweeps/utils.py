@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 import yaml
 
 from veeksha.config.endpoint import EndpointConfig
+from veeksha.config.utils import serialize_config_value
 from veeksha.sweeps.config import TRACE_SEED_TTS, TRACE_SHAREGPT, SweepConfig
 from veeksha.sweeps.specs import INPUT_SWEEP, SweepSpec
 
@@ -27,7 +28,9 @@ def load_config(path: Path) -> Dict[str, Any]:
 
 def write_config(path: Path, config: Dict[str, Any]) -> None:
     with path.open("w", encoding="utf-8") as f:
-        yaml.safe_dump(config, f, sort_keys=False, width=1_000_000)
+        yaml.safe_dump(
+            serialize_config_value(config), f, sort_keys=False, width=1_000_000
+        )
 
 
 def mapping_at(config: Dict[str, Any], path: Sequence[str]) -> Dict[str, Any]:

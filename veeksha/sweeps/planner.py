@@ -87,6 +87,7 @@ class SweepPlan:
     spec: SweepSpec
     tmp_parent: Path
     runs: Tuple[SweepRunDescriptor, ...]
+    base_config_path: Path
     endpoint: Optional[EndpointConfig] = None
 
     def cleanup(self) -> None:
@@ -140,6 +141,16 @@ def _normalize_model(raw: str) -> str:
     return MODEL_ALIASES[key]
 
 
+def _resolve_base_config_path(sweep_config: SweepConfig, spec: SweepSpec) -> Path:
+    if sweep_config.base_config is None:
+        return spec.config_path
+    path = Path(sweep_config.base_config)
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    if not path.is_file():
+        raise SweepConfigError(f"sweep.base_config does not exist: {path}")
+    return path
+
 def _build_sweep_plan(
     sweep_config: SweepConfig,
     spec: SweepSpec,
@@ -147,7 +158,8 @@ def _build_sweep_plan(
     endpoint: Optional[EndpointConfig] = None,
     tmp_parent: Optional[Path] = None,
 ) -> SweepPlan:
-    base_config = load_config(spec.config_path)
+    base_config_path = _resolve_base_config_path(sweep_config, spec)
+    base_config = load_config(base_config_path)
     apply_trace_source(base_config, sweep_config)
     if tmp_parent is None:
         tmp_parent = Path(tempfile.mkdtemp(prefix=f"{spec.temp_prefix}."))
@@ -212,6 +224,7 @@ def _build_sweep_plan(
         spec=spec,
         tmp_parent=tmp_parent,
         runs=tuple(runs),
+        base_config_path=base_config_path,
         endpoint=endpoint,
     )
 

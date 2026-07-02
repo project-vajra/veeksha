@@ -3,6 +3,11 @@ from typing import Optional
 
 from vidhi import BasePolyConfig, field, frozen_dataclass
 
+from veeksha.core.audio_contract import (
+    DEFAULT_AUDIO_SAMPLE_RATE,
+    SUPPORTED_TTS_PROVIDER_NAMES,
+    get_tts_provider_entry,
+)
 from veeksha.logger import init_logger
 from veeksha.types import ClientType
 
@@ -152,14 +157,18 @@ class TTSClientConfig(BaseClientConfig):
 
     provider: str = field(
         "",
-        help="TTS provider name. Supported: 'vajra', 'vllm_omni', 'sglang_omni'.",
+        help=(
+            f"TTS provider name. Supported: {', '.join(SUPPORTED_TTS_PROVIDER_NAMES)}."
+        ),
     )
     voice_id: str = field(
         "",
         help="Optional voice identifier passed to providers that support it.",
     )
-    sample_rate: int = field(24000, help="Audio sample rate in Hz.")
-    chunk_size: int = field(1024, help="Chunk size in bytes for streaming audio response.")
+    sample_rate: int = field(DEFAULT_AUDIO_SAMPLE_RATE, help="Audio sample rate in Hz.")
+    chunk_size: int = field(
+        1024, help="Chunk size in bytes for streaming audio response."
+    )
     raw_pcm: bool = field(
         False,
         help="Whether the provider returns raw PCM (True) or WAV (False). "
@@ -170,8 +179,6 @@ class TTSClientConfig(BaseClientConfig):
     @classmethod
     def get_type(cls) -> ClientType:
         return ClientType.TTS
-
-    _SUPPORTED_PROVIDERS = ("vajra", "vllm_omni", "sglang_omni")
 
     def __post_init__(self):
         super().__post_init__()
@@ -184,12 +191,7 @@ class TTSClientConfig(BaseClientConfig):
         if not self.provider:
             raise ValueError(
                 "TTSClientConfig.provider is required. "
-                f"Supported: {', '.join(self._SUPPORTED_PROVIDERS)}"
-            )
-        if self.provider not in self._SUPPORTED_PROVIDERS:
-            raise ValueError(
-                f"Unsupported TTS provider: {self.provider}. "
-                f"Supported: {', '.join(self._SUPPORTED_PROVIDERS)}"
+                f"Supported: {', '.join(SUPPORTED_TTS_PROVIDER_NAMES)}"
             )
         if not self.model:
             raise ValueError("TTSClientConfig.model is required.")
@@ -199,8 +201,9 @@ class TTSClientConfig(BaseClientConfig):
             raise ValueError("TTSClientConfig.sample_rate must be > 0")
         if self.chunk_size <= 0:
             raise ValueError("TTSClientConfig.chunk_size must be > 0")
-        if self.provider == "vllm_omni" and self.api_key is None:
-            object.__setattr__(self, "api_key", "EMPTY")
+        provider_entry = get_tts_provider_entry(self.provider)
+        if provider_entry.default_api_key is not None and self.api_key is None:
+            object.__setattr__(self, "api_key", provider_entry.default_api_key)
 
     def build_tokenizer_provider(self):
         """TTS models use a simple word-split tokenizer."""
