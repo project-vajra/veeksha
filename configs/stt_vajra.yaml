@@ -3,10 +3,9 @@ output_dir: "benchmark_output/stt_vajra"
 
 client:
   type: stt
-  provider: vajra
+  provider: vajra_openai_realtime
   api_base: "http://localhost:8003"
-  # Same model as the vLLM config so this is engine-vs-engine; assumes the
-  # vajra server is serving Voxtral.
+  # Drives Vajra through the OpenAI-compatible realtime transcription WebSocket.
   model: mistralai/Voxtral-Mini-4B-Realtime-2602
   sample_rate: 16000
   ws_chunk_size: 2048
@@ -54,6 +53,6 @@ trace_recorder:
 wandb:
   enabled: false
   project: "stt-benchmark"
-  run_name: "stt_vajra_voxtral"
-  tags: ["stt", "vajra", "voxtral"]
+  run_name: "stt_vajra_openai_realtime_voxtral"
+  tags: ["stt", "vajra", "voxtral", "openai_realtime"]
   log_artifacts: false

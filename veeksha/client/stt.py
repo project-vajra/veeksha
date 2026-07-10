@@ -1,7 +1,8 @@
-"""STT clients for realtime streaming speech-to-text (vajra, vllm_realtime).
+"""STT clients for realtime streaming speech-to-text (vajra_openai_realtime, vllm_realtime).
 
 Both providers stream PCM16 over a WebSocket and report transcription metrics
-(ttfc, end-to-end latency, RTF). They share one lifecycle in ``_STTClientBase``:
+(ttfc, end-to-end latency, RTF; see ``STTStreamResult`` for the timing metric
+definitions). They share one lifecycle in ``_STTClientBase``:
 audio is paced at 1x playback when ``ws_realtime_pacing`` is on, and the send
 and receive loops run concurrently so ``ttfc`` reflects when the first partial
 actually arrives rather than when the upload finishes. Each provider only
@@ -64,11 +65,77 @@ def _audio_to_pcm16_bytes(audio_path: str, target_sr: int) -> bytes:
     return pcm16.tobytes()
 
 
+def _metadata_ms(metadata: dict, key: str) -> Optional[float]:
+    """Read an optional millisecond offset from request metadata."""
+    value = metadata.get(key)
+    if value is None:
+        return None
+    return float(value)
+
+
+def _slice_pcm16_bytes(
+    pcm_bytes: bytes,
+    sample_rate: int,
+    *,
+    start_ms: Optional[float],
+    end_ms: Optional[float],
+) -> bytes:
+    """Slice raw PCM16 mono bytes by millisecond offsets."""
+    if start_ms is None and end_ms is None:
+        return pcm_bytes
+
+    total_samples = len(pcm_bytes) // BYTES_PER_SAMPLE
+    start_sample = 0 if start_ms is None else int(round(start_ms * sample_rate / 1000))
+    end_sample = (
+        total_samples if end_ms is None else int(round(end_ms * sample_rate / 1000))
+    )
+
+    if start_sample < 0:
+        raise ValueError(f"input_audio_start_ms must be non-negative; got {start_ms}")
+    if end_sample <= start_sample:
+        raise ValueError(
+            "input_audio_end_ms must be greater than input_audio_start_ms; "
+            f"got start_ms={start_ms}, end_ms={end_ms}"
+        )
+    if end_sample > total_samples:
+        raise ValueError(
+            "Requested audio slice exceeds decoded clip length: "
+            f"end_ms={end_ms}, clip_ms={_pcm_duration_ms(len(pcm_bytes), sample_rate):.3f}"
+        )
+
+    start_byte = start_sample * BYTES_PER_SAMPLE
+    end_byte = end_sample * BYTES_PER_SAMPLE
+    return pcm_bytes[start_byte:end_byte]
+
+
 @dataclass
 class STTStreamResult:
-    """Provider-neutral transcript and timing output from one streaming request."""
+    """Provider-neutral transcript and timing output from one streaming request.
+
+    All timings are in milliseconds, measured with ``time.monotonic`` deltas:
+
+    - ``ttfc`` (time to first content): from the first audio byte on the wire
+      to the first delta whose own payload still contains text after
+      control-token cleaning. Empty progress/keepalive deltas and pure
+      control-token pads do not count. Falls back to the completion message
+      when the stream produces a final transcript without any content-bearing
+      delta.
+    - ``time_to_first_visible_text``: from the first audio byte on the wire to
+      the first moment the assembled (concatenated then cleaned) transcript is
+      non-empty, i.e. when a user watching the live transcript would first see
+      text. Matches ``ttfc`` for well-formed streams; the two differ when
+      cleaning a delta in isolation disagrees with cleaning the assembled
+      transcript (e.g. a control token split across deltas cleans non-empty on
+      its own but vanishes once joined). Same completion fallback as ``ttfc``.
+    - ``time_to_first_partial``: from end-of-audio (EOF sentinel sent) to the
+      first delta after EOF with a non-empty assembled transcript; ``None``
+      when no such delta arrives before completion.
+    - ``time_to_final_transcript``: from end-of-audio to the completion
+      message.
+    """
 
     ttfc: Optional[float]
+    time_to_first_visible_text: Optional[float]
     time_to_first_partial: Optional[float]
     time_to_final_transcript: Optional[float]
     partial_transcript: Optional[str]
@@ -131,6 +198,8 @@ class _STTClientBase(BaseLLMClient):
         self._ws_chunk_size = config.ws_chunk_size
         self._pacing = config.ws_realtime_pacing
         self._request_timeout = config.request_timeout
+        self._ws_ping_interval_s = config.ws_ping_interval_s
+        self._ws_ping_timeout_s = config.ws_ping_timeout_s
         self._ws_url = self._http_to_ws(self.ws_path)
 
     # ------------------------------------------------------------------
@@ -195,6 +264,7 @@ class _STTClientBase(BaseLLMClient):
         ttfc: Optional[float] = None
         audio_started_at: Optional[float] = None
         audio_end_at: Optional[float] = None
+        time_to_first_visible_text: Optional[float] = None
         time_to_first_partial: Optional[float] = None
         time_to_final_transcript: Optional[float] = None
         partial_transcript: Optional[str] = None
@@ -203,7 +273,11 @@ class _STTClientBase(BaseLLMClient):
         transcript_chunks: list[str] = []
         snapshots = TranscriptSnapshotRecorder()
 
-        async with websockets.connect(self._ws_url) as ws:
+        async with websockets.connect(
+            self._ws_url,
+            ping_interval=self._ws_ping_interval_s,
+            ping_timeout=self._ws_ping_timeout_s,
+        ) as ws:
             await self._open_session(ws)
 
             async def _send() -> None:
@@ -233,20 +307,28 @@ class _STTClientBase(BaseLLMClient):
                     kind, text = self._parse_message(json.loads(await ws.recv()))
                     now = time.monotonic()
                     if kind == "delta":
+                        # TTFC counts only deltas whose own payload carries
+                        # transcript text after cleaning; empty progress /
+                        # keepalive deltas (e.g. Vajra's priming delta) and
+                        # pure control-token pads are skipped. See
+                        # STTStreamResult for how this differs from
+                        # time_to_first_visible_text below.
+                        if ttfc is None and _clean_transcript(text):
+                            assert (
+                                audio_started_at is not None
+                            ), "delta arrived before any audio was sent"
+                            ttfc = (now - audio_started_at) * 1000
                         transcript_chunks.append(text)
                         chunk_count += 1
                         current_transcript = _clean_transcript(
                             "".join(transcript_chunks)
                         )
                         snapshots.add(now, current_transcript)
-                        # Anchor TTFC to the first delta carrying real content;
-                        # empty/control-token deltas (e.g. Voxtral streaming
-                        # pads) are skipped so TTFC tracks first transcribed text.
-                        if ttfc is None and current_transcript:
+                        if time_to_first_visible_text is None and current_transcript:
                             assert (
                                 audio_started_at is not None
                             ), "transcript arrived before any audio was sent"
-                            ttfc = (now - audio_started_at) * 1000
+                            time_to_first_visible_text = (now - audio_started_at) * 1000
                         if (
                             audio_end_at is not None
                             and time_to_first_partial is None
@@ -263,8 +345,15 @@ class _STTClientBase(BaseLLMClient):
                             if ttfc is None:
                                 assert (
                                     audio_started_at is not None
-                                ), "transcript arrived before any audio was sent"
+                                ), "completion arrived before any audio was sent"
                                 ttfc = (now - audio_started_at) * 1000
+                            if time_to_first_visible_text is None:
+                                assert (
+                                    audio_started_at is not None
+                                ), "transcript arrived before any audio was sent"
+                                time_to_first_visible_text = (
+                                    now - audio_started_at
+                                ) * 1000
                             if chunk_count == 0:
                                 chunk_count = 1
                         if audio_end_at is not None:
@@ -291,6 +380,7 @@ class _STTClientBase(BaseLLMClient):
 
         return STTStreamResult(
             ttfc=ttfc,
+            time_to_first_visible_text=time_to_first_visible_text,
             time_to_first_partial=time_to_first_partial,
             time_to_final_transcript=time_to_final_transcript,
             partial_transcript=partial_transcript,
@@ -351,9 +441,16 @@ class _STTClientBase(BaseLLMClient):
         error_code: Optional[int] = None
         stream_result: Optional[STTStreamResult] = None
 
-        # Decode before the latency clock so file I/O and DSP don't inflate TTFC.
+        # Decode and slice before the latency clock so file I/O and DSP don't
+        # inflate TTFC.
         try:
             pcm_bytes = _audio_to_pcm16_bytes(audio_path, self._sample_rate)
+            pcm_bytes = _slice_pcm16_bytes(
+                pcm_bytes,
+                self._sample_rate,
+                start_ms=_metadata_ms(request.metadata, "input_audio_start_ms"),
+                end_ms=_metadata_ms(request.metadata, "input_audio_end_ms"),
+            )
         except Exception as e:
             return RequestResult(
                 request_id=request.id,
@@ -403,6 +500,11 @@ class _STTClientBase(BaseLLMClient):
                 "audio_task": AudioTask.STT,
                 "ttfc": round(stream_result.ttfc or 0.0, 3),
                 "end_to_end_latency": round(total_latency_ms, 3),
+                "time_to_first_visible_text": (
+                    round(stream_result.time_to_first_visible_text, 3)
+                    if stream_result.time_to_first_visible_text is not None
+                    else None
+                ),
                 "time_to_first_partial": (
                     round(stream_result.time_to_first_partial, 3)
                     if stream_result.time_to_first_partial is not None
@@ -446,37 +548,6 @@ class _STTClientBase(BaseLLMClient):
         )
 
 
-class VajraSTTClient(_STTClientBase):
-    """vajra: WebSocket /stream — binary int16 PCM frames, JSON delta/done.
-
-    Client -> Server: int16 LE PCM frames, then a text frame ``"end"``.
-    Server -> Client: ``{"type": "ready"}`` then ``delta`` / ``done`` / ``error``.
-    """
-
-    ws_path = "/stream"
-
-    async def _open_session(self, ws) -> None:
-        msg = json.loads(await ws.recv())
-        if msg.get("type") != "ready":
-            raise RuntimeError(f"Expected ready, got: {msg}")
-
-    def _encode_chunk(self, chunk: bytes) -> bytes:
-        return chunk
-
-    def _eof(self) -> str:
-        return "end"
-
-    def _parse_message(self, msg: dict) -> tuple[str, str]:
-        msg_type = msg.get("type")
-        if msg_type == "delta":
-            return "delta", msg.get("text", "")
-        if msg_type == "done":
-            return "done", msg.get("text", "")
-        if msg_type == "error":
-            return "error", msg.get("message", "")
-        return "", ""
-
-
 class VllmRealtimeSTTClient(_STTClientBase):
     """vllm_realtime: WebSocket /v1/realtime — base64 PCM16 chunks, deltas.
 
@@ -515,9 +586,68 @@ class VllmRealtimeSTTClient(_STTClientBase):
         return "", ""
 
 
+class VajraOpenAIRealtimeSTTClient(_STTClientBase):
+    """vajra_openai_realtime: WebSocket /openai/v1/realtime — OpenAI transcription.
+
+    Drives Vajra's OpenAI-compatible realtime transcription endpoint. Server ->
+    Client: ``transcription_session.created`` then
+    ``conversation.item.input_audio_transcription.delta`` /
+    ``conversation.item.input_audio_transcription.completed`` / ``error``. v1 is
+    manual-commit, one transcript per connection (PCM16 mono 16 kHz).
+    """
+
+    ws_path = "/openai/v1/realtime?intent=transcription"
+
+    async def _open_session(self, ws) -> None:
+        msg = json.loads(await ws.recv())
+        if msg.get("type") != "transcription_session.created":
+            raise RuntimeError(f"Expected transcription_session.created, got: {msg}")
+        # Configure the session; unlike vllm_realtime, do NOT commit here — a
+        # commit before any audio would finalize an empty transcript.
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "transcription_session.update",
+                    "input_audio_format": "pcm16",
+                    "input_audio_transcription": {"model": self._model},
+                }
+            )
+        )
+
+    def _encode_chunk(self, chunk: bytes) -> str:
+        return json.dumps(
+            {
+                "type": "input_audio_buffer.append",
+                "audio": base64.b64encode(chunk).decode("utf-8"),
+            }
+        )
+
+    def _eof(self) -> str:
+        return json.dumps({"type": "input_audio_buffer.commit"})
+
+    def _parse_message(self, msg: dict) -> tuple[str, str]:
+        msg_type = msg.get("type")
+        if msg_type == "conversation.item.input_audio_transcription.delta":
+            return "delta", msg.get("delta", "")
+        if msg_type == "conversation.item.input_audio_transcription.completed":
+            return "done", msg.get("transcript", "")
+        # ".failed" is the terminal event for a committed item whose
+        # transcription failed; treat it like a session-level "error" so the
+        # request fails fast instead of waiting for the timeout.
+        if msg_type in (
+            "error",
+            "conversation.item.input_audio_transcription.failed",
+        ):
+            error = msg.get("error")
+            if isinstance(error, dict):
+                return "error", str(error.get("message", ""))
+            return "error", str(error or "")
+        return "", ""
+
+
 _PROVIDERS: dict[str, type[_STTClientBase]] = {
-    "vajra": VajraSTTClient,
     "vllm_realtime": VllmRealtimeSTTClient,
+    "vajra_openai_realtime": VajraOpenAIRealtimeSTTClient,
 }
 
 

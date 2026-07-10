@@ -185,9 +185,7 @@ class TTSClientConfig(BaseClientConfig):
 
     provider: str = field(
         default="",
-        metadata={
-            "help": "TTS provider name. Supported: 'vajra', 'vllm_omni'."
-        },
+        metadata={"help": "TTS provider name. Supported: 'vajra', 'vllm_omni'."},
     )
     voice_id: str = field(
         default="",
@@ -266,7 +264,7 @@ class STTClientConfig(BaseClientConfig):
     provider: str = field(
         default="",
         metadata={
-            "help": "STT provider name. Supported: 'vajra', 'vllm_realtime'."
+            "help": "STT provider name. Supported: 'vajra_openai_realtime', 'vllm_realtime'."
         },
     )
     sample_rate: int = field(
@@ -275,9 +273,7 @@ class STTClientConfig(BaseClientConfig):
     )
     ws_chunk_size: int = field(
         default=4096,
-        metadata={
-            "help": "Bytes of raw PCM audio per WebSocket message."
-        },
+        metadata={"help": "Bytes of raw PCM audio per WebSocket message."},
     )
     ws_realtime_pacing: bool = field(
         default=False,
@@ -287,7 +283,18 @@ class STTClientConfig(BaseClientConfig):
             "ws_chunk_size / 2 / sample_rate seconds, assuming PCM16 "
             "mono). Use for realtime-SLO benchmarks (meetings, live "
             "mic); leave off for engine-bound throughput measurements. "
-            "Applies to vllm_realtime and streaming vajra providers."
+            "Applies to realtime STT providers."
+        },
+    )
+    ws_ping_interval_s: Optional[int] = field(
+        default=20,
+        metadata={"help": "WebSocket ping interval for STT streams in seconds."},
+    )
+    ws_ping_timeout_s: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "WebSocket ping timeout for STT streams in seconds. "
+            "None disables keepalive timeout while preserving request_timeout."
         },
     )
     model: str = field(
@@ -302,7 +309,7 @@ class STTClientConfig(BaseClientConfig):
     def get_type(cls) -> ClientType:
         return ClientType.STT
 
-    _SUPPORTED_PROVIDERS = ("vajra", "vllm_realtime")
+    _SUPPORTED_PROVIDERS = ("vllm_realtime", "vajra_openai_realtime")
 
     def __post_init__(self):
         super().__post_init__()
@@ -327,6 +334,10 @@ class STTClientConfig(BaseClientConfig):
             )
         if self.api_base is None:
             raise ValueError("STTClientConfig.api_base is required.")
+        if self.ws_ping_interval_s is not None and self.ws_ping_interval_s <= 0:
+            raise ValueError("STTClientConfig.ws_ping_interval_s must be > 0 or None")
+        if self.ws_ping_timeout_s is not None and self.ws_ping_timeout_s <= 0:
+            raise ValueError("STTClientConfig.ws_ping_timeout_s must be > 0 or None")
 
     def build_tokenizer_provider(self):
         """STT models use a simple word-split tokenizer."""
