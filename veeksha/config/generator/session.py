@@ -1,4 +1,5 @@
 from dataclasses import field
+from typing import Optional
 
 from veeksha.config.core.base_poly_config import BasePolyConfig
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
@@ -255,10 +256,29 @@ class AudioTraceFlavorConfig(BaseTraceFlavorConfig):
             "help": "Optional base directory prepended to relative audio_file paths."
         },
     )
+    target_duration_s: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Optional per-session audio duration to stream from each trace row. "
+                "When set, the audio trace must provide reference_word_timestamps so "
+                "expected_transcript can be trimmed to the streamed prefix, and "
+                "every clip must be at least this long (shorter clips fail at "
+                "request time)."
+            )
+        },
+    )
 
     @classmethod
     def get_type(cls):
         return TraceFlavorType.AUDIO
+
+    def __post_init__(self):
+        if self.target_duration_s is not None and self.target_duration_s <= 0:
+            raise ValueError(
+                "target_duration_s must be positive when set; "
+                f"got {self.target_duration_s}"
+            )
 
 
 @frozen_dataclass

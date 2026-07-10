@@ -3,8 +3,8 @@
 Reads a JSONL trace file where each line contains:
     {"session_id": 0, "audio_file": "/path/to/audio.wav"}
 
-Optionally, each line may include an ``expected_transcript`` field for
-WER evaluation.
+Each line must also include an ``expected_transcript`` field for WER
+evaluation.
 
 Each row becomes a single-request session with an AUDIO channel
 containing the file path in ``AudioChannelRequestContent.input_audio``.
@@ -117,6 +117,10 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
         }
 
         metadata = self._row_metadata(row)
+        if self.flavor_config.target_duration_s is not None:
+            metadata = self._apply_target_duration(
+                metadata, self.flavor_config.target_duration_s
+            )
         metadata["audio_file"] = audio_file
 
         request = Request(
@@ -151,6 +155,58 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
             metadata[column] = value
         metadata["expected_transcript"] = str(metadata["expected_transcript"])
         return metadata
+
+    def _apply_target_duration(
+        self, metadata: dict[str, Any], target_duration_s: float
+    ) -> dict[str, Any]:
+        """Limit a trace row to the target streamed audio prefix.
+
+        Trims ``reference_word_timestamps`` and ``expected_transcript`` to the
+        words that end within the prefix, and records the slice bounds
+        (``input_audio_start_ms`` / ``input_audio_end_ms``) that the STT
+        client uses to cut the decoded PCM before streaming.
+        """
+        target_end_ms = target_duration_s * 1000.0
+        word_timestamps = metadata.get("reference_word_timestamps")
+        if not isinstance(word_timestamps, list):
+            raise ValueError(
+                "Audio trace target_duration_s requires reference_word_timestamps "
+                "for transcript trimming."
+            )
+
+        trimmed_timestamps: list[dict[str, Any]] = []
+        words: list[str] = []
+        for index, word_timing in enumerate(word_timestamps):
+            if not isinstance(word_timing, dict):
+                raise ValueError(
+                    "reference_word_timestamps entries must be objects; "
+                    f"got {type(word_timing).__name__} at index {index}"
+                )
+            if "word" not in word_timing or "end_ms" not in word_timing:
+                raise ValueError(
+                    "reference_word_timestamps entries must contain word and end_ms"
+                )
+            end_ms = float(word_timing["end_ms"])
+            if end_ms <= target_end_ms:
+                trimmed_timestamps.append(dict(word_timing))
+                words.append(str(word_timing["word"]))
+
+        # Ground truth is mandatory (see __init__); an empty trimmed
+        # transcript would make WER scoring degenerate.
+        if not words:
+            raise ValueError(
+                f"No reference word ends within target_duration_s="
+                f"{target_duration_s}; the trimmed expected_transcript would "
+                "be empty."
+            )
+
+        trimmed_metadata = dict(metadata)
+        trimmed_metadata["reference_word_timestamps"] = trimmed_timestamps
+        trimmed_metadata["expected_transcript"] = " ".join(words)
+        trimmed_metadata["input_audio_start_ms"] = 0.0
+        trimmed_metadata["input_audio_end_ms"] = target_end_ms
+        trimmed_metadata["duration_s"] = target_duration_s
+        return trimmed_metadata
 
     def wrap(self) -> pd.DataFrame:
         """Wrap trace for new epoch with shuffled session order."""
