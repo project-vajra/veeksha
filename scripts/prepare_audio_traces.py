@@ -552,7 +552,9 @@ def safe_extract_zip(archive_path: Path, output_dir: Path) -> None:
         for member in archive.infolist():
             target = (output_root / member.filename).resolve()
             if not is_relative_to(target, output_root):
-                raise ValueError(f"Refusing to extract unsafe zip path: {member.filename}")
+                raise ValueError(
+                    f"Refusing to extract unsafe zip path: {member.filename}"
+                )
         archive.extractall(output_root)
 
 
@@ -618,8 +620,8 @@ def parse_ami_words(words_file: Path) -> list[WordTiming]:
         words.append(
             WordTiming(
                 word=text,
-                start_ms=start_s * 1000,
-                end_ms=end_s * 1000,
+                start_ms=round(start_s * 1000, 3),
+                end_ms=round(end_s * 1000, 3),
             )
         )
     return sorted(words, key=lambda word: (word.start_ms, word.end_ms))
@@ -870,11 +872,14 @@ def parse_word_ctm(path: Path) -> list[WordTiming]:
                 continue
             start_s = float(parts[2])
             duration_s = float(parts[3])
+            # Round to microsecond precision so second->ms conversion doesn't
+            # leak float artifacts (0.1 + 0.2 -> 300.00000000000006 ms) into
+            # manifests.
             words.append(
                 WordTiming(
                     word=parts[4],
-                    start_ms=start_s * 1000,
-                    end_ms=(start_s + duration_s) * 1000,
+                    start_ms=round(start_s * 1000, 3),
+                    end_ms=round((start_s + duration_s) * 1000, 3),
                 )
             )
     return words
@@ -1261,9 +1266,11 @@ def main() -> None:
             duration_filter = (
                 f" matching --max-duration <= {source_options.max_duration_s:g}s"
                 if source_options.max_duration_s is not None
-                else f" matching --target-duration {target_duration_s:g}s"
-                if target_duration_s is not None
-                else ""
+                else (
+                    f" matching --target-duration {target_duration_s:g}s"
+                    if target_duration_s is not None
+                    else ""
+                )
             )
             raise SystemExit(
                 f"{dataset_key} produced {produced} eligible clip(s)"
