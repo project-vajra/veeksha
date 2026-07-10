@@ -164,6 +164,7 @@ class ASRRequestMetrics:
     dataset: str
     source_id: Optional[str]
     sample_id: Optional[str]
+    time_to_first_visible_text: Optional[float]
     time_to_first_partial: Optional[float]
     time_to_final_transcript: Optional[float]
     interactivity: Optional[float]
@@ -175,6 +176,11 @@ class ASRRequestMetrics:
             "source_id": self.source_id,
             "sample_id": self.sample_id,
             "audio_file": self.audio_file,
+            "time_to_first_visible_text": (
+                round(self.time_to_first_visible_text, 3)
+                if self.time_to_first_visible_text is not None
+                else None
+            ),
             "time_to_first_partial": (
                 round(self.time_to_first_partial, 3)
                 if self.time_to_first_partial is not None
@@ -231,6 +237,9 @@ def score_asr_request(
     transcript_snapshots = _list_of_dicts_or_empty(
         channel_metrics.get("transcript_snapshots")
     )
+    time_to_first_visible_text = _optional_float(
+        channel_metrics.get("time_to_first_visible_text")
+    )
     time_to_first_partial = _optional_float(
         channel_metrics.get("time_to_first_partial")
     )
@@ -273,6 +282,7 @@ def score_asr_request(
         dataset=dataset,
         source_id=source_id,
         sample_id=sample_id,
+        time_to_first_visible_text=time_to_first_visible_text,
         time_to_first_partial=time_to_first_partial,
         time_to_final_transcript=time_to_final_transcript,
         interactivity=interactivity,

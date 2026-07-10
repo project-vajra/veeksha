@@ -73,8 +73,10 @@ Request-level metrics are written to `request_level_metrics.jsonl`.
 
 Common audio metrics:
 
-- `ttfc`: time from client request start to the first transcript delta/final
-  observed by the client, in milliseconds.
+- `ttfc`: time from the first audio byte sent to the first transcript delta
+  whose own payload carries text after control-token cleaning (or to the final
+  transcript when no such delta arrives), in milliseconds. Empty
+  progress/keepalive deltas do not count.
 - `end_to_end_latency`: time from client request start to request completion, in
   milliseconds.
 - `generated_audio_duration`: audio duration represented by the request, in
@@ -87,6 +89,12 @@ Common audio metrics:
 
 ASR-specific metrics:
 
+- `time_to_first_visible_text`: time from the first audio byte sent to the
+  first moment the assembled (concatenated then cleaned) transcript is
+  non-empty — when a user watching the live transcript would first see text —
+  in milliseconds. Usually equal to `ttfc`; the two differ only when cleaning a
+  single delta disagrees with cleaning the assembled transcript (e.g. a control
+  token split across deltas).
 - `time_to_first_partial`: time from the client sending EOF/commit for the audio
   stream to the first non-empty partial transcript received after that point, in
   milliseconds. This is only present when the provider emits such a partial.
@@ -136,8 +144,8 @@ pinned CDN URL at runtime, so the viewer needs network access when opened.
 ## Partials and Finals
 
 Streaming providers may emit many transcript deltas before the audio stream is
-committed. Veeksha concatenates those deltas to track `ttfc` and the eventual
-transcript, but `partial_transcript` is specifically the first non-empty
+committed. Veeksha concatenates those deltas to track
+`time_to_first_visible_text` and the eventual transcript, but `partial_transcript` is specifically the first non-empty
 transcript observed after EOF/commit. `final_transcript` is the provider's final
 message when available, otherwise the concatenated deltas are used as a fallback.
 
@@ -152,6 +160,7 @@ General audio aggregates are percentile summaries over request-level values:
 - `generated_audio_duration (Mean/P50/P90/P99)`
 - `rtf (Mean/P50/P90/P99)`
 - `chunk_count (Mean/P50/P90/P99)`
+- `time_to_first_visible_text (Mean/P50/P90/P99)`, for STT runs when available
 - `time_to_first_partial (Mean/P50/P90/P99)`, for STT runs when available
 - `time_to_final_transcript (Mean/P50/P90/P99)`, for STT runs when available
 - `interactivity (Mean/P50/P90/P99)`, for STT runs with word-timestamped
@@ -186,6 +195,15 @@ Each manifest row represents one audio request. Key fields:
 - `reference_word_timestamps`: optional list of reference word timings relative
   to the request audio start, e.g.
   `{"word": "hello", "start_ms": 120.0, "end_ms": 340.0}`.
+
+When the audio trace flavor sets `target_duration_s`, each row is trimmed at
+generation time: only the first `target_duration_s` seconds of audio are
+streamed (the STT client slices the decoded PCM using the
+`input_audio_start_ms` / `input_audio_end_ms` request metadata written by the
+generator), and `expected_transcript` / `reference_word_timestamps` are trimmed
+to the words that end within that prefix. Rows must provide
+`reference_word_timestamps`, and every clip must be at least
+`target_duration_s` long.
 
 ## References
 

@@ -94,6 +94,9 @@ class AudioPerformanceEvaluator:
             "session_duration": CDFSketch("session_duration", unit="ms"),
         }
         self.asr_latency_summaries: Dict[str, CDFSketch] = {
+            "time_to_first_visible_text": CDFSketch(
+                "time_to_first_visible_text", unit="ms"
+            ),
             "time_to_first_partial": CDFSketch("time_to_first_partial", unit="ms"),
             "time_to_final_transcript": CDFSketch(
                 "time_to_final_transcript", unit="ms"
@@ -276,6 +279,10 @@ class AudioPerformanceEvaluator:
             self.summaries["chunk_count"].put(chunk_count)
             self.summaries["input_tokens"].put(input_tokens)
             if asr_metrics is not None:
+                if asr_metrics.time_to_first_visible_text is not None:
+                    self.asr_latency_summaries["time_to_first_visible_text"].put(
+                        asr_metrics.time_to_first_visible_text
+                    )
                 if asr_metrics.time_to_first_partial is not None:
                     self.asr_latency_summaries["time_to_first_partial"].put(
                         asr_metrics.time_to_first_partial
