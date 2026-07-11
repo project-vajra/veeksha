@@ -196,7 +196,7 @@ class TTSClientConfig(BaseClientConfig):
 
 @frozen_dataclass
 class TextPacingConfig:
-    """LLM decode-rate emulation for streaming text into a realtime TTS server."""
+    """LLM decode-rate emulation for paced Realtime text conversation items."""
 
     tokens_per_second: float = field(
         20.0, help="Emulated upstream LLM decode rate (whitespace tokens/sec)."
@@ -230,16 +230,16 @@ class TextPacingConfig:
 
 @frozen_dataclass
 class RealtimeTTSClientConfig(BaseClientConfig):
-    """Websocket OpenAI-Realtime-style input-streaming TTS client.
+    """WebSocket TTS client implementing the OpenAI Realtime event contract.
 
     `client.type: realtime_tts` opens a websocket to a realtime TTS server,
-    streams text deltas at an emulated LLM decode rate, and measures streaming
-    interactivity metrics from the audio chunks it receives back.
+    sends text conversation items at an emulated LLM decode rate, and measures
+    streaming interactivity metrics from the audio chunks it receives back.
     """
 
     voice_id: str = field(
         "",
-        help="Optional voice identifier for the fixed Realtime protocol.",
+        help="Optional Realtime output voice identifier.",
     )
     sample_rate: int = field(DEFAULT_AUDIO_SAMPLE_RATE, help="Audio sample rate in Hz.")
     raw_pcm: bool = field(True, help="The Realtime protocol streams raw PCM16.")

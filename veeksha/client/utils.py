@@ -1,9 +1,9 @@
-"""Shared client-side helpers for realtime (input-streaming) TTS.
+"""Shared client-side helpers for paced Realtime text-to-speech.
 
 Text segmentation (emulating an upstream LLM's per-token output) and delta
 pacing (emulating its decode cadence) are transport-agnostic: they turn a prompt
-string into a paced sequence of ``input_text_buffer.append`` payloads. They live
-here rather than in the websocket client so the client stays focused on the
+string into paced ``conversation.item.create`` payloads. They live here rather
+than in the WebSocket client so the client stays focused on the
 transport and metric contract.
 """
 
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class TextSegment:
-    """One paced ``input_text_buffer.append`` payload.
+    """Text for one paced Realtime conversation item.
 
     ``text`` is the exact substring streamed for this delta (whitespace
     preserved); ``n_tokens`` is the number of whitespace tokens it groups.
@@ -74,9 +74,7 @@ def segment_text(text: str, tokens_per_delta: int) -> list[TextSegment]:
     for start in range(0, len(pieces), tokens_per_delta):
         group = pieces[start : start + tokens_per_delta]
         chunk = "".join(group)
-        segments.append(
-            TextSegment(text=chunk, n_chars=len(chunk), n_tokens=len(group))
-        )
+        segments.append(TextSegment(text=chunk, n_chars=len(chunk), n_tokens=len(group)))
     return segments
 
 

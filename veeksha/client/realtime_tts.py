@@ -1,14 +1,13 @@
-"""Websocket realtime (input-streaming) TTS client.
+"""WebSocket client for text-to-speech over the OpenAI Realtime protocol.
 
-Speaks an OpenAI-Realtime-style protocol over a websocket: it streams text
-deltas into a TTS server at an emulated upstream-LLM decode rate, receives audio
-chunks back, and records per-event millisecond timestamps that the audio
-interactivity evaluator consumes.
+It sends paced text conversation items at an emulated upstream-LLM decode rate,
+receives audio chunks, and records the per-event millisecond timestamps consumed
+by the audio interactivity evaluator.
 
 Structurally mirrors the streaming HTTP :class:`~veeksha.client.tts.TTSClient`
 (same metric contract), but the transport is a
-websocket and the request is a paced sequence of ``input_text_buffer.append``
-events rather than a single POST body.
+WebSocket and the request is a paced sequence of ``conversation.item.create``
+events followed by an audio-only ``response.create`` event.
 """
 
 from __future__ import annotations
@@ -55,27 +54,18 @@ class RealtimeEventKind(StrEnum):
 
 
 class RealtimeTTSProtocol:
-    """Fixed OpenAI-Realtime-style protocol used by the benchmark client.
-
-    Incremental ``input_text_buffer.*`` frames are a benchmark extension; they
-    intentionally remain separate from the OpenAI Audio Speech HTTP contract.
-    """
+    """OpenAI Realtime wire contract used by the benchmark client."""
 
     _EVENT_KINDS = {
         "session.updated": RealtimeEventKind.SESSION_UPDATED,
         "response.created": RealtimeEventKind.RESPONSE_CREATED,
         "response.output_audio.delta": RealtimeEventKind.AUDIO_DELTA,
-        "response.audio.delta": RealtimeEventKind.AUDIO_DELTA,
         "response.output_audio.done": RealtimeEventKind.AUDIO_DONE,
-        "response.audio.done": RealtimeEventKind.AUDIO_DONE,
         "response.done": RealtimeEventKind.RESPONSE_DONE,
         "error": RealtimeEventKind.ERROR,
-        "response.error": RealtimeEventKind.ERROR,
     }
 
-    def __init__(
-        self, config: "RealtimeTTSClientConfig", api_key: Optional[str]
-    ) -> None:
+    def __init__(self, config: "RealtimeTTSClientConfig", api_key: Optional[str]) -> None:
         self.config = config
         self._api_key = api_key
 
@@ -100,22 +90,35 @@ class RealtimeTTSProtocol:
         return {"Authorization": f"Bearer {self._api_key}"}
 
     def session_update_json(self) -> str:
-        output: dict = {
-            "format": {"type": "audio/pcm", "rate": self.config.sample_rate}
-        }
+        output: dict = {"format": {"type": "audio/pcm", "rate": self.config.sample_rate}}
         if self.config.voice_id:
             output["voice"] = self.config.voice_id
-        session = {"type": "realtime", "audio": {"output": output}}
+        session = {
+            "type": "realtime",
+            "output_modalities": ["audio"],
+            "audio": {"output": output},
+        }
         return json.dumps({"type": "session.update", "session": session})
 
-    def input_append_json(self, text: str) -> str:
-        return json.dumps({"type": "input_text_buffer.append", "text": text})
-
-    def input_commit_json(self) -> str:
-        return json.dumps({"type": "input_text_buffer.commit"})
+    def conversation_item_create_json(self, text: str) -> str:
+        return json.dumps(
+            {
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": text}],
+                },
+            }
+        )
 
     def response_create_json(self) -> str:
-        return json.dumps({"type": "response.create"})
+        return json.dumps(
+            {
+                "type": "response.create",
+                "response": {"output_modalities": ["audio"]},
+            }
+        )
 
     def classify(self, event_type: str) -> RealtimeEventKind:
         return self._EVENT_KINDS.get(event_type, RealtimeEventKind.OTHER)
@@ -128,9 +131,7 @@ class RealtimeTTSProtocol:
 def _build_realtime_protocol(
     config: "RealtimeTTSClientConfig", api_key: Optional[str] = None
 ) -> RealtimeTTSProtocol:
-    return RealtimeTTSProtocol(
-        config, api_key=config.api_key if api_key is None else api_key
-    )
+    return RealtimeTTSProtocol(config, api_key=config.api_key if api_key is None else api_key)
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +151,13 @@ class RealtimeServerError(Exception):
         super().__init__(str(event))
 
 
+def _validate_completed_response(event: dict) -> None:
+    """Raise when a terminal Realtime response did not complete successfully."""
+    response = event.get("response")
+    if not isinstance(response, dict) or response.get("status") != "completed":
+        raise RealtimeServerError(event)
+
+
 # ---------------------------------------------------------------------------
 # Client
 # ---------------------------------------------------------------------------
@@ -160,11 +168,7 @@ def _round_ms(value: Optional[float]) -> Optional[float]:
 
 
 def _extract_output_sample_rate(session: dict) -> Optional[int]:
-    """Read the server's echoed output sample rate from a ``session`` object.
-
-    Prefers the GA location ``session.audio.output.format.rate``; falls back to a
-    top-level ``sample_rate`` for servers still using the older shape.
-    """
+    """Read ``session.audio.output.format.rate`` from a GA session object."""
     audio = session.get("audio")
     if isinstance(audio, dict):
         output = audio.get("output")
@@ -172,12 +176,11 @@ def _extract_output_sample_rate(session: dict) -> Optional[int]:
             fmt = output.get("format")
             if isinstance(fmt, dict) and isinstance(fmt.get("rate"), int):
                 return fmt["rate"]
-    rate = session.get("sample_rate")
-    return rate if isinstance(rate, int) else None
+    return None
 
 
 class RealtimeTTSClient(BaseLLMClient):
-    """Async websocket client for OpenAI-Realtime-style input-streaming TTS."""
+    """Async WebSocket client for OpenAI Realtime text-to-speech."""
 
     def __init__(self, config: "RealtimeTTSClientConfig", **kwargs) -> None:
         # **kwargs swallows tokenizer_provider (matching TTSClient); realtime
@@ -228,9 +231,7 @@ class RealtimeTTSClient(BaseLLMClient):
         pacing = self._realtime_config.pacing
         segments = segment_text(input_text, pacing.tokens_per_delta)
         pacer = TextDeltaPacer(pacing, seed=pacing.seed + request.id)
-        input_tokens = text_content.target_prompt_tokens or sum(
-            seg.n_tokens for seg in segments
-        )
+        input_tokens = text_content.target_prompt_tokens or sum(seg.n_tokens for seg in segments)
 
         logger.debug(
             "[RealtimeTTS] request_id=%d session_id=%d chars=%d deltas=%d",
@@ -248,7 +249,7 @@ class RealtimeTTSClient(BaseLLMClient):
         ws_connect_latency: Optional[float] = None
         session_ready_offset: Optional[float] = None
         response_created_offset: Optional[float] = None
-        input_commit_offset: Optional[float] = None
+        input_complete_offset: Optional[float] = None
         audio_done_offset: Optional[float] = None
         response_done_offset: Optional[float] = None
         sample_rate = self._realtime_config.sample_rate
@@ -267,7 +268,7 @@ class RealtimeTTSClient(BaseLLMClient):
         t_start = time.monotonic()
 
         async def send_loop(ws) -> None:
-            nonlocal input_commit_offset
+            nonlocal input_complete_offset
             if pacer.initial_delay_s > 0:
                 await asyncio.sleep(pacer.initial_delay_s)
             # Pace by absolute deadlines so ws.send backpressure never
@@ -278,13 +279,10 @@ class RealtimeTTSClient(BaseLLMClient):
                 sleep_s = deadline - time.monotonic()
                 if sleep_s > 0:
                     await asyncio.sleep(sleep_s)
-                await ws.send(self._protocol.input_append_json(seg.text))
+                await ws.send(self._protocol.conversation_item_create_json(seg.text))
                 text_delta_ts.append([(time.monotonic() - t_start) * 1000, seg.n_chars])
-            await ws.send(self._protocol.input_commit_json())
-            input_commit_offset = (time.monotonic() - t_start) * 1000
-            create_frame = self._protocol.response_create_json()
-            if create_frame is not None:
-                await ws.send(create_frame)
+            input_complete_offset = (time.monotonic() - t_start) * 1000
+            await ws.send(self._protocol.response_create_json())
 
         async def recv_loop(ws) -> None:
             nonlocal ttfc, session_ready_offset, response_created_offset
@@ -335,6 +333,7 @@ class RealtimeTTSClient(BaseLLMClient):
                         audio_done_offset = offset_ms
                 elif kind is RealtimeEventKind.RESPONSE_DONE:
                     response_done_offset = offset_ms
+                    _validate_completed_response(event)
                     return  # Terminal: stop on response.done, not audio.done.
                 elif kind is RealtimeEventKind.ERROR:
                     raise RealtimeServerError(event)
@@ -387,17 +386,11 @@ class RealtimeTTSClient(BaseLLMClient):
             AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value: text_delta_ts,
             AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value: audio_chunk_ts,
             AudioMetricKey.WS_CONNECT_LATENCY_MS.value: _round_ms(ws_connect_latency),
-            AudioMetricKey.SESSION_READY_OFFSET_MS.value: _round_ms(
-                session_ready_offset
-            ),
-            AudioMetricKey.RESPONSE_CREATED_OFFSET_MS.value: _round_ms(
-                response_created_offset
-            ),
-            AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value: _round_ms(input_commit_offset),
+            AudioMetricKey.SESSION_READY_OFFSET_MS.value: _round_ms(session_ready_offset),
+            AudioMetricKey.RESPONSE_CREATED_OFFSET_MS.value: _round_ms(response_created_offset),
+            AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value: _round_ms(input_complete_offset),
             AudioMetricKey.AUDIO_DONE_OFFSET_MS.value: _round_ms(audio_done_offset),
-            AudioMetricKey.RESPONSE_DONE_OFFSET_MS.value: _round_ms(
-                response_done_offset
-            ),
+            AudioMetricKey.RESPONSE_DONE_OFFSET_MS.value: _round_ms(response_done_offset),
         }
 
         channels: dict = {}
@@ -465,18 +458,38 @@ def _flatten_exception(exc: BaseException) -> BaseException:
     return leaves[0]
 
 
+def _server_error_message(event: dict) -> str:
+    """Extract the useful message from an error or failed response event."""
+    error = event.get("error")
+    if isinstance(error, dict):
+        message = error.get("message")
+        if isinstance(message, str) and message:
+            return message
+
+    response = event.get("response")
+    if isinstance(response, dict):
+        status_details = response.get("status_details")
+        if isinstance(status_details, dict):
+            error = status_details.get("error")
+            if isinstance(error, dict):
+                message = error.get("message")
+                if isinstance(message, str) and message:
+                    return message
+            reason = status_details.get("reason")
+            if isinstance(reason, str) and reason:
+                return reason
+
+        status = response.get("status")
+        if isinstance(status, str) and status:
+            return f"Realtime response ended with status {status}"
+
+    return json.dumps(event)
+
+
 def _map_error(exc: BaseException) -> tuple[int, str]:
     """Map a flattened exception to an (error_code, error_msg) pair."""
     if isinstance(exc, RealtimeServerError):
-        event = exc.event
-        message: Optional[str] = None
-        if isinstance(event, dict):
-            err = event.get("error")
-            if isinstance(err, dict):
-                message = err.get("message")
-        if not message:
-            message = json.dumps(event)
-        return 500, message
+        return 500, _server_error_message(exc.event)
     if isinstance(exc, InvalidStatus):
         # Handshake rejected: surface the server's HTTP status code.
         return exc.response.status_code, str(exc)
