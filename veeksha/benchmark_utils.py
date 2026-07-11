@@ -1,17 +1,19 @@
 """Utilities used by the benchmark runner."""
 
 import hashlib
+import json
 import os
 import shutil
 import time
 from datetime import datetime
-from typing import Any, Dict, Set, Tuple
+from pathlib import Path
+from typing import Any, Callable, Dict, Set, Tuple
 
 import yaml
 from tqdm import tqdm
-from vidhi import dataclass_to_dict
 
 from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.utils import to_serializable_config_dict
 from veeksha.core.seeding import SeedManager
 from veeksha.evaluator.base import BaseEvaluator
 from veeksha.evaluator.composite import CompositeEvaluator
@@ -40,7 +42,7 @@ def _persist_config_yaml(benchmark_config: BenchmarkConfig) -> str:
         Path to the persisted YAML file.
     """
     os.makedirs(benchmark_config.output_dir, exist_ok=True)
-    config_dict = dataclass_to_dict(benchmark_config)
+    config_dict = to_serializable_config_dict(benchmark_config)
     config_path = os.path.join(benchmark_config.output_dir, "config.yml")
     with open(config_path, "w", encoding="utf-8") as config_file:
         yaml.safe_dump(
@@ -157,6 +159,8 @@ def build_evaluator(
             "output_dir": f"{benchmark_config.output_dir}/metrics",
             "benchmark_start_time": benchmark_start_time,
         }
+        if cfg.get_type() == EvaluationType.PERFORMANCE:
+            kwargs["client_type"] = benchmark_config.client.get_type()
         if cfg.get_type() == EvaluationType.ACCURACY_LMEVAL:
             kwargs["session_generator"] = session_generator
         evaluator_instances.append(EvaluatorRegistry.get(cfg.get_type(), **kwargs))
@@ -217,6 +221,35 @@ def _update_pbar(
         state["last_completed"] = total_done
 
 
+def _progress_writer(max_sessions: int) -> Callable[[int], None]:
+    """Return a callable that publishes benchmark progress as JSON.
+
+    When ``VEEKSHA_PROGRESS_FILE`` is set (the launcher points the benchmark at
+    a file there), the returned callable writes ``{"completed", "total"}`` to it
+    atomically so consumers get structured progress without scraping the console.
+    Returns a no-op when the variable is unset (standalone benchmark runs).
+    """
+    target = os.environ.get("VEEKSHA_PROGRESS_FILE")
+    if not target:
+        return lambda completed: None
+
+    path = Path(target)
+    tmp_path = path.with_name(path.name + ".tmp")
+    total = max_sessions if max_sessions > 0 else None
+
+    def write(completed: int) -> None:
+        try:
+            tmp_path.write_text(
+                json.dumps({"completed": completed, "total": total}),
+                encoding="utf-8",
+            )
+            os.replace(tmp_path, path)
+        except OSError as exc:
+            logger.debug("Failed to write progress file %s: %s", path, exc)
+
+    return write
+
+
 def _monitor_for_completion(
     traffic_scheduler,
     evaluator,
@@ -238,6 +271,10 @@ def _monitor_for_completion(
     timeout_start: float = 0.0
     in_flight_remaining: Set[str] = set()
 
+    write_progress = _progress_writer(max_sessions)
+    write_progress(0)
+    last_written = 0
+
     try:
         while True:
             time.sleep(0.1)
@@ -247,6 +284,9 @@ def _monitor_for_completion(
             elapsed = time.monotonic() - benchmark_start
 
             _update_pbar(pbar, time_based_progress, elapsed, total_done, pbar_state)
+            if total_done != last_written:
+                write_progress(total_done)
+                last_written = total_done
 
             if (
                 not timeout_triggered

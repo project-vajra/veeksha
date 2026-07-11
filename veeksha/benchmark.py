@@ -13,19 +13,15 @@ from veeksha.benchmark_utils import (
 )
 from veeksha.client.registry import ClientRegistry
 from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.endpoint import EndpointConfig
 from veeksha.core.seeding import SeedManager
 from veeksha.core.thread_pool import ThreadPoolManager
-from veeksha.core.tokenizer import (
-    TokenizerProvider,
-    build_hf_tokenizer_handle_from_model,
-)
 from veeksha.core.trace_recorder import TraceRecorder
 from veeksha.generator.session.registry import SessionGeneratorRegistry
 from veeksha.health import HealthChecker
 from veeksha.logger import init_logger
-from veeksha.orchestration import managed_server
+from veeksha.orchestration.benchmark_orchestrator import managed_server
 from veeksha.traffic.registry import TrafficSchedulerRegistry
-from veeksha.types import ChannelModality
 from veeksha.wandb_integration import (
     maybe_finish_wandb_run,
     maybe_init_wandb_run,
@@ -197,11 +193,8 @@ def _run_benchmark(
     seed_manager = SeedManager(benchmark_config.seed)
 
     # get session generator
-    model_name = benchmark_config.client.model
-    tokenizer_provider = TokenizerProvider(
-        {ChannelModality.TEXT: build_hf_tokenizer_handle_from_model(model_name)},
-        model_name=model_name,
-    )
+    tokenizer_provider = benchmark_config.client.build_tokenizer_provider()
+
     append_min_tokens_instruction = False
     if (
         hasattr(benchmark_config.client, "use_min_tokens_prompt_fallback")
@@ -320,6 +313,17 @@ def _run_benchmark(
     return result
 
 
+def _with_endpoint(
+    benchmark_config: BenchmarkConfig, endpoint: EndpointConfig
+) -> BenchmarkConfig:
+    return replace(
+        benchmark_config,
+        client=endpoint.apply_to_client_config(benchmark_config.client),
+        endpoint=endpoint,
+        server=None,
+    )
+
+
 def manage_benchmark_run(
     benchmark_config: BenchmarkConfig,
 ):
@@ -340,35 +344,34 @@ def manage_benchmark_run(
 
     if benchmark_config.server is not None:
         logger.info(f"Launching {benchmark_config.server.engine} server...")
+        updated_benchmark_config = None
+        result = None
+        try:
+            with managed_server(
+                benchmark_config.server, output_dir=benchmark_config.output_dir
+            ) as server_info:
+                endpoint = server_info["endpoint"]
+                logger.info(f"Server ready at {endpoint.api_base}")
 
-        with managed_server(
-            benchmark_config.server, output_dir=benchmark_config.output_dir
-        ) as server_info:
-            logger.info(f"Server ready at {server_info['api_base']}")
+                updated_benchmark_config = _with_endpoint(benchmark_config, endpoint)
 
-            # server dictates client
-            updated_client_config = replace(
-                benchmark_config.client,
-                api_base=server_info["api_base"],
-                api_key=server_info["api_key"],
-                model=benchmark_config.server.model,
-            )
-            updated_benchmark_config = replace(
-                benchmark_config,
-                client=updated_client_config,
-                server=None,
-            )
+                maybe_init_wandb_run(updated_benchmark_config, run_kind="benchmark")
+                try:
+                    result = _run_benchmark(updated_benchmark_config)
+                finally:
+                    logger.info("Server shutting down...")
 
-            maybe_init_wandb_run(updated_benchmark_config, run_kind="benchmark")
-            try:
-                result = _run_benchmark(updated_benchmark_config)
-                maybe_log_benchmark_scalars(updated_benchmark_config.output_dir)
-                maybe_log_benchmark_artifacts(updated_benchmark_config)
-                return result
-            finally:
+            maybe_log_benchmark_scalars(updated_benchmark_config.output_dir)
+            maybe_log_benchmark_artifacts(updated_benchmark_config)
+            return result
+        finally:
+            if updated_benchmark_config is not None:
                 maybe_finish_wandb_run(updated_benchmark_config.output_dir)
-                logger.info("Server shutting down...")
     else:
+        if benchmark_config.endpoint is not None:
+            benchmark_config = _with_endpoint(
+                benchmark_config, benchmark_config.endpoint
+            )
         maybe_init_wandb_run(benchmark_config, run_kind="benchmark")
         try:
             result = _run_benchmark(benchmark_config)

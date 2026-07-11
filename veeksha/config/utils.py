@@ -4,10 +4,13 @@ import json
 import logging
 import os
 import time
+from enum import Enum
 from importlib.resources.abc import Traversable
 from typing import Any, Dict
 
 import yaml
+
+from veeksha.types import ChannelModality
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +70,48 @@ def get_config_hash(config_dict: Dict[str, Any]) -> str:
     return hashlib.blake2s(stable_json.encode()).hexdigest()[:8]
 
 
+def serialize_config_value(value: Any) -> Any:
+    """Return a YAML/JSON-safe config value with enums rendered by schema names."""
+    if isinstance(value, Enum):
+        if isinstance(value.value, str):
+            return value.value
+        return str(value)
+    if isinstance(value, dict):
+        converted: Dict[Any, Any] = {}
+        for key, item in value.items():
+            converted_key = serialize_config_value(key)
+            if converted_key == "target_channels" and isinstance(item, (list, tuple)):
+                converted[converted_key] = [
+                    (
+                        str(ChannelModality(channel))
+                        if isinstance(channel, int) and not isinstance(channel, bool)
+                        else serialize_config_value(channel)
+                    )
+                    for channel in item
+                ]
+            else:
+                converted[converted_key] = serialize_config_value(item)
+        return converted
+    if isinstance(value, list):
+        return [serialize_config_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [serialize_config_value(item) for item in value]
+    return value
+
+
+def to_serializable_config_dict(config: Any) -> Dict[str, Any]:
+    """Convert a vidhi/dataclass config object into schema-friendly plain data."""
+    from vidhi import dataclass_to_dict
+
+    config_as_dict = dataclass_to_dict(config)
+    assert isinstance(
+        config_as_dict, dict
+    ), f"Expected dict, got {type(config_as_dict)}"
+    serialized = serialize_config_value(config_as_dict)
+    assert isinstance(serialized, dict), f"Expected dict, got {type(serialized)}"
+    return serialized
+
+
 def _build_unique_output_dir(root: str, model_name: str, config_hash: str) -> str:
     """Return a unique timestamped output directory path.
 
@@ -85,8 +130,6 @@ def prepare_benchmark_output_dir(benchmark_config) -> None:
       named with model and config-hash plus a high-entropy timestamp.
     - Save both `config.json` and `config.yml` in the final output directory.
     """
-    from vidhi import dataclass_to_dict
-
     current_output_dir = benchmark_config.metrics_config.output_dir
     existing_config_path = os.path.join(current_output_dir, "config.json")
     if os.path.isfile(existing_config_path):
@@ -99,10 +142,7 @@ def prepare_benchmark_output_dir(benchmark_config) -> None:
     base_output_dir = benchmark_config.metrics_config.output_dir
     model_name = benchmark_config.client_config.model.split("/")[-1]
 
-    config_as_dict = dataclass_to_dict(benchmark_config)
-    assert isinstance(
-        config_as_dict, dict
-    ), f"Expected dict, got {type(config_as_dict)}"
+    config_as_dict = to_serializable_config_dict(benchmark_config)
     cfg_hash = get_config_hash(config_as_dict)
     unique_dir = _build_unique_output_dir(base_output_dir, model_name, cfg_hash)
     object.__setattr__(benchmark_config.metrics_config, "output_dir", unique_dir)

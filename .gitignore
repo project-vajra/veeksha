@@ -274,6 +274,11 @@ traces/
 benchmark_output/
 benchmark_outputs/
 microbench_output*
+capacity_search_output/
+
+# local/runtime files
+.env
+configs/
 
 # uv lock file
 uv.lock

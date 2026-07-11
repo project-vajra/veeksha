@@ -7,6 +7,7 @@ from veeksha.config.client import (
     BaseClientConfig,
     OpenAIChatCompletionsClientConfig,
 )
+from veeksha.config.endpoint import EndpointConfig
 from veeksha.config.evaluator import (
     BaseEvaluatorConfig,
     PerformanceEvaluatorConfig,
@@ -60,7 +61,11 @@ class BenchmarkConfig(VeekshaCommand, name="benchmark", default=True):
     )
     server: Optional[BaseServerConfig] = field(
         None,
-        help="Server configuration for managed servers. If set, client.model, client.api_key and client.api_base will be overwritten.",
+        help="Server configuration for managed servers. If set, it produces endpoint.",
+    )
+    endpoint: Optional[EndpointConfig] = field(
+        None,
+        help="Client-facing endpoint contract used to overwrite client.model, client.api_key and client.api_base.",
     )
     wandb: WandbConfig = field(
         default_factory=WandbConfig,
@@ -80,3 +85,5 @@ class BenchmarkConfig(VeekshaCommand, name="benchmark", default=True):
     def __post_init__(self):
         if not self.evaluators:
             raise ValueError("BenchmarkConfig.evaluators must be non-empty.")
+        if self.server is not None and self.endpoint is not None:
+            raise ValueError("BenchmarkConfig cannot set both server and endpoint")

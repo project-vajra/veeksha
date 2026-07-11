@@ -7,13 +7,15 @@ The hierarchy follows the BasePolyConfig pattern used elsewhere in veeksha:
 - BaseEvaluatorConfig (abstract base)
   - PerformanceEvaluatorConfig (latency, throughput)
   - LMEvalAccuracyEvaluatorConfig (task-specific correctness - lm-eval)
+  - AudioQualityEvaluatorConfig (generated audio quality checks)
 """
 
-from typing import Optional, Union
+from typing import List, Optional, Union, cast
 
 from vidhi import BasePolyConfig, field, frozen_dataclass
 
 from veeksha.config.slo import BaseSloConfig, ConstantSloConfig
+from veeksha.config.verification import AudioVerificationConfig
 from veeksha.types import ChannelModality, EvaluationType
 
 
@@ -67,9 +69,6 @@ class DecodeWindowConfig:
             )
 
 
-# ---- Channel-specific performance configs ----
-
-
 @frozen_dataclass
 class BaseChannelPerformanceConfig(BasePolyConfig):
     """Base config for channel-specific performance"""
@@ -105,11 +104,44 @@ class ImageChannelPerformanceConfig(BaseChannelPerformanceConfig):
 
 @frozen_dataclass
 class AudioChannelPerformanceConfig(BaseChannelPerformanceConfig):
-    """Audio channel performance configuration"""
+    """Audio channel performance configuration for TTS benchmarking."""
+
+    interactivity_enabled: bool = field(
+        True,
+        help="Compute streaming interactivity metrics when timestamp lists are present.",
+    )
+    startup_delay_ms_values: List[float] = field(
+        default_factory=lambda: [0.0, 100.0, 300.0],
+        help="Fixed delays after first audio to simulate, in milliseconds.",
+    )
+    startup_buffer_ms_values: List[float] = field(
+        default_factory=lambda: [0.0, 100.0, 300.0],
+        help="Playable-audio targets to simulate before playback, in milliseconds.",
+    )
+    min_reportable_stall_ms: float = field(
+        10.0,
+        help="Playback gaps at or below this duration are treated as transport noise.",
+    )
+    persist_raw_timing: bool = field(
+        False,
+        help="Write metrics/audio_raw_timing.jsonl with raw per-event timestamps.",
+    )
 
     @classmethod
     def get_type(cls) -> ChannelModality:
         return ChannelModality.AUDIO
+
+    def __post_init__(self):
+        for field_name in ("startup_delay_ms_values", "startup_buffer_ms_values"):
+            values = getattr(self, field_name)
+            if any(value < 0 for value in values):
+                raise ValueError(f"{field_name} must contain only values >= 0")
+            normalized = list(dict.fromkeys(float(value) for value in values))
+            if 0.0 not in normalized:
+                normalized.insert(0, 0.0)
+            object.__setattr__(self, field_name, normalized)
+        if self.min_reportable_stall_ms < 0:
+            raise ValueError("min_reportable_stall_ms must be >= 0")
 
 
 @frozen_dataclass
@@ -119,9 +151,6 @@ class VideoChannelPerformanceConfig(BaseChannelPerformanceConfig):
     @classmethod
     def get_type(cls) -> ChannelModality:
         return ChannelModality.VIDEO
-
-
-# ---- Base evaluator config ----
 
 
 def _default_slos() -> list[BaseSloConfig]:
@@ -141,6 +170,16 @@ def _default_slos() -> list[BaseSloConfig]:
     ]
 
 
+def _normalize_channel_modality(channel: object) -> ChannelModality:
+    if isinstance(channel, ChannelModality):
+        return channel
+    if isinstance(channel, str):
+        return cast(ChannelModality, ChannelModality.from_str(channel))
+    if isinstance(channel, int) and not isinstance(channel, bool):
+        return ChannelModality(channel)
+    raise ValueError(f"Invalid target channel modality: {channel!r}")
+
+
 @frozen_dataclass
 class BaseEvaluatorConfig(BasePolyConfig):
     """Base configuration for all evaluators (performance, accuracy)"""
@@ -149,12 +188,10 @@ class BaseEvaluatorConfig(BasePolyConfig):
         default_factory=lambda: ["text"],
         help="List of ChannelModality values to evaluate.",
     )
-
     slos: list[BaseSloConfig] = field(
         default_factory=_default_slos,
         help="List of SLO definitions to evaluate against request-level metrics.",
     )
-
     stream_metrics: bool = field(True, help="Enable real-time metric streaming")
     stream_metrics_interval: float = field(
         5.0, help="Interval for streaming metrics in seconds"
@@ -162,16 +199,11 @@ class BaseEvaluatorConfig(BasePolyConfig):
 
     def __post_init__(self):
         if self.target_channels:
-            converted = []
-            for ch in self.target_channels:
-                if isinstance(ch, str):
-                    converted.append(ChannelModality.from_str(ch))
-                else:
-                    converted.append(ch)
-            object.__setattr__(self, "target_channels", converted)
-
-
-# ---- Performance evaluator config ----
+            object.__setattr__(
+                self,
+                "target_channels",
+                [_normalize_channel_modality(ch) for ch in self.target_channels],
+            )
 
 
 @frozen_dataclass
@@ -197,10 +229,18 @@ class PerformanceEvaluatorConfig(BaseEvaluatorConfig):
     def get_type(cls) -> EvaluationType:
         return EvaluationType.PERFORMANCE
 
+    def __post_init__(self):
+        super().__post_init__()
+        if ChannelModality.AUDIO in self.target_channels and self.audio_channel is None:
+            object.__setattr__(self, "audio_channel", AudioChannelPerformanceConfig())
+        if ChannelModality.VIDEO in self.target_channels and self.video_channel is None:
+            object.__setattr__(self, "video_channel", VideoChannelPerformanceConfig())
+
     def get_channel_config(
-        self, channel: ChannelModality
+        self, channel: ChannelModality | str | int
     ) -> Optional[BaseChannelPerformanceConfig]:
         """Get the performance config for a specific channel."""
+        channel = _normalize_channel_modality(channel)
         if channel == ChannelModality.TEXT:
             return self.text_channel
         elif channel == ChannelModality.IMAGE:
@@ -212,18 +252,18 @@ class PerformanceEvaluatorConfig(BaseEvaluatorConfig):
         return None
 
 
-# ---- Accuracy evaluator config(s) ----
-
-
 @frozen_dataclass
 class LMEvalAccuracyEvaluatorConfig(BaseEvaluatorConfig):
-    """Configuration for lm-eval accuracy evaluation (task-specific correctness).
+    """Configuration for lm-eval accuracy evaluation (task-specific correctness)."""
 
-    IMPORTANT: For lm-eval accuracy evaluation, the content generation must use
-    `LMEvalSessionGenerator`. The generator owns the lm-eval Task/Instance objects,
-    and the evaluator binds responses to instances for evaluation.
-    """
-
+    slos: list[BaseSloConfig] = field(
+        default_factory=list,
+        help="Accuracy evaluators do not use performance SLOs.",
+    )
+    stream_metrics: bool = field(
+        False,
+        help="Accuracy evaluation does not stream incremental metrics.",
+    )
     bootstrap_iters: int = field(
         100000, help="Bootstrap iterations for confidence intervals"
     )
@@ -231,3 +271,33 @@ class LMEvalAccuracyEvaluatorConfig(BaseEvaluatorConfig):
     @classmethod
     def get_type(cls) -> EvaluationType:
         return EvaluationType.ACCURACY_LMEVAL
+
+
+@frozen_dataclass
+class AudioQualityEvaluatorConfig(BaseEvaluatorConfig):
+    """Configuration for generated audio quality evaluation."""
+
+    target_channels: list = field(
+        default_factory=lambda: ["audio"],
+        help="List of modalities whose output quality should be evaluated.",
+    )
+    slos: list[BaseSloConfig] = field(
+        default_factory=list,
+        help="Accuracy evaluators do not use performance SLOs.",
+    )
+    stream_metrics: bool = field(
+        False,
+        help="Accuracy evaluation does not stream incremental metrics.",
+    )
+    verification: AudioVerificationConfig = field(
+        default_factory=AudioVerificationConfig,
+        help="Generated audio verification configuration.",
+    )
+    save_audio_files: bool = field(
+        True,
+        help="Whether to persist audio artifacts for quality evaluation.",
+    )
+
+    @classmethod
+    def get_type(cls) -> EvaluationType:
+        return EvaluationType.AUDIO_QUALITY

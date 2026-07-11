@@ -40,10 +40,12 @@ dependencies = [
     "nvidia-ml-py",
     "rich",
     "vidhi",
+    "websockets>=14",
 ]
 
 [project.scripts]
 veeksha = "veeksha.__main__:main"
+"veeksha-launcher" = "veeksha.launcher:main"
 
 [project.urls]
 Homepage = "https://github.com/project-vajra/veeksha"
@@ -64,6 +66,16 @@ test = [
     {include-group = "dev"},
     "rich",
     "jinja2",
+]
+audio-verification = [
+    "faster-whisper",
+    "jiwer",
+]
+utmos = [
+    "torch",
+    "scipy",
+    "soundfile",
+    "huggingface_hub",
 ]
 
 [tool.setuptools]
