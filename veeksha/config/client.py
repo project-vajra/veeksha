@@ -3,9 +3,11 @@ from typing import Optional
 
 from vidhi import BasePolyConfig, field, frozen_dataclass
 
-from veeksha.core.audio_contract import (
-    DEFAULT_AUDIO_SAMPLE_RATE,
+from veeksha.core.audio_contract import DEFAULT_AUDIO_SAMPLE_RATE
+from veeksha.core.tts_providers import (
+    SUPPORTED_REALTIME_TTS_PROVIDER_NAMES,
     SUPPORTED_TTS_PROVIDER_NAMES,
+    get_realtime_tts_provider,
     get_tts_provider_entry,
 )
 from veeksha.logger import init_logger
@@ -207,15 +209,102 @@ class TTSClientConfig(BaseClientConfig):
 
     def build_tokenizer_provider(self):
         """TTS models use a simple word-split tokenizer."""
-        from veeksha.core.tokenizer import TokenizerHandle, TokenizerProvider
-        from veeksha.types import ChannelModality
+        from veeksha.core.tokenizer import build_word_split_tokenizer_provider
 
-        handle = TokenizerHandle(
-            count_tokens=lambda text: len(text.split()),
-            decode=lambda ids: " ".join(str(i) for i in ids),
-            encode=lambda text: list(range(len(text.split()))),
-        )
-        return TokenizerProvider(
-            {ChannelModality.TEXT: handle},
-            model_name=self.model,
-        )
+        return build_word_split_tokenizer_provider(self.model)
+
+
+@frozen_dataclass
+class TextPacingConfig:
+    """LLM decode-rate emulation for streaming text into a realtime TTS server."""
+
+    tokens_per_second: float = field(
+        20.0, help="Emulated upstream LLM decode rate (whitespace tokens/sec)."
+    )
+    tokens_per_delta: int = field(1, help="Whitespace tokens per input append event.")
+    gap_distribution: str = field(
+        "fixed", help="Inter-delta gap distribution: fixed | poisson."
+    )
+    initial_delay_s: float = field(
+        0.0, help="Delay before the first delta (upstream TTFT emulation)."
+    )
+    seed: int = field(
+        42,
+        help="Base seed for per-request gap jitter (per-request seed = seed + request_id).",
+    )
+
+    def __post_init__(self):
+        if self.tokens_per_second <= 0:
+            raise ValueError("TextPacingConfig.tokens_per_second must be > 0")
+        if self.tokens_per_delta < 1:
+            raise ValueError("TextPacingConfig.tokens_per_delta must be >= 1")
+        if self.gap_distribution not in ("fixed", "poisson"):
+            raise ValueError(
+                "TextPacingConfig.gap_distribution must be one of "
+                "('fixed', 'poisson'), "
+                f"got '{self.gap_distribution}'"
+            )
+        if self.initial_delay_s < 0:
+            raise ValueError("TextPacingConfig.initial_delay_s must be >= 0")
+
+
+@frozen_dataclass
+class RealtimeTTSClientConfig(BaseClientConfig):
+    """Websocket OpenAI-Realtime-style input-streaming TTS client.
+
+    `client.type: realtime_tts` opens a websocket to a realtime TTS server,
+    streams text deltas at an emulated LLM decode rate, and measures streaming
+    interactivity metrics from the audio chunks it receives back.
+    """
+
+    provider: str = field(
+        "",
+        help=(
+            "Realtime TTS provider. Supported: "
+            f"{', '.join(SUPPORTED_REALTIME_TTS_PROVIDER_NAMES)}."
+        ),
+    )
+    voice_id: str = field(
+        "",
+        help="Optional voice identifier passed to providers that support it.",
+    )
+    sample_rate: int = field(DEFAULT_AUDIO_SAMPLE_RATE, help="Audio sample rate in Hz.")
+    raw_pcm: bool = field(True, help="Realtime providers stream raw PCM16.")
+    model: str = field("", help="The realtime TTS model ID.")
+    pacing: TextPacingConfig = field(
+        default_factory=TextPacingConfig,
+        help="Text pacing (LLM decode-rate emulation) configuration.",
+    )
+
+    @classmethod
+    def get_type(cls) -> ClientType:
+        return ClientType.REALTIME_TTS
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        # Skip validation when instantiated with defaults by the flat_dataclass
+        # framework for non-selected polymorphic children.
+        if not self.provider and not self.model:
+            return
+
+        if not self.provider:
+            raise ValueError(
+                "RealtimeTTSClientConfig.provider is required. "
+                f"Supported: {', '.join(SUPPORTED_REALTIME_TTS_PROVIDER_NAMES)}"
+            )
+        if not self.model:
+            raise ValueError("RealtimeTTSClientConfig.model is required.")
+        if self.api_base is None:
+            raise ValueError("RealtimeTTSClientConfig.api_base is required.")
+        if self.sample_rate <= 0:
+            raise ValueError("RealtimeTTSClientConfig.sample_rate must be > 0")
+        # Validates provider against the realtime provider table; raises
+        # ValueError listing supported names on an unknown provider.
+        get_realtime_tts_provider(self.provider)
+
+    def build_tokenizer_provider(self):
+        """Realtime TTS models use a simple word-split tokenizer."""
+        from veeksha.core.tokenizer import build_word_split_tokenizer_provider
+
+        return build_word_split_tokenizer_provider(self.model)

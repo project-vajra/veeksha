@@ -2,25 +2,16 @@
 
 from __future__ import annotations
 
-import base64
-import json
 import threading
 import time
-from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import httpx
 
 from veeksha.client.base import BaseLLMClient
-from veeksha.core.audio_contract import (
-    AudioMetricKey,
-    TTSPayloadFormat,
-    TTSProviderEntry,
-    TTSStreamFormat,
-    build_tts_provider_url,
-    get_tts_provider_entry,
-)
+from veeksha.client.tts_adapters import _build_provider_adapter
+from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.core.request import Request
 from veeksha.core.request_content import TextChannelRequestContent
 from veeksha.core.response import ChannelResponse, RequestResult
@@ -31,93 +22,6 @@ if TYPE_CHECKING:
     from veeksha.config.client import TTSClientConfig
 
 logger = init_logger(__name__)
-
-
-@dataclass(frozen=True)
-class TTSProviderRequest:
-    url: str
-    headers: dict[str, str]
-    payload: dict
-
-
-class TTSProviderAdapter:
-    """Request adapter for a configured streaming TTS provider."""
-
-    def __init__(
-        self, config: TTSClientConfig, provider_entry: TTSProviderEntry
-    ) -> None:
-        self.config = config
-        self.provider_entry = provider_entry
-
-    @property
-    def raw_pcm(self) -> bool:
-        """Whether the provider streams raw PCM bytes."""
-        return self.provider_entry.raw_pcm(self.config.raw_pcm)
-
-    def build_request(self, text: str) -> TTSProviderRequest:
-        """Build a streaming HTTP request for a text input."""
-        if self.provider_entry.payload_format is TTSPayloadFormat.VAJRA_SYNTHESIZE:
-            payload: dict = {"text": text}
-            if self.config.voice_id:
-                payload["speaker"] = self.config.voice_id
-        else:
-            payload = {
-                "input": text,
-                "response_format": self.provider_entry.response_format(
-                    self.config.raw_pcm
-                ),
-                "stream": True,
-            }
-            if self.provider_entry.include_model:
-                payload["model"] = self.config.model
-            if self.config.voice_id:
-                payload["voice"] = self.config.voice_id
-
-        headers = {"Content-Type": "application/json"}
-        if self.config.api_key:
-            headers["Authorization"] = f"Bearer {self.config.api_key}"
-
-        return TTSProviderRequest(
-            url=build_tts_provider_url(str(self.config.api_base), self.provider_entry),
-            headers=headers,
-            payload=payload,
-        )
-
-    async def iter_audio_chunks(
-        self, response: httpx.Response, chunk_size: int
-    ) -> AsyncIterator[bytes]:
-        """Yield decoded audio chunks from a streaming response."""
-        if self.provider_entry.stream_format is TTSStreamFormat.SSE_AUDIO_JSON:
-            async for chunk in self._iter_sse_audio_chunks(response):
-                yield chunk
-            return
-
-        async for chunk in response.aiter_bytes(chunk_size=chunk_size):
-            if chunk:
-                yield chunk
-
-    async def _iter_sse_audio_chunks(
-        self, response: httpx.Response
-    ) -> AsyncIterator[bytes]:
-        async for line in response.aiter_lines():
-            line = line.strip()
-            if not line.startswith("data:"):
-                continue
-            data = line[len("data:") :].strip()
-            if data == "[DONE]":
-                break
-            event = json.loads(data)
-            audio = event.get("audio")
-            if not isinstance(audio, dict):
-                continue
-            encoded = audio.get("data")
-            if not encoded:
-                continue
-            yield base64.b64decode(encoded)
-
-
-def _build_provider_adapter(config: TTSClientConfig) -> TTSProviderAdapter:
-    return TTSProviderAdapter(config, get_tts_provider_entry(config.provider))
 
 
 class TTSClient(BaseLLMClient):

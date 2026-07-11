@@ -9,9 +9,15 @@ SUPPORTED_SLO_METRICS = {
     "tbc",
     "tpot",
     "e2e",
-    "ttfc",
     "generated_audio_duration",
     "rtf",
+    "first_input_to_first_audio_ms",
+    "post_commit_audio_delivery_ms",
+    "required_startup_delay_ms",
+    "zero_delay_stall_count",
+    "zero_delay_total_stall_ms",
+    "zero_delay_longest_stall_ms",
+    "streaming_rtf",
 }
 
 

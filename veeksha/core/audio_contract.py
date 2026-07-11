@@ -1,18 +1,25 @@
-"""Shared audio metric, endpoint, and TTS provider contracts."""
+"""Audio measurement contract: PCM constants and the metric-key vocabulary.
+
+Pure measurement facts shared by the audio (TTS / realtime) clients and the
+audio evaluators. Endpoint and provider routing lives next door in
+:mod:`veeksha.core.tts_providers`.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
 from enum import StrEnum
-from urllib.parse import urljoin
 
+# 16-bit mono PCM at 24 kHz is the shared baseline across TTS dialects.
 DEFAULT_AUDIO_SAMPLE_RATE = 24000
 BYTES_PER_SAMPLE = 2
 WAV_HEADER_BYTES = 44
-OPENAI_V1_PREFIX = "v1"
-AUDIO_SPEECH_PATH = "audio/speech"
-OPENAI_AUDIO_SPEECH_PATH = f"{OPENAI_V1_PREFIX}/{AUDIO_SPEECH_PATH}"
+
+
+def pcm_bytes_to_duration_ms(
+    n_bytes: float, sample_rate: int = DEFAULT_AUDIO_SAMPLE_RATE
+) -> float:
+    """Duration in ms of ``n_bytes`` of 16-bit mono PCM at ``sample_rate``."""
+    return n_bytes / (sample_rate * BYTES_PER_SAMPLE) * 1000.0
 
 
 class AudioMetricKey(StrEnum):
@@ -30,90 +37,34 @@ class AudioMetricKey(StrEnum):
     SESSION_SIZE = "session_size"
     SESSION_DURATION = "session_duration"
 
+    # ----- Realtime input-streaming interactivity keys -----
+    # Time convention for all realtime event-time values below: every *_offset_ms
+    # / timestamp value is a float millisecond offset relative to request start
+    # (the client's WS-connect initiation), measured with time.monotonic().
+    #
+    # Raw-contract keys are emitted by the websocket client:
+    TEXT_DELTA_TIMESTAMPS = "text_delta_timestamps"  # list[[offset_ms, n_chars]]
+    AUDIO_CHUNK_TIMESTAMPS = (
+        "audio_chunk_timestamps"  # list[[offset_ms, n_bytes_decoded_pcm]]
+    )
+    WS_CONNECT_LATENCY_MS = "ws_connect_latency_ms"
+    SESSION_READY_OFFSET_MS = "session_ready_offset_ms"  # nullable
+    RESPONSE_CREATED_OFFSET_MS = "response_created_offset_ms"  # nullable
+    INPUT_COMMIT_OFFSET_MS = "input_commit_offset_ms"
+    AUDIO_DONE_OFFSET_MS = "audio_done_offset_ms"  # nullable
+    RESPONSE_DONE_OFFSET_MS = "response_done_offset_ms"  # nullable
 
-class TTSProviderName(StrEnum):
-    VAJRA = "vajra"
-    VAJRA_HIGGS = "vajra_higgs"
-    VLLM_OMNI = "vllm_omni"
-    SGLANG_OMNI = "sglang_omni"
+    # Stable request-level interactivity keys emitted by the evaluator.
+    FIRST_INPUT_TO_FIRST_AUDIO_MS = "first_input_to_first_audio_ms"
+    REQUEST_START_TO_FIRST_AUDIO_MS = "request_start_to_first_audio_ms"
+    AUDIO_BEFORE_COMMIT_RATIO = "audio_before_commit_ratio"
+    POST_COMMIT_AUDIO_DELIVERY_MS = "post_commit_audio_delivery_ms"
+    REQUIRED_STARTUP_DELAY_MS = "required_startup_delay_ms"
+    ZERO_DELAY_STALL_COUNT = "zero_delay_stall_count"
+    ZERO_DELAY_TOTAL_STALL_MS = "zero_delay_total_stall_ms"
+    ZERO_DELAY_LONGEST_STALL_MS = "zero_delay_longest_stall_ms"
+    ZERO_DELAY_STALL_FREE = "zero_delay_stall_free"
 
-
-class TTSStreamFormat(StrEnum):
-    RAW_BYTES = "raw_bytes"
-    SSE_AUDIO_JSON = "sse_audio_json"
-
-
-class TTSPayloadFormat(StrEnum):
-    OPENAI_SPEECH = "openai_speech"
-    VAJRA_SYNTHESIZE = "vajra_synthesize"
-
-
-@dataclass(frozen=True)
-class TTSProviderEntry:
-    name: TTSProviderName
-    path: str = OPENAI_AUDIO_SPEECH_PATH
-    payload_format: TTSPayloadFormat = TTSPayloadFormat.OPENAI_SPEECH
-    default_api_key: str | None = None
-    include_model: bool = False
-    force_raw_pcm: bool = False
-    stream_format: TTSStreamFormat = TTSStreamFormat.RAW_BYTES
-
-    def raw_pcm(self, configured_raw_pcm: bool) -> bool:
-        return self.force_raw_pcm or configured_raw_pcm
-
-    def response_format(self, configured_raw_pcm: bool) -> str:
-        return "pcm" if self.raw_pcm(configured_raw_pcm) else "wav"
-
-
-TTS_PROVIDER_ENTRIES: Mapping[TTSProviderName, TTSProviderEntry] = {
-    TTSProviderName.VAJRA: TTSProviderEntry(TTSProviderName.VAJRA),
-    TTSProviderName.VAJRA_HIGGS: TTSProviderEntry(
-        TTSProviderName.VAJRA_HIGGS,
-        path="synthesize/stream",
-        payload_format=TTSPayloadFormat.VAJRA_SYNTHESIZE,
-    ),
-    TTSProviderName.VLLM_OMNI: TTSProviderEntry(
-        TTSProviderName.VLLM_OMNI,
-        default_api_key="EMPTY",
-        include_model=True,
-        force_raw_pcm=True,
-    ),
-    TTSProviderName.SGLANG_OMNI: TTSProviderEntry(
-        TTSProviderName.SGLANG_OMNI,
-        include_model=True,
-        force_raw_pcm=True,
-        stream_format=TTSStreamFormat.SSE_AUDIO_JSON,
-    ),
-}
-
-SUPPORTED_TTS_PROVIDER_NAMES = tuple(
-    provider.value for provider in TTS_PROVIDER_ENTRIES
-)
-
-
-def normalize_tts_provider(provider: str) -> TTSProviderName:
-    try:
-        return TTSProviderName(provider)
-    except ValueError as exc:
-        raise ValueError(
-            f"Unsupported TTS provider: {provider}. "
-            f"Supported: {', '.join(SUPPORTED_TTS_PROVIDER_NAMES)}"
-        ) from exc
-
-
-def get_tts_provider_entry(provider: str) -> TTSProviderEntry:
-    return TTS_PROVIDER_ENTRIES[normalize_tts_provider(provider)]
-
-
-def build_tts_provider_url(api_base: str, provider_entry: TTSProviderEntry) -> str:
-    endpoint = provider_entry.path
-    if (
-        endpoint == OPENAI_AUDIO_SPEECH_PATH
-        and api_base.rstrip("/").endswith(f"/{OPENAI_V1_PREFIX}")
-    ):
-        endpoint = AUDIO_SPEECH_PATH
-    return urljoin(api_base.rstrip("/") + "/", endpoint)
-
-
-def build_audio_speech_url(api_base: str) -> str:
-    return build_tts_provider_url(api_base, TTS_PROVIDER_ENTRIES[TTSProviderName.VAJRA])
+    # Diagnostic delivery/finalization metrics.
+    STREAMING_RTF = "streaming_rtf"
+    DONE_AFTER_LAST_AUDIO_MS = "done_after_last_audio_ms"

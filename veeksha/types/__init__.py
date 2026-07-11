@@ -66,6 +66,7 @@ class ClientType(BaseIntEnum):
     OPENAI_COMPLETIONS = 2
     OPENAI_ROUTER = 3
     TTS = 4
+    REALTIME_TTS = 5
 
 
 # ----- Server -----

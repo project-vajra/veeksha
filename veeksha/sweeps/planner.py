@@ -151,6 +151,7 @@ def _resolve_base_config_path(sweep_config: SweepConfig, spec: SweepSpec) -> Pat
         raise SweepConfigError(f"sweep.base_config does not exist: {path}")
     return path
 
+
 def _build_sweep_plan(
     sweep_config: SweepConfig,
     spec: SweepSpec,

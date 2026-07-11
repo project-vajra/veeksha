@@ -10,7 +10,7 @@ The hierarchy follows the BasePolyConfig pattern used elsewhere in veeksha:
   - AudioQualityEvaluatorConfig (generated audio quality checks)
 """
 
-from typing import Optional, Union
+from typing import List, Optional, Union, cast
 
 from vidhi import BasePolyConfig, field, frozen_dataclass
 
@@ -106,9 +106,42 @@ class ImageChannelPerformanceConfig(BaseChannelPerformanceConfig):
 class AudioChannelPerformanceConfig(BaseChannelPerformanceConfig):
     """Audio channel performance configuration for TTS benchmarking."""
 
+    interactivity_enabled: bool = field(
+        True,
+        help="Compute streaming interactivity metrics when timestamp lists are present.",
+    )
+    startup_delay_ms_values: List[float] = field(
+        default_factory=lambda: [0.0, 100.0, 300.0],
+        help="Fixed delays after first audio to simulate, in milliseconds.",
+    )
+    startup_buffer_ms_values: List[float] = field(
+        default_factory=lambda: [0.0, 100.0, 300.0],
+        help="Playable-audio targets to simulate before playback, in milliseconds.",
+    )
+    min_reportable_stall_ms: float = field(
+        10.0,
+        help="Playback gaps at or below this duration are treated as transport noise.",
+    )
+    persist_raw_timing: bool = field(
+        False,
+        help="Write metrics/audio_raw_timing.jsonl with raw per-event timestamps.",
+    )
+
     @classmethod
     def get_type(cls) -> ChannelModality:
         return ChannelModality.AUDIO
+
+    def __post_init__(self):
+        for field_name in ("startup_delay_ms_values", "startup_buffer_ms_values"):
+            values = getattr(self, field_name)
+            if any(value < 0 for value in values):
+                raise ValueError(f"{field_name} must contain only values >= 0")
+            normalized = list(dict.fromkeys(float(value) for value in values))
+            if 0.0 not in normalized:
+                normalized.insert(0, 0.0)
+            object.__setattr__(self, field_name, normalized)
+        if self.min_reportable_stall_ms < 0:
+            raise ValueError("min_reportable_stall_ms must be >= 0")
 
 
 @frozen_dataclass
@@ -141,7 +174,7 @@ def _normalize_channel_modality(channel: object) -> ChannelModality:
     if isinstance(channel, ChannelModality):
         return channel
     if isinstance(channel, str):
-        return ChannelModality.from_str(channel)
+        return cast(ChannelModality, ChannelModality.from_str(channel))
     if isinstance(channel, int) and not isinstance(channel, bool):
         return ChannelModality(channel)
     raise ValueError(f"Invalid target channel modality: {channel!r}")

@@ -9,11 +9,12 @@ from dataclasses import dataclass
 from typing import Any, DefaultDict, Dict, Optional
 
 from veeksha.config.evaluator import PerformanceEvaluatorConfig
+from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.core.seeding import SeedManager
 from veeksha.evaluator.base import BaseEvaluator, EvaluationResult
 from veeksha.logger import init_logger
 from veeksha.slo.runner import evaluate_and_save_slos
-from veeksha.types import ChannelModality
+from veeksha.types import ChannelModality, ClientType
 
 logger = init_logger(__name__)
 
@@ -47,11 +48,15 @@ class PerformanceEvaluator(BaseEvaluator):
         seed_manager: Optional[SeedManager] = None,
         output_dir: Optional[str] = None,
         benchmark_start_time: float = 0.0,
+        client_type: Optional[ClientType] = None,
     ):
         super().__init__(config, seed_manager)
         self.config: PerformanceEvaluatorConfig = config
         self.output_dir = output_dir
         self.benchmark_start_time = benchmark_start_time
+        self.client_type = client_type
+        self._realtime_first_audio_count = 0
+        self._realtime_stream_completed_count = 0
 
         self._channel_evaluators: Dict[ChannelModality, Any] = {}
 
@@ -211,6 +216,7 @@ class PerformanceEvaluator(BaseEvaluator):
         with self.lock:
             self.end_time = completed_at
 
+            self._record_realtime_tts_outcome(response)
             # Update session tracking
             self._update_session_metrics_for_request(
                 session_id=session_id,
@@ -358,6 +364,39 @@ class PerformanceEvaluator(BaseEvaluator):
             if session_id in self.session_stats:
                 self._finalize_session(session_id, termination)
 
+    def _record_realtime_tts_outcome(self, response: Any) -> None:
+        """Count realtime start/completion outcomes, including failed requests."""
+        if self.client_type != ClientType.REALTIME_TTS:
+            return
+        channel_response = getattr(response, "channels", {}).get(ChannelModality.AUDIO)
+        channel_metrics = (
+            channel_response.metrics if channel_response is not None else {}
+        ) or {}
+        audio_timestamps = channel_metrics.get(
+            AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value
+        )
+        if audio_timestamps or channel_metrics.get(AudioMetricKey.CHUNK_COUNT.value, 0):
+            self._realtime_first_audio_count += 1
+        if (
+            channel_metrics.get(AudioMetricKey.RESPONSE_DONE_OFFSET_MS.value)
+            is not None
+        ):
+            self._realtime_stream_completed_count += 1
+
+    def _get_realtime_tts_summary(self) -> Dict[str, float]:
+        if self.client_type != ClientType.REALTIME_TTS:
+            return {}
+        count = self.num_requests
+        return {
+            "realtime_requests_count": float(count),
+            "first_audio_success_rate": (
+                self._realtime_first_audio_count / count if count > 0 else 0.0
+            ),
+            "stream_completion_rate": (
+                self._realtime_stream_completed_count / count if count > 0 else 0.0
+            ),
+        }
+
     def get_aggregated_summary(self) -> Dict[str, float]:
         """Get aggregate summary metrics."""
         return {
@@ -377,6 +416,7 @@ class PerformanceEvaluator(BaseEvaluator):
             "Cancelled Sessions": float(self.num_sessions_cancelled),
             "Incomplete Sessions": float(self.num_sessions_incomplete),
             "Observed Session Dispatch Rate": self._session_dispatch_rate(),
+            **self._get_realtime_tts_summary(),
         }
 
     def _build_summary_stats(self) -> Dict[str, Any]:

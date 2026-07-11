@@ -159,6 +159,8 @@ def build_evaluator(
             "output_dir": f"{benchmark_config.output_dir}/metrics",
             "benchmark_start_time": benchmark_start_time,
         }
+        if cfg.get_type() == EvaluationType.PERFORMANCE:
+            kwargs["client_type"] = benchmark_config.client.get_type()
         if cfg.get_type() == EvaluationType.ACCURACY_LMEVAL:
             kwargs["session_generator"] = session_generator
         evaluator_instances.append(EvaluatorRegistry.get(cfg.get_type(), **kwargs))
