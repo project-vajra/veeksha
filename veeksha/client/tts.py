@@ -5,12 +5,13 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
+from urllib.parse import urljoin
 
 import httpx
 
 from veeksha.client.base import BaseLLMClient
-from veeksha.client.tts_adapters import _build_provider_adapter
 from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.core.request import Request
 from veeksha.core.request_content import TextChannelRequestContent
@@ -24,15 +25,71 @@ if TYPE_CHECKING:
 logger = init_logger(__name__)
 
 
+@dataclass(frozen=True)
+class OpenAISpeechRequest:
+    """Canonical OpenAI Audio Speech HTTP request."""
+
+    url: str
+    headers: dict[str, str]
+    payload: dict[str, str | bool]
+
+
+class TTSProtocolError(Exception):
+    """Raised when a server response violates the selected Speech stream format."""
+
+
+def _build_audio_speech_url(api_base: str) -> str:
+    """Build ``/v1/audio/speech`` from an API base with or without ``/v1``."""
+    normalized_base = api_base.rstrip("/")
+    if not normalized_base.endswith("/v1"):
+        normalized_base = f"{normalized_base}/v1"
+    return urljoin(f"{normalized_base}/", "audio/speech")
+
+
 class TTSClient(BaseLLMClient):
     """Async client for streaming HTTP-based TTS APIs."""
 
     def __init__(self, config: TTSClientConfig, **kwargs) -> None:
         super().__init__(config)
-        self._provider = config.provider
         self._chunk_size = config.chunk_size
-        self._provider_adapter = _build_provider_adapter(config)
+        self._speech_url = _build_audio_speech_url(str(self.api_base))
         self._client_storage = threading.local()
+
+    def _build_request(self, text: str) -> OpenAISpeechRequest:
+        """Build the one wire contract accepted by the HTTP TTS client."""
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return OpenAISpeechRequest(
+            url=self._speech_url,
+            headers=headers,
+            payload={
+                "model": self.config.model,
+                "input": text,
+                "voice": self.config.voice_id,
+                "response_format": "pcm" if self.config.raw_pcm else "wav",
+                "stream": True,
+                "stream_format": "audio",
+            },
+        )
+
+    def _validate_audio_response(self, response: httpx.Response) -> None:
+        content_type = response.headers.get("Content-Type", "")
+        media_type = content_type.partition(";")[0].strip().lower()
+        allowed = {
+            "application/octet-stream",
+            "application/x-wav",
+            "binary/octet-stream",
+        }
+        if (
+            media_type
+            and not media_type.startswith("audio/")
+            and media_type not in allowed
+        ):
+            raise TTSProtocolError(
+                "OpenAI Audio Speech stream_format=audio requires an audio byte "
+                f"response, got Content-Type {content_type!r}"
+            )
 
     def _get_client(self) -> httpx.AsyncClient:
         """Return a thread-local httpx client bound to the caller's event loop."""
@@ -63,11 +120,10 @@ class TTSClient(BaseLLMClient):
                 client_completed_at=time.monotonic(),
             )
         input_text = text_content.input_text
-        provider_request = self._provider_adapter.build_request(input_text)
+        speech_request = self._build_request(input_text)
 
         logger.debug(
-            "[TTS %s] request_id=%d session_id=%d chars=%d text=%.80r",
-            self._provider,
+            "[TTS] request_id=%d session_id=%d chars=%d text=%.80r",
             request.id,
             session_id,
             len(input_text),
@@ -85,19 +141,20 @@ class TTSClient(BaseLLMClient):
         try:
             async with self._get_client().stream(
                 "POST",
-                provider_request.url,
-                headers=provider_request.headers,
-                json=provider_request.payload,
+                speech_request.url,
+                headers=speech_request.headers,
+                json=speech_request.payload,
                 timeout=self.config.request_timeout,
             ) as response:
                 response.raise_for_status()
+                self._validate_audio_response(response)
                 if on_request_dispatched is not None:
                     on_request_dispatched()
 
                 sent_notified = False
-                async for chunk in self._provider_adapter.iter_audio_chunks(
-                    response, self._chunk_size
-                ):
+                async for chunk in response.aiter_bytes(chunk_size=self._chunk_size):
+                    if not chunk:
+                        continue
                     receive_time = time.monotonic()
                     if ttfc is None:
                         ttfc = (receive_time - t_start) * 1000
@@ -111,6 +168,10 @@ class TTSClient(BaseLLMClient):
                 if not sent_notified and on_request_sent is not None:
                     on_request_sent()
 
+        except TTSProtocolError as e:
+            error_code = 502
+            error_msg = str(e)
+            logger.warning("TTS protocol error: (%s) %s", error_code, error_msg)
         except httpx.HTTPStatusError as e:
             error_code = e.response.status_code if e.response else 500
             error_msg = str(e)
@@ -142,7 +203,7 @@ class TTSClient(BaseLLMClient):
                     AudioMetricKey.TTFC.value: round(ttfc or 0.0, 3),
                     AudioMetricKey.END_TO_END_LATENCY.value: round(total_latency_ms, 3),
                     AudioMetricKey.CHUNK_COUNT.value: chunk_count,
-                    AudioMetricKey.RAW_PCM.value: self._provider_adapter.raw_pcm,
+                    AudioMetricKey.RAW_PCM.value: self.config.raw_pcm,
                     AudioMetricKey.SAMPLE_RATE.value: self.config.sample_rate,
                     AudioMetricKey.INPUT_CHARS.value: len(input_text),
                     AudioMetricKey.INPUT_TOKENS.value: text_content.target_prompt_tokens

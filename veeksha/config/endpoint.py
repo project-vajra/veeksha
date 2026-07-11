@@ -9,12 +9,6 @@ from vidhi import field, frozen_dataclass
 
 from veeksha.types import ServerType
 
-_CLIENT_PROVIDER_BY_ENGINE_TYPE = {
-    "vajra": "vajra",
-    "vllm": "vllm_omni",
-    "sglang": "sglang_omni",
-}
-
 
 @frozen_dataclass
 class EndpointConfig:
@@ -27,9 +21,6 @@ class EndpointConfig:
     health_url: Optional[str] = field(None, help="Health endpoint URL.")
     host: str = field("localhost", help="Host used for local port ownership checks.")
     port: int = field(0, help="Host port owned by the endpoint.")
-    client_provider: Optional[str] = field(
-        None, help="Client provider value for provider-specific clients."
-    )
 
     def __post_init__(self) -> None:
         self.engine_type = _normalize_engine_type(self.engine_type)
@@ -44,10 +35,6 @@ class EndpointConfig:
             raise ValueError("endpoint.host must be non-empty")
         if self.port < 0:
             raise ValueError("endpoint.port must be >= 0")
-        if self.client_provider is None:
-            self.client_provider = _CLIENT_PROVIDER_BY_ENGINE_TYPE[self.engine_type]
-        elif not self.client_provider:
-            raise ValueError("endpoint.client_provider must be non-empty")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -59,8 +46,6 @@ class EndpointConfig:
             "api_key": self.api_key,
             "model": self.model,
         }
-        if "provider" in client_fields:
-            overrides["provider"] = self.client_provider
         return {
             key: value
             for key, value in overrides.items()
@@ -75,8 +60,6 @@ class EndpointConfig:
         client_mapping["model"] = self.model
         if self.api_key is not None:
             client_mapping["api_key"] = self.api_key
-        if "provider" in client_mapping and self.client_provider is not None:
-            client_mapping["provider"] = self.client_provider
 
 
 def _normalize_engine_type(engine_type: str | ServerType) -> str:

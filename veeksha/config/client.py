@@ -4,12 +4,6 @@ from typing import Optional
 from vidhi import BasePolyConfig, field, frozen_dataclass
 
 from veeksha.core.audio_contract import DEFAULT_AUDIO_SAMPLE_RATE
-from veeksha.core.tts_providers import (
-    SUPPORTED_REALTIME_TTS_PROVIDER_NAMES,
-    SUPPORTED_TTS_PROVIDER_NAMES,
-    get_realtime_tts_provider,
-    get_tts_provider_entry,
-)
 from veeksha.logger import init_logger
 from veeksha.types import ClientType
 
@@ -151,21 +145,15 @@ class OpenAIRouterClientConfig(OpenAIChatCompletionsClientConfig):
 
 @frozen_dataclass
 class TTSClientConfig(BaseClientConfig):
-    """TTS client configuration for Vajra, vLLM Omni and SGLang Omni streaming APIs.
+    """TTS client configuration for the OpenAI Audio Speech API.
 
-    `client.type: tts` sends text to a TTS API and measures audio generation
-    metrics from the streamed audio response.
+    Every server used with ``client.type: tts`` must implement the canonical
+    ``POST /v1/audio/speech`` request and raw-audio streaming response.
     """
 
-    provider: str = field(
-        "",
-        help=(
-            f"TTS provider name. Supported: {', '.join(SUPPORTED_TTS_PROVIDER_NAMES)}."
-        ),
-    )
     voice_id: str = field(
         "",
-        help="Optional voice identifier passed to providers that support it.",
+        help="Required OpenAI Audio Speech voice identifier.",
     )
     sample_rate: int = field(DEFAULT_AUDIO_SAMPLE_RATE, help="Audio sample rate in Hz.")
     chunk_size: int = field(
@@ -173,8 +161,7 @@ class TTSClientConfig(BaseClientConfig):
     )
     raw_pcm: bool = field(
         False,
-        help="Whether the provider returns raw PCM (True) or WAV (False). "
-        "vllm_omni and sglang_omni always use raw PCM regardless of this value.",
+        help="Request response_format=pcm (True) or response_format=wav (False).",
     )
     model: str = field("", help="The TTS model ID.")
 
@@ -187,25 +174,18 @@ class TTSClientConfig(BaseClientConfig):
 
         # Skip validation when instantiated with defaults by the flat_dataclass
         # framework for non-selected polymorphic children.
-        if not self.provider and not self.model:
+        if not self.model and self.api_base is None and not self.voice_id:
             return
-
-        if not self.provider:
-            raise ValueError(
-                "TTSClientConfig.provider is required. "
-                f"Supported: {', '.join(SUPPORTED_TTS_PROVIDER_NAMES)}"
-            )
         if not self.model:
             raise ValueError("TTSClientConfig.model is required.")
+        if not self.voice_id:
+            raise ValueError("TTSClientConfig.voice_id is required.")
         if self.api_base is None:
             raise ValueError("TTSClientConfig.api_base is required.")
         if self.sample_rate <= 0:
             raise ValueError("TTSClientConfig.sample_rate must be > 0")
         if self.chunk_size <= 0:
             raise ValueError("TTSClientConfig.chunk_size must be > 0")
-        provider_entry = get_tts_provider_entry(self.provider)
-        if provider_entry.default_api_key is not None and self.api_key is None:
-            object.__setattr__(self, "api_key", provider_entry.default_api_key)
 
     def build_tokenizer_provider(self):
         """TTS models use a simple word-split tokenizer."""
@@ -257,19 +237,12 @@ class RealtimeTTSClientConfig(BaseClientConfig):
     interactivity metrics from the audio chunks it receives back.
     """
 
-    provider: str = field(
-        "",
-        help=(
-            "Realtime TTS provider. Supported: "
-            f"{', '.join(SUPPORTED_REALTIME_TTS_PROVIDER_NAMES)}."
-        ),
-    )
     voice_id: str = field(
         "",
-        help="Optional voice identifier passed to providers that support it.",
+        help="Optional voice identifier for the fixed Realtime protocol.",
     )
     sample_rate: int = field(DEFAULT_AUDIO_SAMPLE_RATE, help="Audio sample rate in Hz.")
-    raw_pcm: bool = field(True, help="Realtime providers stream raw PCM16.")
+    raw_pcm: bool = field(True, help="The Realtime protocol streams raw PCM16.")
     model: str = field("", help="The realtime TTS model ID.")
     pacing: TextPacingConfig = field(
         default_factory=TextPacingConfig,
@@ -285,23 +258,14 @@ class RealtimeTTSClientConfig(BaseClientConfig):
 
         # Skip validation when instantiated with defaults by the flat_dataclass
         # framework for non-selected polymorphic children.
-        if not self.provider and not self.model:
+        if not self.model and self.api_base is None:
             return
-
-        if not self.provider:
-            raise ValueError(
-                "RealtimeTTSClientConfig.provider is required. "
-                f"Supported: {', '.join(SUPPORTED_REALTIME_TTS_PROVIDER_NAMES)}"
-            )
         if not self.model:
             raise ValueError("RealtimeTTSClientConfig.model is required.")
         if self.api_base is None:
             raise ValueError("RealtimeTTSClientConfig.api_base is required.")
         if self.sample_rate <= 0:
             raise ValueError("RealtimeTTSClientConfig.sample_rate must be > 0")
-        # Validates provider against the realtime provider table; raises
-        # ValueError listing supported names on an unknown provider.
-        get_realtime_tts_provider(self.provider)
 
     def build_tokenizer_provider(self):
         """Realtime TTS models use a simple word-split tokenizer."""

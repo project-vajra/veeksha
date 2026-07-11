@@ -6,7 +6,7 @@ chunks back, and records per-event millisecond timestamps that the audio
 interactivity evaluator consumes.
 
 Structurally mirrors the streaming HTTP :class:`~veeksha.client.tts.TTSClient`
-(adapter + client split, same metric contract), but the transport is a
+(same metric contract), but the transport is a
 websocket and the request is a paced sequence of ``input_text_buffer.append``
 events rather than a single POST body.
 """
@@ -14,10 +14,13 @@ events rather than a single POST body.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import time
 from collections.abc import Callable
+from enum import StrEnum
 from typing import TYPE_CHECKING, Optional
+from urllib.parse import quote, urljoin
 
 from websockets.asyncio.client import connect
 from websockets.exceptions import (
@@ -27,13 +30,11 @@ from websockets.exceptions import (
 )
 
 from veeksha.client.base import BaseLLMClient
-from veeksha.client.tts_adapters import _build_realtime_adapter
 from veeksha.client.utils import TextDeltaPacer, segment_text
 from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.core.request import Request
 from veeksha.core.request_content import TextChannelRequestContent
 from veeksha.core.response import ChannelResponse, RequestResult
-from veeksha.core.tts_providers import RealtimeEventKind
 from veeksha.logger import init_logger
 from veeksha.types import ChannelModality
 
@@ -41,6 +42,95 @@ if TYPE_CHECKING:
     from veeksha.config.client import RealtimeTTSClientConfig
 
 logger = init_logger(__name__)
+
+
+class RealtimeEventKind(StrEnum):
+    SESSION_UPDATED = "session_updated"
+    RESPONSE_CREATED = "response_created"
+    AUDIO_DELTA = "audio_delta"
+    AUDIO_DONE = "audio_done"
+    RESPONSE_DONE = "response_done"
+    ERROR = "error"
+    OTHER = "other"
+
+
+class RealtimeTTSProtocol:
+    """Fixed OpenAI-Realtime-style protocol used by the benchmark client.
+
+    Incremental ``input_text_buffer.*`` frames are a benchmark extension; they
+    intentionally remain separate from the OpenAI Audio Speech HTTP contract.
+    """
+
+    _EVENT_KINDS = {
+        "session.updated": RealtimeEventKind.SESSION_UPDATED,
+        "response.created": RealtimeEventKind.RESPONSE_CREATED,
+        "response.output_audio.delta": RealtimeEventKind.AUDIO_DELTA,
+        "response.audio.delta": RealtimeEventKind.AUDIO_DELTA,
+        "response.output_audio.done": RealtimeEventKind.AUDIO_DONE,
+        "response.audio.done": RealtimeEventKind.AUDIO_DONE,
+        "response.done": RealtimeEventKind.RESPONSE_DONE,
+        "error": RealtimeEventKind.ERROR,
+        "response.error": RealtimeEventKind.ERROR,
+    }
+
+    def __init__(
+        self, config: "RealtimeTTSClientConfig", api_key: Optional[str]
+    ) -> None:
+        self.config = config
+        self._api_key = api_key
+
+    @property
+    def raw_pcm(self) -> bool:
+        return True
+
+    def build_ws_url(self, api_base: str) -> str:
+        ws_base = api_base
+        if ws_base.startswith("https://"):
+            ws_base = "wss://" + ws_base[len("https://") :]
+        elif ws_base.startswith("http://"):
+            ws_base = "ws://" + ws_base[len("http://") :]
+        normalized_base = ws_base.rstrip("/")
+        path = "realtime" if normalized_base.endswith("/v1") else "v1/realtime"
+        url = urljoin(f"{normalized_base}/", path)
+        return f"{url}?model={quote(self.config.model, safe='')}"
+
+    def headers(self) -> dict[str, str]:
+        if not self._api_key:
+            return {}
+        return {"Authorization": f"Bearer {self._api_key}"}
+
+    def session_update_json(self) -> str:
+        output: dict = {
+            "format": {"type": "audio/pcm", "rate": self.config.sample_rate}
+        }
+        if self.config.voice_id:
+            output["voice"] = self.config.voice_id
+        session = {"type": "realtime", "audio": {"output": output}}
+        return json.dumps({"type": "session.update", "session": session})
+
+    def input_append_json(self, text: str) -> str:
+        return json.dumps({"type": "input_text_buffer.append", "text": text})
+
+    def input_commit_json(self) -> str:
+        return json.dumps({"type": "input_text_buffer.commit"})
+
+    def response_create_json(self) -> str:
+        return json.dumps({"type": "response.create"})
+
+    def classify(self, event_type: str) -> RealtimeEventKind:
+        return self._EVENT_KINDS.get(event_type, RealtimeEventKind.OTHER)
+
+    def extract_audio(self, event: dict) -> bytes:
+        encoded = event.get("delta")
+        return base64.b64decode(encoded) if encoded else b""
+
+
+def _build_realtime_protocol(
+    config: "RealtimeTTSClientConfig", api_key: Optional[str] = None
+) -> RealtimeTTSProtocol:
+    return RealtimeTTSProtocol(
+        config, api_key=config.api_key if api_key is None else api_key
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -94,8 +184,7 @@ class RealtimeTTSClient(BaseLLMClient):
         # TTS token counts come from whitespace segmentation instead.
         super().__init__(config)
         self._realtime_config = config
-        self._provider = config.provider
-        self._adapter = _build_realtime_adapter(config, api_key=self.api_key)
+        self._protocol = _build_realtime_protocol(config, api_key=self.api_key)
 
     def _connect(self):
         """Return the websocket connect context manager.
@@ -107,11 +196,11 @@ class RealtimeTTSClient(BaseLLMClient):
         """
         open_timeout = min(self._realtime_config.request_timeout, 30)
         return connect(
-            self._adapter.build_ws_url(str(self.api_base)),
+            self._protocol.build_ws_url(str(self.api_base)),
             max_size=None,
             compression=None,
             open_timeout=open_timeout,
-            additional_headers=self._adapter.headers(),
+            additional_headers=self._protocol.headers(),
         )
 
     async def send_request(
@@ -144,8 +233,7 @@ class RealtimeTTSClient(BaseLLMClient):
         )
 
         logger.debug(
-            "[RealtimeTTS %s] request_id=%d session_id=%d chars=%d deltas=%d",
-            self._provider,
+            "[RealtimeTTS] request_id=%d session_id=%d chars=%d deltas=%d",
             request.id,
             session_id,
             len(input_text),
@@ -190,11 +278,11 @@ class RealtimeTTSClient(BaseLLMClient):
                 sleep_s = deadline - time.monotonic()
                 if sleep_s > 0:
                     await asyncio.sleep(sleep_s)
-                await ws.send(self._adapter.input_append_json(seg.text))
+                await ws.send(self._protocol.input_append_json(seg.text))
                 text_delta_ts.append([(time.monotonic() - t_start) * 1000, seg.n_chars])
-            await ws.send(self._adapter.input_commit_json())
+            await ws.send(self._protocol.input_commit_json())
             input_commit_offset = (time.monotonic() - t_start) * 1000
-            create_frame = self._adapter.response_create_json()
+            create_frame = self._protocol.response_create_json()
             if create_frame is not None:
                 await ws.send(create_frame)
 
@@ -211,10 +299,10 @@ class RealtimeTTSClient(BaseLLMClient):
                     continue
                 if not isinstance(event, dict):
                     continue
-                kind = self._adapter.classify(event.get("type", ""))
+                kind = self._protocol.classify(event.get("type", ""))
 
                 if kind is RealtimeEventKind.AUDIO_DELTA:
-                    chunk = self._adapter.extract_audio(event)
+                    chunk = self._protocol.extract_audio(event)
                     if chunk:
                         audio_chunks.append(chunk)
                         audio_chunk_ts.append([offset_ms, len(chunk)])
@@ -256,7 +344,7 @@ class RealtimeTTSClient(BaseLLMClient):
             async with asyncio.timeout(self._realtime_config.request_timeout):
                 async with self._connect() as ws:
                     ws_connect_latency = (time.monotonic() - t_start) * 1000
-                    await ws.send(self._adapter.session_update_json())
+                    await ws.send(self._protocol.session_update_json())
                     # Analog of the HTTP-200 ack: the scheduler's dispatch pacing
                     # advances on this callback.
                     if on_request_dispatched is not None:
@@ -291,7 +379,7 @@ class RealtimeTTSClient(BaseLLMClient):
             AudioMetricKey.TTFC.value: round(ttfc or 0.0, 3),
             AudioMetricKey.END_TO_END_LATENCY.value: round(total_latency_ms, 3),
             AudioMetricKey.CHUNK_COUNT.value: len(audio_chunks),
-            AudioMetricKey.RAW_PCM.value: self._adapter.raw_pcm,
+            AudioMetricKey.RAW_PCM.value: self._protocol.raw_pcm,
             AudioMetricKey.SAMPLE_RATE.value: sample_rate,
             AudioMetricKey.INPUT_CHARS.value: len(input_text),
             AudioMetricKey.INPUT_TOKENS.value: input_tokens,

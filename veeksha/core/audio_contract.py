@@ -1,8 +1,7 @@
 """Audio measurement contract: PCM constants and the metric-key vocabulary.
 
 Pure measurement facts shared by the audio (TTS / realtime) clients and the
-audio evaluators. Endpoint and provider routing lives next door in
-:mod:`veeksha.core.tts_providers`.
+audio evaluators. Transport-specific protocol handling lives in the clients.
 """
 
 from __future__ import annotations

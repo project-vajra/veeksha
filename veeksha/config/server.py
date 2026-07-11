@@ -44,9 +44,6 @@ class BaseServerConfig(BasePolyConfig):
     host: str = field("localhost", help="Host address for the server")
     port: int = field(8000, help="Port number for the server")
     api_key: str = field("token-abc123", help="API key for server authentication")
-    client_provider: Optional[str] = field(
-        None, help="Provider value to apply to provider-specific benchmark clients."
-    )
     gpu_ids: Optional[List[int]] = field(
         None, help="List of GPU IDs to use (None means auto-assign)"
     )
@@ -108,7 +105,6 @@ class BaseServerConfig(BasePolyConfig):
             health_url=self.get_health_check_url(),
             host=self.host,
             port=self.port,
-            client_provider=self.client_provider,
         )
 
     def get_gpu_env_var(self) -> Optional[str]:

@@ -184,7 +184,6 @@ def _coerce_server_dict(
         "setup_dir",
         "env_path",
         "max_model_len",
-        "client_provider",
     ):
         if key == "max_model_len":
             _coerce_optional_int(data, key)
