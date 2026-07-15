@@ -60,7 +60,6 @@ def _maybe_pregenerate_sessions(benchmark_config, session_generator) -> Optional
     return pregenerated_sessions
 
 
-
 def _run_main_loop(
     session_generator,
     traffic_scheduler,
@@ -85,7 +84,9 @@ def _run_main_loop(
         target_sessions = getattr(
             traffic_scheduler, "target_concurrent_sessions", None
         ) or getattr(traffic_scheduler, "_target_concurrent", None)
-        num_client_threads = max(3, -(-int(target_sessions) // 8)) if target_sessions else 3
+        num_client_threads = (
+            max(3, -(-int(target_sessions) // 8)) if target_sessions else 3
+        )
     client_queues = [Queue() for _ in range(num_client_threads)]
     output_queue = Queue()
     stop_event = threading.Event()

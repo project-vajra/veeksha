@@ -273,10 +273,11 @@ class AudioTraceFlavorConfig(BaseTraceFlavorConfig):
         default=None,
         metadata={
             "help": (
-                "Optional half-width of a uniform per-session duration "
-                "spread around target_duration_s: each session streams a "
-                "duration sampled from [target - spread, target + spread] "
-                "(median stays at target_duration_s). Requires "
+                "Optional hard half-width of the clipped-Gaussian "
+                "per-session duration spread around target_duration_s: "
+                "durations are drawn from Normal(target, sigma) and clipped "
+                "to [target - spread, target + spread] (median stays at "
+                "target_duration_s). Requires "
                 "target_duration_s; every clip must be at least "
                 "target + spread seconds long."
             )
@@ -309,9 +310,7 @@ class AudioTraceFlavorConfig(BaseTraceFlavorConfig):
             )
         if self.target_duration_spread_s is not None:
             if self.target_duration_s is None:
-                raise ValueError(
-                    "target_duration_spread_s requires target_duration_s"
-                )
+                raise ValueError("target_duration_spread_s requires target_duration_s")
             if not 0 < self.target_duration_spread_s < self.target_duration_s:
                 raise ValueError(
                     "target_duration_spread_s must be in (0, "
@@ -327,6 +326,14 @@ class AudioTraceFlavorConfig(BaseTraceFlavorConfig):
                 raise ValueError(
                     "target_duration_sigma_s must be positive; got "
                     f"{self.target_duration_sigma_s}"
+                )
+            if self.target_duration_sigma_s > self.target_duration_spread_s:
+                raise ValueError(
+                    "target_duration_sigma_s must be <= "
+                    "target_duration_spread_s (acceptance of the clipped "
+                    "draw collapses past the clip bounds); got sigma="
+                    f"{self.target_duration_sigma_s} spread="
+                    f"{self.target_duration_spread_s}"
                 )
 
 
