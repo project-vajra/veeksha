@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, DefaultDict, Dict, List, Optional
@@ -94,9 +95,14 @@ class ASRDatasetAggregates:
 
 
 class ASRMetricAccumulator:
-    """Builds ASR WER summaries across request-scoped ASR samples."""
+    """Builds ASR WER summaries across request-scoped ASR samples.
+
+    Thread-safe: scoring runs concurrently on completion worker threads
+    outside the evaluator locks, so sample collection guards its own state.
+    """
 
     def __init__(self) -> None:
+        self._lock = threading.Lock()
         self._samples: List[ASRScoredSample] = []
 
     def add_clip_sample(
@@ -107,17 +113,18 @@ class ASRMetricAccumulator:
         final_stats: WERStats,
         partial_stats: Optional[WERStats],
     ) -> None:
-        self._samples.append(
-            ASRScoredSample(
-                dataset=dataset,
-                duration_s=duration_s,
-                final_stats=final_stats,
-                partial_stats=partial_stats,
-            )
+        sample = ASRScoredSample(
+            dataset=dataset,
+            duration_s=duration_s,
+            final_stats=final_stats,
+            partial_stats=partial_stats,
         )
+        with self._lock:
+            self._samples.append(sample)
 
     def get_summary(self) -> Dict[str, Optional[float]]:
-        samples = self._samples
+        with self._lock:
+            samples = list(self._samples)
         if not samples:
             return {}
 

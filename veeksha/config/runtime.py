@@ -25,8 +25,16 @@ class RuntimeConfig:
         metadata={"help": "Number of threads for dispatching requests to workers."},
     )
     num_completion_threads: int = field(
-        default=2,
-        metadata={"help": "Number of threads for processing completed requests."},
+        default=8,
+        metadata={
+            "help": (
+                "Number of threads for processing completed requests. "
+                "Completion workers also run per-request ASR scoring "
+                "(WER + interactivity alignment) concurrently, so "
+                "under-provisioning stretches the post-run drain when many "
+                "sessions finish together."
+            )
+        },
     )
     num_client_threads: Optional[int] = field(
         default=None,

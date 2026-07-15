@@ -3,6 +3,7 @@
 import json
 import os
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -105,6 +106,7 @@ class AudioPerformanceEvaluator:
         }
         self._asr_metrics = ASRMetricAccumulator()
         self._stt_request_count = 0
+        self._asr_scoring_seconds = 0.0
 
         # Request dispatch tracking (like text.py _pending_requests)
         self._pending_requests: Dict[int, Dict[str, Any]] = {}
@@ -146,69 +148,81 @@ class AudioPerformanceEvaluator:
         completed_at: float,
         response: Any,
     ) -> None:
-        """Record that an audio request completed."""
+        """Record that an audio request completed.
+
+        The heavy per-request work (ASR transcript scoring) runs outside the
+        evaluator lock so completion workers can score concurrently; the lock
+        only guards shared-state mutation.
+        """
         with self.lock:
             dispatch_info = self._pending_requests.pop(request_id, None)
-            if dispatch_info:
-                dispatched_at = dispatch_info["dispatched_at"]
-            else:
-                dispatched_at = getattr(
-                    response,
-                    "scheduler_dispatched_at",
-                    self._request_time_reference,
-                )
+            request_time_reference = self._request_time_reference
 
-            channel_response = None
-            if hasattr(response, "channels"):
-                channel_response = response.channels.get(ChannelModality.AUDIO)
-
-            if channel_response is None:
-                logger.debug("Request %d has no AUDIO channel response", request_id)
-                return
-
-            cm = channel_response.metrics or {}
-            ttfc = cm.get("ttfc", 0.0)
-            end_to_end_latency = cm.get("end_to_end_latency", 0.0)
-            chunk_count = cm.get("chunk_count", 0)
-            raw_pcm = bool(cm.get("raw_pcm", False))
-            sample_rate = int(cm.get("sample_rate", DEFAULT_AUDIO_SAMPLE_RATE))
-            # STT measures the input clip (reported via pcm_byte_count);
-            # TTS / LLM_AUDIO measure generated output audio bytes.
-            audio_task = cm.get("audio_task")
-            if audio_task == AudioTask.STT:
-                total_bytes = int(cm["pcm_byte_count"])
-            elif audio_task in (AudioTask.TTS, AudioTask.LLM_AUDIO):
-                audio_content = channel_response.content
-                total_bytes = (
-                    len(audio_content) if isinstance(audio_content, bytes) else 0
-                )
-            else:
-                raise ValueError(
-                    f"AUDIO response for request {request_id} has unknown "
-                    f"audio_task={audio_task!r}; expected one of {list(AudioTask)}"
-                )
-            pcm_byte_count = _pcm_byte_count(total_bytes, raw_pcm=raw_pcm)
-            generated_audio_duration = _audio_duration_ms(pcm_byte_count, sample_rate)
-            rtf = (
-                end_to_end_latency / generated_audio_duration
-                if generated_audio_duration > 0
-                else float("inf")
+        if dispatch_info:
+            dispatched_at = dispatch_info["dispatched_at"]
+        else:
+            dispatched_at = getattr(
+                response,
+                "scheduler_dispatched_at",
+                request_time_reference,
             )
-            input_chars = cm.get("input_chars", 0)
-            input_tokens = cm.get("input_tokens", 0)
-            input_text = cm.get("input_text", "")
 
-            session_total_requests = getattr(response, "session_total_requests", None)
+        channel_response = None
+        if hasattr(response, "channels"):
+            channel_response = response.channels.get(ChannelModality.AUDIO)
 
-            asr_metrics = None
+        if channel_response is None:
+            logger.debug("Request %d has no AUDIO channel response", request_id)
+            return
+
+        cm = channel_response.metrics or {}
+        ttfc = cm.get("ttfc", 0.0)
+        end_to_end_latency = cm.get("end_to_end_latency", 0.0)
+        chunk_count = cm.get("chunk_count", 0)
+        raw_pcm = bool(cm.get("raw_pcm", False))
+        sample_rate = int(cm.get("sample_rate", DEFAULT_AUDIO_SAMPLE_RATE))
+        # STT measures the input clip (reported via pcm_byte_count);
+        # TTS / LLM_AUDIO measure generated output audio bytes.
+        audio_task = cm.get("audio_task")
+        if audio_task == AudioTask.STT:
+            total_bytes = int(cm["pcm_byte_count"])
+        elif audio_task in (AudioTask.TTS, AudioTask.LLM_AUDIO):
+            audio_content = channel_response.content
+            total_bytes = len(audio_content) if isinstance(audio_content, bytes) else 0
+        else:
+            raise ValueError(
+                f"AUDIO response for request {request_id} has unknown "
+                f"audio_task={audio_task!r}; expected one of {list(AudioTask)}"
+            )
+        pcm_byte_count = _pcm_byte_count(total_bytes, raw_pcm=raw_pcm)
+        generated_audio_duration = _audio_duration_ms(pcm_byte_count, sample_rate)
+        rtf = (
+            end_to_end_latency / generated_audio_duration
+            if generated_audio_duration > 0
+            else float("inf")
+        )
+        input_chars = cm.get("input_chars", 0)
+        input_tokens = cm.get("input_tokens", 0)
+        input_text = cm.get("input_text", "")
+
+        session_total_requests = getattr(response, "session_total_requests", None)
+
+        asr_metrics = None
+        asr_scoring_seconds = 0.0
+        if audio_task == AudioTask.STT:
+            scoring_started_at = time.perf_counter()
+            asr_metrics = score_asr_request(
+                request_id=request_id,
+                channel_metrics=cm,
+                duration_s=generated_audio_duration / 1000.0,
+                accumulator=self._asr_metrics,
+            )
+            asr_scoring_seconds = time.perf_counter() - scoring_started_at
+
+        with self.lock:
             if audio_task == AudioTask.STT:
                 self._stt_request_count += 1
-                asr_metrics = score_asr_request(
-                    request_id=request_id,
-                    channel_metrics=cm,
-                    duration_s=generated_audio_duration / 1000.0,
-                    accumulator=self._asr_metrics,
-                )
+                self._asr_scoring_seconds += asr_scoring_seconds
 
             metrics = AudioRequestMetrics(
                 request_id=request_id,
@@ -338,6 +352,13 @@ class AudioPerformanceEvaluator:
     def finalize(self) -> EvaluationResult:
         """Finalize evaluation and return results."""
         with self.lock:
+            if self._stt_request_count > 0:
+                logger.info(
+                    "Evaluator phase 'asr_scoring' took %.2fs total across "
+                    "%d STT requests (concurrent, overlapped with the run)",
+                    self._asr_scoring_seconds,
+                    self._stt_request_count,
+                )
             return EvaluationResult(
                 evaluator_type="audio_performance",
                 channel=ChannelModality.AUDIO,
@@ -352,9 +373,18 @@ class AudioPerformanceEvaluator:
     def save(self, output_dir: str) -> None:
         """Save all evaluation artifacts."""
         with self.lock:
-            self._save_request_level_metrics(output_dir)
-            self._save_cdf_csvs(output_dir)
-            self._plot_cdfs(output_dir)
+            for stage_name, stage in (
+                ("audio_request_level_metrics", self._save_request_level_metrics),
+                ("audio_cdf_csvs", self._save_cdf_csvs),
+                ("audio_cdf_plots", self._plot_cdfs),
+            ):
+                stage_started_at = time.perf_counter()
+                stage(output_dir)
+                logger.info(
+                    "Evaluator phase '%s' took %.2fs",
+                    stage_name,
+                    time.perf_counter() - stage_started_at,
+                )
 
     def flush_streaming_outputs(self, output_dir: str) -> None:
         """Flush current metrics for streaming."""

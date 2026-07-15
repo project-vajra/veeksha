@@ -21,10 +21,10 @@ import re
 import unicodedata
 from fractions import Fraction
 from typing import Iterator, List, Match, Optional, Union
-from .english_abbreviations import english_spelling_normalizer
 
 import regex
 
+from .english_abbreviations import english_spelling_normalizer
 
 # non-ASCII letters that are not separated by "NFKD" normalization
 ADDITIONAL_DIACRITICS = {
@@ -47,39 +47,73 @@ ADDITIONAL_DIACRITICS = {
 }
 
 
+class _SymbolReplacementTable(dict):
+    """Lazy per-codepoint replacement table for ``str.translate``.
+
+    Computes the same per-character replacement as the original character
+    loop and memoizes it, so repeated normalizer calls classify each distinct
+    codepoint only once.
+    """
+
+    def __init__(self, keep: str):
+        super().__init__()
+        self._keep = keep
+
+    def __missing__(self, codepoint: int) -> str:
+        char = chr(codepoint)
+        if char in self._keep:
+            replacement = char
+        elif char in ADDITIONAL_DIACRITICS:
+            replacement = ADDITIONAL_DIACRITICS[char]
+        elif unicodedata.category(char) == "Mn":
+            replacement = ""
+        elif unicodedata.category(char)[0] in "MSP":
+            replacement = " "
+        else:
+            replacement = char
+        self[codepoint] = replacement
+        return replacement
+
+
+_symbol_and_diacritic_tables: dict = {}
+
+
+class _SymbolOnlyTable(dict):
+    """Lazy per-codepoint table replacing 'MSP' categories with a space."""
+
+    def __missing__(self, codepoint: int) -> str:
+        char = chr(codepoint)
+        replacement = " " if unicodedata.category(char)[0] in "MSP" else char
+        self[codepoint] = replacement
+        return replacement
+
+
+_symbol_only_table = _SymbolOnlyTable()
+
+
 def remove_symbols_and_diacritics(s: str, keep=""):
     """
     Replace any other markers, symbols, and punctuations with a space, and drop any diacritics (category 'Mn' and some
     manual mappings)
     """
-
-    def replace_character(char):
-        if char in keep:
-            return char
-        elif char in ADDITIONAL_DIACRITICS:
-            return ADDITIONAL_DIACRITICS[char]
-
-        elif unicodedata.category(char) == "Mn":
-            return ""
-
-        elif unicodedata.category(char)[0] in "MSP":
-            return " "
-
-        return char
-
-    return "".join(replace_character(c) for c in unicodedata.normalize("NFKD", s))
+    table = _symbol_and_diacritic_tables.get(keep)
+    if table is None:
+        table = _symbol_and_diacritic_tables[keep] = _SymbolReplacementTable(keep)
+    return unicodedata.normalize("NFKD", s).translate(table)
 
 
 def remove_symbols(s: str):
     """
     Replace any other markers, symbols, punctuations with a space, keeping diacritics
     """
-    return "".join(" " if unicodedata.category(c)[0] in "MSP" else c for c in unicodedata.normalize("NFKC", s))
+    return unicodedata.normalize("NFKC", s).translate(_symbol_only_table)
 
 
 class BasicTextNormalizer:
     def __init__(self, remove_diacritics: bool = False, split_letters: bool = False):
-        self.clean = remove_symbols_and_diacritics if remove_diacritics else remove_symbols
+        self.clean = (
+            remove_symbols_and_diacritics if remove_diacritics else remove_symbols
+        )
         self.split_letters = split_letters
 
     def __call__(self, s: str):
@@ -91,14 +125,18 @@ class BasicTextNormalizer:
         if self.split_letters:
             s = " ".join(regex.findall(r"\X", s, regex.U))
 
-        s = re.sub(r"\s+", " ", s)  # replace any successive whitespace characters with a space
+        s = re.sub(
+            r"\s+", " ", s
+        )  # replace any successive whitespace characters with a space
 
         return s
 
 
 class BasicMultilingualTextNormalizer:
     def __init__(self, remove_diacritics: bool = True):
-        self.clean = remove_symbols_and_diacritics if remove_diacritics else remove_symbols
+        self.clean = (
+            remove_symbols_and_diacritics if remove_diacritics else remove_symbols
+        )
 
     def __call__(self, s: str):
         s = s.lower()
@@ -111,6 +149,24 @@ class BasicMultilingualTextNormalizer:
         s = re.sub(r"\s+", " ", s).strip()
 
         return s
+
+
+_NUMERIC_RE = re.compile(r"^\d+(\.\d+)?$")
+_AND_A_HALF_RE = re.compile(r"\band\s+a\s+half\b")
+_LETTER_DIGIT_RE = re.compile(r"([a-z])([0-9])")
+_DIGIT_LETTER_RE = re.compile(r"([0-9])([a-z])")
+_DIGIT_SUFFIX_SPACE_RE = re.compile(r"([0-9])\s+(st|nd|rd|th|s)\b")
+_CURRENCY_CENTS_RE = re.compile(r"([€£$])([0-9]+) (?:and )?¢([0-9]{1,2})\b")
+_ZERO_CENTS_RE = re.compile(r"[€£$]0.([0-9]{1,2})\b")
+_ONE_READABILITY_RE = re.compile(r"\b1(s?)\b")
+_BRACKET_CONTENT_RE = re.compile(r"[<\[][^>\]]*[>\]]")
+_PAREN_CONTENT_RE = re.compile(r"\(([^)]+?)\)")
+_SPACE_BEFORE_APOSTROPHE_RE = re.compile(r"\s+'")
+_DIGIT_COMMA_RE = re.compile(r"(\d),(\d)")
+_PERIOD_NON_DIGIT_RE = re.compile(r"\.([^0-9]|$)")
+_SYMBOL_NON_DIGIT_RE = re.compile(r"[.$¢€£]([^0-9])")
+_NON_DIGIT_PERCENT_RE = re.compile(r"([^0-9])%")
+_WHITESPACE_RE = re.compile(r"\s+")
 
 
 class EnglishNumberNormalizer:
@@ -138,7 +194,8 @@ class EnglishNumberNormalizer:
         }
         # fmt: on
         self.ones_plural = {
-            "sixes" if name == "six" else name + "s": (value, "s") for name, value in self.ones.items()
+            "sixes" if name == "six" else name + "s": (value, "s")
+            for name, value in self.ones.items()
         }
         self.ones_ordinal = {
             "zeroth": (0, "th"),
@@ -165,8 +222,13 @@ class EnglishNumberNormalizer:
             "eighty": 80,
             "ninety": 90,
         }
-        self.tens_plural = {name.replace("y", "ies"): (value, "s") for name, value in self.tens.items()}
-        self.tens_ordinal = {name.replace("y", "ieth"): (value, "th") for name, value in self.tens.items()}
+        self.tens_plural = {
+            name.replace("y", "ies"): (value, "s") for name, value in self.tens.items()
+        }
+        self.tens_ordinal = {
+            name.replace("y", "ieth"): (value, "th")
+            for name, value in self.tens.items()
+        }
         self.tens_suffixed = {**self.tens_plural, **self.tens_ordinal}
 
         self.multipliers = {
@@ -183,9 +245,16 @@ class EnglishNumberNormalizer:
             "nonillion": 1_000_000_000_000_000_000_000_000_000_000,
             "decillion": 1_000_000_000_000_000_000_000_000_000_000_000,
         }
-        self.multipliers_plural = {name + "s": (value, "s") for name, value in self.multipliers.items()}
-        self.multipliers_ordinal = {name + "th": (value, "th") for name, value in self.multipliers.items()}
-        self.multipliers_suffixed = {**self.multipliers_plural, **self.multipliers_ordinal}
+        self.multipliers_plural = {
+            name + "s": (value, "s") for name, value in self.multipliers.items()
+        }
+        self.multipliers_ordinal = {
+            name + "th": (value, "th") for name, value in self.multipliers.items()
+        }
+        self.multipliers_suffixed = {
+            **self.multipliers_plural,
+            **self.multipliers_ordinal,
+        }
         self.decimals = {*self.ones, *self.tens, *self.zeros}
 
         self.preceding_prefixers = {
@@ -204,7 +273,10 @@ class EnglishNumberNormalizer:
             "cent": "¢",
             "cents": "¢",
         }
-        self.prefixes = set(list(self.preceding_prefixers.values()) + list(self.following_prefixers.values()))
+        self.prefixes = set(
+            list(self.preceding_prefixers.values())
+            + list(self.following_prefixers.values())
+        )
         self.suffixers = {
             "per": {"cent": "%"},
             "percent": "%",
@@ -253,17 +325,36 @@ class EnglishNumberNormalizer:
         if len(words) == 0:
             return
 
+        vocabulary = self.words
+        prefixes = self.prefixes
         for i, current in enumerate(words):
-            prev = words[i - 1] if i != 0 else None
-            next = words[i + 1] if i != len(words) - 1 else None
             if skip:
                 skip = False
                 continue
 
-            next_is_numeric = next is not None and re.match(r"^\d+(\.\d+)?$", next)
-            has_prefix = current[0] in self.prefixes
+            # Fast path: a word with no leading digit/currency sign that is not
+            # part of the number vocabulary passes through unchanged whenever no
+            # number is being accumulated. This mirrors the
+            # `current not in self.words` branch below with `value`/`prefix`
+            # both unset, where `output(current)` returns `current` verbatim.
+            first_char = current[0]
+            if (
+                value is None
+                and prefix is None
+                and current not in vocabulary
+                and not first_char.isdigit()
+                and first_char not in prefixes
+            ):
+                yield current
+                continue
+
+            prev = words[i - 1] if i != 0 else None
+            next = words[i + 1] if i != len(words) - 1 else None
+
+            next_is_numeric = next is not None and _NUMERIC_RE.match(next)
+            has_prefix = first_char in prefixes
             current_without_prefix = current[1:] if has_prefix else current
-            if re.match(r"^\d+(\.\d+)?$", current_without_prefix):
+            if _NUMERIC_RE.match(current_without_prefix):
                 # arabic numbers (potentially with signs and fractions)
                 f = to_fraction(current_without_prefix)
                 if f is None:
@@ -295,7 +386,9 @@ class EnglishNumberNormalizer:
                 if value is None:
                     value = ones
                 elif isinstance(value, str) or prev in self.ones:
-                    if prev in self.tens and ones < 10:  # replace the last zero with the digit
+                    if (
+                        prev in self.tens and ones < 10
+                    ):  # replace the last zero with the digit
                         value = value[:-1] + str(ones)
                     else:
                         value = str(value) + str(ones)
@@ -457,7 +550,7 @@ class EnglishNumberNormalizer:
         # replace "<number> and a half" with "<number> point five"
         results = []
 
-        segments = re.split(r"\band\s+a\s+half\b", s)
+        segments = _AND_A_HALF_RE.split(s)
         for i, segment in enumerate(segments):
             if len(segment.strip()) == 0:
                 continue
@@ -474,11 +567,11 @@ class EnglishNumberNormalizer:
         s = " ".join(results)
 
         # put a space at number/letter boundary
-        s = re.sub(r"([a-z])([0-9])", r"\1 \2", s)
-        s = re.sub(r"([0-9])([a-z])", r"\1 \2", s)
+        s = _LETTER_DIGIT_RE.sub(r"\1 \2", s)
+        s = _DIGIT_LETTER_RE.sub(r"\1 \2", s)
 
         # but remove spaces which could be a suffix
-        s = re.sub(r"([0-9])\s+(st|nd|rd|th|s)\b", r"\1\2", s)
+        s = _DIGIT_SUFFIX_SPACE_RE.sub(r"\1\2", s)
 
         return s
 
@@ -499,11 +592,14 @@ class EnglishNumberNormalizer:
                 return m.string
 
         # apply currency postprocessing; "$2 and ¢7" -> "$2.07"
-        s = re.sub(r"([€£$])([0-9]+) (?:and )?¢([0-9]{1,2})\b", combine_cents, s)
-        s = re.sub(r"[€£$]0.([0-9]{1,2})\b", extract_cents, s)
+        if "¢" in s:
+            s = _CURRENCY_CENTS_RE.sub(combine_cents, s)
+        if "€" in s or "£" in s or "$" in s:
+            s = _ZERO_CENTS_RE.sub(extract_cents, s)
 
         # write "one(s)" instead of "1(s)", just for the readability
-        s = re.sub(r"\b1(s?)\b", r"one\1", s)
+        if "1" in s:
+            s = _ONE_READABILITY_RE.sub(r"one\1", s)
 
         return s
 
@@ -590,28 +686,53 @@ class EnglishTextNormalizer:
         self.standardize_numbers = EnglishNumberNormalizer()
         self.standardize_spellings = EnglishSpellingNormalizer(english_spelling_mapping)
 
+        self._ignore_patterns_re = re.compile(self.ignore_patterns)
+        # Every replacer pattern is a literal decorated only with zero-width
+        # \b anchors, so any match must contain the bare literal as a
+        # substring. A C-speed containment check therefore lets us skip the
+        # regex pass entirely when it could not match (sub with no match is
+        # the identity).
+        self._compiled_replacers = [
+            (pattern.replace("\\b", ""), re.compile(pattern), replacement)
+            for pattern, replacement in self.replacers.items()
+        ]
+
     def __call__(self, s: str):
         s = s.lower()
 
-        s = re.sub(r"[<\[][^>\]]*[>\]]", "", s)  # remove words between brackets
-        s = re.sub(r"\(([^)]+?)\)", "", s)  # remove words between parenthesis
-        s = re.sub(self.ignore_patterns, "", s)
-        s = re.sub(r"\s+'", "'", s)  # standardize when there's a space before an apostrophe
+        if "[" in s or "<" in s:
+            s = _BRACKET_CONTENT_RE.sub("", s)  # remove words between brackets
+        if "(" in s:
+            s = _PAREN_CONTENT_RE.sub("", s)  # remove words between parenthesis
+        s = self._ignore_patterns_re.sub("", s)
+        if "'" in s:
+            s = _SPACE_BEFORE_APOSTROPHE_RE.sub(
+                "'", s
+            )  # standardize when there's a space before an apostrophe
 
-        for pattern, replacement in self.replacers.items():
-            s = re.sub(pattern, replacement, s)
+        for literal, pattern, replacement in self._compiled_replacers:
+            if literal in s:
+                s = pattern.sub(replacement, s)
 
-        s = re.sub(r"(\d),(\d)", r"\1\2", s)  # remove commas between digits
-        s = re.sub(r"\.([^0-9]|$)", r" \1", s)  # remove periods not followed by numbers
-        s = remove_symbols_and_diacritics(s, keep=".%$¢€£")  # keep some symbols for numerics
+        if "," in s:
+            s = _DIGIT_COMMA_RE.sub(r"\1\2", s)  # remove commas between digits
+        if "." in s:
+            s = _PERIOD_NON_DIGIT_RE.sub(
+                r" \1", s
+            )  # remove periods not followed by numbers
+        s = remove_symbols_and_diacritics(
+            s, keep=".%$¢€£"
+        )  # keep some symbols for numerics
 
         s = self.standardize_numbers(s)
         s = self.standardize_spellings(s)
 
         # now remove prefix/suffix symbols that are not preceded/followed by numbers
-        s = re.sub(r"[.$¢€£]([^0-9])", r" \1", s)
-        s = re.sub(r"([^0-9])%", r"\1 ", s)
+        s = _SYMBOL_NON_DIGIT_RE.sub(r" \1", s)
+        s = _NON_DIGIT_PERCENT_RE.sub(r"\1 ", s)
 
-        s = re.sub(r"\s+", " ", s)  # replace any successive whitespace characters with a space
+        s = _WHITESPACE_RE.sub(
+            " ", s
+        )  # replace any successive whitespace characters with a space
 
         return s

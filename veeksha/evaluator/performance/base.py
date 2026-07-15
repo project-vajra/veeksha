@@ -235,14 +235,17 @@ class PerformanceEvaluator(BaseEvaluator):
 
             self.num_completed_requests += 1
 
-            # Delegate to channel evaluators
-            for channel, evaluator in self._channel_evaluators.items():
-                evaluator.record_request_completed(
-                    request_id=request_id,
-                    session_id=session_id,
-                    completed_at=completed_at,
-                    response=response,
-                )
+        # Delegate to channel evaluators outside the aggregate lock: channel
+        # evaluators do their own locking, and the audio evaluator's ASR
+        # scoring is CPU-heavy — holding the lock here would serialize all
+        # completion workers behind a single scoring thread.
+        for channel, evaluator in self._channel_evaluators.items():
+            evaluator.record_request_completed(
+                request_id=request_id,
+                session_id=session_id,
+                completed_at=completed_at,
+                response=response,
+            )
 
         if self.config.stream_metrics and self._stream_thread:
             self._stream_has_updates.set()
@@ -402,7 +405,13 @@ class PerformanceEvaluator(BaseEvaluator):
         channel_metrics = {}
 
         for channel, evaluator in self._channel_evaluators.items():
+            finalize_started_at = time.perf_counter()
             channel_result = evaluator.finalize()
+            logger.info(
+                "Evaluator phase '%s_finalize' took %.2fs",
+                channel,
+                time.perf_counter() - finalize_started_at,
+            )
             channel_metrics[str(channel)] = channel_result.metrics
             combined_metrics.update(channel_result.metrics)
 
@@ -418,17 +427,33 @@ class PerformanceEvaluator(BaseEvaluator):
         os.makedirs(output_dir, exist_ok=True)
 
         # Save aggregate summary
+        summary_started_at = time.perf_counter()
         summary = self._build_summary_stats()
         summary_path = os.path.join(output_dir, "summary_stats.json")
         with open(summary_path, "w") as f:
             json.dump(summary, f, indent=2)
+        logger.info(
+            "Evaluator phase 'summary_stats' took %.2fs",
+            time.perf_counter() - summary_started_at,
+        )
 
         # Delegate to channel evaluators
         for channel, evaluator in self._channel_evaluators.items():
+            save_started_at = time.perf_counter()
             evaluator.save(output_dir)
+            logger.info(
+                "Evaluator phase '%s_save' took %.2fs",
+                channel,
+                time.perf_counter() - save_started_at,
+            )
 
         # request-level metrics are persisted now
+        slo_started_at = time.perf_counter()
         evaluate_and_save_slos(slo_configs=self.config.slos, metrics_dir=output_dir)
+        logger.info(
+            "Evaluator phase 'slo_evaluation' took %.2fs",
+            time.perf_counter() - slo_started_at,
+        )
 
     def get_streaming_metrics(self) -> Optional[Dict[str, Any]]:
         """Return current metrics for streaming updates."""

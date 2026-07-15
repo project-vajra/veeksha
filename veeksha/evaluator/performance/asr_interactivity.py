@@ -61,22 +61,56 @@ def compute_interactivity_stats(
     reference_tokens = [word.word for word in reference_words]
     first_seen_ms: list[Optional[float]] = [None] * len(reference_tokens)
 
+    # Intern tokens as small ints: SequenceMatcher only relies on element
+    # equality/hashing, so a bijective token->id mapping shared between the
+    # reference and every hypothesis yields identical matching blocks while
+    # hashing and comparing much faster than strings.
+    token_ids: dict[str, int] = {}
+    reference_token_ids = [
+        token_ids.setdefault(token, len(token_ids)) for token in reference_tokens
+    ]
+
+    matcher = difflib.SequenceMatcher(autojunk=False)
+    matcher.set_seq1(reference_token_ids)
+
+    previous_transcript: Optional[str] = None
+    previous_hypothesis_ids: Optional[list[int]] = None
+    previous_blocks: Optional[list[difflib.Match]] = None
+
     for snapshot in sorted(snapshots, key=lambda item: item.elapsed_ms):
-        hypothesis_tokens = _normalize_words(snapshot.transcript)
-        matcher = difflib.SequenceMatcher(
-            a=reference_tokens,
-            b=hypothesis_tokens,
-            autojunk=False,
-        )
-        for tag, ref_start, ref_end, _hyp_start, _hyp_end in matcher.get_opcodes():
-            if tag != "equal":
-                continue
-            for ref_index in range(ref_start, ref_end):
+        # Streaming partials often repeat the previous transcript (or reduce
+        # to the same normalized token sequence); the matching blocks depend
+        # only on the token sequences, so reuse them.
+        if snapshot.transcript == previous_transcript:
+            hypothesis_ids = previous_hypothesis_ids
+        else:
+            hypothesis_ids = [
+                token_ids.setdefault(token, len(token_ids))
+                for token in _normalize_words(snapshot.transcript)
+            ]
+            previous_transcript = snapshot.transcript
+        if not hypothesis_ids:
+            previous_hypothesis_ids = hypothesis_ids
+            previous_blocks = []
+            continue
+        if hypothesis_ids == previous_hypothesis_ids:
+            blocks = previous_blocks
+        else:
+            matcher.set_seq2(hypothesis_ids)
+            # Equal-opcode ranges are exactly the matching blocks (the final
+            # sentinel block has size 0 and marks nothing).
+            blocks = matcher.get_matching_blocks()
+            previous_hypothesis_ids = hypothesis_ids
+            previous_blocks = blocks
+
+        elapsed_ms = snapshot.elapsed_ms
+        for ref_start, _hyp_start, block_size in blocks:
+            for ref_index in range(ref_start, ref_start + block_size):
                 if (
                     first_seen_ms[ref_index] is None
-                    and snapshot.elapsed_ms >= reference_words[ref_index].start_ms
+                    and elapsed_ms >= reference_words[ref_index].start_ms
                 ):
-                    first_seen_ms[ref_index] = snapshot.elapsed_ms
+                    first_seen_ms[ref_index] = elapsed_ms
 
     latencies = [
         max(0.0, seen_ms - word.end_ms)

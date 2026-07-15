@@ -305,12 +305,23 @@ def _run_benchmark(
 
     logger.info("Finalizing evaluator...")
     # finalize and save results
+    finalize_started_at = time.monotonic()
     result = evaluator.finalize()
+    logger.info(
+        "Benchmark phase 'evaluator_finalize' took %.2fs",
+        time.monotonic() - finalize_started_at,
+    )
 
+    save_started_at = time.monotonic()
     evaluator.save(f"{benchmark_config.output_dir}/metrics")
+    logger.info(
+        "Benchmark phase 'evaluator_save' took %.2fs",
+        time.monotonic() - save_started_at,
+    )
 
     # health checks
     logger.info("Running health checks...")
+    health_started_at = time.monotonic()
     health_checker = HealthChecker(
         trace_file=f"{benchmark_config.output_dir}/traces/dispatch_trace.jsonl",
         metrics_file=f"{benchmark_config.output_dir}/metrics/request_level_metrics.jsonl",
@@ -318,6 +329,10 @@ def _run_benchmark(
     )
     health_checker.run_and_save(
         f"{benchmark_config.output_dir}/health_check_results.txt"
+    )
+    logger.info(
+        "Benchmark phase 'health_checks' took %.2fs",
+        time.monotonic() - health_started_at,
     )
 
     return result
