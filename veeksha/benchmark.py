@@ -76,7 +76,17 @@ def _run_main_loop(
     if benchmark_start_time is None:
         benchmark_start_time = time.monotonic()
 
-    client_queues = [Queue() for _ in range(runtime_config.num_client_threads)]
+    num_client_threads = runtime_config.num_client_threads
+    if num_client_threads is None:
+        # Provision client workers for the offered load (the sweep planner
+        # already does this; direct configs get the same protection): an
+        # under-provisioned pool serializes per-session sends and shows up
+        # as phantom server-side latency at high concurrency.
+        target_sessions = getattr(
+            traffic_scheduler, "target_concurrent_sessions", None
+        ) or getattr(traffic_scheduler, "_target_concurrent", None)
+        num_client_threads = max(3, -(-int(target_sessions) // 8)) if target_sessions else 3
+    client_queues = [Queue() for _ in range(num_client_threads)]
     output_queue = Queue()
     stop_event = threading.Event()
     generator_lock = threading.Lock()

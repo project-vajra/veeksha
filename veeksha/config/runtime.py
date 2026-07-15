@@ -1,3 +1,4 @@
+from typing import Optional
 from dataclasses import field
 
 from veeksha.config.core.frozen_dataclass import frozen_dataclass
@@ -27,10 +28,16 @@ class RuntimeConfig:
         default=2,
         metadata={"help": "Number of threads for processing completed requests."},
     )
-    num_client_threads: int = field(
-        default=3,
+    num_client_threads: Optional[int] = field(
+        default=None,
         metadata={
-            "help": "Number of async worker threads for making concurrent requests."
+            "help": (
+                "Number of async worker threads for making concurrent "
+                "requests. None (default) provisions for the offered load: "
+                "one thread per 8 target-concurrent sessions, floor 3 — "
+                "under-provisioned client threads stretch realtime send "
+                "cadence and invalidate high-concurrency latency metrics."
+            )
         },
     )
     pregenerate_sessions: bool = field(
