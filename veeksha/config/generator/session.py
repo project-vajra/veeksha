@@ -269,6 +269,34 @@ class AudioTraceFlavorConfig(BaseTraceFlavorConfig):
         },
     )
 
+    target_duration_spread_s: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Optional half-width of a uniform per-session duration "
+                "spread around target_duration_s: each session streams a "
+                "duration sampled from [target - spread, target + spread] "
+                "(median stays at target_duration_s). Requires "
+                "target_duration_s; every clip must be at least "
+                "target + spread seconds long."
+            )
+        },
+    )
+
+    target_duration_sigma_s: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Standard deviation of the clipped-Gaussian per-session "
+                "duration draw around target_duration_s. Defaults to "
+                "target_duration_spread_s / 2 (clip bounds at 2 sigma). The "
+                "distribution is Normal(target, sigma) re-drawn until it "
+                "falls inside [target - spread, target + spread]; symmetry "
+                "keeps the median at target_duration_s."
+            )
+        },
+    )
+
     @classmethod
     def get_type(cls):
         return TraceFlavorType.AUDIO
@@ -279,6 +307,27 @@ class AudioTraceFlavorConfig(BaseTraceFlavorConfig):
                 "target_duration_s must be positive when set; "
                 f"got {self.target_duration_s}"
             )
+        if self.target_duration_spread_s is not None:
+            if self.target_duration_s is None:
+                raise ValueError(
+                    "target_duration_spread_s requires target_duration_s"
+                )
+            if not 0 < self.target_duration_spread_s < self.target_duration_s:
+                raise ValueError(
+                    "target_duration_spread_s must be in (0, "
+                    f"target_duration_s); got {self.target_duration_spread_s} "
+                    f"with target_duration_s={self.target_duration_s}"
+                )
+        if self.target_duration_sigma_s is not None:
+            if self.target_duration_spread_s is None:
+                raise ValueError(
+                    "target_duration_sigma_s requires target_duration_spread_s"
+                )
+            if self.target_duration_sigma_s <= 0:
+                raise ValueError(
+                    "target_duration_sigma_s must be positive; got "
+                    f"{self.target_duration_sigma_s}"
+                )
 
 
 @frozen_dataclass

@@ -99,6 +99,7 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
         self._current_session_id = 0
         self._current_request_id = 0
         self._rng = seed_manager.random("trace_shuffling")
+        self._duration_rng = seed_manager.random("audio_target_duration")
 
     @property
     def required_columns(self) -> List[str]:
@@ -119,7 +120,7 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
         metadata = self._row_metadata(row)
         if self.flavor_config.target_duration_s is not None:
             metadata = self._apply_target_duration(
-                metadata, self.flavor_config.target_duration_s
+                metadata, self._sample_target_duration_s()
             )
         metadata["audio_file"] = audio_file
 
@@ -155,6 +156,31 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
             metadata[column] = value
         metadata["expected_transcript"] = str(metadata["expected_transcript"])
         return metadata
+
+    def _sample_target_duration_s(self) -> float:
+        """Per-session streamed duration: clipped Gaussian around the median.
+
+        Deterministic under the run seed. Normal(M, sigma) re-drawn until
+        inside [M - S, M + S]; sigma defaults to S/2 (bounds at 2 sigma,
+        ~4.6% of draws re-sampled). Symmetry keeps the median at M.
+        """
+        target_duration_s = self.flavor_config.target_duration_s
+        assert target_duration_s is not None
+        spread_s = self.flavor_config.target_duration_spread_s
+        if spread_s is None:
+            return target_duration_s
+        sigma_s = self.flavor_config.target_duration_sigma_s
+        if sigma_s is None:
+            sigma_s = spread_s / 2.0
+        # Clipped Gaussian via rejection: symmetric about the target, so the
+        # median stays at target_duration_s; the clip bounds are hard limits
+        # (every clip must be at least target + spread long).
+        low_s = target_duration_s - spread_s
+        high_s = target_duration_s + spread_s
+        while True:
+            duration_s = self._duration_rng.gauss(target_duration_s, sigma_s)
+            if low_s <= duration_s <= high_s:
+                return duration_s
 
     def _apply_target_duration(
         self, metadata: dict[str, Any], target_duration_s: float
