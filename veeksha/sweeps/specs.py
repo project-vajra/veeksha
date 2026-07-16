@@ -29,6 +29,9 @@ MODEL_ALIASES = {
     "s2-pro": "fish-speech",
     "vibe-voice": "vibe-voice",
     "vibe": "vibe-voice",
+    "voxtral": "voxtral",
+    "voxtral-mini": "voxtral",
+    "stt": "voxtral",
 }
 
 
@@ -48,6 +51,9 @@ class SweepSpec:
     default_step: Optional[int] = None
     write_runtime_limits: bool = True
     disable_audio_for_input: bool = False
+
+    # Audio-input workloads own their trace and do not use text length bounds.
+    audio_input: bool = False
 
     @property
     def config_path(self) -> Path:
@@ -175,6 +181,28 @@ SPECS: Dict[Tuple[str, str, str], SweepSpec] = {
         run_name_template="vj_vibe_voice_0.5_{date_tag}_c={concurrency}",
         default_concurrencies=(1, 2, 4, 8),
         write_runtime_limits=False,
+    ),
+    (CONCURRENCY_SWEEP, "vajra", "voxtral"): SweepSpec(
+        sweep_type=CONCURRENCY_SWEEP,
+        engine="vajra",
+        model="voxtral",
+        config_name="stt_vajra.yaml",
+        temp_prefix="stt_vajra_voxtral_sweep",
+        run_config_template="stt_vajra_voxtral_c{concurrency}.yaml",
+        run_name_template="stt_vajra_voxtral_c_{concurrency}",
+        default_concurrencies=(1, 2, 4, 8, 16, 32, 64),
+        audio_input=True,
+    ),
+    (CONCURRENCY_SWEEP, "vllm", "voxtral"): SweepSpec(
+        sweep_type=CONCURRENCY_SWEEP,
+        engine="vllm",
+        model="voxtral",
+        config_name="stt_vllm_realtime.yaml",
+        temp_prefix="stt_vllm_voxtral_sweep",
+        run_config_template="stt_vllm_voxtral_c{concurrency}.yaml",
+        run_name_template="stt_vllm_voxtral_c_{concurrency}",
+        default_concurrencies=(1, 2, 4, 8, 16, 32, 64),
+        audio_input=True,
     ),
     (INPUT_SWEEP, "vajra", "qwen-tts"): SweepSpec(
         sweep_type=INPUT_SWEEP,

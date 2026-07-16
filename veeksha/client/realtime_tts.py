@@ -35,7 +35,7 @@ from veeksha.core.request import Request
 from veeksha.core.request_content import TextChannelRequestContent
 from veeksha.core.response import ChannelResponse, RequestResult
 from veeksha.logger import init_logger
-from veeksha.types import ChannelModality
+from veeksha.types import AudioTask, ChannelModality
 
 if TYPE_CHECKING:
     from veeksha.config.client import RealtimeTTSClientConfig
@@ -65,7 +65,9 @@ class RealtimeTTSProtocol:
         "error": RealtimeEventKind.ERROR,
     }
 
-    def __init__(self, config: "RealtimeTTSClientConfig", api_key: Optional[str]) -> None:
+    def __init__(
+        self, config: "RealtimeTTSClientConfig", api_key: Optional[str]
+    ) -> None:
         self.config = config
         self._api_key = api_key
 
@@ -90,7 +92,9 @@ class RealtimeTTSProtocol:
         return {"Authorization": f"Bearer {self._api_key}"}
 
     def session_update_json(self) -> str:
-        output: dict = {"format": {"type": "audio/pcm", "rate": self.config.sample_rate}}
+        output: dict = {
+            "format": {"type": "audio/pcm", "rate": self.config.sample_rate}
+        }
         if self.config.voice_id:
             output["voice"] = self.config.voice_id
         session = {
@@ -131,7 +135,9 @@ class RealtimeTTSProtocol:
 def _build_realtime_protocol(
     config: "RealtimeTTSClientConfig", api_key: Optional[str] = None
 ) -> RealtimeTTSProtocol:
-    return RealtimeTTSProtocol(config, api_key=config.api_key if api_key is None else api_key)
+    return RealtimeTTSProtocol(
+        config, api_key=config.api_key if api_key is None else api_key
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +237,9 @@ class RealtimeTTSClient(BaseLLMClient):
         pacing = self._realtime_config.pacing
         segments = segment_text(input_text, pacing.tokens_per_delta)
         pacer = TextDeltaPacer(pacing, seed=pacing.seed + request.id)
-        input_tokens = text_content.target_prompt_tokens or sum(seg.n_tokens for seg in segments)
+        input_tokens = text_content.target_prompt_tokens or sum(
+            seg.n_tokens for seg in segments
+        )
 
         logger.debug(
             "[RealtimeTTS] request_id=%d session_id=%d chars=%d deltas=%d",
@@ -375,6 +383,7 @@ class RealtimeTTSClient(BaseLLMClient):
         audio_data = b"".join(audio_chunks) if audio_chunks else b""
 
         metrics = {
+            "audio_task": AudioTask.TTS,
             AudioMetricKey.TTFC.value: round(ttfc or 0.0, 3),
             AudioMetricKey.END_TO_END_LATENCY.value: round(total_latency_ms, 3),
             AudioMetricKey.CHUNK_COUNT.value: len(audio_chunks),
@@ -386,11 +395,19 @@ class RealtimeTTSClient(BaseLLMClient):
             AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value: text_delta_ts,
             AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value: audio_chunk_ts,
             AudioMetricKey.WS_CONNECT_LATENCY_MS.value: _round_ms(ws_connect_latency),
-            AudioMetricKey.SESSION_READY_OFFSET_MS.value: _round_ms(session_ready_offset),
-            AudioMetricKey.RESPONSE_CREATED_OFFSET_MS.value: _round_ms(response_created_offset),
-            AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value: _round_ms(input_complete_offset),
+            AudioMetricKey.SESSION_READY_OFFSET_MS.value: _round_ms(
+                session_ready_offset
+            ),
+            AudioMetricKey.RESPONSE_CREATED_OFFSET_MS.value: _round_ms(
+                response_created_offset
+            ),
+            AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value: _round_ms(
+                input_complete_offset
+            ),
             AudioMetricKey.AUDIO_DONE_OFFSET_MS.value: _round_ms(audio_done_offset),
-            AudioMetricKey.RESPONSE_DONE_OFFSET_MS.value: _round_ms(response_done_offset),
+            AudioMetricKey.RESPONSE_DONE_OFFSET_MS.value: _round_ms(
+                response_done_offset
+            ),
         }
 
         channels: dict = {}

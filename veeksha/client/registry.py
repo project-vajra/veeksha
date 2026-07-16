@@ -48,3 +48,11 @@ ClientRegistry.register(
         "RealtimeTTSClient",
     ),
 )
+
+ClientRegistry.register(
+    ClientType.STT,
+    _LazyLoader(
+        "veeksha.client.stt",
+        "STTClient",
+    ),
+)

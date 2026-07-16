@@ -1,8 +1,9 @@
-"""Performance evaluator for TTS audio generation metrics."""
+"""Performance evaluator for TTS, realtime TTS, LLM-audio, and STT metrics."""
 
 import json
 import os
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,6 +19,11 @@ from veeksha.core.audio_contract import (
 )
 from veeksha.evaluator.base import EvaluationResult
 from veeksha.evaluator.cdf_sketch import CDFSketch
+from veeksha.evaluator.performance.asr import (
+    ASRMetricAccumulator,
+    ASRRequestMetrics,
+    score_asr_request,
+)
 from veeksha.evaluator.performance.audio_interactivity import (
     InteractivityMetrics,
     RequestTiming,
@@ -25,7 +31,7 @@ from veeksha.evaluator.performance.audio_interactivity import (
     parse_request_timing,
 )
 from veeksha.logger import init_logger
-from veeksha.types import ChannelModality
+from veeksha.types import AudioTask, ChannelModality
 
 logger = init_logger(__name__)
 
@@ -44,7 +50,7 @@ def _policy_tag(value: float) -> str:
 
 @dataclass
 class AudioRequestMetrics:
-    """Metrics for a single audio (TTS) request."""
+    """Metrics for a single audio request."""
 
     request_id: int
     session_id: int
@@ -57,6 +63,8 @@ class AudioRequestMetrics:
     chunk_count: int
     pcm_byte_count: int
     input_chars: int = 0
+    audio_task: AudioTask | None = None
+    asr: ASRRequestMetrics | None = None
     input_tokens: int = 0
     input_text: str = ""
     session_total_requests: int | None = None
@@ -65,7 +73,7 @@ class AudioRequestMetrics:
 
 
 class AudioPerformanceEvaluator:
-    """Evaluate HTTP and realtime TTS performance."""
+    """Evaluate TTS interactivity and STT recognition performance together."""
 
     def __init__(
         self,
@@ -100,6 +108,20 @@ class AudioPerformanceEvaluator:
                 AudioMetricKey.SESSION_DURATION.value, unit="ms"
             ),
         }
+
+        self.asr_latency_summaries: dict[str, CDFSketch] = {
+            "time_to_first_visible_text": CDFSketch(
+                "time_to_first_visible_text", unit="ms"
+            ),
+            "time_to_first_partial": CDFSketch("time_to_first_partial", unit="ms"),
+            "time_to_final_transcript": CDFSketch(
+                "time_to_final_transcript", unit="ms"
+            ),
+            "interactivity": CDFSketch("interactivity", unit="ms"),
+        }
+        self._asr_metrics = ASRMetricAccumulator()
+        self._stt_request_count = 0
+        self._asr_scoring_seconds = 0.0
 
         self._pending_requests: dict[int, dict[str, Any]] = {}
         self._completed_metrics: list[AudioRequestMetrics] = []
@@ -144,78 +166,124 @@ class AudioPerformanceEvaluator:
         completed_at: float,
         response: Any,
     ) -> None:
-        """Record one completed request with an AUDIO response."""
+        """Record a completed TTS, LLM-audio, or STT request.
+
+        ASR scoring runs outside the evaluator lock so completion workers can
+        normalize and align transcripts concurrently. Shared metric mutation
+        remains under the evaluator lock.
+        """
         with self.lock:
             dispatch_info = self._pending_requests.pop(request_id, None)
-            dispatched_at = (
-                dispatch_info["dispatched_at"]
-                if dispatch_info
-                else getattr(
-                    response,
-                    "scheduler_dispatched_at",
-                    self._request_time_reference,
+            request_time_reference = self._request_time_reference
+
+        dispatched_at = (
+            dispatch_info["dispatched_at"]
+            if dispatch_info
+            else getattr(
+                response,
+                "scheduler_dispatched_at",
+                request_time_reference,
+            )
+        )
+
+        channel_response = getattr(response, "channels", {}).get(ChannelModality.AUDIO)
+        if channel_response is None:
+            logger.debug("Request %d has no AUDIO channel response", request_id)
+            return
+
+        cm = channel_response.metrics or {}
+        ttfc = float(cm.get(AudioMetricKey.TTFC.value, 0.0))
+        end_to_end_latency = float(cm.get(AudioMetricKey.END_TO_END_LATENCY.value, 0.0))
+        chunk_count = int(cm.get(AudioMetricKey.CHUNK_COUNT.value, 0))
+        raw_pcm = bool(cm.get(AudioMetricKey.RAW_PCM.value, False))
+        sample_rate = int(
+            cm.get(AudioMetricKey.SAMPLE_RATE.value, DEFAULT_AUDIO_SAMPLE_RATE)
+        )
+
+        raw_audio_task = cm.get("audio_task")
+        try:
+            audio_task = (
+                AudioTask[raw_audio_task.upper()]
+                if isinstance(raw_audio_task, str)
+                else AudioTask(raw_audio_task)
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            expected = ", ".join(str(task) for task in AudioTask)
+            raise ValueError(
+                f"AUDIO response for request {request_id} has unknown "
+                f"audio_task={raw_audio_task!r}; expected one of: {expected}"
+            ) from error
+
+        if audio_task is AudioTask.STT:
+            if AudioMetricKey.PCM_BYTE_COUNT.value not in cm:
+                raise ValueError(
+                    f"STT response for request {request_id} is missing "
+                    f"{AudioMetricKey.PCM_BYTE_COUNT.value}"
                 )
-            )
-
-            channel_response = getattr(response, "channels", {}).get(
-                ChannelModality.AUDIO
-            )
-            if channel_response is None:
-                logger.debug("Request %d has no AUDIO channel response", request_id)
-                return
-
-            cm = channel_response.metrics or {}
-            ttfc = float(cm.get(AudioMetricKey.TTFC.value, 0.0))
-            end_to_end_latency = float(
-                cm.get(AudioMetricKey.END_TO_END_LATENCY.value, 0.0)
-            )
-            chunk_count = int(cm.get(AudioMetricKey.CHUNK_COUNT.value, 0))
-            raw_pcm = bool(cm.get(AudioMetricKey.RAW_PCM.value, False))
-            sample_rate = int(
-                cm.get(AudioMetricKey.SAMPLE_RATE.value, DEFAULT_AUDIO_SAMPLE_RATE)
-            )
+            total_bytes = int(cm[AudioMetricKey.PCM_BYTE_COUNT.value])
+        else:
             audio_content = channel_response.content
-            total_bytes = len(audio_content) if isinstance(audio_content, bytes) else 0
-            pcm_byte_count = _pcm_byte_count(total_bytes, raw_pcm=raw_pcm)
-            generated_audio_duration = pcm_bytes_to_duration_ms(
-                pcm_byte_count, sample_rate
+            total_bytes = (
+                len(audio_content)
+                if isinstance(audio_content, (bytes, bytearray, memoryview))
+                else 0
             )
-            rtf = (
-                end_to_end_latency / generated_audio_duration
-                if generated_audio_duration > 0
-                else float("inf")
-            )
-            input_chars = int(cm.get(AudioMetricKey.INPUT_CHARS.value, 0))
-            input_tokens = int(cm.get(AudioMetricKey.INPUT_TOKENS.value, 0))
-            input_text = str(cm.get(AudioMetricKey.INPUT_TEXT.value, ""))
 
-            ws_connect_latency = cm.get(AudioMetricKey.WS_CONNECT_LATENCY_MS.value)
-            ws_connect_latency_ms = (
-                float(ws_connect_latency) if ws_connect_latency is not None else None
-            )
-            interactivity: InteractivityMetrics | None = None
-            timing: RequestTiming | None = None
-            if self.channel_config.interactivity_enabled:
-                timing = parse_request_timing(cm, sample_rate)
-                if timing is not None:
-                    interactivity = compute_interactivity_metrics(
-                        timing,
-                        startup_delay_ms_values=(
-                            self.channel_config.startup_delay_ms_values
-                        ),
-                        startup_buffer_ms_values=(
-                            self.channel_config.startup_buffer_ms_values
-                        ),
-                        min_reportable_stall_ms=(
-                            self.channel_config.min_reportable_stall_ms
-                        ),
+        pcm_byte_count = _pcm_byte_count(total_bytes, raw_pcm=raw_pcm)
+        generated_audio_duration = pcm_bytes_to_duration_ms(pcm_byte_count, sample_rate)
+        rtf = (
+            end_to_end_latency / generated_audio_duration
+            if generated_audio_duration > 0
+            else float("inf")
+        )
+        input_chars = int(cm.get(AudioMetricKey.INPUT_CHARS.value, 0) or 0)
+        input_tokens = int(cm.get(AudioMetricKey.INPUT_TOKENS.value, 0) or 0)
+        input_text = str(cm.get(AudioMetricKey.INPUT_TEXT.value, ""))
+
+        ws_connect_latency = cm.get(AudioMetricKey.WS_CONNECT_LATENCY_MS.value)
+        ws_connect_latency_ms = (
+            float(ws_connect_latency) if ws_connect_latency is not None else None
+        )
+        interactivity: InteractivityMetrics | None = None
+        raw_timing_row: dict[str, Any] | None = None
+        if audio_task is AudioTask.TTS and self.channel_config.interactivity_enabled:
+            timing = parse_request_timing(cm, sample_rate)
+            if timing is not None:
+                interactivity = compute_interactivity_metrics(
+                    timing,
+                    startup_delay_ms_values=(
+                        self.channel_config.startup_delay_ms_values
+                    ),
+                    startup_buffer_ms_values=(
+                        self.channel_config.startup_buffer_ms_values
+                    ),
+                    min_reportable_stall_ms=(
+                        self.channel_config.min_reportable_stall_ms
+                    ),
+                )
+                if self.channel_config.persist_raw_timing:
+                    raw_timing_row = self._build_raw_timing_row(
+                        request_id, session_id, cm, timing
                     )
-                    if self.channel_config.persist_raw_timing:
-                        self._raw_timing_rows.append(
-                            self._build_raw_timing_row(
-                                request_id, session_id, cm, timing
-                            )
-                        )
+
+        asr_metrics: ASRRequestMetrics | None = None
+        asr_scoring_seconds = 0.0
+        if audio_task is AudioTask.STT:
+            scoring_started_at = time.perf_counter()
+            asr_metrics = score_asr_request(
+                request_id=request_id,
+                channel_metrics=cm,
+                duration_s=generated_audio_duration / 1000.0,
+                accumulator=self._asr_metrics,
+            )
+            asr_scoring_seconds = time.perf_counter() - scoring_started_at
+
+        with self.lock:
+            if audio_task is AudioTask.STT:
+                self._stt_request_count += 1
+                self._asr_scoring_seconds += asr_scoring_seconds
+            if raw_timing_row is not None:
+                self._raw_timing_rows.append(raw_timing_row)
 
             metrics = AudioRequestMetrics(
                 request_id=request_id,
@@ -230,6 +298,8 @@ class AudioPerformanceEvaluator:
                 pcm_byte_count=pcm_byte_count,
                 input_chars=input_chars,
                 input_tokens=input_tokens,
+                audio_task=audio_task,
+                asr=asr_metrics,
                 input_text=input_text,
                 session_total_requests=getattr(
                     response, "session_total_requests", None
@@ -252,10 +322,10 @@ class AudioPerformanceEvaluator:
             ):
                 self._last_completion_at = completed_at
 
-            def normalize_ts(ts: float | None) -> float | None:
-                if ts is None:
+            def normalize_ts(timestamp: float | None) -> float | None:
+                if timestamp is None:
                     return None
-                return round(max(0.0, ts - self._request_time_reference), 5)
+                return round(max(0.0, timestamp - self._request_time_reference), 5)
 
             self._lifecycle_timestamps.append(
                 {
@@ -287,6 +357,20 @@ class AudioPerformanceEvaluator:
             self.summaries[AudioMetricKey.RTF.value].put(rtf)
             self.summaries[AudioMetricKey.CHUNK_COUNT.value].put(chunk_count)
             self.summaries[AudioMetricKey.INPUT_TOKENS.value].put(input_tokens)
+
+            if asr_metrics is not None:
+                asr_values = {
+                    "time_to_first_visible_text": (
+                        asr_metrics.time_to_first_visible_text
+                    ),
+                    "time_to_first_partial": asr_metrics.time_to_first_partial,
+                    "time_to_final_transcript": (asr_metrics.time_to_final_transcript),
+                    "interactivity": asr_metrics.interactivity,
+                }
+                for metric_name, value in asr_values.items():
+                    if value is not None:
+                        self.asr_latency_summaries[metric_name].put(value)
+
             if interactivity is not None:
                 self._record_interactivity(metrics)
 
@@ -384,10 +468,16 @@ class AudioPerformanceEvaluator:
                 )
 
     def get_summary(self) -> dict[str, float | None]:
-        """Return aggregate audio and policy metrics."""
+        """Return aggregate audio, ASR, and playback-policy metrics."""
         perf_summary: dict[str, float | None] = {}
         for cdf_sketch in self.summaries.values():
             perf_summary.update(cdf_sketch.get_summary())
+
+        if self._stt_request_count > 0:
+            for cdf_sketch in self.asr_latency_summaries.values():
+                if len(cdf_sketch) > 0:
+                    perf_summary.update(cdf_sketch.get_summary())
+            perf_summary.update(self._asr_metrics.get_summary())
 
         wall_s = 0.0
         if self._first_dispatch_at is not None and self._last_completion_at is not None:
@@ -423,6 +513,13 @@ class AudioPerformanceEvaluator:
 
     def finalize(self) -> EvaluationResult:
         with self.lock:
+            if self._stt_request_count > 0:
+                logger.info(
+                    "Evaluator phase 'asr_scoring' took %.2fs total across "
+                    "%d STT requests (concurrent and overlapped with the run)",
+                    self._asr_scoring_seconds,
+                    self._stt_request_count,
+                )
             return EvaluationResult(
                 evaluator_type="audio_performance",
                 channel=ChannelModality.AUDIO,
@@ -435,11 +532,24 @@ class AudioPerformanceEvaluator:
 
     def save(self, output_dir: str) -> None:
         with self.lock:
-            self._save_request_level_metrics(output_dir)
-            self._save_raw_timing(output_dir)
-            self._save_cdf_csvs(output_dir)
-            self._plot_cdfs(output_dir)
-            self._plot_stall_free_vs_startup_policy(output_dir)
+            stages = (
+                ("audio_request_level_metrics", self._save_request_level_metrics),
+                ("audio_raw_timing", self._save_raw_timing),
+                ("audio_cdf_csvs", self._save_cdf_csvs),
+                ("audio_cdf_plots", self._plot_cdfs),
+                (
+                    "audio_stall_free_policy_plot",
+                    self._plot_stall_free_vs_startup_policy,
+                ),
+            )
+            for stage_name, stage in stages:
+                stage_started_at = time.perf_counter()
+                stage(output_dir)
+                logger.info(
+                    "Evaluator phase '%s' took %.2fs",
+                    stage_name,
+                    time.perf_counter() - stage_started_at,
+                )
 
     def flush_streaming_outputs(self, output_dir: str) -> None:
         with self.lock:
@@ -482,6 +592,9 @@ class AudioPerformanceEvaluator:
                     5,
                 ),
                 "result_processed_at": lifecycle["result_processed_at"],
+                "audio_task": (
+                    str(metrics.audio_task) if metrics.audio_task is not None else None
+                ),
                 AudioMetricKey.TTFC.value: round(metrics.ttfc, 3),
                 AudioMetricKey.END_TO_END_LATENCY.value: round(
                     metrics.end_to_end_latency, 3
@@ -496,6 +609,8 @@ class AudioPerformanceEvaluator:
                 AudioMetricKey.INPUT_TOKENS.value: metrics.input_tokens,
                 AudioMetricKey.INPUT_TEXT.value: metrics.input_text,
             }
+            if metrics.asr is not None:
+                row.update(metrics.asr.to_request_row())
             row.update(self._interactivity_row_fields(metrics))
             rows.append(row)
         return rows
@@ -636,15 +751,27 @@ class AudioPerformanceEvaluator:
                 file.write(json.dumps(row) + "\n")
         self._raw_timing_rows_streamed = len(self._raw_timing_rows)
 
+    def _cdf_summaries(self) -> dict[str, CDFSketch]:
+        summaries = dict(self.summaries)
+        if self._stt_request_count > 0:
+            summaries.update(
+                {
+                    name: sketch
+                    for name, sketch in self.asr_latency_summaries.items()
+                    if len(sketch) > 0
+                }
+            )
+        return summaries
+
     def _save_cdf_csvs(self, output_dir: str) -> None:
-        for metric_name, cdf_sketch in self.summaries.items():
+        for metric_name, cdf_sketch in self._cdf_summaries().items():
             cdf_sketch._to_df().to_csv(
                 os.path.join(output_dir, f"audio_{metric_name}.csv"),
                 index=False,
             )
 
     def _plot_cdfs(self, output_dir: str) -> None:
-        for metric_name, cdf_sketch in self.summaries.items():
+        for metric_name, cdf_sketch in self._cdf_summaries().items():
             try:
                 cdf_sketch.plot_cdf(output_dir, f"audio_{metric_name}")
             except Exception as error:

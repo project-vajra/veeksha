@@ -170,7 +170,7 @@ class VajraServerConfig(BaseServerConfig):
     """Vajra subprocess server config."""
 
     command: List[str] = field(default_factory=list)
-    env: Dict[str, str] = field(default_factory=dict)
+    env: Optional[Dict[str, str]] = field(None)
 
     @classmethod
     def get_type(cls) -> ServerType:
@@ -210,7 +210,7 @@ class VllmServerConfig(BaseServerConfig):
     hf_model: str = ""
     deploy_config: str = ""
     container_deploy_config: Optional[str] = None
-    env: Dict[str, str] = field(default_factory=dict)
+    env: Optional[Dict[str, str]] = field(None)
     pass_env: List[str] = field(default_factory=list)
     bootstrap: Optional[str] = None
 
@@ -284,7 +284,7 @@ class SglangServerConfig(BaseServerConfig):
     container_source_dir: str = "/sglang-omni"
     venv_path: str = "/opt/sglomni/.venv"
     bootstrap: Optional[str] = None
-    env: Dict[str, str] = field(default_factory=dict)
+    env: Optional[Dict[str, str]] = field(None)
     pass_env: List[str] = field(default_factory=list)
 
     @classmethod

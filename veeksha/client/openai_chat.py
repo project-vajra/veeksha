@@ -18,7 +18,7 @@ from veeksha.core.request_content import (
 from veeksha.core.response import ChannelResponse, RequestResult
 from veeksha.core.tokenizer import TokenizerProvider
 from veeksha.logger import init_logger
-from veeksha.types import ChannelModality
+from veeksha.types import AudioTask, ChannelModality
 
 if TYPE_CHECKING:
     from veeksha.config.client import OpenAIChatCompletionsClientConfig
@@ -279,7 +279,7 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
             channels[ChannelModality.AUDIO] = ChannelResponse(
                 modality=ChannelModality.AUDIO,
                 content=audio_data,
-                metrics={},
+                metrics={"audio_task": AudioTask.LLM_AUDIO},
             )
 
         if video_data is not None:
@@ -513,6 +513,7 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
                 modality=ChannelModality.AUDIO,
                 content=audio_bytes,
                 metrics={
+                    "audio_task": AudioTask.LLM_AUDIO,
                     AudioMetricKey.TTFC.value: round(audio_ttfc or 0.0, 3),
                     AudioMetricKey.END_TO_END_LATENCY.value: round(total_latency_ms, 3),
                     AudioMetricKey.CHUNK_COUNT.value: audio_chunk_count,

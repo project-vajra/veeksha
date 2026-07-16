@@ -168,7 +168,8 @@ def build_run_config(
         flavor["max_chars"] = input_size
         if spec.disable_audio_for_input:
             _disable_audio_saving(config)
-    else:
+    elif not spec.audio_input:
+        # STT audio traces have no text length bounds to rewrite.
         _apply_length_bounds(
             config,
             min_tokens=min_tokens,

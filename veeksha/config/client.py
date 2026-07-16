@@ -272,3 +272,92 @@ class RealtimeTTSClientConfig(BaseClientConfig):
         from veeksha.core.tokenizer import build_word_split_tokenizer_provider
 
         return build_word_split_tokenizer_provider(self.model)
+
+
+@frozen_dataclass
+class STTClientConfig(BaseClientConfig):
+    """STT client configuration for realtime streaming speech-to-text APIs."""
+
+    provider: str = field(
+        "",
+        help=(
+            "STT provider name. Supported: 'vajra_openai_realtime', " "'vllm_realtime'."
+        ),
+    )
+    sample_rate: int = field(16000, help="Expected audio sample rate in Hz.")
+    ws_chunk_size: int = field(
+        4096,
+        help=(
+            "Bytes of raw PCM audio per WebSocket message. Client CPU scales "
+            "with concurrency * sample_rate * 2 / ws_chunk_size, so prefer "
+            "larger chunks at high concurrency."
+        ),
+    )
+    ws_permessage_deflate: bool = field(
+        False,
+        help=(
+            "Negotiate WebSocket permessage-deflate compression. Disabled by "
+            "default because base64 PCM is high entropy and compression adds "
+            "substantial client and server CPU."
+        ),
+    )
+    ws_realtime_pacing: bool = field(
+        False,
+        help=(
+            "Sleep between WebSocket audio chunks to simulate realtime input. "
+            "Enable for live-audio SLO measurements; disable for engine-bound "
+            "throughput measurements."
+        ),
+    )
+    ws_ping_interval_s: Optional[int] = field(
+        20, help="WebSocket ping interval in seconds; None disables pings."
+    )
+    ws_ping_timeout_s: Optional[int] = field(
+        None,
+        help=(
+            "WebSocket ping timeout in seconds. None disables keepalive timeout "
+            "while preserving request_timeout."
+        ),
+    )
+    model: str = field("", help="The STT model ID.")
+
+    _SUPPORTED_PROVIDERS = ("vllm_realtime", "vajra_openai_realtime")
+
+    @classmethod
+    def get_type(cls) -> ClientType:
+        return ClientType.STT
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        # Skip validation for the default polymorphic child instantiated by Vidhi.
+        if not self.provider and not self.model and self.api_base is None:
+            return
+        if not self.provider:
+            raise ValueError(
+                "STTClientConfig.provider is required. "
+                f"Supported: {', '.join(self._SUPPORTED_PROVIDERS)}"
+            )
+        if self.provider not in self._SUPPORTED_PROVIDERS:
+            raise ValueError(
+                f"Unsupported STT provider: {self.provider}. "
+                f"Supported: {', '.join(self._SUPPORTED_PROVIDERS)}"
+            )
+        if not self.model:
+            raise ValueError("STTClientConfig.model is required.")
+        if self.api_base is None:
+            raise ValueError("STTClientConfig.api_base is required.")
+        if self.sample_rate <= 0:
+            raise ValueError("STTClientConfig.sample_rate must be > 0")
+        if self.ws_chunk_size <= 0:
+            raise ValueError("STTClientConfig.ws_chunk_size must be > 0")
+        if self.ws_ping_interval_s is not None and self.ws_ping_interval_s <= 0:
+            raise ValueError("STTClientConfig.ws_ping_interval_s must be > 0 or None")
+        if self.ws_ping_timeout_s is not None and self.ws_ping_timeout_s <= 0:
+            raise ValueError("STTClientConfig.ws_ping_timeout_s must be > 0 or None")
+
+    def build_tokenizer_provider(self):
+        """STT models use a simple word-split tokenizer."""
+        from veeksha.core.tokenizer import build_word_split_tokenizer_provider
+
+        return build_word_split_tokenizer_provider(self.model)

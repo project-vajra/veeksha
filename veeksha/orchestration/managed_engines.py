@@ -229,7 +229,7 @@ class VajraSubprocessRunner(BaseEngineRunner):
 
     def _build_env(self) -> dict[str, str]:
         env = os.environ.copy()
-        env.update(self.config.env)
+        env.update(self.config.env or {})
         setup_dir = str(self._setup_dir())
         pythonpath = env.get("PYTHONPATH")
         paths = [
@@ -400,10 +400,11 @@ class VllmOmniDockerRunner(BaseEngineRunner):
             self._deploy_config_volume(),
         ]:
             cmd.extend(["-v", volume])
-        for key, value in self.config.env.items():
+        config_env = self.config.env or {}
+        for key, value in config_env.items():
             cmd.extend(["-e", f"{key}={value}"])
         for key in self.config.pass_env:
-            if key not in self.config.env:
+            if key not in config_env:
                 if key not in os.environ:
                     raise EngineError(
                         f"required environment variable is not set: {key}"

@@ -74,7 +74,9 @@ def segment_text(text: str, tokens_per_delta: int) -> list[TextSegment]:
     for start in range(0, len(pieces), tokens_per_delta):
         group = pieces[start : start + tokens_per_delta]
         chunk = "".join(group)
-        segments.append(TextSegment(text=chunk, n_chars=len(chunk), n_tokens=len(group)))
+        segments.append(
+            TextSegment(text=chunk, n_chars=len(chunk), n_tokens=len(group))
+        )
     return segments
 
 

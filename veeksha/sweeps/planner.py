@@ -17,6 +17,9 @@ Examples
     # Use the Seed TTS text dataset instead of the default ShareGPT trace
     python scripts/sweep.py --sweep-type concurrency --engine vajra \\
         --model qwen-tts --trace seed_tts
+    # STT concurrency sweep (uses the audio trace in its base config)
+    python scripts/sweep.py --sweep-type concurrency --engine vajra \\
+        --model voxtral --cooldown-seconds 30
 
     # Override output_dir for generated benchmark configs
     python scripts/sweep.py --sweep-type concurrency --engine vajra \\
@@ -161,7 +164,9 @@ def _build_sweep_plan(
 ) -> SweepPlan:
     base_config_path = _resolve_base_config_path(sweep_config, spec)
     base_config = load_config(base_config_path)
-    apply_trace_source(base_config, sweep_config)
+    if not spec.audio_input:
+        apply_trace_source(base_config, sweep_config)
+    trace_source = "audio" if spec.audio_input else sweep_config.trace
     if tmp_parent is None:
         tmp_parent = Path(tempfile.mkdtemp(prefix=f"{spec.temp_prefix}."))
     else:
@@ -217,7 +222,7 @@ def _build_sweep_plan(
                 command=benchmark_command(run_config),
                 timeout_seconds=sweep_config.timeout_seconds,
                 max_sessions=sweep_config.max_sessions,
-                trace_source=sweep_config.trace,
+                trace_source=trace_source,
             )
         )
 

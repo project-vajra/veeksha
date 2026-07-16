@@ -1,0 +1,57 @@
+seed: 42
+output_dir: "benchmark_output/stt_vllm_realtime"
+
+client:
+  type: stt
+  provider: vllm_realtime
+  api_base: "http://localhost:8025"
+  model: mistralai/Voxtral-Mini-4B-Realtime-2602
+  sample_rate: 16000
+  ws_chunk_size: 2048
+  ws_realtime_pacing: true
+  request_timeout: 7200
+
+session_generator:
+  type: trace
+  trace_file: traces/asr/aa_public/manifest.jsonl
+  wrap_mode: true
+  flavor:
+    type: audio
+    audio_dir: ""
+
+traffic_scheduler:
+  type: concurrent
+  target_concurrent_sessions: 8
+  rampup_seconds: 0
+
+evaluators:
+  - type: performance
+    target_channels: ["audio"]
+    stream_metrics: true
+    stream_metrics_interval: 10.0
+    slos:
+      # Capacity gate: p99 first-partial latency climbs once the engine can't
+      # keep up at 1x pacing. (RTF is >=1 by construction when paced.)
+      - name: "P99 time-to-first-chunk under 500ms"
+        metric: ttfc
+        percentile: 0.99
+        value: 500
+        type: constant
+
+runtime:
+  max_sessions: -1
+  benchmark_timeout: 300
+  post_timeout_grace_seconds: 120
+  num_client_threads: 2
+  num_dispatcher_threads: 2
+  num_completion_threads: 2
+
+trace_recorder:
+  enabled: false
+
+wandb:
+  enabled: false
+  project: "stt-benchmark"
+  run_name: "stt_vllm_voxtral"
+  tags: ["stt", "vllm_realtime", "voxtral"]
+  log_artifacts: false

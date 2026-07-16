@@ -38,6 +38,7 @@ class TraceFlavorType(BaseIntEnum):
     UNTIMED_CONTENT_MULTI_TURN = 5
     SHAREGPT = 6
     SEED_TTS_TEXT = 7
+    AUDIO = 8
 
 
 class ChannelModality(BaseIntEnum):
@@ -45,6 +46,14 @@ class ChannelModality(BaseIntEnum):
     IMAGE = 2
     AUDIO = 3
     VIDEO = 4
+
+
+class AudioTask(BaseIntEnum):
+    """Workload represented by an AUDIO response."""
+
+    TTS = 1
+    STT = 2
+    LLM_AUDIO = 3
 
 
 class SessionGraphType(BaseIntEnum):
@@ -67,6 +76,7 @@ class ClientType(BaseIntEnum):
     OPENAI_ROUTER = 3
     TTS = 4
     REALTIME_TTS = 5
+    STT = 6
 
 
 # ----- Server -----

@@ -27,7 +27,7 @@ dependencies = [
     "numpy",
     "jinja2",
     "datasets",
-    "lm-eval",
+    "lm-eval>=0.4.11,<0.4.12",
     "evaluate",
     "pytablewriter",
     "Pillow",
@@ -41,6 +41,10 @@ dependencies = [
     "rich",
     "vidhi",
     "websockets>=14",
+    "jiwer",
+    "regex",
+    "soundfile",
+    "librosa",
 ]
 
 [project.scripts]

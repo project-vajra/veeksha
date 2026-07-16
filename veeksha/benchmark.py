@@ -1,4 +1,6 @@
 import os
+import sys
+import sysconfig
 import threading
 import time
 from dataclasses import replace
@@ -33,6 +35,26 @@ from veeksha.workers.client_runner import ClientRunnerManager
 from veeksha.workers.prefetch import SharedSessionCounter
 
 logger = init_logger(__name__)
+
+
+def _warn_if_gil_enabled(stage: str) -> None:
+    """Warn when the GIL is active on a free-threaded build.
+
+    A C extension that does not declare free-threading support re-enables the
+    GIL at import time unless the process runs with ``-Xgil=0`` /
+    ``PYTHON_GIL=0``. This can happen mid-run (e.g. the first
+    ``librosa.load`` lazily imports ``msgpack``), silently serializing every
+    client worker thread and invalidating high-concurrency measurements.
+    """
+    if not sysconfig.get_config_var("Py_GIL_DISABLED"):
+        return
+    if sys._is_gil_enabled():
+        logger.warning(
+            "The GIL is enabled at %s on a free-threaded Python build; "
+            "client worker threads serialize on it. Launch with -Xgil=0 or "
+            "PYTHON_GIL=0 to keep it disabled.",
+            stage,
+        )
 
 
 def _maybe_pregenerate_sessions(benchmark_config, session_generator) -> Optional[list]:
@@ -73,10 +95,23 @@ def _run_main_loop(
 ) -> None:
     """Run the main benchmark loop with all workers."""
     logger.info("Starting main loop")
+    _warn_if_gil_enabled("benchmark start")
     if benchmark_start_time is None:
         benchmark_start_time = time.monotonic()
 
-    client_queues = [Queue() for _ in range(runtime_config.num_client_threads)]
+    num_client_threads = runtime_config.num_client_threads
+    if num_client_threads is None:
+        # Provision client workers for the offered load (the sweep planner
+        # already does this; direct configs get the same protection): an
+        # under-provisioned pool serializes per-session sends and shows up
+        # as phantom server-side latency at high concurrency.
+        target_sessions = getattr(
+            traffic_scheduler, "target_concurrent_sessions", None
+        ) or getattr(traffic_scheduler, "_target_concurrent", None)
+        num_client_threads = (
+            max(3, -(-int(target_sessions) // 8)) if target_sessions else 3
+        )
+    client_queues = [Queue() for _ in range(num_client_threads)]
     output_queue = Queue()
     stop_event = threading.Event()
     generator_lock = threading.Lock()
@@ -160,6 +195,10 @@ def _run_main_loop(
     except KeyboardInterrupt:
         logger.info("Interrupted, stopping")
         pending_in_flight = set()
+
+    # The GIL can flip on mid-run via lazy extension imports; re-check so a
+    # serialized run is at least loudly reported.
+    _warn_if_gil_enabled("benchmark end")
 
     stop_event.set()
     pool_manager.join_pool("prefetch", timeout=1.0)
@@ -295,12 +334,23 @@ def _run_benchmark(
 
     logger.info("Finalizing evaluator...")
     # finalize and save results
+    finalize_started_at = time.monotonic()
     result = evaluator.finalize()
+    logger.info(
+        "Benchmark phase 'evaluator_finalize' took %.2fs",
+        time.monotonic() - finalize_started_at,
+    )
 
+    save_started_at = time.monotonic()
     evaluator.save(f"{benchmark_config.output_dir}/metrics")
+    logger.info(
+        "Benchmark phase 'evaluator_save' took %.2fs",
+        time.monotonic() - save_started_at,
+    )
 
     # health checks
     logger.info("Running health checks...")
+    health_started_at = time.monotonic()
     health_checker = HealthChecker(
         trace_file=f"{benchmark_config.output_dir}/traces/dispatch_trace.jsonl",
         metrics_file=f"{benchmark_config.output_dir}/metrics/request_level_metrics.jsonl",
@@ -308,6 +358,10 @@ def _run_benchmark(
     )
     health_checker.run_and_save(
         f"{benchmark_config.output_dir}/health_check_results.txt"
+    )
+    logger.info(
+        "Benchmark phase 'health_checks' took %.2fs",
+        time.monotonic() - health_started_at,
     )
 
     return result

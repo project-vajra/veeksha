@@ -237,6 +237,75 @@ class ShareGPTTraceFlavorConfig(BaseTraceFlavorConfig):
 
 
 @frozen_dataclass
+class AudioTraceFlavorConfig(BaseTraceFlavorConfig):
+    """Audio trace flavor configuration for STT benchmarking."""
+
+    audio_dir: str = field(
+        "",
+        help="Optional base directory prepended to relative audio_file paths.",
+    )
+    target_duration_s: float | None = field(
+        None,
+        help=(
+            "Optional per-session audio duration to stream. The trace must "
+            "provide reference_word_timestamps so expected transcripts can be "
+            "trimmed to the streamed prefix."
+        ),
+    )
+    target_duration_spread_s: float | None = field(
+        None,
+        help=(
+            "Hard half-width of a clipped-Gaussian duration spread around "
+            "target_duration_s. Requires target_duration_s."
+        ),
+    )
+    target_duration_sigma_s: float | None = field(
+        None,
+        help=(
+            "Standard deviation of the clipped-Gaussian duration draw. Defaults "
+            "to half the spread and must not exceed the spread."
+        ),
+    )
+
+    @classmethod
+    def get_type(cls):
+        return TraceFlavorType.AUDIO
+
+    def __post_init__(self):
+        if self.target_duration_s is not None and self.target_duration_s <= 0:
+            raise ValueError(
+                "target_duration_s must be positive when set; "
+                f"got {self.target_duration_s}"
+            )
+        if self.target_duration_spread_s is not None:
+            if self.target_duration_s is None:
+                raise ValueError("target_duration_spread_s requires target_duration_s")
+            if not 0 < self.target_duration_spread_s < self.target_duration_s:
+                raise ValueError(
+                    "target_duration_spread_s must be in (0, "
+                    f"target_duration_s); got {self.target_duration_spread_s} "
+                    f"with target_duration_s={self.target_duration_s}"
+                )
+        if self.target_duration_sigma_s is not None:
+            if self.target_duration_spread_s is None:
+                raise ValueError(
+                    "target_duration_sigma_s requires target_duration_spread_s"
+                )
+            if self.target_duration_sigma_s <= 0:
+                raise ValueError(
+                    "target_duration_sigma_s must be positive; got "
+                    f"{self.target_duration_sigma_s}"
+                )
+            if self.target_duration_sigma_s > self.target_duration_spread_s:
+                raise ValueError(
+                    "target_duration_sigma_s must be <= "
+                    "target_duration_spread_s; got sigma="
+                    f"{self.target_duration_sigma_s} spread="
+                    f"{self.target_duration_spread_s}"
+                )
+
+
+@frozen_dataclass
 class SeedTTSTextTraceFlavorConfig(BaseTraceFlavorConfig):
     """Seed TTS eval text dataset configuration.
 
