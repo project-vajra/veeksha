@@ -273,7 +273,23 @@ class STTClientConfig(BaseClientConfig):
     )
     ws_chunk_size: int = field(
         default=4096,
-        metadata={"help": "Bytes of raw PCM audio per WebSocket message."},
+        metadata={
+            "help": "Bytes of raw PCM audio per WebSocket message. Client "
+            "CPU scales with the message rate (concurrency * sample_rate * "
+            "2 / ws_chunk_size), so prefer larger chunks at high "
+            "concurrency: 8192 (256ms at 16kHz PCM16) sends 4x fewer "
+            "messages than 2048 and is still fine-grained for realtime "
+            "STT serving. Note this changes the wire traffic shape."
+        },
+    )
+    ws_permessage_deflate: bool = field(
+        default=False,
+        metadata={
+            "help": "Negotiate WebSocket permessage-deflate compression. "
+            "Off by default: base64 PCM is high-entropy, and deflate "
+            "costs ~10x the send-path CPU on the client (plus inflate "
+            "on the server) for little size reduction."
+        },
     )
     ws_realtime_pacing: bool = field(
         default=False,

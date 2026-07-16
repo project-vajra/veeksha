@@ -1,4 +1,6 @@
 import os
+import sys
+import sysconfig
 import threading
 import time
 from dataclasses import replace
@@ -32,6 +34,26 @@ from veeksha.workers.client_runner import ClientRunnerManager
 from veeksha.workers.prefetch import SharedSessionCounter
 
 logger = init_logger(__name__)
+
+
+def _warn_if_gil_enabled(stage: str) -> None:
+    """Warn when the GIL is active on a free-threaded build.
+
+    A C extension that does not declare free-threading support re-enables the
+    GIL at import time unless the process runs with ``-Xgil=0`` /
+    ``PYTHON_GIL=0``. This can happen mid-run (e.g. the first
+    ``librosa.load`` lazily imports ``msgpack``), silently serializing every
+    client worker thread and invalidating high-concurrency measurements.
+    """
+    if not sysconfig.get_config_var("Py_GIL_DISABLED"):
+        return
+    if sys._is_gil_enabled():
+        logger.warning(
+            "The GIL is enabled at %s on a free-threaded Python build; "
+            "client worker threads serialize on it. Launch with -Xgil=0 or "
+            "PYTHON_GIL=0 to keep it disabled.",
+            stage,
+        )
 
 
 def _maybe_pregenerate_sessions(benchmark_config, session_generator) -> Optional[list]:
@@ -72,6 +94,7 @@ def _run_main_loop(
 ) -> None:
     """Run the main benchmark loop with all workers."""
     logger.info("Starting main loop")
+    _warn_if_gil_enabled("benchmark start")
     if benchmark_start_time is None:
         benchmark_start_time = time.monotonic()
 
@@ -170,6 +193,10 @@ def _run_main_loop(
     except KeyboardInterrupt:
         logger.info("Interrupted, stopping")
         pending_in_flight = set()
+
+    # The GIL can flip on mid-run via lazy extension imports; re-check so a
+    # serialized run is at least loudly reported.
+    _warn_if_gil_enabled("benchmark end")
 
     stop_event.set()
     pool_manager.join_pool("prefetch", timeout=1.0)

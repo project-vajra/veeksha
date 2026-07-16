@@ -20,8 +20,10 @@ import base64
 import json
 import os
 import re
+import threading
 import time
 from abc import abstractmethod
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
@@ -74,13 +76,18 @@ def _metadata_ms(metadata: dict, key: str) -> Optional[float]:
 
 
 def _slice_pcm16_bytes(
-    pcm_bytes: bytes,
+    pcm_bytes: bytes | memoryview,
     sample_rate: int,
     *,
     start_ms: Optional[float],
     end_ms: Optional[float],
-) -> bytes:
-    """Slice raw PCM16 mono bytes by millisecond offsets."""
+) -> bytes | memoryview:
+    """Slice raw PCM16 mono bytes by millisecond offsets.
+
+    Accepts a ``memoryview`` for zero-copy slicing of cached clip PCM (the
+    slice then aliases the cached buffer instead of duplicating ~minutes of
+    audio per session).
+    """
     if start_ms is None and end_ms is None:
         return pcm_bytes
 
@@ -106,6 +113,25 @@ def _slice_pcm16_bytes(
     start_byte = start_sample * BYTES_PER_SAMPLE
     end_byte = end_sample * BYTES_PER_SAMPLE
     return pcm_bytes[start_byte:end_byte]
+
+
+# Decoded clips (and their pre-encoded wire messages) are cached per client;
+# traces replay a finite clip set, so this is bounded in practice. The FIFO
+# cap guards pathological manifests with thousands of distinct clips.
+_CLIP_CACHE_MAX_CLIPS = 64
+
+
+@dataclass(frozen=True)
+class _ClipAssets:
+    """Deterministic per-clip artifacts shared by every session replaying it.
+
+    ``wire_messages[i]`` is the provider append-message for the full chunk
+    ``pcm[i * chunk_size : (i + 1) * chunk_size]``; the trailing partial chunk
+    (from the clip end or a per-session slice) is encoded on the fly.
+    """
+
+    pcm: bytes
+    wire_messages: list[str]
 
 
 @dataclass
@@ -200,7 +226,14 @@ class _STTClientBase(BaseLLMClient):
         self._request_timeout = config.request_timeout
         self._ws_ping_interval_s = config.ws_ping_interval_s
         self._ws_ping_timeout_s = config.ws_ping_timeout_s
+        self._ws_compression = "deflate" if config.ws_permessage_deflate else None
         self._ws_url = self._http_to_ws(self.ws_path)
+
+        # Per-clip decode + wire-message cache, shared across the worker
+        # threads that all hold this one client instance.
+        self._clip_cache: OrderedDict[str, _ClipAssets] = OrderedDict()
+        self._clip_cache_lock = threading.Lock()
+        self._clip_locks: dict[str, threading.Lock] = {}
 
     # ------------------------------------------------------------------
     # Provider protocol hooks
@@ -211,7 +244,7 @@ class _STTClientBase(BaseLLMClient):
         """Complete the provider handshake before audio is sent."""
 
     @abstractmethod
-    def _encode_chunk(self, chunk: bytes) -> str | bytes:
+    def _encode_chunk(self, chunk: bytes | memoryview) -> str | bytes:
         """Frame a PCM16 chunk into the message the provider expects."""
         raise NotImplementedError
 
@@ -248,9 +281,46 @@ class _STTClientBase(BaseLLMClient):
         if delay_s > 0:
             await asyncio.sleep(delay_s)
 
+    def _clip_lock(self, audio_path: str) -> threading.Lock:
+        """Return the per-clip lock guarding decode/encode for one path."""
+        with self._clip_cache_lock:
+            lock = self._clip_locks.get(audio_path)
+            if lock is None:
+                lock = self._clip_locks[audio_path] = threading.Lock()
+            return lock
+
+    def _clip_assets(self, audio_path: str) -> _ClipAssets:
+        """Decode a clip and pre-encode its append messages, cached per clip.
+
+        Blocking (audio decode + base64/JSON encode); callers on an event
+        loop must run this in an executor. The per-clip lock makes the
+        thundering herd at benchmark start decode each clip exactly once.
+        """
+        with self._clip_lock(audio_path):
+            with self._clip_cache_lock:
+                assets = self._clip_cache.get(audio_path)
+            if assets is not None:
+                return assets
+
+            pcm = _audio_to_pcm16_bytes(audio_path, self._sample_rate)
+            view = memoryview(pcm)
+            full_end = len(pcm) - len(pcm) % self._ws_chunk_size
+            wire_messages = [
+                self._encode_chunk(view[offset : offset + self._ws_chunk_size])
+                for offset in range(0, full_end, self._ws_chunk_size)
+            ]
+            assets = _ClipAssets(pcm=pcm, wire_messages=wire_messages)
+
+            with self._clip_cache_lock:
+                self._clip_cache[audio_path] = assets
+                while len(self._clip_cache) > _CLIP_CACHE_MAX_CLIPS:
+                    self._clip_cache.popitem(last=False)
+            return assets
+
     async def _stream(
         self,
-        pcm_bytes: bytes,
+        pcm_bytes: bytes | memoryview,
+        wire_messages: Optional[list[str]] = None,
     ) -> STTStreamResult:
         """Stream pre-decoded PCM16 to the provider and collect the transcript.
 
@@ -258,6 +328,10 @@ class _STTClientBase(BaseLLMClient):
         timed when they arrive, not after the (paced) upload completes. ``ttfc``
         is anchored to ``audio_started_at`` (the first audio byte on the wire),
         so clip decode, connect, and handshake latency are excluded.
+
+        ``wire_messages`` are the cached pre-encoded append messages for the
+        clip this PCM is a prefix of (chunk ``i`` at byte ``i * chunk_size``);
+        the trailing partial chunk is encoded on the fly.
         """
         import websockets
 
@@ -277,6 +351,7 @@ class _STTClientBase(BaseLLMClient):
             self._ws_url,
             ping_interval=self._ws_ping_interval_s,
             ping_timeout=self._ws_ping_timeout_s,
+            compression=self._ws_compression,
         ) as ws:
             await self._open_session(ws)
 
@@ -291,8 +366,12 @@ class _STTClientBase(BaseLLMClient):
                             audio_started_at
                             + byte_offset / BYTES_PER_SAMPLE / self._sample_rate
                         )
-                    chunk = pcm_bytes[byte_offset : byte_offset + self._ws_chunk_size]
-                    await ws.send(self._encode_chunk(chunk))
+                    chunk_end = byte_offset + self._ws_chunk_size
+                    if wire_messages is not None and chunk_end <= len(pcm_bytes):
+                        message = wire_messages[byte_offset // self._ws_chunk_size]
+                    else:
+                        message = self._encode_chunk(pcm_bytes[byte_offset:chunk_end])
+                    await ws.send(message)
                 if audio_started_at is not None:
                     await self._maybe_pace_until(
                         audio_started_at
@@ -442,15 +521,23 @@ class _STTClientBase(BaseLLMClient):
         stream_result: Optional[STTStreamResult] = None
 
         # Decode and slice before the latency clock so file I/O and DSP don't
-        # inflate TTFC.
+        # inflate TTFC. Decode and append-message encoding are cached per
+        # clip and run in an executor so they never stall the shared event
+        # loop (a synchronous decode here freezes pacing for every session
+        # on this worker's loop).
         try:
-            pcm_bytes = _audio_to_pcm16_bytes(audio_path, self._sample_rate)
+            loop = asyncio.get_running_loop()
+            clip = await loop.run_in_executor(None, self._clip_assets, audio_path)
+            start_ms = _metadata_ms(request.metadata, "input_audio_start_ms")
             pcm_bytes = _slice_pcm16_bytes(
-                pcm_bytes,
+                memoryview(clip.pcm),
                 self._sample_rate,
-                start_ms=_metadata_ms(request.metadata, "input_audio_start_ms"),
+                start_ms=start_ms,
                 end_ms=_metadata_ms(request.metadata, "input_audio_end_ms"),
             )
+            # Cached messages are aligned to the clip start; a non-zero slice
+            # start shifts the chunk grid, so encode per chunk in that case.
+            wire_messages = clip.wire_messages if not start_ms else None
         except Exception as e:
             return RequestResult(
                 request_id=request.id,
@@ -466,7 +553,7 @@ class _STTClientBase(BaseLLMClient):
 
         try:
             async with asyncio.timeout(self._request_timeout):
-                stream_result = await self._stream(pcm_bytes)
+                stream_result = await self._stream(pcm_bytes, wire_messages)
         except TimeoutError:
             error_code = 408
             error_msg = f"STT request timed out after {self._request_timeout}s"
@@ -564,7 +651,7 @@ class VllmRealtimeSTTClient(_STTClientBase):
         await ws.send(json.dumps({"type": "session.update", "model": self._model}))
         await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
 
-    def _encode_chunk(self, chunk: bytes) -> str:
+    def _encode_chunk(self, chunk: bytes | memoryview) -> str:
         return json.dumps(
             {
                 "type": "input_audio_buffer.append",
@@ -614,7 +701,7 @@ class VajraOpenAIRealtimeSTTClient(_STTClientBase):
             )
         )
 
-    def _encode_chunk(self, chunk: bytes) -> str:
+    def _encode_chunk(self, chunk: bytes | memoryview) -> str:
         return json.dumps(
             {
                 "type": "input_audio_buffer.append",
