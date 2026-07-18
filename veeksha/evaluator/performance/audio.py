@@ -35,6 +35,11 @@ from veeksha.types import AudioTask, ChannelModality
 
 logger = init_logger(__name__)
 
+# One codec chunk of audio in milliseconds. A stream truncated at the server's
+# length cap can fall short of the exact cap duration by at most one chunk, so
+# the truncation heuristic compares against (cap - one chunk).
+LENGTH_CAP_CHUNK_MS = 320.0
+
 
 def _pcm_byte_count(total_bytes: int, *, raw_pcm: bool) -> int:
     if raw_pcm:
@@ -70,6 +75,7 @@ class AudioRequestMetrics:
     session_total_requests: int | None = None
     interactivity: InteractivityMetrics | None = None
     ws_connect_latency_ms: float | None = None
+    suspected_length_cap_truncation: bool = False
 
 
 class AudioPerformanceEvaluator:
@@ -141,6 +147,7 @@ class AudioPerformanceEvaluator:
         self._total_generated_audio_duration_ms = 0.0
         self._first_dispatch_at: float | None = None
         self._last_completion_at: float | None = None
+        self._suspected_truncation_count = 0
 
     def register_request(
         self,
@@ -240,6 +247,15 @@ class AudioPerformanceEvaluator:
         input_tokens = int(cm.get(AudioMetricKey.INPUT_TOKENS.value, 0) or 0)
         input_text = str(cm.get(AudioMetricKey.INPUT_TEXT.value, ""))
 
+        # Duration at the server's length cap (within one codec chunk) is the
+        # only client-visible signal of silent server-side truncation.
+        max_expected_audio_ms = self.channel_config.max_expected_audio_ms
+        suspected_length_cap_truncation = (
+            audio_task is AudioTask.TTS
+            and max_expected_audio_ms is not None
+            and generated_audio_duration >= max_expected_audio_ms - LENGTH_CAP_CHUNK_MS
+        )
+
         ws_connect_latency = cm.get(AudioMetricKey.WS_CONNECT_LATENCY_MS.value)
         ws_connect_latency_ms = (
             float(ws_connect_latency) if ws_connect_latency is not None else None
@@ -306,8 +322,11 @@ class AudioPerformanceEvaluator:
                 ),
                 interactivity=interactivity,
                 ws_connect_latency_ms=ws_connect_latency_ms,
+                suspected_length_cap_truncation=suspected_length_cap_truncation,
             )
             self._completed_metrics.append(metrics)
+            if suspected_length_cap_truncation:
+                self._suspected_truncation_count += 1
 
             self._total_input_chars += input_chars
             self._total_generated_audio_duration_ms += generated_audio_duration
@@ -491,6 +510,11 @@ class AudioPerformanceEvaluator:
             else None
         )
 
+        if self.channel_config.max_expected_audio_ms is not None:
+            perf_summary["suspected_length_cap_truncation"] = (
+                self._suspected_truncation_count
+            )
+
         if self._interactive_request_count > 0:
             count = self._interactive_request_count
             perf_summary["interactive_requests_count"] = count
@@ -609,6 +633,10 @@ class AudioPerformanceEvaluator:
                 AudioMetricKey.INPUT_TOKENS.value: metrics.input_tokens,
                 AudioMetricKey.INPUT_TEXT.value: metrics.input_text,
             }
+            if self.channel_config.max_expected_audio_ms is not None:
+                row["suspected_length_cap_truncation"] = int(
+                    metrics.suspected_length_cap_truncation
+                )
             if metrics.asr is not None:
                 row.update(metrics.asr.to_request_row())
             row.update(self._interactivity_row_fields(metrics))

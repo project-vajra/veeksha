@@ -126,6 +126,16 @@ class AudioChannelPerformanceConfig(BaseChannelPerformanceConfig):
         False,
         help="Write metrics/audio_raw_timing.jsonl with raw per-event timestamps.",
     )
+    max_expected_audio_ms: Optional[float] = field(
+        None,
+        help="Server-side audio duration cap in milliseconds (e.g. Vajra's "
+        "max_decode_tokens * 80ms per token = 163840ms at defaults). When set, "
+        "any request whose generated audio duration reaches the cap (within "
+        "one 320ms codec chunk) is counted as suspected_length_cap_truncation "
+        "in the summary and reported by the run's health check. The server "
+        "truncates silently at the cap, so duration-at-cap is the only "
+        "client-visible signal.",
+    )
 
     @classmethod
     def get_type(cls) -> ChannelModality:
@@ -142,6 +152,8 @@ class AudioChannelPerformanceConfig(BaseChannelPerformanceConfig):
             object.__setattr__(self, field_name, normalized)
         if self.min_reportable_stall_ms < 0:
             raise ValueError("min_reportable_stall_ms must be >= 0")
+        if self.max_expected_audio_ms is not None and self.max_expected_audio_ms <= 0:
+            raise ValueError("max_expected_audio_ms must be > 0 or None")
 
 
 @frozen_dataclass

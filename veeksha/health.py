@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Tuple, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 import numpy as np
 import pandas as pd
@@ -101,6 +101,10 @@ class HealthChecker:
 
         # lifecycle timing delays check
         results.append(self.check_lifecycle_timing_delays())
+
+        # audio truncation check (only when an audio duration cap is configured)
+        if self._max_expected_audio_ms() is not None:
+            results.append(self.check_suspected_length_cap_truncation())
 
         return results
 
@@ -1296,4 +1300,85 @@ class HealthChecker:
                 "sections": sections,
             },
             passed=True,  # No pass/fail criteria for now
+        )
+
+    def _max_expected_audio_ms(self) -> Optional[float]:
+        """Return the configured audio duration cap, if any evaluator sets one."""
+        for evaluator_config in self.config.evaluators:
+            audio_channel = getattr(evaluator_config, "audio_channel", None)
+            if audio_channel is None:
+                continue
+            max_expected = getattr(audio_channel, "max_expected_audio_ms", None)
+            if max_expected is not None:
+                return max_expected
+        return None
+
+    def check_suspected_length_cap_truncation(self) -> TestResult:
+        """
+        Report requests whose generated audio duration reached the configured
+        server-side cap (max_expected_audio_ms, within one codec chunk).
+
+        The server truncates silently at the cap and the request still scores
+        as a success, so any flagged request invalidates duration-derived
+        metrics for that request. Flags are computed by the audio evaluator and
+        read from request_level_metrics.jsonl.
+        """
+        name = "Suspected Length-Cap Truncation Check"
+        max_expected_ms = self._max_expected_audio_ms()
+        flag_col = self._get_col("suspected_length_cap_truncation")
+
+        if flag_col not in self.merged_df.columns:
+            return TestResult(
+                summary={
+                    "name": name,
+                    "sections": [
+                        {
+                            "title": "Missing Data",
+                            "results": {
+                                "Status": "Skipped",
+                                "Reason": (
+                                    "Column 'suspected_length_cap_truncation' "
+                                    "missing from request metrics."
+                                ),
+                                "Resolution": (
+                                    "Ensure the audio performance evaluator ran "
+                                    "with max_expected_audio_ms set."
+                                ),
+                            },
+                        }
+                    ],
+                },
+                passed=True,
+            )
+
+        flagged = self.merged_df[self.merged_df[flag_col].fillna(0).astype(int) == 1]
+        flagged_count = len(flagged)
+        total_count = len(self.merged_df)
+        passed = flagged_count == 0
+
+        results: Dict[str, Any] = {
+            "Configured Audio Cap (ms)": f"{max_expected_ms:.1f}",
+            "Truncation Threshold (ms)": f">= cap - 320ms (one codec chunk)",
+            "Total Requests Checked": str(total_count),
+            "Suspected Truncations": (
+                f"{flagged_count} " f"({100.0 * flagged_count / total_count:.1f}%)"
+                if total_count > 0
+                else "0"
+            ),
+        }
+        if flagged_count > 0:
+            sample_ids = flagged["request_id"].head(10).tolist()
+            results["Sample Request IDs"] = ", ".join(str(rid) for rid in sample_ids)
+            results["Interpretation"] = (
+                "Audio duration at the server's length cap: the server likely "
+                "truncated these sessions silently (they still scored as "
+                "successes). Duration-derived metrics are unreliable for them."
+            )
+
+        return TestResult(
+            summary={
+                "name": name,
+                "sections": [{"title": "Truncation Summary", "results": results}],
+            },
+            passed=passed,
         )

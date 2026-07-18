@@ -12,11 +12,16 @@ from veeksha.evaluator.performance.audio import AudioPerformanceEvaluator
 from veeksha.types import AudioTask, ChannelModality
 
 
-def _evaluator(*, interactivity_enabled: bool) -> AudioPerformanceEvaluator:
+def _evaluator(
+    *,
+    interactivity_enabled: bool,
+    max_expected_audio_ms: float | None = None,
+) -> AudioPerformanceEvaluator:
     audio_config = AudioChannelPerformanceConfig(
         interactivity_enabled=interactivity_enabled,
         startup_delay_ms_values=[0.0],
         startup_buffer_ms_values=[0.0],
+        max_expected_audio_ms=max_expected_audio_ms,
     )
     config = PerformanceEvaluatorConfig(
         target_channels=[ChannelModality.AUDIO],
@@ -132,6 +137,69 @@ def test_stt_task_uses_input_pcm_duration_and_exports_asr_metrics() -> None:
     assert row["final_wer"] == 0.0
     assert summary["asr_final_sample_count"] == 1.0
     assert AudioMetricKey.ZERO_DELAY_STALL_COUNT.value not in row
+
+
+def _tts_metrics() -> dict:
+    return {
+        "audio_task": AudioTask.TTS,
+        AudioMetricKey.TTFC.value: 100.0,
+        AudioMetricKey.END_TO_END_LATENCY.value: 900.0,
+        AudioMetricKey.CHUNK_COUNT.value: 1,
+        AudioMetricKey.RAW_PCM.value: True,
+        AudioMetricKey.SAMPLE_RATE.value: 24000,
+    }
+
+
+def test_duration_at_cap_is_counted_as_suspected_truncation() -> None:
+    # Cap 1000ms with the 320ms one-chunk tolerance: >= 680ms is suspect.
+    # At 24kHz 16-bit mono PCM, 1ms = 48 bytes.
+    evaluator = _evaluator(interactivity_enabled=False, max_expected_audio_ms=1000.0)
+
+    _record(
+        evaluator,
+        request_id=1,
+        content=b"\0" * (1000 * 48),  # exactly at the cap
+        metrics=_tts_metrics(),
+    )
+    _record(
+        evaluator,
+        request_id=2,
+        content=b"\0" * (680 * 48),  # exactly at cap - one chunk
+        metrics=_tts_metrics(),
+    )
+    _record(
+        evaluator,
+        request_id=3,
+        content=b"\0" * (679 * 48),  # just below the threshold
+        metrics=_tts_metrics(),
+    )
+
+    summary = evaluator.get_summary()
+    assert summary["suspected_length_cap_truncation"] == 2
+
+    rows = {row["request_id"]: row for row in evaluator._export_request_rows()}
+    assert rows[1]["suspected_length_cap_truncation"] == 1
+    assert rows[2]["suspected_length_cap_truncation"] == 1
+    assert rows[3]["suspected_length_cap_truncation"] == 0
+
+
+def test_truncation_detection_disabled_without_configured_cap() -> None:
+    evaluator = _evaluator(interactivity_enabled=False)
+
+    _record(
+        evaluator,
+        request_id=1,
+        content=b"\0" * (1000 * 48),
+        metrics=_tts_metrics(),
+    )
+
+    assert "suspected_length_cap_truncation" not in evaluator.get_summary()
+    assert "suspected_length_cap_truncation" not in evaluator._export_request_rows()[0]
+
+
+def test_audio_channel_config_rejects_nonpositive_cap() -> None:
+    with pytest.raises(ValueError, match="max_expected_audio_ms must be > 0"):
+        AudioChannelPerformanceConfig(max_expected_audio_ms=0.0)
 
 
 def test_audio_response_without_task_is_rejected() -> None:
