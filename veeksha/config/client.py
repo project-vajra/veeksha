@@ -275,6 +275,63 @@ class RealtimeTTSClientConfig(BaseClientConfig):
 
 
 @frozen_dataclass
+class VajraTTSStreamClientConfig(BaseClientConfig):
+    """WebSocket TTS client for Vajra's native streaming-text speech protocol.
+
+    `client.type: vajra_tts_stream` opens a websocket to
+    ``/v1/audio/speech/stream`` on a Vajra TTS server, sends a
+    ``session.config`` message followed by ``input.text`` deltas at an
+    emulated LLM decode rate, and measures streaming interactivity metrics
+    from the binary PCM frames it receives back.
+    """
+
+    voice_id: str = field(
+        "",
+        help="Optional voice identifier sent in session.config.",
+    )
+    sample_rate: int = field(DEFAULT_AUDIO_SAMPLE_RATE, help="Audio sample rate in Hz.")
+    raw_pcm: bool = field(True, help="The protocol streams raw int16 PCM frames.")
+    model: str = field("", help="The TTS model ID.")
+    language: Optional[str] = field(
+        None, help="Optional language sent in session.config."
+    )
+    instructions: Optional[str] = field(
+        None, help="Optional instructions sent in session.config."
+    )
+    task_type: Optional[str] = field(
+        None, help="Optional task_type sent in session.config."
+    )
+    pacing: TextPacingConfig = field(
+        default_factory=TextPacingConfig,
+        help="Text pacing (LLM decode-rate emulation) configuration.",
+    )
+
+    @classmethod
+    def get_type(cls) -> ClientType:
+        return ClientType.VAJRA_TTS_STREAM
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        # Skip validation when instantiated with defaults by the flat_dataclass
+        # framework for non-selected polymorphic children.
+        if not self.model and self.api_base is None:
+            return
+        if not self.model:
+            raise ValueError("VajraTTSStreamClientConfig.model is required.")
+        if self.api_base is None:
+            raise ValueError("VajraTTSStreamClientConfig.api_base is required.")
+        if self.sample_rate <= 0:
+            raise ValueError("VajraTTSStreamClientConfig.sample_rate must be > 0")
+
+    def build_tokenizer_provider(self):
+        """Vajra TTS models use a simple word-split tokenizer."""
+        from veeksha.core.tokenizer import build_word_split_tokenizer_provider
+
+        return build_word_split_tokenizer_provider(self.model)
+
+
+@frozen_dataclass
 class STTClientConfig(BaseClientConfig):
     """STT client configuration for realtime streaming speech-to-text APIs."""
 

@@ -22,14 +22,15 @@ from typing import TYPE_CHECKING, Optional
 from urllib.parse import quote, urljoin
 
 from websockets.asyncio.client import connect
-from websockets.exceptions import (
-    ConnectionClosedError,
-    InvalidHandshake,
-    InvalidStatus,
-)
 
 from veeksha.client.base import BaseLLMClient
-from veeksha.client.utils import TextDeltaPacer, segment_text
+from veeksha.client.utils import (
+    WS_TRANSPORT_ERROR_PRIORITY,
+    TextDeltaPacer,
+    flatten_ws_exception,
+    map_ws_transport_error,
+    segment_text,
+)
 from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.core.request import Request
 from veeksha.core.request_content import TextChannelRequestContent
@@ -365,7 +366,9 @@ class RealtimeTTSClient(BaseLLMClient):
             error_msg = "Realtime TTS request timed out"
             logger.warning("Realtime TTS timeout: (%s) %s", error_code, error_msg)
         except Exception as exc:  # noqa: BLE001 - mapped to error codes below.
-            error_code, error_msg = _map_error(_flatten_exception(exc))
+            error_code, error_msg = _map_error(
+                flatten_ws_exception(exc, _ERROR_PRIORITY)
+            )
             logger.warning("Realtime TTS error: (%s) %s", error_code, error_msg)
 
         completed_at = time.monotonic()
@@ -435,44 +438,10 @@ class RealtimeTTSClient(BaseLLMClient):
 # Error flattening / mapping
 # ---------------------------------------------------------------------------
 
-
-def _flatten_exception(exc: BaseException) -> BaseException:
-    """Reduce a (possibly nested) ExceptionGroup to its most specific leaf.
-
-    ``asyncio.TaskGroup`` raises an ``ExceptionGroup`` bundling the failing
-    task exceptions; connect-phase failures propagate bare. Collect the leaves
-    and pick by priority so the mapping below sees the exception that actually
-    determines the error code.
-    """
-    if not isinstance(exc, BaseExceptionGroup):
-        return exc
-
-    leaves: list[BaseException] = []
-
-    def _collect(node: BaseException) -> None:
-        if isinstance(node, BaseExceptionGroup):
-            for sub in node.exceptions:
-                _collect(sub)
-        else:
-            leaves.append(node)
-
-    _collect(exc)
-    if not leaves:
-        return exc
-
-    priority = (
-        RealtimeServerError,
-        InvalidStatus,
-        InvalidHandshake,
-        ConnectionClosedError,
-        TimeoutError,
-        OSError,
-    )
-    for exc_type in priority:
-        for leaf in leaves:
-            if isinstance(leaf, exc_type):
-                return leaf
-    return leaves[0]
+_ERROR_PRIORITY: tuple[type[BaseException], ...] = (
+    RealtimeServerError,
+    *WS_TRANSPORT_ERROR_PRIORITY,
+)
 
 
 def _server_error_message(event: dict) -> str:
@@ -507,13 +476,4 @@ def _map_error(exc: BaseException) -> tuple[int, str]:
     """Map a flattened exception to an (error_code, error_msg) pair."""
     if isinstance(exc, RealtimeServerError):
         return 500, _server_error_message(exc.event)
-    if isinstance(exc, InvalidStatus):
-        # Handshake rejected: surface the server's HTTP status code.
-        return exc.response.status_code, str(exc)
-    if isinstance(exc, TimeoutError):
-        return 408, "Realtime TTS request timed out"
-    if isinstance(exc, (InvalidHandshake, OSError)):
-        # Connect-phase failure (DNS/refused/handshake): unreachable server.
-        return 503, str(exc)
-    # ConnectionClosedError and anything else: unclassified transport failure.
-    return 520, str(exc)
+    return map_ws_transport_error(exc, "Realtime TTS request timed out")

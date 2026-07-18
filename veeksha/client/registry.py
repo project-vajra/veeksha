@@ -56,3 +56,11 @@ ClientRegistry.register(
         "STTClient",
     ),
 )
+
+ClientRegistry.register(
+    ClientType.VAJRA_TTS_STREAM,
+    _LazyLoader(
+        "veeksha.client.vajra_tts_stream",
+        "VajraTTSStreamClient",
+    ),
+)

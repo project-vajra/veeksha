@@ -77,6 +77,7 @@ class ClientType(BaseIntEnum):
     TTS = 4
     REALTIME_TTS = 5
     STT = 6
+    VAJRA_TTS_STREAM = 7
 
 
 # ----- Server -----

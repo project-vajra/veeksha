@@ -18,6 +18,10 @@ from veeksha.types import ChannelModality, ClientType
 
 logger = init_logger(__name__)
 
+# Clients that stream paced text in and audio out over a websocket and emit
+# the realtime AudioMetricKey contract (audio chunk timestamps + done offsets).
+_REALTIME_TTS_CLIENT_TYPES = (ClientType.REALTIME_TTS, ClientType.VAJRA_TTS_STREAM)
+
 
 @dataclass
 class SessionAggregate:
@@ -369,7 +373,7 @@ class PerformanceEvaluator(BaseEvaluator):
 
     def _record_realtime_tts_outcome(self, response: Any) -> None:
         """Count realtime start/completion outcomes, including failed requests."""
-        if self.client_type != ClientType.REALTIME_TTS:
+        if self.client_type not in _REALTIME_TTS_CLIENT_TYPES:
             return
         channel_response = getattr(response, "channels", {}).get(ChannelModality.AUDIO)
         channel_metrics = (
@@ -387,7 +391,7 @@ class PerformanceEvaluator(BaseEvaluator):
             self._realtime_stream_completed_count += 1
 
     def _get_realtime_tts_summary(self) -> Dict[str, float]:
-        if self.client_type != ClientType.REALTIME_TTS:
+        if self.client_type not in _REALTIME_TTS_CLIENT_TYPES:
             return {}
         count = self.num_requests
         return {

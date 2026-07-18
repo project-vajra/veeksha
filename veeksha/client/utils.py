@@ -1,10 +1,9 @@
-"""Shared client-side helpers for paced Realtime text-to-speech.
+"""Shared client-side helpers for paced streaming-text TTS.
 
-Text segmentation (emulating an upstream LLM's per-token output) and delta
-pacing (emulating its decode cadence) are transport-agnostic: they turn a prompt
-string into paced ``conversation.item.create`` payloads. They live here rather
-than in the WebSocket client so the client stays focused on the
-transport and metric contract.
+Text segmentation (emulating an upstream LLM's per-token output), delta pacing
+(emulating its decode cadence), and WebSocket error flattening/mapping are
+transport-agnostic; they live here rather than in the WebSocket clients so each
+client stays focused on its wire protocol and metric contract.
 """
 
 from __future__ import annotations
@@ -14,6 +13,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
+from websockets.exceptions import (
+    ConnectionClosedError,
+    InvalidHandshake,
+    InvalidStatus,
+)
 
 from veeksha.config.generator.interval import (
     FixedIntervalGeneratorConfig,
@@ -110,3 +114,70 @@ class TextDeltaPacer:
     def next_gap(self) -> float:
         """Return the next inter-delta gap in seconds."""
         return self._generator.get_next_interval()
+
+
+# ---------------------------------------------------------------------------
+# WebSocket error flattening / mapping
+# ---------------------------------------------------------------------------
+
+# Transport exceptions ranked most- to least-specific. Clients prepend their
+# own server-error types so protocol errors win over the transport failures
+# they cause (e.g. a server error that also closes the connection).
+WS_TRANSPORT_ERROR_PRIORITY: tuple[type[BaseException], ...] = (
+    InvalidStatus,
+    InvalidHandshake,
+    ConnectionClosedError,
+    TimeoutError,
+    OSError,
+)
+
+
+def flatten_ws_exception(
+    exc: BaseException, priority: tuple[type[BaseException], ...]
+) -> BaseException:
+    """Reduce a (possibly nested) ExceptionGroup to its most specific leaf.
+
+    ``asyncio.TaskGroup`` raises an ``ExceptionGroup`` bundling the failing
+    task exceptions; connect-phase failures propagate bare. Collect the leaves
+    and pick by ``priority`` so error mapping sees the exception that actually
+    determines the error code.
+    """
+    if not isinstance(exc, BaseExceptionGroup):
+        return exc
+
+    leaves: list[BaseException] = []
+
+    def _collect(node: BaseException) -> None:
+        if isinstance(node, BaseExceptionGroup):
+            for sub in node.exceptions:
+                _collect(sub)
+        else:
+            leaves.append(node)
+
+    _collect(exc)
+    if not leaves:
+        return exc
+
+    for exc_type in priority:
+        for leaf in leaves:
+            if isinstance(leaf, exc_type):
+                return leaf
+    return leaves[0]
+
+
+def map_ws_transport_error(exc: BaseException, timeout_msg: str) -> tuple[int, str]:
+    """Map a flattened transport exception to an (error_code, error_msg) pair.
+
+    Server-signalled protocol errors are client-specific and must be handled
+    by the caller before falling through to this transport mapping.
+    """
+    if isinstance(exc, InvalidStatus):
+        # Handshake rejected: surface the server's HTTP status code.
+        return exc.response.status_code, str(exc)
+    if isinstance(exc, TimeoutError):
+        return 408, timeout_msg
+    if isinstance(exc, (InvalidHandshake, OSError)):
+        # Connect-phase failure (DNS/refused/handshake): unreachable server.
+        return 503, str(exc)
+    # ConnectionClosedError and anything else: unclassified transport failure.
+    return 520, str(exc)
