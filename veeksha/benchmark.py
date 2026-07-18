@@ -20,7 +20,7 @@ from veeksha.core.seeding import SeedManager
 from veeksha.core.thread_pool import ThreadPoolManager
 from veeksha.core.trace_recorder import TraceRecorder
 from veeksha.generator.session.registry import SessionGeneratorRegistry
-from veeksha.health import HealthChecker
+from veeksha.health import HealthChecker, maybe_build_tts_zombie_probe
 from veeksha.logger import init_logger
 from veeksha.orchestration.benchmark_orchestrator import managed_server
 from veeksha.traffic.registry import TrafficSchedulerRegistry
@@ -292,6 +292,12 @@ def _run_benchmark(
         benchmark_config, session_generator
     )
 
+    # Snapshot server-side finished-session counters (Vajra TTS endpoints only)
+    # so the post-run health check can detect zombie sessions.
+    tts_zombie_probe = maybe_build_tts_zombie_probe(benchmark_config)
+    if tts_zombie_probe is not None:
+        tts_zombie_probe.capture_start()
+
     benchmark_start_time = time.monotonic()
     traffic_scheduler.reset_reference_time()
 
@@ -332,6 +338,9 @@ def _run_benchmark(
         if trace_recorder:
             trace_recorder.stop()
 
+    if tts_zombie_probe is not None:
+        tts_zombie_probe.capture_end()
+
     logger.info("Finalizing evaluator...")
     # finalize and save results
     finalize_started_at = time.monotonic()
@@ -355,6 +364,7 @@ def _run_benchmark(
         trace_file=f"{benchmark_config.output_dir}/traces/dispatch_trace.jsonl",
         metrics_file=f"{benchmark_config.output_dir}/metrics/request_level_metrics.jsonl",
         benchmark_config=benchmark_config,
+        tts_zombie_probe=tts_zombie_probe,
     )
     health_checker.run_and_save(
         f"{benchmark_config.output_dir}/health_check_results.txt"

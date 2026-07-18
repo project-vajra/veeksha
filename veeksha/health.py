@@ -4,12 +4,15 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 import numpy as np
 import pandas as pd
+import requests
 
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.logger import init_logger
-from veeksha.types import IntervalGeneratorType, TrafficType
+from veeksha.types import IntervalGeneratorType, ServerType, TrafficType
 
 logger = init_logger(__name__)
+
+TTS_WORKER_STATS_PATH = "/debug/tts_worker_stats"
 
 
 @dataclass
@@ -18,16 +21,181 @@ class TestResult:
     passed: bool
 
 
+@dataclass
+class TTSWorkerStatsSnapshot:
+    """Cumulative Talker finished-session counters from a Vajra TTS server."""
+
+    finished_eos: int
+    finished_length_cap: int
+
+    @property
+    def finished_total(self) -> int:
+        return self.finished_eos + self.finished_length_cap
+
+
+class TTSZombieSessionProbe:
+    """Compares server-side finished-session counts against benchmark completions.
+
+    Vajra TTS servers expose cumulative Talker counters at
+    ``/debug/tts_worker_stats`` (populated when the server runs with
+    ``VAJRA_TTS_TELEMETRY_DIR`` set). Snapshotting them at benchmark start and
+    end gives the number of sessions the server finished during the run; a
+    surplus over the requests the benchmark completed means
+    previously-disconnected clients left sessions decoding server-side
+    ("zombies") that the server only finished during this run's window.
+    """
+
+    def __init__(self, api_base: str, timeout_s: float = 10.0):
+        self.stats_url = api_base.rstrip("/") + TTS_WORKER_STATS_PATH
+        self.timeout_s = timeout_s
+        self._start_snapshot: Optional[TTSWorkerStatsSnapshot] = None
+        self._start_note: Optional[str] = None
+        self._end_snapshot: Optional[TTSWorkerStatsSnapshot] = None
+        self._end_note: Optional[str] = None
+
+    def capture_start(self) -> None:
+        self._start_snapshot, self._start_note = self._fetch()
+        if self._start_note is not None:
+            logger.warning(
+                "TTS zombie-session probe start snapshot unavailable: %s",
+                self._start_note,
+            )
+
+    def capture_end(self) -> None:
+        self._end_snapshot, self._end_note = self._fetch()
+        if self._end_note is not None:
+            logger.warning(
+                "TTS zombie-session probe end snapshot unavailable: %s",
+                self._end_note,
+            )
+
+    def _fetch(self) -> Tuple[Optional[TTSWorkerStatsSnapshot], Optional[str]]:
+        """Return (snapshot, note); a note means the snapshot is unavailable."""
+        try:
+            response = requests.get(self.stats_url, timeout=self.timeout_s)
+        except requests.RequestException as exc:
+            return None, f"GET {self.stats_url} failed: {exc}"
+        if response.status_code == 404:
+            return None, (
+                f"GET {self.stats_url} returned 404: worker telemetry disabled "
+                "(set VAJRA_TTS_TELEMETRY_DIR on the server) or not a TTS server"
+            )
+        if response.status_code != 200:
+            return None, (f"GET {self.stats_url} returned HTTP {response.status_code}")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            return None, f"GET {self.stats_url} returned invalid JSON: {exc}"
+        talker = payload.get("talker") if isinstance(payload, dict) else None
+        finished = talker.get("finished") if isinstance(talker, dict) else None
+        if not isinstance(finished, dict):
+            return None, (
+                "stats payload has no talker.finished counters "
+                "(no Talker snapshot dumped yet?)"
+            )
+        return (
+            TTSWorkerStatsSnapshot(
+                finished_eos=int(finished.get("eos", 0)),
+                finished_length_cap=int(finished.get("length_cap", 0)),
+            ),
+            None,
+        )
+
+    def build_result(self, completed_requests: int) -> TestResult:
+        """Build the health check TestResult from the captured snapshots."""
+        name = "TTS Zombie Session Check"
+
+        if self._start_snapshot is None or self._end_snapshot is None:
+            notes = [
+                note for note in (self._start_note, self._end_note) if note is not None
+            ] or ["snapshot never captured"]
+            return TestResult(
+                summary={
+                    "name": name,
+                    "sections": [
+                        {
+                            "title": "Server Stats Unavailable",
+                            "results": {
+                                "Status": "Skipped",
+                                "Reason": "; ".join(notes),
+                            },
+                        }
+                    ],
+                },
+                passed=True,
+            )
+
+        start = self._start_snapshot
+        end = self._end_snapshot
+        eos_delta = end.finished_eos - start.finished_eos
+        length_cap_delta = end.finished_length_cap - start.finished_length_cap
+        finished_delta = end.finished_total - start.finished_total
+        surplus = finished_delta - completed_requests
+        passed = surplus <= 0
+
+        results: Dict[str, Any] = {
+            "Stats URL": self.stats_url,
+            "Finished at Start (eos/length_cap)": (
+                f"{start.finished_eos}/{start.finished_length_cap}"
+            ),
+            "Finished at End (eos/length_cap)": (
+                f"{end.finished_eos}/{end.finished_length_cap}"
+            ),
+            "Server Finished Delta": (
+                f"{finished_delta} (eos: {eos_delta}, length_cap: {length_cap_delta})"
+            ),
+            "Benchmark Completed Requests": str(completed_requests),
+            "Surplus (zombies)": str(surplus),
+        }
+        if surplus > 0:
+            results["Interpretation"] = (
+                "The server finished more sessions than this benchmark "
+                "completed: previously-disconnected clients left sessions "
+                "decoding server-side. They competed for decode capacity "
+                "during this run, so its measurements are suspect."
+            )
+        elif surplus < 0:
+            results["Note"] = (
+                "The server finished fewer sessions than this benchmark "
+                "completed; sessions were likely still decoding at the end "
+                "snapshot (this run may itself be leaving zombies behind)."
+            )
+
+        return TestResult(
+            summary={
+                "name": name,
+                "sections": [
+                    {"title": "Finished Session Accounting", "results": results}
+                ],
+            },
+            passed=passed,
+        )
+
+
+def maybe_build_tts_zombie_probe(
+    benchmark_config: BenchmarkConfig,
+) -> Optional[TTSZombieSessionProbe]:
+    """Build a zombie-session probe for Vajra endpoints that declare a health_url."""
+    endpoint = benchmark_config.endpoint
+    if endpoint is None or endpoint.health_url is None:
+        return None
+    if endpoint.engine_type != str(ServerType.VAJRA):
+        return None
+    return TTSZombieSessionProbe(endpoint.api_base)
+
+
 class HealthChecker:
     def __init__(
         self,
         trace_file: str,
         metrics_file: str,
         benchmark_config: BenchmarkConfig,
+        tts_zombie_probe: Optional[TTSZombieSessionProbe] = None,
     ):
         self.trace_file = trace_file
         self.metrics_file = metrics_file
         self.config = benchmark_config
+        self.tts_zombie_probe = tts_zombie_probe
         self.trace_df = pd.DataFrame()
         self.metrics_df = pd.DataFrame()
         self.merged_df = pd.DataFrame()
@@ -105,6 +273,14 @@ class HealthChecker:
         # audio truncation check (only when an audio duration cap is configured)
         if self._max_expected_audio_ms() is not None:
             results.append(self.check_suspected_length_cap_truncation())
+
+        # zombie-session check (only when a Vajra endpoint probe was captured)
+        if self.tts_zombie_probe is not None:
+            results.append(
+                self.tts_zombie_probe.build_result(
+                    completed_requests=len(self.metrics_df)
+                )
+            )
 
         return results
 
