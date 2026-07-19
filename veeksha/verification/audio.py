@@ -161,12 +161,18 @@ class AudioVerificationSummary:
 
 
 def normalize_text(text: str) -> str:
-    """Normalize English text with the Seed-TTS WER punctuation protocol."""
+    """Normalize English text with the exact Seed-TTS-Eval WER protocol.
+
+    Strip all string.punctuation except the apostrophe, collapse double
+    spaces in a single replace pass (seed-exact quirk: "a   b" -> "a  b"),
+    then lowercase. No number normalization: digits vs words count as errors.
+    """
     normalized = text
     for char in string.punctuation:
         if char == "'":
             continue
         normalized = normalized.replace(char, "")
+    normalized = normalized.replace("  ", " ")
     return normalized.lower()
 
 
@@ -212,14 +218,10 @@ def _audio_path_to_f32_16k(path: Path) -> np.ndarray:
     return scipy.signal.resample(mono, target_len).astype(np.float32)
 
 
-def _utmos_key(config: AudioVerificationConfig) -> tuple[str, str, str]:
-    return (config.utmos.hf_repo, config.utmos.jit_file, config.utmos.device)
-
-
-def _resolve_utmos_device(config: AudioVerificationConfig) -> str:
+def _resolve_utmos_device(device: str) -> str:
     import torch
 
-    device = config.utmos.device.strip()
+    device = device.strip()
     if device.startswith("cuda") and not torch.cuda.is_available():
         raise AudioVerificationError(
             f"UTMOS requested {device}, but CUDA is unavailable."
@@ -227,10 +229,11 @@ def _resolve_utmos_device(config: AudioVerificationConfig) -> str:
     return device
 
 
-def _ensure_utmos_jit_model(config: AudioVerificationConfig) -> Any | None:
+def load_utmos_jit_model(hf_repo: str, jit_file: str, device: str) -> Any | None:
+    """Load (and cache) the UTMOS TorchScript model, or None if unavailable."""
     global _utmos_jit_key, _utmos_jit_model
 
-    key = _utmos_key(config)
+    key = (hf_repo, jit_file, device)
     with _utmos_lock:
         if key in _utmos_jit_load_failed_keys:
             return None
@@ -242,11 +245,11 @@ def _ensure_utmos_jit_model(config: AudioVerificationConfig) -> Any | None:
             from huggingface_hub import hf_hub_download
 
             path = hf_hub_download(
-                repo_id=config.utmos.hf_repo,
-                filename=config.utmos.jit_file,
+                repo_id=hf_repo,
+                filename=jit_file,
                 repo_type="model",
             )
-            model = torch.jit.load(path, map_location=_resolve_utmos_device(config))
+            model = torch.jit.load(path, map_location=_resolve_utmos_device(device))
             model.eval()
         except Exception as exc:
             logger.warning(
@@ -262,15 +265,16 @@ def _ensure_utmos_jit_model(config: AudioVerificationConfig) -> Any | None:
         return _utmos_jit_model
 
 
-def _utmos_predict_f32_16k(
-    wav_f32: np.ndarray, config: AudioVerificationConfig
+def predict_utmos_f32_16k(
+    wav_f32: np.ndarray, hf_repo: str, jit_file: str, device: str
 ) -> float | None:
+    """Score 16 kHz mono float32 audio with UTMOS, or None if unavailable."""
     import torch
 
     if len(wav_f32) == 0:
         return None
 
-    model = _ensure_utmos_jit_model(config)
+    model = load_utmos_jit_model(hf_repo, jit_file, device)
     if model is None:
         return None
 
@@ -280,7 +284,7 @@ def _utmos_predict_f32_16k(
         try:
             model_device = next(model.buffers()).device
         except StopIteration:
-            model_device = torch.device(config.utmos.device)
+            model_device = torch.device(device)
 
     wav = np.ascontiguousarray(wav_f32, dtype=np.float32)
     model_input = (
@@ -298,7 +302,9 @@ def _utmos_predict_audio_path(
     audio_path: Path, config: AudioVerificationConfig
 ) -> float | None:
     wav_16k = _audio_path_to_f32_16k(audio_path)
-    return _utmos_predict_f32_16k(wav_16k, config)
+    return predict_utmos_f32_16k(
+        wav_16k, config.utmos.hf_repo, config.utmos.jit_file, config.utmos.device
+    )
 
 
 def build_audio_verifiers(
