@@ -31,7 +31,7 @@ Key features
       as directed acyclic graphs with history inheritance, capturing real chat context accumulation
     - **Shared prefix testing**: Generate workloads with configurable prefix sharing to
       benchmark KV-cache efficiency
-    - **Trace replay**: Replay production traces (Claude Code, RAG, conversational) with
+    - **Trace replay**: Replay production traces (coding assistants, RAG, conversational) with
       preserved timing and token distributions
 
 **Flexible traffic generation**

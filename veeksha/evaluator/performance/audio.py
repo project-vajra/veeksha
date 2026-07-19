@@ -67,6 +67,9 @@ class AudioRequestMetrics:
     asr: ASRRequestMetrics | None = None
     input_tokens: int = 0
     input_text: str = ""
+    provider: str = ""
+    provider_model: str = ""
+    provider_protocol: str = ""
     session_total_requests: int | None = None
     interactivity: InteractivityMetrics | None = None
     ws_connect_latency_ms: float | None = None
@@ -131,9 +134,11 @@ class AudioPerformanceEvaluator:
 
         self._interactivity_sketches_ready = False
         self._interactive_request_count = 0
+        self._tts_service_fluidity_eligible_count = 0
         self._fixed_delay_stall_free_counts: dict[float, int] = {}
         self._buffer_target_stall_free_counts: dict[float, int] = {}
         self._buffer_target_eligible_counts: dict[float, int] = {}
+        self._fluidity_policy_sketches: dict[float, CDFSketch] = {}
         self._raw_timing_rows: list[dict[str, Any]] = []
         self._raw_timing_rows_streamed = 0
 
@@ -239,7 +244,9 @@ class AudioPerformanceEvaluator:
         input_chars = int(cm.get(AudioMetricKey.INPUT_CHARS.value, 0) or 0)
         input_tokens = int(cm.get(AudioMetricKey.INPUT_TOKENS.value, 0) or 0)
         input_text = str(cm.get(AudioMetricKey.INPUT_TEXT.value, ""))
-
+        provider = str(cm.get(AudioMetricKey.PROVIDER.value, ""))
+        provider_model = str(cm.get(AudioMetricKey.PROVIDER_MODEL.value, ""))
+        provider_protocol = str(cm.get(AudioMetricKey.PROVIDER_PROTOCOL.value, ""))
         ws_connect_latency = cm.get(AudioMetricKey.WS_CONNECT_LATENCY_MS.value)
         ws_connect_latency_ms = (
             float(ws_connect_latency) if ws_connect_latency is not None else None
@@ -259,6 +266,13 @@ class AudioPerformanceEvaluator:
                     ),
                     min_reportable_stall_ms=(
                         self.channel_config.min_reportable_stall_ms
+                    ),
+                    fluidity_frame_ms=self.channel_config.fluidity_frame_ms,
+                    fluidity_startup_delay_ms=(
+                        self.channel_config.fluidity_startup_delay_ms
+                    ),
+                    fluidity_attribution_mode=(
+                        self.channel_config.fluidity_attribution_mode
                     ),
                 )
                 if self.channel_config.persist_raw_timing:
@@ -301,6 +315,9 @@ class AudioPerformanceEvaluator:
                 audio_task=audio_task,
                 asr=asr_metrics,
                 input_text=input_text,
+                provider=provider,
+                provider_model=provider_model,
+                provider_protocol=provider_protocol,
                 session_total_requests=getattr(
                     response, "session_total_requests", None
                 ),
@@ -380,7 +397,10 @@ class AudioPerformanceEvaluator:
         specs: list[tuple[AudioMetricKey, str | None]] = [
             (AudioMetricKey.FIRST_INPUT_TO_FIRST_AUDIO_MS, "ms"),
             (AudioMetricKey.REQUEST_START_TO_FIRST_AUDIO_MS, "ms"),
+            (AudioMetricKey.REQUEST_START_TO_FIRST_PLAYABLE_AUDIO_MS, "ms"),
             (AudioMetricKey.AUDIO_BEFORE_COMMIT_RATIO, None),
+            (AudioMetricKey.DUPLEX_OVERLAP_OBSERVED, None),
+            (AudioMetricKey.DUPLEX_OVERLAP_MS, "ms"),
             (AudioMetricKey.POST_COMMIT_AUDIO_DELIVERY_MS, "ms"),
             (AudioMetricKey.REQUIRED_STARTUP_DELAY_MS, "ms"),
             (AudioMetricKey.ZERO_DELAY_STALL_COUNT, None),
@@ -389,9 +409,29 @@ class AudioPerformanceEvaluator:
             (AudioMetricKey.STREAMING_RTF, None),
             (AudioMetricKey.DONE_AFTER_LAST_AUDIO_MS, "ms"),
             (AudioMetricKey.WS_CONNECT_LATENCY_MS, "ms"),
+            (AudioMetricKey.USER_AUDIO_FLUIDITY_INDEX, None),
+            (AudioMetricKey.TTS_SERVICE_FLUIDITY_INDEX, None),
+            (AudioMetricKey.TTS_SERVICE_FLUIDITY_ELIGIBLE, None),
+            (AudioMetricKey.UNATTRIBUTED_MISSED_DEADLINES, None),
+            (AudioMetricKey.AUDIO_FLUIDITY_TOTAL_DEADLINES, None),
+            (AudioMetricKey.AUDIO_FLUIDITY_MISSED_DEADLINES, None),
+            (AudioMetricKey.AUDIO_PLAYABLE_FRAME_COUNT, None),
         ]
         for key, unit in specs:
             self.summaries[key.value] = CDFSketch(key.value, unit=unit)
+        fluidity_delays = list(
+            dict.fromkeys(
+                [
+                    *self.channel_config.startup_delay_ms_values,
+                    self.channel_config.fluidity_startup_delay_ms,
+                ]
+            )
+        )
+        for delay_ms in fluidity_delays:
+            metric_name = f"user_audio_fluidity_index_d{_policy_tag(delay_ms)}ms"
+            sketch = CDFSketch(metric_name)
+            self.summaries[metric_name] = sketch
+            self._fluidity_policy_sketches[float(delay_ms)] = sketch
         self._interactivity_sketches_ready = True
 
     def _record_interactivity(self, metrics: AudioRequestMetrics) -> None:
@@ -414,9 +454,18 @@ class AudioPerformanceEvaluator:
             interactivity.request_start_to_first_audio_ms,
         )
         put(
+            AudioMetricKey.REQUEST_START_TO_FIRST_PLAYABLE_AUDIO_MS,
+            interactivity.request_start_to_first_playable_audio_ms,
+        )
+        put(
             AudioMetricKey.AUDIO_BEFORE_COMMIT_RATIO,
             interactivity.audio_before_commit_ratio,
         )
+        put(
+            AudioMetricKey.DUPLEX_OVERLAP_OBSERVED,
+            float(interactivity.duplex_overlap_observed),
+        )
+        put(AudioMetricKey.DUPLEX_OVERLAP_MS, interactivity.duplex_overlap_ms)
         put(
             AudioMetricKey.POST_COMMIT_AUDIO_DELIVERY_MS,
             interactivity.post_commit_audio_delivery_ms,
@@ -434,6 +483,40 @@ class AudioPerformanceEvaluator:
             interactivity.done_after_last_audio_ms,
         )
         put(AudioMetricKey.WS_CONNECT_LATENCY_MS, metrics.ws_connect_latency_ms)
+        if interactivity.user_audio_fluidity is not None:
+            put(
+                AudioMetricKey.USER_AUDIO_FLUIDITY_INDEX,
+                interactivity.user_audio_fluidity.fluidity_index,
+            )
+            put(
+                AudioMetricKey.AUDIO_FLUIDITY_TOTAL_DEADLINES,
+                float(interactivity.user_audio_fluidity.total_deadlines),
+            )
+            put(
+                AudioMetricKey.AUDIO_FLUIDITY_MISSED_DEADLINES,
+                float(interactivity.user_audio_fluidity.missed_deadlines),
+            )
+            put(
+                AudioMetricKey.AUDIO_PLAYABLE_FRAME_COUNT,
+                float(interactivity.user_audio_fluidity.playable_frame_count),
+            )
+        put(
+            AudioMetricKey.TTS_SERVICE_FLUIDITY_ELIGIBLE,
+            float(interactivity.tts_service_fluidity_eligible),
+        )
+        put(
+            AudioMetricKey.UNATTRIBUTED_MISSED_DEADLINES,
+            float(interactivity.unattributed_missed_deadlines),
+        )
+        if interactivity.tts_service_fluidity is not None:
+            put(
+                AudioMetricKey.TTS_SERVICE_FLUIDITY_INDEX,
+                interactivity.tts_service_fluidity.fluidity_index,
+            )
+            self._tts_service_fluidity_eligible_count += 1
+        for delay_ms, result in interactivity.fluidity_by_startup_delay.items():
+            if result is not None:
+                self._fluidity_policy_sketches[delay_ms].put(result.fluidity_index)
 
         self._interactive_request_count += 1
         for delay_ms, result in interactivity.fixed_delay_playback.items():
@@ -467,9 +550,9 @@ class AudioPerformanceEvaluator:
                     max(0.0, last_completion_at - first_dispatch_at)
                 )
 
-    def get_summary(self) -> dict[str, float | None]:
+    def get_summary(self) -> dict[str, Any]:
         """Return aggregate audio, ASR, and playback-policy metrics."""
-        perf_summary: dict[str, float | None] = {}
+        perf_summary: dict[str, Any] = {}
         for cdf_sketch in self.summaries.values():
             perf_summary.update(cdf_sketch.get_summary())
 
@@ -494,6 +577,18 @@ class AudioPerformanceEvaluator:
         if self._interactive_request_count > 0:
             count = self._interactive_request_count
             perf_summary["interactive_requests_count"] = count
+            perf_summary[AudioMetricKey.AUDIO_FLUIDITY_FRAME_MS.value] = (
+                self.channel_config.fluidity_frame_ms
+            )
+            perf_summary[AudioMetricKey.AUDIO_FLUIDITY_STARTUP_DELAY_MS.value] = (
+                self.channel_config.fluidity_startup_delay_ms
+            )
+            perf_summary["fluidity_attribution_mode"] = (
+                self.channel_config.fluidity_attribution_mode
+            )
+            perf_summary["tts_service_fluidity_eligible_fraction"] = (
+                self._tts_service_fluidity_eligible_count / count
+            )
             for delay_ms in self.channel_config.startup_delay_ms_values:
                 tag = _policy_tag(delay_ms)
                 fraction = self._fixed_delay_stall_free_counts.get(delay_ms, 0) / count
@@ -595,6 +690,9 @@ class AudioPerformanceEvaluator:
                 "audio_task": (
                     str(metrics.audio_task) if metrics.audio_task is not None else None
                 ),
+                AudioMetricKey.PROVIDER.value: metrics.provider,
+                AudioMetricKey.PROVIDER_MODEL.value: metrics.provider_model,
+                AudioMetricKey.PROVIDER_PROTOCOL.value: metrics.provider_protocol,
                 AudioMetricKey.TTFC.value: round(metrics.ttfc, 3),
                 AudioMetricKey.END_TO_END_LATENCY.value: round(
                     metrics.end_to_end_latency, 3
@@ -637,9 +735,20 @@ class AudioPerformanceEvaluator:
             interactivity.request_start_to_first_audio_ms,
         )
         add(
+            AudioMetricKey.REQUEST_START_TO_FIRST_PLAYABLE_AUDIO_MS.value,
+            interactivity.request_start_to_first_playable_audio_ms,
+        )
+        add(
             AudioMetricKey.AUDIO_BEFORE_COMMIT_RATIO.value,
             interactivity.audio_before_commit_ratio,
             5,
+        )
+        fields[AudioMetricKey.DUPLEX_OVERLAP_OBSERVED.value] = int(
+            interactivity.duplex_overlap_observed
+        )
+        add(
+            AudioMetricKey.DUPLEX_OVERLAP_MS.value,
+            interactivity.duplex_overlap_ms,
         )
         add(
             AudioMetricKey.POST_COMMIT_AUDIO_DELIVERY_MS.value,
@@ -664,6 +773,50 @@ class AudioPerformanceEvaluator:
             AudioMetricKey.DONE_AFTER_LAST_AUDIO_MS.value,
             interactivity.done_after_last_audio_ms,
         )
+        if interactivity.user_audio_fluidity is not None:
+            add(
+                AudioMetricKey.AUDIO_FLUIDITY_FRAME_MS.value,
+                interactivity.user_audio_fluidity.frame_duration_ms,
+            )
+            add(
+                AudioMetricKey.AUDIO_FLUIDITY_STARTUP_DELAY_MS.value,
+                interactivity.user_audio_fluidity.startup_delay_ms,
+            )
+            add(
+                AudioMetricKey.USER_AUDIO_FLUIDITY_INDEX.value,
+                interactivity.user_audio_fluidity.fluidity_index,
+                5,
+            )
+            fields[AudioMetricKey.AUDIO_FLUIDITY_TOTAL_DEADLINES.value] = (
+                interactivity.user_audio_fluidity.total_deadlines
+            )
+            fields[AudioMetricKey.AUDIO_FLUIDITY_MISSED_DEADLINES.value] = (
+                interactivity.user_audio_fluidity.missed_deadlines
+            )
+            fields[AudioMetricKey.AUDIO_PLAYABLE_FRAME_COUNT.value] = (
+                interactivity.user_audio_fluidity.playable_frame_count
+            )
+        fields[AudioMetricKey.TTS_SERVICE_FLUIDITY_ELIGIBLE.value] = int(
+            interactivity.tts_service_fluidity_eligible
+        )
+        fields[AudioMetricKey.UNATTRIBUTED_MISSED_DEADLINES.value] = (
+            interactivity.unattributed_missed_deadlines
+        )
+        if interactivity.tts_service_fluidity is not None:
+            add(
+                AudioMetricKey.TTS_SERVICE_FLUIDITY_INDEX.value,
+                interactivity.tts_service_fluidity.fluidity_index,
+                5,
+            )
+
+        for delay_ms, result in interactivity.fluidity_by_startup_delay.items():
+            if result is None:
+                continue
+            add(
+                f"user_audio_fluidity_index_d{_policy_tag(delay_ms)}ms",
+                result.fluidity_index,
+                5,
+            )
 
         for delay_ms, result in interactivity.fixed_delay_playback.items():
             if delay_ms == 0.0:
@@ -707,6 +860,9 @@ class AudioPerformanceEvaluator:
             [round(float(entry[0]), 1), int(entry[1])] for entry in raw_chunks
         ]
         audio_chunks.sort(key=lambda chunk: chunk[0])
+        response_trigger_ms = channel_metrics.get(
+            AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value
+        )
         return {
             "request_id": request_id,
             "session_id": session_id,
@@ -715,6 +871,16 @@ class AudioPerformanceEvaluator:
                 [round(offset, 1), n_chars] for offset, n_chars in timing.text_deltas
             ],
             "audio_chunks": audio_chunks,
+            "response_trigger_ms": (
+                round(float(response_trigger_ms), 1)
+                if response_trigger_ms is not None
+                else None
+            ),
+            "provider": channel_metrics.get(AudioMetricKey.PROVIDER.value),
+            "provider_model": channel_metrics.get(AudioMetricKey.PROVIDER_MODEL.value),
+            "provider_protocol": channel_metrics.get(
+                AudioMetricKey.PROVIDER_PROTOCOL.value
+            ),
             "commit_ms": (
                 round(timing.commit_ms, 1) if timing.commit_ms is not None else None
             ),
@@ -782,7 +948,6 @@ class AudioPerformanceEvaluator:
             return
         try:
             import pandas as pd
-
             import rekha as rk
 
             rows: list[dict[str, Any]] = []

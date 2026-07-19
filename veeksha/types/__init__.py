@@ -77,6 +77,11 @@ class ClientType(BaseIntEnum):
     TTS = 4
     REALTIME_TTS = 5
     STT = 6
+    ELEVENLABS_STREAMING_TTS = 7
+    DEEPGRAM_FLUX_STREAMING_TTS = 8
+    ELEVENLABS_HTTP_TTS = 9
+    DEEPGRAM_FLUX_HTTP_TTS = 10
+    DEEPGRAM_AURA_STREAMING_TTS = 11
 
 
 # ----- Server -----
