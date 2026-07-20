@@ -2,16 +2,42 @@ from __future__ import annotations
 
 import pytest
 
+from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.evaluator.performance.audio_interactivity import (
     RequestTiming,
     compute_audio_fluidity,
     compute_interactivity_metrics,
+    parse_request_timing,
 )
 
 
 def _chunk(receipt_ms: float, duration_ms: float) -> tuple[float, float, float]:
     # 16-bit mono PCM at 24 kHz: 48 decoded bytes per millisecond.
     return receipt_ms, duration_ms, duration_ms * 48
+
+
+def test_parse_timing_coalesces_transport_frames_and_uses_wire_sample_rate() -> None:
+    timing = parse_request_timing(
+        {
+            AudioMetricKey.SAMPLE_RATE.value: 16000,
+            AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value: [[5.0, 4]],
+            AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value: [
+                [30.0, 320],
+                [30.0, 320],
+                [50.0, 640],
+            ],
+            AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value: 10.0,
+            AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value: 25.0,
+        }
+    )
+
+    assert timing is not None
+    assert timing.sample_rate == 16000
+    assert timing.response_trigger_ms == 10.0
+    assert timing.audio_chunks == [
+        (30.0, 20.0, 640.0),
+        (50.0, 20.0, 640.0),
+    ]
 
 
 def test_audio_fluidity_carries_early_frame_slack_forward() -> None:
@@ -94,10 +120,94 @@ def test_audio_fluidity_ignores_an_incomplete_tail_frame() -> None:
     )
 
 
+def test_playback_policies_match_a_manually_solved_packet_timeline() -> None:
+    timing = RequestTiming(
+        text_deltas=[(10.0, 5)],
+        audio_chunks=[
+            _chunk(100.0, 100.0),
+            _chunk(250.0, 20.0),
+            _chunk(400.0, 20.0),
+        ],
+        response_trigger_ms=20.0,
+        commit_ms=20.0,
+        audio_done_ms=420.0,
+        response_done_ms=425.0,
+        sample_rate=24000,
+    )
+
+    metrics = compute_interactivity_metrics(
+        timing,
+        startup_delay_ms_values=[0.0, 180.0],
+        startup_buffer_ms_values=[100.0, 140.0],
+        min_reportable_stall_ms=0.0,
+        fluidity_frame_ms=20.0,
+        fluidity_startup_delay_ms=0.0,
+        fluidity_attribution_mode="conservative",
+    )
+
+    assert metrics.required_startup_delay_ms == 180.0
+    assert metrics.fixed_delay_playback[0.0].stall_count == 2
+    assert metrics.fixed_delay_playback[0.0].total_stall_ms == 180.0
+    assert metrics.fixed_delay_playback[180.0].stall_free
+    assert not metrics.buffer_target_playback[100.0].stall_free
+    assert metrics.buffer_target_playback[140.0].stall_free
+
+
+def test_initial_audio_reservoir_can_make_required_extra_delay_zero() -> None:
+    timing = RequestTiming(
+        text_deltas=[(10.0, 5)],
+        audio_chunks=[_chunk(100.0, 1000.0), _chunk(500.0, 20.0)],
+        response_trigger_ms=20.0,
+        commit_ms=20.0,
+        audio_done_ms=520.0,
+        response_done_ms=525.0,
+        sample_rate=24000,
+    )
+
+    metrics = compute_interactivity_metrics(
+        timing,
+        startup_delay_ms_values=[0.0],
+        startup_buffer_ms_values=[0.0],
+        min_reportable_stall_ms=0.0,
+        fluidity_frame_ms=20.0,
+        fluidity_startup_delay_ms=0.0,
+        fluidity_attribution_mode="conservative",
+    )
+
+    assert metrics.required_startup_delay_ms == 0.0
+    assert metrics.fixed_delay_playback[0.0].stall_free
+
+
+def test_trigger_ttfa_is_not_inferred_when_protocol_did_not_record_a_trigger() -> None:
+    timing = RequestTiming(
+        text_deltas=[(20.0, 5)],
+        audio_chunks=[_chunk(100.0, 20.0)],
+        response_trigger_ms=None,
+        commit_ms=20.0,
+        audio_done_ms=120.0,
+        response_done_ms=125.0,
+        sample_rate=24000,
+    )
+
+    metrics = compute_interactivity_metrics(
+        timing,
+        startup_delay_ms_values=[0.0],
+        startup_buffer_ms_values=[0.0],
+        min_reportable_stall_ms=0.0,
+        fluidity_frame_ms=20.0,
+        fluidity_startup_delay_ms=0.0,
+        fluidity_attribution_mode="conservative",
+    )
+
+    assert metrics.first_input_to_first_playable_audio_ms == 80.0
+    assert metrics.trigger_to_first_playable_audio_ms is None
+
+
 def test_interactivity_distinguishes_first_byte_from_first_playable_frame() -> None:
     timing = RequestTiming(
         text_deltas=[(20.0, 5)],
         audio_chunks=[_chunk(100.0, 10.0), _chunk(110.0, 10.0)],
+        response_trigger_ms=80.0,
         commit_ms=80.0,
         audio_done_ms=120.0,
         response_done_ms=125.0,
@@ -116,6 +226,8 @@ def test_interactivity_distinguishes_first_byte_from_first_playable_frame() -> N
 
     assert metrics.request_start_to_first_audio_ms == 100.0
     assert metrics.request_start_to_first_playable_audio_ms == 110.0
+    assert metrics.first_input_to_first_playable_audio_ms == 90.0
+    assert metrics.trigger_to_first_playable_audio_ms == 30.0
     assert metrics.user_audio_fluidity is not None
     assert metrics.user_audio_fluidity.startup_delay_ms == 100.0
     assert metrics.user_audio_fluidity.fluidity_index == 1.0
@@ -130,6 +242,7 @@ def test_duplex_user_fluidity_is_not_attributed_to_service_without_source_proof(
             _chunk(50.0, 20.0),
             _chunk(115.0, 20.0),
         ],
+        response_trigger_ms=10.0,
         commit_ms=200.0,
         audio_done_ms=140.0,
         response_done_ms=210.0,
@@ -161,6 +274,7 @@ def test_oversupplied_duplex_attributes_fluidity_to_service() -> None:
             _chunk(50.0, 20.0),
             _chunk(115.0, 20.0),
         ],
+        response_trigger_ms=10.0,
         commit_ms=200.0,
         audio_done_ms=140.0,
         response_done_ms=210.0,

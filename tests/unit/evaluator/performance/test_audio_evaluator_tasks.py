@@ -85,6 +85,7 @@ def test_tts_task_preserves_playback_interactivity_metrics() -> None:
                 [100.0, 2400],
                 [180.0, 2400],
             ],
+            AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value: 70.0,
             AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value: 150.0,
             AudioMetricKey.AUDIO_DONE_OFFSET_MS.value: 230.0,
             AudioMetricKey.RESPONSE_DONE_OFFSET_MS.value: 240.0,
@@ -96,6 +97,8 @@ def test_tts_task_preserves_playback_interactivity_metrics() -> None:
     assert row[AudioMetricKey.GENERATED_AUDIO_DURATION.value] == 100.0
     assert row[AudioMetricKey.ZERO_DELAY_STALL_COUNT.value] == 1
     assert row[AudioMetricKey.REQUEST_START_TO_FIRST_PLAYABLE_AUDIO_MS.value] == 100.0
+    assert row[AudioMetricKey.FIRST_INPUT_TO_FIRST_PLAYABLE_AUDIO_MS.value] == 80.0
+    assert row[AudioMetricKey.TRIGGER_TO_FIRST_PLAYABLE_AUDIO_MS.value] == 30.0
     assert row[AudioMetricKey.USER_AUDIO_FLUIDITY_INDEX.value] == pytest.approx(
         4 / 7, abs=1e-5
     )

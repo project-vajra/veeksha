@@ -98,6 +98,7 @@ class LocalWhisperTranscriber:
     """In-process faster-whisper transcriber for WER verification."""
 
     def __init__(self, config: AudioVerificationConfig):
+        self.config = config
         whisper_config = config.wer.whisper
         try:
             from faster_whisper import WhisperModel
@@ -113,7 +114,13 @@ class LocalWhisperTranscriber:
         )
 
     def transcribe(self, audio_path: Path) -> str:
-        segments, _ = self.model.transcribe(str(audio_path))
+        whisper_config = self.config.wer.whisper
+        segments, _ = self.model.transcribe(
+            str(audio_path),
+            language=whisper_config.language,
+            task="transcribe",
+            beam_size=whisper_config.beam_size,
+        )
         return " ".join(segment.text.strip() for segment in segments).strip()
 
 
@@ -410,11 +417,21 @@ def verify_audio_outputs(
             len(summary.errors),
         )
 
-    if config.fail_on_threshold and summary.failed_requests:
-        raise AudioVerificationError(
-            f"{summary.failed_requests} audio requests exceeded WER threshold "
-            f"{config.wer.threshold}"
-        )
+    if config.fail_on_threshold:
+        failures = []
+        if summary.failed_requests:
+            failures.append(
+                f"{summary.failed_requests} audio requests exceeded WER threshold "
+                f"{config.wer.threshold}"
+            )
+        if summary.error_requests:
+            failures.append(
+                f"{summary.error_requests} audio requests could not be verified"
+            )
+        if summary.errors:
+            failures.append(f"{len(summary.errors)} run-level verification errors")
+        if failures:
+            raise AudioVerificationError("; ".join(failures))
 
     return summary
 

@@ -370,6 +370,7 @@ class NativeStreamingTTSClient(BaseLLMClient):
         ttfc: Optional[float] = None
         ws_connect_latency: Optional[float] = None
         session_ready_offset: Optional[float] = None
+        response_trigger_offset: Optional[float] = None
         response_created_offset: Optional[float] = None
         input_complete_offset: Optional[float] = None
         audio_done_offset: Optional[float] = None
@@ -386,7 +387,7 @@ class NativeStreamingTTSClient(BaseLLMClient):
         t_start = time.monotonic()
 
         async def send_loop(ws) -> None:
-            nonlocal input_complete_offset
+            nonlocal input_complete_offset, response_trigger_offset
             if pacer.initial_delay_s > 0:
                 await asyncio.sleep(pacer.initial_delay_s)
             deadline = time.monotonic()
@@ -396,6 +397,12 @@ class NativeStreamingTTSClient(BaseLLMClient):
                 if sleep_s > 0:
                     await asyncio.sleep(sleep_s)
                 offset_ms = (time.monotonic() - t_start) * 1000
+                if response_trigger_offset is None:
+                    # Native streaming APIs begin accepting synthesis work with
+                    # the first real text message. Protocol setup payloads such
+                    # as ElevenLabs' single-space initializer are deliberately
+                    # excluded from this semantic trigger.
+                    response_trigger_offset = offset_ms
                 await ws.send(self._protocol.text_message(segment.text))
                 text_delta_ts.append([offset_ms, segment.n_chars])
             input_complete_offset = (time.monotonic() - t_start) * 1000
@@ -479,6 +486,9 @@ class NativeStreamingTTSClient(BaseLLMClient):
             AudioMetricKey.WS_CONNECT_LATENCY_MS.value: _round_ms(ws_connect_latency),
             AudioMetricKey.SESSION_READY_OFFSET_MS.value: _round_ms(
                 session_ready_offset
+            ),
+            AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value: _round_ms(
+                response_trigger_offset
             ),
             AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value: _round_ms(
                 input_complete_offset

@@ -59,6 +59,8 @@ class AudioMetricKey(StrEnum):
 
     # Stable request-level interactivity keys emitted by the evaluator.
     FIRST_INPUT_TO_FIRST_AUDIO_MS = "first_input_to_first_audio_ms"
+    FIRST_INPUT_TO_FIRST_PLAYABLE_AUDIO_MS = "first_input_to_first_playable_audio_ms"
+    TRIGGER_TO_FIRST_PLAYABLE_AUDIO_MS = "trigger_to_first_playable_audio_ms"
     REQUEST_START_TO_FIRST_AUDIO_MS = "request_start_to_first_audio_ms"
     REQUEST_START_TO_FIRST_PLAYABLE_AUDIO_MS = (
         "request_start_to_first_playable_audio_ms"

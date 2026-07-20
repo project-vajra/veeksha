@@ -396,6 +396,8 @@ class AudioPerformanceEvaluator:
             return
         specs: list[tuple[AudioMetricKey, str | None]] = [
             (AudioMetricKey.FIRST_INPUT_TO_FIRST_AUDIO_MS, "ms"),
+            (AudioMetricKey.FIRST_INPUT_TO_FIRST_PLAYABLE_AUDIO_MS, "ms"),
+            (AudioMetricKey.TRIGGER_TO_FIRST_PLAYABLE_AUDIO_MS, "ms"),
             (AudioMetricKey.REQUEST_START_TO_FIRST_AUDIO_MS, "ms"),
             (AudioMetricKey.REQUEST_START_TO_FIRST_PLAYABLE_AUDIO_MS, "ms"),
             (AudioMetricKey.AUDIO_BEFORE_COMMIT_RATIO, None),
@@ -448,6 +450,14 @@ class AudioPerformanceEvaluator:
         put(
             AudioMetricKey.FIRST_INPUT_TO_FIRST_AUDIO_MS,
             interactivity.first_input_to_first_audio_ms,
+        )
+        put(
+            AudioMetricKey.FIRST_INPUT_TO_FIRST_PLAYABLE_AUDIO_MS,
+            interactivity.first_input_to_first_playable_audio_ms,
+        )
+        put(
+            AudioMetricKey.TRIGGER_TO_FIRST_PLAYABLE_AUDIO_MS,
+            interactivity.trigger_to_first_playable_audio_ms,
         )
         put(
             AudioMetricKey.REQUEST_START_TO_FIRST_AUDIO_MS,
@@ -731,6 +741,14 @@ class AudioPerformanceEvaluator:
             interactivity.first_input_to_first_audio_ms,
         )
         add(
+            AudioMetricKey.FIRST_INPUT_TO_FIRST_PLAYABLE_AUDIO_MS.value,
+            interactivity.first_input_to_first_playable_audio_ms,
+        )
+        add(
+            AudioMetricKey.TRIGGER_TO_FIRST_PLAYABLE_AUDIO_MS.value,
+            interactivity.trigger_to_first_playable_audio_ms,
+        )
+        add(
             AudioMetricKey.REQUEST_START_TO_FIRST_AUDIO_MS.value,
             interactivity.request_start_to_first_audio_ms,
         )
@@ -860,9 +878,6 @@ class AudioPerformanceEvaluator:
             [round(float(entry[0]), 1), int(entry[1])] for entry in raw_chunks
         ]
         audio_chunks.sort(key=lambda chunk: chunk[0])
-        response_trigger_ms = channel_metrics.get(
-            AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value
-        )
         return {
             "request_id": request_id,
             "session_id": session_id,
@@ -872,8 +887,8 @@ class AudioPerformanceEvaluator:
             ],
             "audio_chunks": audio_chunks,
             "response_trigger_ms": (
-                round(float(response_trigger_ms), 1)
-                if response_trigger_ms is not None
+                round(timing.response_trigger_ms, 1)
+                if timing.response_trigger_ms is not None
                 else None
             ),
             "provider": channel_metrics.get(AudioMetricKey.PROVIDER.value),

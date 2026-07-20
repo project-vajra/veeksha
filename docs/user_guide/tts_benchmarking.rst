@@ -57,9 +57,18 @@ Metrics
 
    * - Metric
      - Meaning
+   * - ``trigger_to_first_playable_audio_ms``
+     - Synthesis trigger to the first complete PCM playback frame on the active
+       connection. This is the primary steady-state TTFA: ``response.create``
+       for Realtime TTS and the first real synthesis-eligible text message for
+       native streaming APIs. Protocol setup messages are excluded.
+   * - ``first_input_to_first_playable_audio_ms``
+     - First real streamed text delta to the first complete PCM playback frame.
+       Unlike trigger TTFA, this intentionally exposes any client or provider
+       lookahead before synthesis is triggered.
    * - ``request_start_to_first_playable_audio_ms``
-     - Request start to the first complete PCM playback frame. This is the
-       primary first-audio latency.
+     - WebSocket-connect initiation to the first complete PCM playback frame.
+       Report this separately as cold-session or connection-inclusive latency.
    * - ``ttfc``
      - Request start to the first wire audio chunk. A tiny partial chunk may not
        yet be playable, so this is retained as a transport diagnostic.
@@ -182,8 +191,8 @@ Set ``ELEVENLABS_API_KEY`` in the environment and replace ``voice_id``.
           persist_raw_timing: true
         slos:
           - type: constant
-            name: P90 first playable audio under 1 second
-            metric: request_start_to_first_playable_audio_ms
+            name: P90 trigger-to-first-playable audio under 1 second
+            metric: trigger_to_first_playable_audio_ms
             percentile: 0.90
             value: 1000
           - type: constant
@@ -202,6 +211,8 @@ Set ``ELEVENLABS_API_KEY`` in the environment and replace ``voice_id``.
               model: large-v3
               device: cpu
               compute_type: int8
+              language: en
+              beam_size: 5
           utmos:
             enabled: false
 
@@ -219,6 +230,30 @@ WER requires the optional ``audio-verification`` dependencies (including
 faster-whisper). UTMOS requires its corresponding optional dependency group.
 Install those groups in the Veeksha environment before enabling the quality
 checks.
+
+Correctness metric contract
+---------------------------
+
+ASR and TTS WER intentionally use different published protocols and therefore
+different units:
+
+- ASR ``final_wer`` and aggregate ``asr_*_wer`` fields are percentages in the
+  range 0--100 for ordinary cases. Text is normalized with the Open ASR
+  Leaderboard English normalizer. Prefer corpus WER for the primary comparison;
+  sample-mean and duration-weighted WER are reported as diagnostics.
+- TTS verification ``wer`` fields are ratios where 0.05 means five percent.
+  They use Seed-TTS-style punctuation normalization and a configured
+  faster-whisper judge. Keep the judge checkpoint, language, beam size, device,
+  compute type, corpus revision, and text normalization identical across every
+  provider. This WER measures intelligibility, not naturalness, speaker
+  similarity, emotion, or human preference.
+- UTMOS is a predicted naturalness score. Treat it as a scalable regression
+  signal, not a substitute for a blinded human preference study.
+
+With ``fail_on_threshold: true``, verification fails closed: a WER threshold
+violation, missing audio file, transcription failure, unavailable UTMOS model,
+or run-level verification error fails the benchmark rather than silently
+removing that request from the quality sample.
 
 For Deepgram Flux streaming, replace only the client block:
 
@@ -240,6 +275,13 @@ lane. Use ``elevenlabs_http_tts`` or ``deepgram_flux_http_tts`` for the
 complete-text/complete-audio controls. For Vajra, use ``realtime_tts`` and set
 ``input_output_mode: duplex``; the server must consume conversation items added
 after an active ``response.create``.
+
+Do not treat ``response.create`` ordering or output overlap alone as proof of
+semantic duplex synthesis. A conforming run must also pass full-reference TTS
+WER (or a stronger text-coverage check) so a server that speaks only the prefix
+available at trigger time cannot be reported as successful streaming. The
+``duplex_start_after_tokens`` value is a configurable workload threshold, not a
+special eight-token protocol rule.
 
 Keep the trace seed, input texts, pacing, PCM format, region, concurrency sweep,
 and retry policy identical across providers. Report request failures and rate

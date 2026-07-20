@@ -135,6 +135,9 @@ def test_native_clients_stream_text_and_audio_concurrently(provider: str) -> Non
     assert metrics[AudioMetricKey.PROVIDER_MODEL.value] == config.model
     assert len(metrics[AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value]) == 3
     assert metrics[AudioMetricKey.CHUNK_COUNT.value] == 3
+    assert metrics[AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value] == pytest.approx(
+        metrics[AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value][0][0], abs=0.001
+    )
     assert (
         metrics[AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value][0][0]
         < metrics[AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value]
@@ -198,6 +201,8 @@ def test_deepgram_aura_adapter_handles_audio_after_flush() -> None:
     assert metrics[AudioMetricKey.PROVIDER_PROTOCOL.value] == "v1_aura_speak"
     first_audio_ms = metrics[AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value][0][0]
     commit_ms = metrics[AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value]
+    trigger_ms = metrics[AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value]
+    assert trigger_ms < commit_ms
     assert first_audio_ms >= commit_ms
     assert [json.loads(raw)["type"] for raw in websocket.sent] == [
         "Speak",

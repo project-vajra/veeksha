@@ -12,6 +12,8 @@ SUPPORTED_SLO_METRICS = {
     "generated_audio_duration",
     "rtf",
     "first_input_to_first_audio_ms",
+    "first_input_to_first_playable_audio_ms",
+    "trigger_to_first_playable_audio_ms",
     "request_start_to_first_playable_audio_ms",
     "audio_before_commit_ratio",
     "duplex_overlap_observed",

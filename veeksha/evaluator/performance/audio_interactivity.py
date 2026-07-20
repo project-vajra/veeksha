@@ -30,6 +30,7 @@ class RequestTiming:
 
     text_deltas: list[tuple[float, int]]
     audio_chunks: list[tuple[float, float, float]]
+    response_trigger_ms: Optional[float]
     commit_ms: Optional[float]
     audio_done_ms: Optional[float]
     response_done_ms: Optional[float]
@@ -116,6 +117,9 @@ def parse_request_timing(
     return RequestTiming(
         text_deltas=text_deltas,
         audio_chunks=audio_chunks,
+        response_trigger_ms=_optional_float(
+            metrics, AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS
+        ),
         commit_ms=_optional_float(metrics, AudioMetricKey.INPUT_COMMIT_OFFSET_MS),
         audio_done_ms=_optional_float(metrics, AudioMetricKey.AUDIO_DONE_OFFSET_MS),
         response_done_ms=_optional_float(
@@ -342,6 +346,8 @@ class InteractivityMetrics:
     """Stable and diagnostic metrics derived from one request timeline."""
 
     first_input_to_first_audio_ms: Optional[float]
+    first_input_to_first_playable_audio_ms: Optional[float]
+    trigger_to_first_playable_audio_ms: Optional[float]
     request_start_to_first_audio_ms: float
     request_start_to_first_playable_audio_ms: Optional[float]
     audio_before_commit_ratio: Optional[float]
@@ -384,6 +390,17 @@ def compute_interactivity_metrics(
 
     first_input_to_first_audio_ms = (
         first_audio_ms - timing.text_deltas[0][0] if timing.text_deltas else None
+    )
+    first_input_to_first_playable_audio_ms = (
+        first_playable_audio_ms - timing.text_deltas[0][0]
+        if timing.text_deltas and first_playable_audio_ms is not None
+        else None
+    )
+    trigger_to_first_playable_audio_ms = (
+        first_playable_audio_ms - timing.response_trigger_ms
+        if timing.response_trigger_ms is not None
+        and first_playable_audio_ms is not None
+        else None
     )
 
     audio_before_commit_ratio: Optional[float] = None
@@ -493,6 +510,8 @@ def compute_interactivity_metrics(
 
     return InteractivityMetrics(
         first_input_to_first_audio_ms=first_input_to_first_audio_ms,
+        first_input_to_first_playable_audio_ms=(first_input_to_first_playable_audio_ms),
+        trigger_to_first_playable_audio_ms=trigger_to_first_playable_audio_ms,
         request_start_to_first_audio_ms=first_audio_ms,
         request_start_to_first_playable_audio_ms=first_playable_audio_ms,
         audio_before_commit_ratio=audio_before_commit_ratio,

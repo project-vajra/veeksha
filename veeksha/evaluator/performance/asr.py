@@ -65,7 +65,9 @@ class WERAggregate:
         corpus = (
             (self.errors / self.reference_words) * 100
             if self.reference_words > 0
-            else None
+            else (
+                100.0 if self.errors > 0 else (0.0 if self.sample_count > 0 else None)
+            )
         )
         duration_weighted = (
             self.duration_weighted_wer_sum / self.duration_s_sum
