@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Optional
@@ -32,7 +33,7 @@ from veeksha.client.utils import (
     map_ws_transport_error,
     segment_text,
 )
-from veeksha.core.audio_contract import AudioMetricKey
+from veeksha.core.audio_contract import AudioMetricKey, pcm_bytes_to_duration_ms
 from veeksha.core.request import Request
 from veeksha.core.request_content import TextChannelRequestContent
 from veeksha.core.response import ChannelResponse, RequestResult
@@ -117,9 +118,25 @@ class VajraTTSServerError(Exception):
         super().__init__(str(event))
 
 
+class _ClientAbort(Exception):
+    """Signals a deliberate mid-stream client abort (not a server/transport error).
+
+    Raised from inside the send/recv loops (or the wall-clock watchdog) when the
+    configured abort trigger fires; unwinds the ``asyncio.TaskGroup`` and closes
+    the WebSocket, simulating a client that hangs up mid-utterance.
+    """
+
+
 _ERROR_PRIORITY: tuple[type[BaseException], ...] = (
     VajraTTSServerError,
     *WS_TRANSPORT_ERROR_PRIORITY,
+)
+
+# When unwinding a TaskGroup, a deliberate abort must win over any transport
+# error (e.g. ConnectionClosedError) that closing the socket may surface.
+_ABORT_ERROR_PRIORITY: tuple[type[BaseException], ...] = (
+    _ClientAbort,
+    *_ERROR_PRIORITY,
 )
 
 
@@ -206,6 +223,23 @@ class VajraTTSStreamClient(BaseLLMClient):
             seg.n_tokens for seg in segments
         )
 
+        # Adversarial mid-stream abort: a deterministically-selected fraction of
+        # sessions hang up partway through synthesis to exercise the server's
+        # abort / slot-reclaim / staging-teardown paths.
+        abort_config = self._stream_config.abort
+        abort_input_after: Optional[int] = None
+        abort_audio_ms: Optional[float] = None
+        abort_wall_s: Optional[float] = None
+        if abort_config.selects(session_id):
+            if abort_config.trigger == "input_fraction":
+                abort_input_after = max(
+                    1, math.ceil(abort_config.value * len(segments))
+                )
+            elif abort_config.trigger == "audio_ms":
+                abort_audio_ms = abort_config.value
+            elif abort_config.trigger == "wall_clock_s":
+                abort_wall_s = abort_config.value
+
         logger.debug(
             "[VajraTTSStream] request_id=%d session_id=%d chars=%d deltas=%d",
             request.id,
@@ -227,6 +261,7 @@ class VajraTTSStreamClient(BaseLLMClient):
         sample_rate = self._stream_config.sample_rate
 
         sent_fired = False
+        aborted = False
 
         def fire_sent_once() -> None:
             nonlocal sent_fired
@@ -246,19 +281,24 @@ class VajraTTSStreamClient(BaseLLMClient):
             # Pace by absolute deadlines so ws.send backpressure never
             # accumulates drift into subsequent gaps.
             deadline = time.monotonic()
-            for seg in segments:
+            for index, seg in enumerate(segments):
                 deadline += pacer.next_gap()
                 sleep_s = deadline - time.monotonic()
                 if sleep_s > 0:
                     await asyncio.sleep(sleep_s)
                 await ws.send(self._protocol.input_text_json(seg.text))
                 text_delta_ts.append([(time.monotonic() - t_start) * 1000, seg.n_chars])
+                # Abort after a fraction of the input deltas: the client stops
+                # feeding text and never sends input.done (hangs up mid-input).
+                if abort_input_after is not None and index + 1 >= abort_input_after:
+                    raise _ClientAbort()
             input_complete_offset = (time.monotonic() - t_start) * 1000
             await ws.send(self._protocol.input_done_json())
 
         async def recv_loop(ws) -> None:
             nonlocal ttfc, session_ready_offset, audio_done_offset
             nonlocal session_done_offset, sample_rate
+            received_audio_ms = 0.0
             while True:
                 raw = await ws.recv()
                 # Stamp receipt BEFORE any json decode work.
@@ -273,6 +313,14 @@ class VajraTTSStreamClient(BaseLLMClient):
                         if ttfc is None:
                             ttfc = offset_ms
                         fire_sent_once()
+                        # Abort after N ms of received audio: the client stops
+                        # reading and closes the socket mid-playback.
+                        if abort_audio_ms is not None:
+                            received_audio_ms += pcm_bytes_to_duration_ms(
+                                len(chunk), sample_rate
+                            )
+                            if received_audio_ms >= abort_audio_ms:
+                                raise _ClientAbort()
                     continue
 
                 try:
@@ -311,6 +359,13 @@ class VajraTTSStreamClient(BaseLLMClient):
                     raise VajraTTSServerError(event)
                 # Anything else: keep receiving until session.done.
 
+        async def abort_watchdog() -> None:
+            # Wall-clock abort: fire independently of frame arrival so a stalled
+            # recv still hangs up on schedule.
+            assert abort_wall_s is not None
+            await asyncio.sleep(abort_wall_s)
+            raise _ClientAbort()
+
         try:
             async with asyncio.timeout(self._stream_config.request_timeout):
                 async with self._connect() as ws:
@@ -324,15 +379,28 @@ class VajraTTSStreamClient(BaseLLMClient):
                     async with asyncio.TaskGroup() as task_group:
                         task_group.create_task(send_loop(ws))
                         task_group.create_task(recv_loop(ws))
+                        if abort_wall_s is not None:
+                            task_group.create_task(abort_watchdog())
         except TimeoutError:
             error_code = 408
             error_msg = "Vajra TTS stream request timed out"
             logger.warning("Vajra TTS stream timeout: (%s) %s", error_code, error_msg)
         except Exception as exc:  # noqa: BLE001 - mapped to error codes below.
-            error_code, error_msg = _map_error(
-                flatten_ws_exception(exc, _ERROR_PRIORITY)
-            )
-            logger.warning("Vajra TTS stream error: (%s) %s", error_code, error_msg)
+            flattened = flatten_ws_exception(exc, _ABORT_ERROR_PRIORITY)
+            if isinstance(flattened, _ClientAbort):
+                # Deliberate client hang-up: a distinct bucket, not a failure.
+                aborted = True
+                logger.debug(
+                    "[VajraTTSStream] request_id=%d session_id=%d aborted "
+                    "mid-stream (trigger=%s value=%s)",
+                    request.id,
+                    session_id,
+                    abort_config.trigger,
+                    abort_config.value,
+                )
+            else:
+                error_code, error_msg = _map_error(flattened)
+                logger.warning("Vajra TTS stream error: (%s) %s", error_code, error_msg)
 
         completed_at = time.monotonic()
         total_latency_ms = (completed_at - t_start) * 1000
@@ -358,6 +426,7 @@ class VajraTTSStreamClient(BaseLLMClient):
             AudioMetricKey.INPUT_CHARS.value: len(input_text),
             AudioMetricKey.INPUT_TOKENS.value: input_tokens,
             AudioMetricKey.INPUT_TEXT.value: input_text,
+            AudioMetricKey.ABORTED.value: aborted,
             AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value: text_delta_ts,
             AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value: audio_chunk_ts,
             AudioMetricKey.WS_CONNECT_LATENCY_MS.value: _round_ms(ws_connect_latency),
@@ -375,7 +444,9 @@ class VajraTTSStreamClient(BaseLLMClient):
 
         channels: dict = {}
         has_partial = bool(audio_chunks or text_delta_ts)
-        if success or has_partial:
+        # Always export the AUDIO channel for an abort (even a dataless early
+        # hang-up) so the evaluator can count it in the aborted bucket.
+        if success or has_partial or aborted:
             channels[ChannelModality.AUDIO] = ChannelResponse(
                 modality=ChannelModality.AUDIO,
                 content=audio_data,

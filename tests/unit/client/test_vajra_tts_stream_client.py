@@ -7,7 +7,11 @@ from veeksha.client.vajra_tts_stream import (
     VajraTTSStreamClient,
     VajraTTSStreamProtocol,
 )
-from veeksha.config.client import TextPacingConfig, VajraTTSStreamClientConfig
+from veeksha.config.client import (
+    TextPacingConfig,
+    TTSAbortConfig,
+    VajraTTSStreamClientConfig,
+)
 from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.core.request import Request
 from veeksha.core.request_content import TextChannelRequestContent
@@ -317,3 +321,124 @@ def test_send_request_without_text_channel_returns_400() -> None:
 
     assert result.success is False
     assert result.error_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Mid-stream abort injection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "kwargs,match",
+    [
+        (dict(fraction=1.5), "fraction must be in"),
+        (dict(fraction=-0.1), "fraction must be in"),
+        (dict(trigger="bogus"), "trigger must be one of"),
+        (dict(value=0.0), "value must be > 0"),
+        (dict(trigger="input_fraction", value=2.0), "in \\(0, 1\\]"),
+    ],
+)
+def test_abort_config_rejects_invalid(kwargs: dict, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        TTSAbortConfig(**kwargs)
+
+
+@pytest.mark.unit
+def test_abort_config_selection_is_deterministic_and_bounded() -> None:
+    abort = TTSAbortConfig(fraction=0.5)
+    other = TTSAbortConfig(fraction=0.5)
+    assert [abort.selects(i) for i in range(16)] == [
+        other.selects(i) for i in range(16)
+    ]
+    # fraction=0 selects nobody; fraction=1 selects everybody.
+    assert not any(TTSAbortConfig(fraction=0.0).selects(i) for i in range(64))
+    assert all(TTSAbortConfig(fraction=1.0).selects(i) for i in range(64))
+
+
+@pytest.mark.unit
+def test_abort_audio_ms_closes_stream_after_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Each fake chunk is 2400 bytes == 50ms at 24kHz 16-bit mono; a 50ms
+    # threshold hangs up right after the first chunk, mid-utterance.
+    client = _client(abort=TTSAbortConfig(fraction=1.0, trigger="audio_ms", value=50.0))
+    websocket = _FakeVajraWebSocket()
+    events: list[str] = []
+
+    result = _run_request(client, websocket, monkeypatch, events)
+
+    assert result.success is True
+    channel = result.channels[ChannelModality.AUDIO]
+    assert channel.metrics[AudioMetricKey.ABORTED.value] is True
+    # Hung up after the first chunk; the second chunk was never read.
+    assert channel.metrics[AudioMetricKey.CHUNK_COUNT.value] == 1
+    # audio_ms does not cut the input side: input.done was still sent.
+    assert any(m["type"] == "input.done" for m in websocket.sent_messages)
+
+
+@pytest.mark.unit
+def test_abort_input_fraction_stops_before_input_done(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # "hello world from vajra" -> 4 whitespace deltas; abort after ceil(0.5*4)=2.
+    client = _client(
+        abort=TTSAbortConfig(fraction=1.0, trigger="input_fraction", value=0.5)
+    )
+    websocket = _FakeVajraWebSocket()
+    events: list[str] = []
+
+    result = _run_request(client, websocket, monkeypatch, events)
+
+    assert result.success is True
+    text_messages = [m for m in websocket.sent_messages if m["type"] == "input.text"]
+    assert len(text_messages) == 2
+    # The client hung up mid-input: input.done was never sent.
+    assert not any(m["type"] == "input.done" for m in websocket.sent_messages)
+    channel = result.channels[ChannelModality.AUDIO]
+    assert channel.metrics[AudioMetricKey.ABORTED.value] is True
+
+
+class _BlockingAfterStartWebSocket(_FakeVajraWebSocket):
+    """audio.start once, then blocks forever (until the abort watchdog fires)."""
+
+    async def recv(self) -> str | bytes:
+        index = self._recv_index
+        self._recv_index += 1
+        if index == 0:
+            await self._first_text.wait()
+            return json.dumps({"type": "audio.start", "sample_rate": 24000})
+        await asyncio.Event().wait()  # never resolves; cancelled on abort
+        raise AssertionError("unreachable")
+
+
+@pytest.mark.unit
+def test_abort_wall_clock_closes_stalled_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client(
+        abort=TTSAbortConfig(fraction=1.0, trigger="wall_clock_s", value=0.05)
+    )
+    websocket = _BlockingAfterStartWebSocket()
+    events: list[str] = []
+
+    result = _run_request(client, websocket, monkeypatch, events)
+
+    assert result.success is True
+    channel = result.channels[ChannelModality.AUDIO]
+    assert channel.metrics[AudioMetricKey.ABORTED.value] is True
+
+
+@pytest.mark.unit
+def test_unselected_session_is_not_aborted(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Default abort config disables injection: the request completes normally.
+    client = _client()
+    websocket = _FakeVajraWebSocket()
+    events: list[str] = []
+
+    result = _run_request(client, websocket, monkeypatch, events)
+
+    assert result.success is True
+    channel = result.channels[ChannelModality.AUDIO]
+    assert channel.metrics[AudioMetricKey.ABORTED.value] is False
+    assert channel.metrics[AudioMetricKey.CHUNK_COUNT.value] == 2

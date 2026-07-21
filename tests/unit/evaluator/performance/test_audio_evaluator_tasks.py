@@ -202,6 +202,88 @@ def test_audio_channel_config_rejects_nonpositive_cap() -> None:
         AudioChannelPerformanceConfig(max_expected_audio_ms=0.0)
 
 
+def _tts_interactive_metrics(*, aborted: bool) -> dict:
+    metrics = {
+        "audio_task": AudioTask.TTS,
+        AudioMetricKey.TTFC.value: 100.0,
+        AudioMetricKey.END_TO_END_LATENCY.value: 250.0,
+        AudioMetricKey.CHUNK_COUNT.value: 2,
+        AudioMetricKey.RAW_PCM.value: True,
+        AudioMetricKey.SAMPLE_RATE.value: 24000,
+        AudioMetricKey.INPUT_CHARS.value: 5,
+        AudioMetricKey.INPUT_TOKENS.value: 1,
+        AudioMetricKey.INPUT_TEXT.value: "hello",
+        AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value: [[20.0, 5]],
+        AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value: [[100.0, 2400], [180.0, 2400]],
+        AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value: 150.0,
+        AudioMetricKey.AUDIO_DONE_OFFSET_MS.value: 230.0,
+        AudioMetricKey.RESPONSE_DONE_OFFSET_MS.value: 240.0,
+    }
+    if aborted:
+        metrics[AudioMetricKey.ABORTED.value] = True
+    return metrics
+
+
+def test_aborted_request_bucketed_and_excluded_from_aggregates() -> None:
+    evaluator = _evaluator(interactivity_enabled=True)
+
+    _record(
+        evaluator,
+        request_id=1,
+        content=b"\0" * 4800,
+        metrics=_tts_interactive_metrics(aborted=False),
+    )
+    _record(
+        evaluator,
+        request_id=2,
+        content=b"\0" * 4800,
+        metrics=_tts_interactive_metrics(aborted=True),
+    )
+
+    summary = evaluator.get_summary()
+    assert summary["aborted_requests_count"] == 1
+
+    # Only the non-aborted request feeds the continuity / duration sketches and
+    # the interactivity bucket.
+    assert len(evaluator.summaries[AudioMetricKey.GENERATED_AUDIO_DURATION.value]) == 1
+    assert len(evaluator.summaries[AudioMetricKey.TTFC.value]) == 1
+    assert evaluator._interactive_request_count == 1
+
+    rows = {row["request_id"]: row for row in evaluator._export_request_rows()}
+    # Both requests are still exported; the aborted one is flagged and carries
+    # no interactivity fields.
+    assert rows[1][AudioMetricKey.ABORTED.value] == 0
+    assert rows[2][AudioMetricKey.ABORTED.value] == 1
+    assert AudioMetricKey.ZERO_DELAY_STALL_COUNT.value in rows[1]
+    assert AudioMetricKey.ZERO_DELAY_STALL_COUNT.value not in rows[2]
+
+
+def test_aborted_request_not_flagged_as_length_cap_truncation() -> None:
+    # Cap 1000ms: >= 680ms is suspect. An aborted stream at/over that duration
+    # is partial by construction and must not be counted as truncation.
+    evaluator = _evaluator(interactivity_enabled=False, max_expected_audio_ms=1000.0)
+
+    _record(
+        evaluator,
+        request_id=1,
+        content=b"\0" * (1000 * 48),
+        metrics={**_tts_metrics(), AudioMetricKey.ABORTED.value: True},
+    )
+
+    summary = evaluator.get_summary()
+    assert summary["suspected_length_cap_truncation"] == 0
+    assert summary["aborted_requests_count"] == 1
+    row = evaluator._export_request_rows()[0]
+    assert row["suspected_length_cap_truncation"] == 0
+    assert row[AudioMetricKey.ABORTED.value] == 1
+
+
+def test_summary_has_no_aborted_count_without_aborts() -> None:
+    evaluator = _evaluator(interactivity_enabled=False)
+    _record(evaluator, request_id=1, content=b"\0" * 4800, metrics=_tts_metrics())
+    assert "aborted_requests_count" not in evaluator.get_summary()
+
+
 def test_audio_response_without_task_is_rejected() -> None:
     evaluator = _evaluator(interactivity_enabled=False)
 

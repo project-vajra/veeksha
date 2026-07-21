@@ -36,6 +36,12 @@ class AudioMetricKey(StrEnum):
     SESSION_SIZE = "session_size"
     SESSION_DURATION = "session_duration"
 
+    # True when the client deliberately closed the stream mid-utterance
+    # (adversarial abort injection), rather than the server erroring. Aborted
+    # requests are counted in their own bucket and excluded from continuity /
+    # duration aggregates by the evaluator.
+    ABORTED = "aborted"
+
     # ----- Realtime input-streaming interactivity keys -----
     # Time convention for all realtime event-time values below: every *_offset_ms
     # / timestamp value is a float millisecond offset relative to request start
