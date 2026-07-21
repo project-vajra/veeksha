@@ -352,10 +352,45 @@ class SeedTTSTextTraceFlavorConfig(BaseTraceFlavorConfig):
         help="If >= 0, enables char-based input length control. Text is "
         "truncated to a sampled char count in [min_chars, max_chars].",
     )
+    target_duration_s: float | None = field(
+        None,
+        help=(
+            "Optional per-session target audio duration (seconds). When set, the "
+            "input text is truncated to target_duration_s * words_per_second "
+            "words instead of the min_tokens/max_tokens word sample, so a run can "
+            "target multi-minute (soak) sessions from a long-text trace. "
+            "Mutually exclusive with min_chars/max_chars."
+        ),
+    )
+    target_duration_spread_s: float | None = field(
+        None,
+        help=(
+            "Hard half-width of a clipped-Gaussian spread around "
+            "target_duration_s. Requires target_duration_s."
+        ),
+    )
+    target_duration_sigma_s: float | None = field(
+        None,
+        help=(
+            "Standard deviation of the clipped-Gaussian duration draw. Defaults "
+            "to half the spread and must not exceed the spread."
+        ),
+    )
+    words_per_second: float = field(
+        2.5,
+        help=(
+            "Speaking rate used to convert target_duration_s into a word budget "
+            "(2.5 words/s ~= 150 wpm, a typical TTS narration pace)."
+        ),
+    )
 
     @property
     def use_chars(self) -> bool:
         return self.min_chars >= 0 and self.max_chars >= 0
+
+    @property
+    def use_target_duration(self) -> bool:
+        return self.target_duration_s is not None
 
     @classmethod
     def get_type(cls):
@@ -385,6 +420,47 @@ class SeedTTSTextTraceFlavorConfig(BaseTraceFlavorConfig):
             if self.min_tokens > self.max_tokens:
                 raise ValueError(
                     f"min_tokens ({self.min_tokens}) must be <= max_tokens ({self.max_tokens})"
+                )
+
+        if self.use_target_duration:
+            if self.use_chars:
+                raise ValueError(
+                    "target_duration_s maps to a word budget and is mutually "
+                    "exclusive with char-based length control (min_chars/max_chars)."
+                )
+            if self.target_duration_s <= 0:
+                raise ValueError(
+                    "target_duration_s must be positive when set; "
+                    f"got {self.target_duration_s}"
+                )
+            if self.words_per_second <= 0:
+                raise ValueError(
+                    f"words_per_second must be positive; got {self.words_per_second}"
+                )
+        if self.target_duration_spread_s is not None:
+            if not self.use_target_duration:
+                raise ValueError("target_duration_spread_s requires target_duration_s")
+            if not 0 < self.target_duration_spread_s < self.target_duration_s:
+                raise ValueError(
+                    "target_duration_spread_s must be in (0, target_duration_s); "
+                    f"got {self.target_duration_spread_s} with "
+                    f"target_duration_s={self.target_duration_s}"
+                )
+        if self.target_duration_sigma_s is not None:
+            if self.target_duration_spread_s is None:
+                raise ValueError(
+                    "target_duration_sigma_s requires target_duration_spread_s"
+                )
+            if self.target_duration_sigma_s <= 0:
+                raise ValueError(
+                    "target_duration_sigma_s must be positive; got "
+                    f"{self.target_duration_sigma_s}"
+                )
+            if self.target_duration_sigma_s > self.target_duration_spread_s:
+                raise ValueError(
+                    "target_duration_sigma_s must be <= target_duration_spread_s; "
+                    f"got sigma={self.target_duration_sigma_s} "
+                    f"spread={self.target_duration_spread_s}"
                 )
 
 

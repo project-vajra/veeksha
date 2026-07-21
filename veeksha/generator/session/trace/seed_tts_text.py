@@ -15,6 +15,9 @@ from veeksha.core.seeding import SeedManager
 from veeksha.core.session import Session
 from veeksha.core.tokenizer import TokenizerProvider
 from veeksha.generator.session.trace.base_flavor import TraceFlavorGeneratorBase
+from veeksha.generator.session.trace.duration import (
+    sample_clipped_gaussian_duration_s,
+)
 from veeksha.logger import init_logger
 from veeksha.types import ChannelModality
 
@@ -139,6 +142,7 @@ class SeedTTSTextTraceFlavorGenerator(TraceFlavorGeneratorBase):
         self._current_request_id = 0
         self._rng = seed_manager.random("seed_tts_text_shuffling")
         self._length_rng = seed_manager.random("seed_tts_text_input_length")
+        self._duration_rng = seed_manager.random("seed_tts_text_target_duration")
 
         logger.info(
             "Loaded %d Seed TTS text rows from %s/%s split=%s",
@@ -225,12 +229,31 @@ class SeedTTSTextTraceFlavorGenerator(TraceFlavorGeneratorBase):
 
         return pd.DataFrame(rows)
 
+    def _sample_target_word_count(self) -> int:
+        """Word budget for a target-duration (soak) session.
+
+        Draws a clipped-Gaussian duration and maps it to a word count via the
+        configured speaking rate. Deterministic under the run seed.
+        """
+        duration_s = sample_clipped_gaussian_duration_s(
+            self.flavor_config.target_duration_s,
+            self.flavor_config.target_duration_spread_s,
+            self.flavor_config.target_duration_sigma_s,
+            self._duration_rng,
+        )
+        return max(1, round(duration_s * self.flavor_config.words_per_second))
+
     def prepare_session(self, group: pd.DataFrame) -> Session:
         session_id = self._next_session_id()
         row = group.iloc[0]
         text = str(row["text"])
 
-        if self.flavor_config.use_chars:
+        target_duration_s: float | None = None
+        if self.flavor_config.use_target_duration:
+            target_words = self._sample_target_word_count()
+            target_duration_s = target_words / self.flavor_config.words_per_second
+            text = _truncate_to_words(text, target_words)
+        elif self.flavor_config.use_chars:
             target_chars = self._length_rng.randint(
                 self.flavor_config.min_chars,
                 self.flavor_config.max_chars,
@@ -266,6 +289,8 @@ class SeedTTSTextTraceFlavorGenerator(TraceFlavorGeneratorBase):
                 "input_chars": len(text),
             }
         )
+        if target_duration_s is not None:
+            request.metadata["target_duration_s"] = target_duration_s
 
         graph = self._build_linear_session_graph(1, [0.0])
         return Session(id=session_id, session_graph=graph, requests={0: request})
