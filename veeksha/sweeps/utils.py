@@ -93,6 +93,44 @@ def format_template(
     )
 
 
+# Decode-batch graph-ladder edges for the Qwen3-TTS host-tail build: batch-size
+# boundaries where the CUDA-graph ladder switches buckets. A load sweep that
+# only hits round concurrencies never lands the server *on* these edges, where
+# the batch-dependent overlapped-decode staging is most likely to expose an
+# async-ordering bug.
+GRAPH_LADDER_EDGES: Tuple[int, ...] = (384, 448, 480, 512)
+
+
+def edge_batch_concurrencies(
+    edges: Sequence[int] = GRAPH_LADDER_EDGES,
+    *,
+    straddle: int = 1,
+    minimum: int = 1,
+) -> Tuple[int, ...]:
+    """Concurrency values that straddle decode-batch graph-ladder edges.
+
+    For each edge ``e``, emits ``e - straddle .. e + straddle`` (clamped to
+    ``>= minimum``), de-duplicated and sorted. Feed the result to the sweep's
+    ``--concurrencies`` so a run exercises the batch-dependent staging *at* the
+    ladder boundaries (e.g. 383, 384, 385) instead of only round numbers.
+    """
+    if straddle < 0:
+        raise ValueError(f"straddle must be >= 0; got {straddle}")
+    if minimum < 1:
+        raise ValueError(f"minimum must be >= 1; got {minimum}")
+    if not edges:
+        raise ValueError("edges must be non-empty")
+    values: set[int] = set()
+    for edge in edges:
+        if edge < 1:
+            raise ValueError(f"edge values must be >= 1; got {edge}")
+        for offset in range(-straddle, straddle + 1):
+            candidate = edge + offset
+            if candidate >= minimum:
+                values.add(candidate)
+    return tuple(sorted(values))
+
+
 def input_sizes(sweep_config: SweepConfig, spec: SweepSpec) -> Tuple[int, ...]:
     if sweep_config.sizes:
         return sweep_config.sizes
