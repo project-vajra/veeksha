@@ -39,6 +39,31 @@ PR 203:
 1. `183e7c56` - duplex and audio-fluidity benchmarking
 2. `94a015cc` - validated streaming-latency and quality metrics
 
+## Post-reconciliation client consolidation
+
+After the two source series were reconciled, the audio-client API was simplified
+around transport and interaction mode rather than provider:
+
+- `client.type: tts` is the only complete-text HTTP TTS client.
+- `client.type: streaming_tts` is the only paced text-in/audio-out WebSocket
+  TTS client.
+- `client.type: stt` is the only streaming PCM-in/text-out WebSocket STT
+  client; there is no separate HTTP/batch STT path.
+- `client.provider` selects the wire strategy. HTTP supports `openai`,
+  `elevenlabs`, and `deepgram_flux`; WebSocket supports `openai_realtime`,
+  `vajra`, `elevenlabs`, `deepgram_flux`, and `deepgram_aura`.
+- Provider-specific request construction, authentication, URLs, event parsing,
+  and terminal conditions remain isolated in protocol strategies.
+- Provider-specific public TTS types, configs, registry entries, and four
+  duplicate lifecycle modules were removed; no legacy aliases remain.
+- STT's provider subclasses were replaced by protocol strategies behind one
+  concrete public `STTClient`.
+
+No provider protocol, metric, evaluator, health check, or verifier was removed.
+The source-inventory sections below retain historical class/type names when
+describing the merge inputs; the final mapping and audio inventories describe
+the post-cleanup public API.
+
 ## Meaning of verification in this log
 
 Each feature is classified at one of three levels:
@@ -66,7 +91,7 @@ common baseline, not because one branch reimplemented the other.
 | Normalized audio contract | Raw PCM metadata, sample rate, chunk timestamps, text-delta timestamps, commit/done offsets, and audio artifacts |
 | Playback analysis | Local replay of received audio timing under startup/buffering policies |
 | Baseline TTS quality | Seed-TTS-style WER and UTMOS request verification |
-| Realtime ASR clients | Vajra OpenAI-realtime and vLLM-realtime PCM16 WebSocket clients behind one `STTClient` factory |
+| Realtime ASR client | One PCM16 WebSocket `STTClient` with internal Vajra OpenAI-realtime and vLLM-realtime protocol strategies |
 | ASR workload preparation | Audio trace flavor, manifest metadata, expected transcripts, word timestamps, and concurrency sweep support |
 | ASR evaluation | Final/partial transcripts, WER, RTF, first-transcript latency, transcript snapshots, and word-visibility interactivity |
 | Benchmark plumbing | Client registry, Vidhi config deserialization, result summaries, plots/artifacts, managed Vajra endpoints, and sweep orchestration |
@@ -127,11 +152,11 @@ feature by feature.
 | Paced incremental text | Vajra native streaming client | ElevenLabs, Deepgram, and OpenAI realtime duplex | Include every provider; use the same pacing primitives |
 | Raw streaming timeline | Vajra text/audio/done offsets | Provider, trigger, playable-frame, fluidity fields | Include the union and make Vajra emit the provider/trigger contract too |
 | WebSocket failure mapping | Shared recursive flattener with transport priority | Provider client-local flattener and detailed provider errors | Supersede only the duplicate flattener with the shared helper; retain provider-specific status/body mapping |
-| Client registration/config | Vajra streaming enum/config/registry | Five provider-native clients plus Aura | Include all six additions with unique stable enum IDs |
+| Client registration/config | Vajra streaming enum/config/registry | Five provider-native clients plus Aura | Retain every protocol behind one HTTP and one WebSocket client with provider strategies |
 | Audio evaluation | Duration-cap truncation | Provider labels, playable-frame timing, stalls/fluidity | Include both in the same request row and run summary |
 | TTS WER normalization | Seed-exact normalization | Verification hardening and manual-oracle tests | Keep Seed-exact implementation and update the conflicting test oracle |
 | UTMOS | Shared loader/scorer and long-form windows | Strict per-request accounting | Include both; one shared scoring primitive |
-| Completion summaries | Realtime and Vajra streaming | New native streaming providers | Treat all text-in/audio-out streaming clients as realtime TTS summary producers |
+| Completion summaries | Realtime and Vajra streaming | New native streaming providers | Treat the unified `streaming_tts` client as the streaming completion-summary producer |
 | Test isolation | Optional models assumed absent in one environment | Lazy optional dependencies | Make absence deterministic with monkeypatches; never download a model during a unit test |
 
 ## Conflict and decision ledger
@@ -142,45 +167,42 @@ required choosing one user-facing feature over another.
 | File/area | Decision | Classification | Verification |
 | --- | --- | --- | --- |
 | `veeksha/client/realtime_tts.py` | Preserve PR duplex behavior and use the shared `tts_v2` WebSocket exception helper/imports | Included + superseded duplicate plumbing | Realtime duplex/complete-text tests |
-| `veeksha/config/client.py` | Preserve Vajra plus all five provider-native configs and Aura streaming config | Included | Six config deserialization cases |
+| `veeksha/config/client.py` | Reconcile all provider fields, then consolidate them into `TTSClientConfig` and `StreamingTTSClientConfig` | Included and standardized | Eight provider/config deserialization cases |
 | `veeksha/config/evaluator.py` | Preserve both duration-cap validation and fluidity/stall policy validation | Included | Evaluator config/task tests |
 | `veeksha/evaluator/performance/audio.py` | Preserve truncation marking together with provider labels, playable-frame, overlap, fluidity, stall, plot, and summary fields | Included | Audio task/interactivity/SLO tests |
-| `veeksha/types/__init__.py` | Keep existing values 1-7; assign provider additions 8-12 to eliminate branch-local collisions | Included with reconciled IDs | Enum uniqueness/stability test |
+| `veeksha/types/__init__.py` | Resolve merge-time collisions, then retain compact IDs 1-6 with `STREAMING_TTS = 5` | Standardized transport boundary | Enum uniqueness/stability test |
 | Three cleanly merged overlapping files | `registry.py`, audio evaluator tests, and `verification/audio.py` retained both sides and were audited after Git's clean merge | Included | Registry/config/verification tests |
 | Native provider exception groups | Prefer fatal provider error over generic socket leaves while still using the shared recursive helper | Superseded duplicate plumbing | Nested `ExceptionGroup` test |
 | Vajra provider/timing metadata | Add provider/model/protocol, first input trigger, and response-created timing to the native Vajra stream | Included semantic integration | Vajra fake-WebSocket contract test |
-| Streaming summary classification | Add ElevenLabs streaming, Deepgram Flux streaming, and Deepgram Aura streaming to the realtime completion-summary set | Included semantic integration | Explicit membership test |
+| Streaming summary classification | Route all provider strategies through `ClientType.STREAMING_TTS` | Included semantic integration | Explicit singleton membership test |
 | Seed normalization test expectation | Replace PR's pre-reconciliation double-space expectation with the Seed-exact single replacement result for that fixture | Superseded test oracle, not capability | Manual WER/normalization tests |
 | Optional-model unit test | Patch all optional model builders to unavailable instead of relying on the machine lacking packages/GPU | Superseded nondeterministic test setup | Long-form graceful-degradation test |
 | Added-code static diagnostics | Use typed dynamic imports for optional models, compatible jiwer lookup, explicit ndarray conversion, robust health sampling, and a statically visible version fallback | Included integration hardening | Added files: 0 pyright errors; full tree improves baseline by 6 |
 
 ### Included, removed, and superseded summary
 
-- **Included:** every user-facing feature from both source series.
-- **Removed:** no user-facing feature, client, metric, health check, verifier,
-  CLI, artifact, or documentation page.
-- **Superseded implementation details only:** the provider-local exception
-  flattener, conflicting numeric enum assignments, a non-Seed normalization
-  expectation, and an environment-dependent unit-test assumption.
+- **Included:** every protocol capability, metric, health check, verifier, CLI,
+  artifact, and documentation workflow from both source series.
+- **Removed:** provider-specific public TTS client types/configs/registry entries
+  and their duplicate lifecycle modules. Existing YAML must migrate to `tts` or
+  `streaming_tts` plus `provider`; no legacy aliases are retained.
+- **Superseded implementation details:** duplicated HTTP/WebSocket loops, the
+  provider-local exception flattener, conflicting enum assignments, a non-Seed
+  normalization expectation, and environment-dependent unit-test setup.
 
 ## Final client type mapping
 
-The mapping intentionally preserves the common baseline and `tts_v2` values.
+The final mapping keeps the original IDs 1--6 and makes transport, rather than
+provider, the TTS client boundary.
 
-| ID | Client type | Source |
+| ID | Client type | Responsibility |
 | ---: | --- | --- |
-| 1 | `OPENAI_CHAT_COMPLETIONS` | common baseline |
-| 2 | `OPENAI_COMPLETIONS` | common baseline |
-| 3 | `OPENAI_ROUTER` | common baseline |
-| 4 | `TTS` | common baseline |
-| 5 | `REALTIME_TTS` | common baseline |
-| 6 | `STT` | common baseline |
-| 7 | `VAJRA_TTS_STREAM` | `tts_v2` |
-| 8 | `ELEVENLABS_STREAMING_TTS` | PR 203 |
-| 9 | `DEEPGRAM_FLUX_STREAMING_TTS` | PR 203 |
-| 10 | `ELEVENLABS_HTTP_TTS` | PR 203 |
-| 11 | `DEEPGRAM_FLUX_HTTP_TTS` | PR 203 |
-| 12 | `DEEPGRAM_AURA_STREAMING_TTS` | PR 203 |
+| 1 | `OPENAI_CHAT_COMPLETIONS` | OpenAI-compatible chat completions |
+| 2 | `OPENAI_COMPLETIONS` | OpenAI-compatible text completions |
+| 3 | `OPENAI_ROUTER` | Per-request chat/completions routing |
+| 4 | `TTS` | Complete-text HTTP TTS for every supported provider |
+| 5 | `STREAMING_TTS` | Paced text-in/audio-out WebSocket TTS for every supported provider |
+| 6 | `STT` | Streaming WebSocket speech-to-text for every supported provider |
 
 ## Complete ASR pipeline inventory
 
@@ -199,14 +221,14 @@ The mapping intentionally preserves the common baseline and `tts_v2` values.
 
 - `STTClientConfig.provider` selects `vajra_openai_realtime` or
   `vllm_realtime`.
-- Both clients share one lifecycle: open session, encode PCM chunks, send EOF,
-  and parse provider events.
+- Both provider strategies share one concrete client lifecycle: open session,
+  encode PCM chunks, send EOF, and parse provider events.
 - Send and receive loops run concurrently.
 - Optional 1x realtime upload pacing prevents TTFC from being measured only
   after a full clip upload.
-- Metrics include first transcript chunk, final completion, end-to-end latency,
-  real-time factor, partial/final transcript, snapshots, audio byte/sample
-  metadata, and task identity.
+- Metrics include normalized provider/model/protocol identity, first transcript
+  chunk, final completion, end-to-end latency, real-time factor, partial/final
+  transcript, snapshots, audio byte/sample metadata, and task identity.
 
 ### 3. Correctness and aggregation
 
@@ -252,16 +274,14 @@ The mapping intentionally preserves the common baseline and `tts_v2` values.
 
 ### 2. Supported TTS clients
 
-| Public client | Transport/mode | Input/output behavior |
-| --- | --- | --- |
-| `tts` | OpenAI-compatible HTTP | Complete text -> complete audio |
-| `realtime_tts` | OpenAI realtime WebSocket | Paced text -> audio; `complete_text` or early-trigger `duplex` |
-| `vajra_tts_stream` | Vajra native WebSocket | `session.config` + paced text + done -> binary PCM/events |
-| `elevenlabs_streaming_tts` | ElevenLabs native WebSocket | Paced text -> streaming PCM |
-| `deepgram_flux_streaming_tts` | Deepgram Flux native WebSocket | Paced text -> streaming PCM |
-| `deepgram_aura_streaming_tts` | Deepgram Aura native WebSocket | Paced text/flush -> streaming PCM |
-| `elevenlabs_http_tts` | ElevenLabs native HTTP | Complete text -> complete PCM |
-| `deepgram_flux_http_tts` | Deepgram Flux native HTTP | Complete text -> complete PCM |
+| Public client | Transport/mode | Providers | Input/output behavior |
+| --- | --- | --- | --- |
+| `tts` | HTTP | `openai`, `elevenlabs`, `deepgram_flux` | Complete text -> HTTP audio stream |
+| `streaming_tts` | WebSocket | `openai_realtime`, `vajra`, `elevenlabs`, `deepgram_flux`, `deepgram_aura` | Paced text -> streaming PCM |
+
+`TTSClientConfig.provider` and `StreamingTTSClientConfig.provider` select a
+protocol strategy without changing the shared client lifecycle or evaluator
+contract.
 
 ### 3. Normalized response contract
 
@@ -318,9 +338,10 @@ The mapping intentionally preserves the common baseline and `tts_v2` values.
 | `git diff --check` | PASS |
 | Python compile check for reconciliation edits | PASS |
 | Every unit-test file changed by either source branch | PASS: 135 passed, 0 failed, 0 skipped |
-| Full repository unit suite | PASS with host caveat: 428 passed and 2 unchanged port-allocation tests deselected; unfiltered run was 428/430 with only port 8000 occupancy failures |
-| Formatter/import checks for changed Python | PASS: Black and isort across all Python changed from the common base |
-| Static analysis | PASS for regression: 62 errors vs 68 on the exact common baseline, with no diagnostic unique to this branch; inherited repository-wide debt remains |
+| Consolidated audio client/config unit suite | PASS: 60 passed, 0 failed |
+| Full repository unit suite | PASS with host caveat: 438 passed and 2 unchanged port-allocation tests deselected; unfiltered run was 438/440 with only port 8000 occupancy failures |
+| Formatter/import checks for changed Python | PASS: Black and isort across all changed Python |
+| Static analysis | PASS: Pyright reported 0 errors, warnings, or information diagnostics across the consolidated clients, configs, registry, utilities, and evaluator integration |
 | Live ElevenLabs/Deepgram/OpenAI provider calls | NOT RUN: credentials and billable external services required |
 | Live Vajra native streaming + telemetry probe | NOT RUN: deployed endpoint and telemetry directory required |
 | Long-form real-corpus/model run | NOT RUN: audio/reference corpus and model checkpoints required |

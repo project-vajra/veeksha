@@ -3,30 +3,31 @@ import json
 
 import pytest
 
-from veeksha.client.vajra_tts_stream import (
-    VajraTTSStreamClient,
-    VajraTTSStreamProtocol,
+from veeksha.client.streaming_tts import (
+    StreamingTTSClient,
+    VajraStreamingProtocol,
 )
-from veeksha.config.client import TextPacingConfig, VajraTTSStreamClientConfig
+from veeksha.config.client import StreamingTTSClientConfig, TextPacingConfig
 from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.core.request import Request
 from veeksha.core.request_content import TextChannelRequestContent
 from veeksha.types import ChannelModality
 
 
-def _config(**overrides) -> VajraTTSStreamClientConfig:
+def _config(**overrides) -> StreamingTTSClientConfig:
     kwargs = dict(
+        provider="vajra",
         model="qwen-tts",
         api_base="http://localhost:8081",
         voice_id="vivian",
         pacing=TextPacingConfig(tokens_per_second=10000.0),
     )
     kwargs.update(overrides)
-    return VajraTTSStreamClientConfig(**kwargs)
+    return StreamingTTSClientConfig(**kwargs)
 
 
-def _client(**overrides) -> VajraTTSStreamClient:
-    return VajraTTSStreamClient(_config(**overrides))
+def _client(**overrides) -> StreamingTTSClient:
+    return StreamingTTSClient(_config(**overrides))
 
 
 # ---------------------------------------------------------------------------
@@ -37,13 +38,13 @@ def _client(**overrides) -> VajraTTSStreamClient:
 @pytest.mark.unit
 def test_config_requires_model() -> None:
     with pytest.raises(ValueError, match="model is required"):
-        VajraTTSStreamClientConfig(api_base="http://localhost:8081")
+        StreamingTTSClientConfig(provider="vajra", api_base="http://localhost:8081")
 
 
 @pytest.mark.unit
 def test_config_requires_api_base() -> None:
     with pytest.raises(ValueError, match="api_base is required"):
-        VajraTTSStreamClientConfig(model="qwen-tts")
+        StreamingTTSClientConfig(provider="vajra", model="qwen-tts")
 
 
 @pytest.mark.unit
@@ -56,7 +57,7 @@ def test_config_rejects_nonpositive_sample_rate() -> None:
 def test_config_defaults_skip_validation_for_polymorphic_instantiation() -> None:
     # The flat_dataclass framework instantiates non-selected polymorphic
     # children with defaults; that must not raise.
-    config = VajraTTSStreamClientConfig()
+    config = StreamingTTSClientConfig()
     assert config.model == ""
 
 
@@ -88,16 +89,16 @@ def test_config_defaults_skip_validation_for_polymorphic_instantiation() -> None
     ],
 )
 def test_build_ws_url(api_base: str, expected: str) -> None:
-    protocol = VajraTTSStreamProtocol(_config(), api_key=None)
+    protocol = VajraStreamingProtocol(_config(), api_key=None)
 
     assert protocol.build_ws_url(api_base) == expected
 
 
 @pytest.mark.unit
 def test_session_config_json_minimal() -> None:
-    protocol = VajraTTSStreamProtocol(_config(voice_id=""), api_key=None)
+    protocol = VajraStreamingProtocol(_config(voice_id=""), api_key=None)
 
-    message = json.loads(protocol.session_config_json())
+    message = json.loads(protocol.initial_messages()[0])
 
     assert message == {
         "type": "session.config",
@@ -108,12 +109,12 @@ def test_session_config_json_minimal() -> None:
 
 @pytest.mark.unit
 def test_session_config_json_includes_optional_fields() -> None:
-    protocol = VajraTTSStreamProtocol(
+    protocol = VajraStreamingProtocol(
         _config(language="en", instructions="calm", task_type="CustomVoice"),
         api_key=None,
     )
 
-    message = json.loads(protocol.session_config_json())
+    message = json.loads(protocol.initial_messages()[0])
 
     assert message["voice"] == "vivian"
     assert message["language"] == "en"
@@ -123,8 +124,8 @@ def test_session_config_json_includes_optional_fields() -> None:
 
 @pytest.mark.unit
 def test_headers_include_bearer_token_only_when_set() -> None:
-    assert VajraTTSStreamProtocol(_config(), api_key=None).headers() == {}
-    assert VajraTTSStreamProtocol(_config(), api_key="sk-x").headers() == {
+    assert VajraStreamingProtocol(_config(), api_key=None).headers() == {}
+    assert VajraStreamingProtocol(_config(), api_key="sk-x").headers() == {
         "Authorization": "Bearer sk-x"
     }
 
@@ -201,7 +202,7 @@ def _request(text: str = "hello world from vajra") -> Request:
 
 
 def _run_request(
-    client: VajraTTSStreamClient,
+    client: StreamingTTSClient,
     websocket: _FakeVajraWebSocket,
     monkeypatch: pytest.MonkeyPatch,
     events: list[str],

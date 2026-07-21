@@ -17,32 +17,49 @@ The TTS path has five layers:
    fluidity from those events.
 5. The audio quality evaluator can save WAV files and compute WER and UTMOS.
 
-The provider adapters intentionally retain their native lifecycle:
+The public client type describes the transport. The ``provider`` field selects
+the wire protocol behind that transport, while every provider shares the same
+request lifecycle and metric contract:
 
 .. list-table::
    :header-rows: 1
 
    * - ``client.type``
+     - ``provider``
      - Transport
      - Input behavior
-   * - ``realtime_tts``
+   * - ``tts``
+     - ``openai``
+     - OpenAI-compatible ``POST /v1/audio/speech``
+     - Complete text with an HTTP audio response
+   * - ``tts``
+     - ``elevenlabs``
+     - ElevenLabs ``/v1/text-to-speech`` HTTP
+     - Complete text with an HTTP PCM response
+   * - ``tts``
+     - ``deepgram_flux``
+     - Deepgram Flux ``POST /v2/speak``
+     - Complete text with an HTTP PCM response
+   * - ``streaming_tts``
+     - ``openai_realtime``
      - OpenAI Realtime-compatible WebSocket
      - Complete-text or duplex ``response.create`` scheduling
-   * - ``elevenlabs_streaming_tts``
+   * - ``streaming_tts``
+     - ``vajra``
+     - Vajra native ``/v1/audio/speech/stream`` WebSocket
+     - Paced ``input.text`` messages with binary PCM output
+   * - ``streaming_tts``
+     - ``elevenlabs``
      - ElevenLabs ``/stream-input`` WebSocket
-     - Paced partial text followed by the provider finalization message
-   * - ``deepgram_flux_streaming_tts``
+     - Paced partial text followed by provider finalization
+   * - ``streaming_tts``
+     - ``deepgram_flux``
      - Deepgram Flux ``/v2/speak`` WebSocket
      - Paced ``Speak`` messages; audio may arrive before ``Flush``
-   * - ``deepgram_aura_streaming_tts``
+   * - ``streaming_tts``
+     - ``deepgram_aura``
      - Deepgram Aura ``/v1/speak`` WebSocket
      - Paced ``Speak`` messages followed by ``Flush``
-   * - ``elevenlabs_http_tts``
-     - ElevenLabs complete-response HTTP
-     - All text and then all audio
-   * - ``deepgram_flux_http_tts``
-     - Deepgram Flux ``POST /v2/speak``
-     - All text and then all audio
 
 The native protocols follow the vendor specifications for `ElevenLabs
 stream-input <https://elevenlabs.io/docs/api-reference/text-to-speech/v-1-text-to-speech-voice-id-stream-input>`_,
@@ -155,7 +172,8 @@ Set ``ELEVENLABS_API_KEY`` in the environment and replace ``voice_id``.
     output_dir: benchmark_output/tts_elevenlabs_streaming
 
     client:
-      type: elevenlabs_streaming_tts
+      type: streaming_tts
+      provider: elevenlabs
       api_base: https://api.elevenlabs.io
       model: eleven_flash_v2_5
       voice_id: YOUR_VOICE_ID
@@ -260,7 +278,8 @@ For Deepgram Flux streaming, replace only the client block:
 .. code-block:: yaml
 
     client:
-      type: deepgram_flux_streaming_tts
+      type: streaming_tts
+      provider: deepgram_flux
       api_base: https://api.deepgram.com
       model: flux-alexis-en
       api_key_env: DEEPGRAM_API_KEY
@@ -270,11 +289,16 @@ For Deepgram Flux streaming, replace only the client block:
         tokens_per_delta: 1
         gap_distribution: fixed
 
-Use ``deepgram_aura_streaming_tts`` with an Aura model for the ``/v1/speak``
-lane. Use ``elevenlabs_http_tts`` or ``deepgram_flux_http_tts`` for the
-complete-text/complete-audio controls. For Vajra, use ``realtime_tts`` and set
-``input_output_mode: duplex``; the server must consume conversation items added
-after an active ``response.create``.
+For Aura, keep ``type: streaming_tts`` and set ``provider: deepgram_aura``.
+For complete-text HTTP controls, use ``type: tts`` with either
+``provider: elevenlabs`` or ``provider: deepgram_flux``. The OpenAI-compatible
+HTTP speech contract is ``type: tts`` with ``provider: openai``.
+
+Vajra's native streaming contract uses ``type: streaming_tts`` with
+``provider: vajra``. A Vajra endpoint implementing the OpenAI Realtime
+contract instead uses ``provider: openai_realtime``. Set
+``input_output_mode: duplex`` only for the explicit Realtime response trigger; the server must
+consume conversation items added after an active ``response.create``.
 
 Do not treat ``response.create`` ordering or output overlap alone as proof of
 semantic duplex synthesis. A conforming run must also pass full-reference TTS

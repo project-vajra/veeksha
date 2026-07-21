@@ -4,8 +4,13 @@ from typing import Optional
 from vidhi import BasePolyConfig, field, frozen_dataclass
 
 from veeksha.core.audio_contract import DEFAULT_AUDIO_SAMPLE_RATE
+from veeksha.core.tokenizer import (
+    TokenizerProvider,
+    build_hf_tokenizer_handle_from_model,
+    build_word_split_tokenizer_provider,
+)
 from veeksha.logger import init_logger
-from veeksha.types import ClientType
+from veeksha.types import ChannelModality, ClientType
 
 logger = init_logger(__name__)
 
@@ -42,18 +47,12 @@ class BaseClientConfig(BasePolyConfig):
                 self.additional_sampling_params
             )
 
-    def build_tokenizer_provider(self):
+    def build_tokenizer_provider(self) -> TokenizerProvider:
         """Build a TokenizerProvider for this client config.
 
         Default implementation uses a HuggingFace tokenizer based on self.model.
         Subclasses can override for non-HF models.
         """
-        from veeksha.core.tokenizer import (
-            TokenizerProvider,
-            build_hf_tokenizer_handle_from_model,
-        )
-        from veeksha.types import ChannelModality
-
         return TokenizerProvider(
             {ChannelModality.TEXT: build_hf_tokenizer_handle_from_model(self.model)},
             model_name=self.model,
@@ -145,58 +144,84 @@ class OpenAIRouterClientConfig(OpenAIChatCompletionsClientConfig):
 
 @frozen_dataclass
 class TTSClientConfig(BaseClientConfig):
-    """TTS client configuration for the OpenAI Audio Speech API.
+    """Provider-agnostic complete-text HTTP TTS configuration."""
 
-    Every server used with ``client.type: tts`` must implement the canonical
-    ``POST /v1/audio/speech`` request and raw-audio streaming response.
-    """
-
-    voice_id: str = field(
+    provider: str = field(
         "",
-        help="Required OpenAI Audio Speech voice identifier.",
+        help=("HTTP TTS provider. Supported: openai, elevenlabs, deepgram_flux."),
     )
+    voice_id: str = field("", help="Voice identifier when required by the provider.")
     sample_rate: int = field(DEFAULT_AUDIO_SAMPLE_RATE, help="Audio sample rate in Hz.")
     chunk_size: int = field(
-        1024, help="Chunk size in bytes for streaming audio response."
+        1024, help="Read size in bytes for HTTP audio response streaming."
     )
     raw_pcm: bool = field(
         False,
-        help="Request response_format=pcm (True) or response_format=wav (False).",
+        help="Request raw PCM from providers that support selectable output formats.",
     )
     model: str = field("", help="The TTS model ID.")
+    api_key_env: Optional[str] = field(
+        None,
+        help="Optional provider API-key environment variable override.",
+    )
+    stability: float = field(0.5, help="ElevenLabs voice stability.")
+    similarity_boost: float = field(0.8, help="ElevenLabs similarity boost.")
+    speed: float = field(1.0, help="Provider speaking-rate multiplier.")
+    apply_text_normalization: str = field(
+        "off", help="ElevenLabs text normalization mode: auto | on | off."
+    )
+    mip_opt_out: bool = field(
+        False, help="Opt out of the Deepgram Model Improvement Program."
+    )
+
+    _SUPPORTED_PROVIDERS = ("openai", "elevenlabs", "deepgram_flux")
+    _VOICE_REQUIRED_PROVIDERS = ("openai", "elevenlabs")
 
     @classmethod
     def get_type(cls) -> ClientType:
         return ClientType.TTS
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         super().__post_init__()
-
-        # Skip validation when instantiated with defaults by the flat_dataclass
-        # framework for non-selected polymorphic children.
-        if not self.model and self.api_base is None and not self.voice_id:
+        if (
+            not self.provider
+            and not self.model
+            and self.api_base is None
+            and not self.voice_id
+        ):
             return
+        if self.provider not in self._SUPPORTED_PROVIDERS:
+            raise ValueError(
+                f"Unsupported HTTP TTS provider: {self.provider or '<empty>'}. "
+                f"Supported: {', '.join(self._SUPPORTED_PROVIDERS)}"
+            )
         if not self.model:
             raise ValueError("TTSClientConfig.model is required.")
-        if not self.voice_id:
-            raise ValueError("TTSClientConfig.voice_id is required.")
         if self.api_base is None:
             raise ValueError("TTSClientConfig.api_base is required.")
+        if self.provider in self._VOICE_REQUIRED_PROVIDERS and not self.voice_id:
+            raise ValueError(
+                f"TTSClientConfig.voice_id is required for {self.provider}."
+            )
         if self.sample_rate <= 0:
             raise ValueError("TTSClientConfig.sample_rate must be > 0")
         if self.chunk_size <= 0:
             raise ValueError("TTSClientConfig.chunk_size must be > 0")
+        if self.provider == "elevenlabs":
+            if not 0.7 <= self.speed <= 1.2:
+                raise ValueError("ElevenLabs speed must be between 0.7 and 1.2")
+            if self.apply_text_normalization not in ("auto", "on", "off"):
+                raise ValueError(
+                    "apply_text_normalization must be one of ('auto', 'on', 'off')"
+                )
 
-    def build_tokenizer_provider(self):
-        """TTS models use a simple word-split tokenizer."""
-        from veeksha.core.tokenizer import build_word_split_tokenizer_provider
-
+    def build_tokenizer_provider(self) -> TokenizerProvider:
         return build_word_split_tokenizer_provider(self.model)
 
 
 @frozen_dataclass
 class TextPacingConfig:
-    """LLM decode-rate emulation for paced Realtime text conversation items."""
+    """LLM decode-rate emulation for paced streaming text input."""
 
     tokens_per_second: float = field(
         20.0, help="Emulated upstream LLM decode rate (whitespace tokens/sec)."
@@ -210,10 +235,10 @@ class TextPacingConfig:
     )
     seed: int = field(
         42,
-        help="Base seed for per-request gap jitter (per-request seed = seed + request_id).",
+        help="Base seed for per-request gap jitter (request seed = seed + request_id).",
     )
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.tokens_per_second <= 0:
             raise ValueError("TextPacingConfig.tokens_per_second must be > 0")
         if self.tokens_per_delta < 1:
@@ -221,397 +246,129 @@ class TextPacingConfig:
         if self.gap_distribution not in ("fixed", "poisson"):
             raise ValueError(
                 "TextPacingConfig.gap_distribution must be one of "
-                "('fixed', 'poisson'), "
-                f"got '{self.gap_distribution}'"
+                f"('fixed', 'poisson'), got '{self.gap_distribution}'"
             )
         if self.initial_delay_s < 0:
             raise ValueError("TextPacingConfig.initial_delay_s must be >= 0")
 
 
 @frozen_dataclass
-class RealtimeTTSClientConfig(BaseClientConfig):
-    """WebSocket TTS client implementing the OpenAI Realtime event contract.
+class StreamingTTSClientConfig(BaseClientConfig):
+    """Provider-agnostic paced text-in/audio-out WebSocket TTS configuration."""
 
-    `client.type: realtime_tts` opens a websocket to a realtime TTS server,
-    sends text conversation items at an emulated LLM decode rate, and measures
-    streaming interactivity metrics from the audio chunks it receives back.
-    """
-
-    voice_id: str = field(
+    provider: str = field(
         "",
-        help="Optional Realtime output voice identifier.",
+        help=(
+            "Streaming TTS provider. Supported: openai_realtime, vajra, "
+            "elevenlabs, deepgram_flux, deepgram_aura."
+        ),
     )
-    sample_rate: int = field(DEFAULT_AUDIO_SAMPLE_RATE, help="Audio sample rate in Hz.")
-    raw_pcm: bool = field(True, help="The Realtime protocol streams raw PCM16.")
-    model: str = field("", help="The realtime TTS model ID.")
+    voice_id: str = field("", help="Optional provider voice identifier.")
+    sample_rate: int = field(DEFAULT_AUDIO_SAMPLE_RATE, help="PCM sample rate in Hz.")
+    model: str = field("", help="The streaming TTS model ID.")
+    api_key_env: Optional[str] = field(
+        None,
+        help="Optional provider API-key environment variable override.",
+    )
     pacing: TextPacingConfig = field(
         default_factory=TextPacingConfig,
-        help="Text pacing (LLM decode-rate emulation) configuration.",
+        help="Upstream LLM text pacing configuration.",
     )
     input_output_mode: str = field(
         "complete_text",
         help=(
-            "Realtime input/output scheduling: 'complete_text' sends "
-            "response.create after all text deltas; 'duplex' sends it once "
-            "duplex_start_after_tokens have arrived and continues appending text "
-            "while audio is generated. Duplex mode requires a server that consumes "
-            "conversation items added to an active response."
+            "Explicit response scheduling: complete_text or duplex. Providers "
+            "that synthesize on text receipt use their native trigger behavior."
         ),
     )
     duplex_start_after_tokens: int = field(
         1,
-        help=(
-            "Minimum paced input tokens to send before response.create in duplex "
-            "mode. The trigger fires after the delta that crosses this threshold."
-        ),
+        help="Input tokens before an explicit duplex response trigger.",
+    )
+    language: Optional[str] = field(
+        None, help="Optional language for protocols that support it."
+    )
+    instructions: Optional[str] = field(
+        None, help="Optional synthesis instructions for protocols that support them."
+    )
+    task_type: Optional[str] = field(None, help="Optional provider task type.")
+    chunk_length_schedule: list[int] = field(
+        default_factory=lambda: [120, 160, 250, 290],
+        help="ElevenLabs character thresholds for audio generation.",
+    )
+    stability: float = field(0.5, help="ElevenLabs voice stability.")
+    similarity_boost: float = field(0.8, help="ElevenLabs similarity boost.")
+    speed: float = field(1.0, help="Provider speaking-rate multiplier.")
+    auto_mode: bool = field(False, help="Enable ElevenLabs automatic chunk scheduling.")
+    apply_text_normalization: str = field(
+        "off", help="ElevenLabs text normalization mode: auto | on | off."
+    )
+    mip_opt_out: bool = field(
+        False, help="Opt out of the Deepgram Model Improvement Program."
+    )
+
+    _SUPPORTED_PROVIDERS = (
+        "openai_realtime",
+        "vajra",
+        "elevenlabs",
+        "deepgram_flux",
+        "deepgram_aura",
     )
 
     @classmethod
     def get_type(cls) -> ClientType:
-        return ClientType.REALTIME_TTS
+        return ClientType.STREAMING_TTS
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         super().__post_init__()
-
-        # Skip validation when instantiated with defaults by the flat_dataclass
-        # framework for non-selected polymorphic children.
-        if not self.model and self.api_base is None:
+        if (
+            not self.provider
+            and not self.model
+            and self.api_base is None
+            and not self.voice_id
+        ):
             return
+        if self.provider not in self._SUPPORTED_PROVIDERS:
+            raise ValueError(
+                f"Unsupported streaming TTS provider: {self.provider or '<empty>'}. "
+                f"Supported: {', '.join(self._SUPPORTED_PROVIDERS)}"
+            )
         if not self.model:
-            raise ValueError("RealtimeTTSClientConfig.model is required.")
+            raise ValueError("StreamingTTSClientConfig.model is required.")
         if self.api_base is None:
-            raise ValueError("RealtimeTTSClientConfig.api_base is required.")
+            raise ValueError("StreamingTTSClientConfig.api_base is required.")
+        if self.provider == "elevenlabs" and not self.voice_id:
+            raise ValueError(
+                "StreamingTTSClientConfig.voice_id is required for elevenlabs."
+            )
         if self.sample_rate <= 0:
-            raise ValueError("RealtimeTTSClientConfig.sample_rate must be > 0")
+            raise ValueError("StreamingTTSClientConfig.sample_rate must be > 0")
         if self.input_output_mode not in ("complete_text", "duplex"):
             raise ValueError(
-                "RealtimeTTSClientConfig.input_output_mode must be one of "
+                "StreamingTTSClientConfig.input_output_mode must be one of "
                 "('complete_text', 'duplex')"
             )
         if self.duplex_start_after_tokens < 1:
             raise ValueError(
-                "RealtimeTTSClientConfig.duplex_start_after_tokens must be >= 1"
+                "StreamingTTSClientConfig.duplex_start_after_tokens must be >= 1"
             )
-
-    def build_tokenizer_provider(self):
-        """Realtime TTS models use a simple word-split tokenizer."""
-        from veeksha.core.tokenizer import build_word_split_tokenizer_provider
-
-        return build_word_split_tokenizer_provider(self.model)
-
-
-@frozen_dataclass
-class VajraTTSStreamClientConfig(BaseClientConfig):
-    """WebSocket TTS client for Vajra's native streaming-text speech protocol.
-
-    `client.type: vajra_tts_stream` opens a websocket to
-    ``/v1/audio/speech/stream`` on a Vajra TTS server, sends a
-    ``session.config`` message followed by ``input.text`` deltas at an
-    emulated LLM decode rate, and measures streaming interactivity metrics
-    from the binary PCM frames it receives back.
-    """
-
-    voice_id: str = field(
-        "",
-        help="Optional voice identifier sent in session.config.",
-    )
-    sample_rate: int = field(DEFAULT_AUDIO_SAMPLE_RATE, help="Audio sample rate in Hz.")
-    raw_pcm: bool = field(True, help="The protocol streams raw int16 PCM frames.")
-    model: str = field("", help="The TTS model ID.")
-    language: Optional[str] = field(
-        None, help="Optional language sent in session.config."
-    )
-    instructions: Optional[str] = field(
-        None, help="Optional instructions sent in session.config."
-    )
-    task_type: Optional[str] = field(
-        None, help="Optional task_type sent in session.config."
-    )
-    pacing: TextPacingConfig = field(
-        default_factory=TextPacingConfig,
-        help="Text pacing (LLM decode-rate emulation) configuration.",
-    )
-
-    @classmethod
-    def get_type(cls) -> ClientType:
-        return ClientType.VAJRA_TTS_STREAM
-
-    def __post_init__(self):
-        super().__post_init__()
-
-        # Skip validation when instantiated with defaults by the flat_dataclass
-        # framework for non-selected polymorphic children.
-        if not self.model and self.api_base is None:
-            return
-        if not self.model:
-            raise ValueError("VajraTTSStreamClientConfig.model is required.")
-        if self.api_base is None:
-            raise ValueError("VajraTTSStreamClientConfig.api_base is required.")
-        if self.sample_rate <= 0:
-            raise ValueError("VajraTTSStreamClientConfig.sample_rate must be > 0")
-
-    def build_tokenizer_provider(self):
-        """Vajra TTS models use a simple word-split tokenizer."""
-        from veeksha.core.tokenizer import build_word_split_tokenizer_provider
-
-        return build_word_split_tokenizer_provider(self.model)
-
-
-@frozen_dataclass
-class ElevenLabsStreamingTTSClientConfig(BaseClientConfig):
-    """Native ElevenLabs ``stream-input`` WebSocket TTS client."""
-
-    voice_id: str = field("", help="ElevenLabs voice identifier.")
-    sample_rate: int = field(DEFAULT_AUDIO_SAMPLE_RATE, help="PCM sample rate in Hz.")
-    model: str = field("", help="ElevenLabs model ID, e.g. eleven_flash_v2_5.")
-    api_key_env: str = field(
-        "ELEVENLABS_API_KEY",
-        help="Environment variable used when client.api_key is omitted.",
-    )
-    pacing: TextPacingConfig = field(
-        default_factory=TextPacingConfig,
-        help="Upstream LLM text pacing configuration.",
-    )
-    chunk_length_schedule: list[int] = field(
-        default_factory=lambda: [120, 160, 250, 290],
-        help="Provider character thresholds that trigger successive audio chunks.",
-    )
-    stability: float = field(0.5, help="ElevenLabs voice stability.")
-    similarity_boost: float = field(0.8, help="ElevenLabs similarity boost.")
-    speed: float = field(1.0, help="ElevenLabs speaking-rate multiplier.")
-    auto_mode: bool = field(
-        False,
-        help="Use ElevenLabs auto mode instead of the configured chunk schedule.",
-    )
-    apply_text_normalization: str = field(
-        "off",
-        help="ElevenLabs text normalization mode: auto | on | off.",
-    )
-
-    @classmethod
-    def get_type(cls) -> ClientType:
-        return ClientType.ELEVENLABS_STREAMING_TTS
-
-    def __post_init__(self):
-        super().__post_init__()
-        if not self.model and self.api_base is None and not self.voice_id:
-            return
-        if self.api_base is None:
-            raise ValueError("ElevenLabsStreamingTTSClientConfig.api_base is required")
-        if not self.model:
-            raise ValueError("ElevenLabsStreamingTTSClientConfig.model is required")
-        if not self.voice_id:
-            raise ValueError("ElevenLabsStreamingTTSClientConfig.voice_id is required")
-        if self.sample_rate <= 0:
-            raise ValueError(
-                "ElevenLabsStreamingTTSClientConfig.sample_rate must be > 0"
-            )
-        if not self.api_key_env:
-            raise ValueError(
-                "ElevenLabsStreamingTTSClientConfig.api_key_env is required"
-            )
-        if not self.chunk_length_schedule or any(
-            value <= 0 for value in self.chunk_length_schedule
-        ):
-            raise ValueError("chunk_length_schedule must contain positive values")
-        if self.chunk_length_schedule != sorted(self.chunk_length_schedule):
-            raise ValueError("chunk_length_schedule must be non-decreasing")
-        if not 0.7 <= self.speed <= 1.2:
-            raise ValueError("ElevenLabs speed must be between 0.7 and 1.2")
-        if self.apply_text_normalization not in ("auto", "on", "off"):
-            raise ValueError(
-                "apply_text_normalization must be one of ('auto', 'on', 'off')"
-            )
-
-    def build_tokenizer_provider(self):
-        from veeksha.core.tokenizer import build_word_split_tokenizer_provider
-
-        return build_word_split_tokenizer_provider(self.model)
-
-
-@frozen_dataclass
-class DeepgramFluxStreamingTTSClientConfig(BaseClientConfig):
-    """Native Deepgram Flux ``/v2/speak`` streaming TTS client."""
-
-    sample_rate: int = field(DEFAULT_AUDIO_SAMPLE_RATE, help="PCM sample rate in Hz.")
-    model: str = field("", help="Deepgram Flux model ID, e.g. flux-alexis-en.")
-    api_key_env: str = field(
-        "DEEPGRAM_API_KEY",
-        help="Environment variable used when client.api_key is omitted.",
-    )
-    pacing: TextPacingConfig = field(
-        default_factory=TextPacingConfig,
-        help="Upstream LLM text pacing configuration.",
-    )
-    mip_opt_out: bool = field(
-        False,
-        help="Opt out of Deepgram's Model Improvement Program.",
-    )
-
-    @classmethod
-    def get_type(cls) -> ClientType:
-        return ClientType.DEEPGRAM_FLUX_STREAMING_TTS
-
-    def __post_init__(self):
-        super().__post_init__()
-        if not self.model and self.api_base is None:
-            return
-        if self.api_base is None:
-            raise ValueError(
-                "DeepgramFluxStreamingTTSClientConfig.api_base is required"
-            )
-        if not self.model:
-            raise ValueError("DeepgramFluxStreamingTTSClientConfig.model is required")
-        if self.sample_rate <= 0:
-            raise ValueError(
-                "DeepgramFluxStreamingTTSClientConfig.sample_rate must be > 0"
-            )
-        if not self.api_key_env:
-            raise ValueError(
-                "DeepgramFluxStreamingTTSClientConfig.api_key_env is required"
-            )
-
-    def build_tokenizer_provider(self):
-        from veeksha.core.tokenizer import build_word_split_tokenizer_provider
-
-        return build_word_split_tokenizer_provider(self.model)
-
-
-@frozen_dataclass
-class DeepgramAuraStreamingTTSClientConfig(BaseClientConfig):
-    """Native Deepgram Aura ``/v1/speak`` WebSocket TTS client.
-
-    Aura accepts incremental ``Speak`` messages and an explicit ``Flush`` to
-    drain the queued turn. This remains a distinct lane from Flux's
-    streaming-first, turn-based ``/v2/speak`` lifecycle.
-    """
-
-    sample_rate: int = field(DEFAULT_AUDIO_SAMPLE_RATE, help="PCM sample rate in Hz.")
-    model: str = field("", help="Deepgram Aura model ID, e.g. aura-2-thalia-en.")
-    api_key_env: str = field(
-        "DEEPGRAM_API_KEY",
-        help="Environment variable used when client.api_key is omitted.",
-    )
-    pacing: TextPacingConfig = field(
-        default_factory=TextPacingConfig,
-        help="Upstream LLM text pacing configuration.",
-    )
-    mip_opt_out: bool = field(
-        False,
-        help="Opt out of Deepgram's Model Improvement Program.",
-    )
-    speed: float = field(1.0, help="Deepgram Aura speaking-rate multiplier.")
-
-    @classmethod
-    def get_type(cls) -> ClientType:
-        return ClientType.DEEPGRAM_AURA_STREAMING_TTS
-
-    def __post_init__(self):
-        super().__post_init__()
-        if not self.model and self.api_base is None:
-            return
-        if self.api_base is None:
-            raise ValueError(
-                "DeepgramAuraStreamingTTSClientConfig.api_base is required"
-            )
-        if not self.model:
-            raise ValueError("DeepgramAuraStreamingTTSClientConfig.model is required")
-        if self.sample_rate <= 0:
-            raise ValueError(
-                "DeepgramAuraStreamingTTSClientConfig.sample_rate must be > 0"
-            )
-        if not self.api_key_env:
-            raise ValueError(
-                "DeepgramAuraStreamingTTSClientConfig.api_key_env is required"
-            )
-        if not 0.7 <= self.speed <= 1.5:
+        if self.provider == "elevenlabs":
+            if not self.chunk_length_schedule or any(
+                value <= 0 for value in self.chunk_length_schedule
+            ):
+                raise ValueError("chunk_length_schedule must contain positive values")
+            if self.chunk_length_schedule != sorted(self.chunk_length_schedule):
+                raise ValueError("chunk_length_schedule must be non-decreasing")
+            if not 0.7 <= self.speed <= 1.2:
+                raise ValueError("ElevenLabs speed must be between 0.7 and 1.2")
+            if self.apply_text_normalization not in ("auto", "on", "off"):
+                raise ValueError(
+                    "apply_text_normalization must be one of ('auto', 'on', 'off')"
+                )
+        if self.provider == "deepgram_aura" and not 0.7 <= self.speed <= 1.5:
             raise ValueError("Deepgram Aura speed must be between 0.7 and 1.5")
 
-    def build_tokenizer_provider(self):
-        from veeksha.core.tokenizer import build_word_split_tokenizer_provider
-
-        return build_word_split_tokenizer_provider(self.model)
-
-
-@frozen_dataclass
-class ElevenLabsHTTPTTSClientConfig(BaseClientConfig):
-    """ElevenLabs complete-text, non-streaming HTTP TTS client."""
-
-    voice_id: str = field("", help="ElevenLabs voice identifier.")
-    sample_rate: int = field(DEFAULT_AUDIO_SAMPLE_RATE, help="PCM sample rate in Hz.")
-    model: str = field("", help="ElevenLabs model ID.")
-    api_key_env: str = field(
-        "ELEVENLABS_API_KEY",
-        help="Environment variable used when client.api_key is omitted.",
-    )
-    stability: float = field(0.5, help="ElevenLabs voice stability.")
-    similarity_boost: float = field(0.8, help="ElevenLabs similarity boost.")
-    speed: float = field(1.0, help="ElevenLabs speaking-rate multiplier.")
-    apply_text_normalization: str = field(
-        "off", help="ElevenLabs text normalization mode: auto | on | off."
-    )
-
-    @classmethod
-    def get_type(cls) -> ClientType:
-        return ClientType.ELEVENLABS_HTTP_TTS
-
-    def __post_init__(self):
-        super().__post_init__()
-        if not self.model and self.api_base is None and not self.voice_id:
-            return
-        if self.api_base is None or not self.model or not self.voice_id:
-            raise ValueError(
-                "ElevenLabsHTTPTTSClientConfig requires api_base, model, and voice_id"
-            )
-        if self.sample_rate <= 0:
-            raise ValueError("ElevenLabsHTTPTTSClientConfig.sample_rate must be > 0")
-        if not self.api_key_env:
-            raise ValueError("ElevenLabsHTTPTTSClientConfig.api_key_env is required")
-        if not 0.7 <= self.speed <= 1.2:
-            raise ValueError("ElevenLabs speed must be between 0.7 and 1.2")
-        if self.apply_text_normalization not in ("auto", "on", "off"):
-            raise ValueError(
-                "apply_text_normalization must be one of ('auto', 'on', 'off')"
-            )
-
-    def build_tokenizer_provider(self):
-        from veeksha.core.tokenizer import build_word_split_tokenizer_provider
-
-        return build_word_split_tokenizer_provider(self.model)
-
-
-@frozen_dataclass
-class DeepgramFluxHTTPClientConfig(BaseClientConfig):
-    """Deepgram Flux complete-text, non-streaming HTTP TTS client."""
-
-    sample_rate: int = field(DEFAULT_AUDIO_SAMPLE_RATE, help="PCM sample rate in Hz.")
-    model: str = field("", help="Deepgram Flux model ID.")
-    api_key_env: str = field(
-        "DEEPGRAM_API_KEY",
-        help="Environment variable used when client.api_key is omitted.",
-    )
-    mip_opt_out: bool = field(
-        False, help="Opt out of Deepgram's Model Improvement Program."
-    )
-
-    @classmethod
-    def get_type(cls) -> ClientType:
-        return ClientType.DEEPGRAM_FLUX_HTTP_TTS
-
-    def __post_init__(self):
-        super().__post_init__()
-        if not self.model and self.api_base is None:
-            return
-        if self.api_base is None or not self.model:
-            raise ValueError("DeepgramFluxHTTPClientConfig requires api_base and model")
-        if self.sample_rate <= 0:
-            raise ValueError("DeepgramFluxHTTPClientConfig.sample_rate must be > 0")
-        if not self.api_key_env:
-            raise ValueError("DeepgramFluxHTTPClientConfig.api_key_env is required")
-
-    def build_tokenizer_provider(self):
-        from veeksha.core.tokenizer import build_word_split_tokenizer_provider
-
+    def build_tokenizer_provider(self) -> TokenizerProvider:
         return build_word_split_tokenizer_provider(self.model)
 
 
@@ -697,8 +454,6 @@ class STTClientConfig(BaseClientConfig):
         if self.ws_ping_timeout_s is not None and self.ws_ping_timeout_s <= 0:
             raise ValueError("STTClientConfig.ws_ping_timeout_s must be > 0 or None")
 
-    def build_tokenizer_provider(self):
+    def build_tokenizer_provider(self) -> TokenizerProvider:
         """STT models use a simple word-split tokenizer."""
-        from veeksha.core.tokenizer import build_word_split_tokenizer_provider
-
         return build_word_split_tokenizer_provider(self.model)

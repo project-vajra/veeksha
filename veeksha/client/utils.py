@@ -1,13 +1,14 @@
-"""Shared client-side helpers for paced streaming-text TTS.
+"""Shared client-side helpers for streaming audio clients.
 
 Text segmentation (emulating an upstream LLM's per-token output), delta pacing
-(emulating its decode cadence), and WebSocket error flattening/mapping are
-transport-agnostic; they live here rather than in the WebSocket clients so each
-client stays focused on its wire protocol and metric contract.
+(emulating its decode cadence), URL normalization, and WebSocket error
+flattening/mapping are transport-agnostic; they live here so each client stays
+focused on its lifecycle and metric contract.
 """
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -114,6 +115,40 @@ class TextDeltaPacer:
     def next_gap(self) -> float:
         """Return the next inter-delta gap in seconds."""
         return self._generator.get_next_interval()
+
+
+# ---------------------------------------------------------------------------
+# WebSocket URL normalization
+# ---------------------------------------------------------------------------
+
+
+def to_websocket_url(url: str) -> str:
+    """Convert an HTTP(S) endpoint to the equivalent WebSocket scheme."""
+    if url.startswith("https://"):
+        return "wss://" + url[len("https://") :]
+    if url.startswith("http://"):
+        return "ws://" + url[len("http://") :]
+    return url
+
+
+# ---------------------------------------------------------------------------
+# Provider authentication
+# ---------------------------------------------------------------------------
+
+
+def resolve_provider_api_key(
+    configured_key: str | None,
+    api_key_env: str | None,
+    default_api_key_env: str,
+    *,
+    required: bool,
+) -> str | None:
+    """Resolve an explicit key before the provider configured/default env."""
+    env_name = api_key_env or default_api_key_env
+    api_key = configured_key or os.environ.get(env_name)
+    if required and not api_key:
+        raise ValueError(f"API key is required: set client.api_key or {env_name}")
+    return api_key
 
 
 # ---------------------------------------------------------------------------

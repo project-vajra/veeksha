@@ -21,8 +21,8 @@ if (
     transformers_stub.AutoTokenizer = object  # type: ignore[attr-defined]
     sys.modules["transformers"] = transformers_stub
 
-from veeksha.client.realtime_tts import RealtimeTTSClient
-from veeksha.config.client import RealtimeTTSClientConfig, TextPacingConfig
+from veeksha.client.streaming_tts import StreamingTTSClient
+from veeksha.config.client import StreamingTTSClientConfig, TextPacingConfig
 from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.core.request import Request
 from veeksha.core.request_content import TextChannelRequestContent
@@ -89,8 +89,9 @@ def _request() -> Request:
     )
 
 
-def _client(mode: str) -> tuple[RealtimeTTSClient, _FakeWebSocket]:
-    config = RealtimeTTSClientConfig(
+def _client(mode: str) -> tuple[StreamingTTSClient, _FakeWebSocket]:
+    config = StreamingTTSClientConfig(
+        provider="openai_realtime",
         api_base="http://example.test",
         model="test-tts",
         input_output_mode=mode,
@@ -100,7 +101,7 @@ def _client(mode: str) -> tuple[RealtimeTTSClient, _FakeWebSocket]:
             tokens_per_delta=1,
         ),
     )
-    client = RealtimeTTSClient(config)
+    client = StreamingTTSClient(config)
     websocket = _FakeWebSocket()
     client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
     return client, websocket
@@ -155,7 +156,8 @@ def test_complete_text_triggers_response_after_last_input_delta() -> None:
 @pytest.mark.unit
 def test_realtime_tts_config_rejects_unknown_input_output_mode() -> None:
     with pytest.raises(ValueError, match="input_output_mode"):
-        RealtimeTTSClientConfig(
+        StreamingTTSClientConfig(
+            provider="openai_realtime",
             api_base="http://example.test",
             model="test-tts",
             input_output_mode="not-a-mode",

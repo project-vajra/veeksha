@@ -20,13 +20,7 @@ logger = init_logger(__name__)
 
 # Clients that stream paced text in and audio out over a websocket and emit
 # the realtime AudioMetricKey contract (audio chunk timestamps + done offsets).
-_REALTIME_TTS_CLIENT_TYPES = (
-    ClientType.REALTIME_TTS,
-    ClientType.VAJRA_TTS_STREAM,
-    ClientType.ELEVENLABS_STREAMING_TTS,
-    ClientType.DEEPGRAM_FLUX_STREAMING_TTS,
-    ClientType.DEEPGRAM_AURA_STREAMING_TTS,
-)
+_STREAMING_TTS_CLIENT_TYPES = (ClientType.STREAMING_TTS,)
 
 
 @dataclass
@@ -65,8 +59,8 @@ class PerformanceEvaluator(BaseEvaluator):
         self.output_dir = output_dir
         self.benchmark_start_time = benchmark_start_time
         self.client_type = client_type
-        self._realtime_first_audio_count = 0
-        self._realtime_stream_completed_count = 0
+        self._streaming_tts_first_audio_count = 0
+        self._streaming_tts_completed_count = 0
 
         self._channel_evaluators: Dict[ChannelModality, Any] = {}
 
@@ -226,7 +220,7 @@ class PerformanceEvaluator(BaseEvaluator):
         with self.lock:
             self.end_time = completed_at
 
-            self._record_realtime_tts_outcome(response)
+            self._record_streaming_tts_outcome(response)
             # Update session tracking
             self._update_session_metrics_for_request(
                 session_id=session_id,
@@ -377,9 +371,9 @@ class PerformanceEvaluator(BaseEvaluator):
             if session_id in self.session_stats:
                 self._finalize_session(session_id, termination)
 
-    def _record_realtime_tts_outcome(self, response: Any) -> None:
-        """Count realtime start/completion outcomes, including failed requests."""
-        if self.client_type not in _REALTIME_TTS_CLIENT_TYPES:
+    def _record_streaming_tts_outcome(self, response: Any) -> None:
+        """Count streaming start/completion outcomes, including failed requests."""
+        if self.client_type not in _STREAMING_TTS_CLIENT_TYPES:
             return
         channel_response = getattr(response, "channels", {}).get(ChannelModality.AUDIO)
         channel_metrics = (
@@ -389,24 +383,24 @@ class PerformanceEvaluator(BaseEvaluator):
             AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value
         )
         if audio_timestamps or channel_metrics.get(AudioMetricKey.CHUNK_COUNT.value, 0):
-            self._realtime_first_audio_count += 1
+            self._streaming_tts_first_audio_count += 1
         if (
             channel_metrics.get(AudioMetricKey.RESPONSE_DONE_OFFSET_MS.value)
             is not None
         ):
-            self._realtime_stream_completed_count += 1
+            self._streaming_tts_completed_count += 1
 
-    def _get_realtime_tts_summary(self) -> Dict[str, float]:
-        if self.client_type not in _REALTIME_TTS_CLIENT_TYPES:
+    def _get_streaming_tts_summary(self) -> Dict[str, float]:
+        if self.client_type not in _STREAMING_TTS_CLIENT_TYPES:
             return {}
         count = self.num_requests
         return {
-            "realtime_requests_count": float(count),
+            "streaming_tts_requests_count": float(count),
             "first_audio_success_rate": (
-                self._realtime_first_audio_count / count if count > 0 else 0.0
+                self._streaming_tts_first_audio_count / count if count > 0 else 0.0
             ),
             "stream_completion_rate": (
-                self._realtime_stream_completed_count / count if count > 0 else 0.0
+                self._streaming_tts_completed_count / count if count > 0 else 0.0
             ),
         }
 
@@ -429,7 +423,7 @@ class PerformanceEvaluator(BaseEvaluator):
             "Cancelled Sessions": float(self.num_sessions_cancelled),
             "Incomplete Sessions": float(self.num_sessions_incomplete),
             "Observed Session Dispatch Rate": self._session_dispatch_rate(),
-            **self._get_realtime_tts_summary(),
+            **self._get_streaming_tts_summary(),
         }
 
     def _build_summary_stats(self) -> Dict[str, Any]:

@@ -18,22 +18,18 @@ if (
     transformers_stub.AutoTokenizer = object  # type: ignore[attr-defined]
     sys.modules["transformers"] = transformers_stub
 
-from veeksha.client.native_streaming_tts import (
+from veeksha.client.streaming_tts import (
     _ERROR_PRIORITY,
     DeepgramAuraStreamingProtocol,
-    DeepgramAuraStreamingTTSClient,
     DeepgramFluxStreamingProtocol,
-    DeepgramFluxStreamingTTSClient,
     ElevenLabsStreamingProtocol,
-    ElevenLabsStreamingTTSClient,
-    NativeStreamingTTSError,
+    StreamingTTSClient,
+    StreamingTTSError,
     _map_error,
 )
 from veeksha.client.utils import flatten_ws_exception
 from veeksha.config.client import (
-    DeepgramAuraStreamingTTSClientConfig,
-    DeepgramFluxStreamingTTSClientConfig,
-    ElevenLabsStreamingTTSClientConfig,
+    StreamingTTSClientConfig,
     TextPacingConfig,
 )
 from veeksha.core.audio_contract import AudioMetricKey
@@ -110,24 +106,26 @@ def _pacing() -> TextPacingConfig:
 
 @pytest.mark.unit
 @pytest.mark.parametrize("provider", ["elevenlabs", "deepgram"])
-def test_native_clients_stream_text_and_audio_concurrently(provider: str) -> None:
+def test_streaming_providers_share_text_audio_lifecycle(provider: str) -> None:
     if provider == "elevenlabs":
-        config = ElevenLabsStreamingTTSClientConfig(
+        config = StreamingTTSClientConfig(
+            provider="elevenlabs",
             api_base="https://api.elevenlabs.io",
             api_key="test-key",
             model="eleven_flash_v2_5",
             voice_id="test-voice",
             pacing=_pacing(),
         )
-        client: Any = ElevenLabsStreamingTTSClient(config)
+        client: Any = StreamingTTSClient(config)
     else:
-        config = DeepgramFluxStreamingTTSClientConfig(
+        config = StreamingTTSClientConfig(
+            provider="deepgram_flux",
             api_base="https://api.deepgram.com",
             api_key="test-key",
             model="flux-alexis-en",
             pacing=_pacing(),
         )
-        client = DeepgramFluxStreamingTTSClient(config)
+        client = StreamingTTSClient(config)
 
     websocket = _FakeWebSocket(provider)
     client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
@@ -149,8 +147,9 @@ def test_native_clients_stream_text_and_audio_concurrently(provider: str) -> Non
 
 
 @pytest.mark.unit
-def test_native_protocol_urls_use_raw_pcm_and_provider_auth() -> None:
-    eleven_config = ElevenLabsStreamingTTSClientConfig(
+def test_streaming_protocol_urls_use_raw_pcm_and_provider_auth() -> None:
+    eleven_config = StreamingTTSClientConfig(
+        provider="elevenlabs",
         api_base="https://api.elevenlabs.io",
         api_key="eleven-key",
         model="eleven_flash_v2_5",
@@ -163,7 +162,8 @@ def test_native_protocol_urls_use_raw_pcm_and_provider_auth() -> None:
     assert "output_format=pcm_24000" in eleven.build_ws_url(str(eleven_config.api_base))
     assert eleven.headers() == {"xi-api-key": "eleven-key"}
 
-    deepgram_config = DeepgramFluxStreamingTTSClientConfig(
+    deepgram_config = StreamingTTSClientConfig(
+        provider="deepgram_flux",
         api_base="https://api.deepgram.com",
         api_key="deepgram-key",
         model="flux-alexis-en",
@@ -174,7 +174,8 @@ def test_native_protocol_urls_use_raw_pcm_and_provider_auth() -> None:
     assert "speed=" not in deepgram.build_ws_url(str(deepgram_config.api_base))
     assert deepgram.headers() == {"Authorization": "Token deepgram-key"}
 
-    aura_config = DeepgramAuraStreamingTTSClientConfig(
+    aura_config = StreamingTTSClientConfig(
+        provider="deepgram_aura",
         api_base="https://api.deepgram.com",
         api_key="deepgram-key",
         model="aura-2-thalia-en",
@@ -188,13 +189,14 @@ def test_native_protocol_urls_use_raw_pcm_and_provider_auth() -> None:
 
 @pytest.mark.unit
 def test_deepgram_aura_adapter_handles_audio_after_flush() -> None:
-    config = DeepgramAuraStreamingTTSClientConfig(
+    config = StreamingTTSClientConfig(
+        provider="deepgram_aura",
         api_base="https://api.deepgram.com",
         api_key="test-key",
         model="aura-2-thalia-en",
         pacing=_pacing(),
     )
-    client = DeepgramAuraStreamingTTSClient(config)
+    client = StreamingTTSClient(config)
     websocket = _FakeWebSocket("deepgram_aura")
     client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
 
@@ -217,19 +219,20 @@ def test_deepgram_aura_adapter_handles_audio_after_flush() -> None:
 
 
 @pytest.mark.unit
-def test_native_client_requires_provider_key(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_streaming_provider_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
-    config = DeepgramFluxStreamingTTSClientConfig(
+    config = StreamingTTSClientConfig(
+        provider="deepgram_flux",
         api_base="https://api.deepgram.com",
         model="flux-alexis-en",
     )
     with pytest.raises(ValueError, match="DEEPGRAM_API_KEY"):
-        DeepgramFluxStreamingTTSClient(config)
+        StreamingTTSClient(config)
 
 
 @pytest.mark.unit
-def test_native_streaming_error_priority_preserves_provider_error() -> None:
-    provider_error = NativeStreamingTTSError("provider failed")
+def test_streaming_error_priority_preserves_provider_error() -> None:
+    provider_error = StreamingTTSError("provider failed")
     grouped = ExceptionGroup(
         "task failures",
         [OSError("socket closed"), ExceptionGroup("provider", [provider_error])],

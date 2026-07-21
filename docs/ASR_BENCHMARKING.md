@@ -1,5 +1,17 @@
 # ASR Benchmarking
 
+## Client and transport model
+
+`client.type: stt` always selects one provider-agnostic realtime WebSocket
+client. `client.provider` chooses either the `vllm_realtime` or
+`vajra_openai_realtime` wire strategy; it does not select a different
+client lifecycle.
+
+Requests name an audio file, which the client decodes to PCM16 and streams while
+receiving partial and final transcripts concurrently. Disabling
+`ws_realtime_pacing` sends those chunks faster, but does not switch to HTTP.
+There is no separate HTTP/batch STT client.
+
 ## Trace Generation
 
 Generate the public ASR trace with:
@@ -86,6 +98,11 @@ Common audio metrics:
 - `chunk_count`: number of transcript deltas observed, or `1` when only a final
   transcript is returned.
 - `input_tokens`: whitespace token count of the final transcript.
+- `provider`: normalized serving provider family (`vllm` or `vajra`).
+- `provider_model`: configured transcription model identifier.
+- `provider_protocol`: concrete wire protocol selected by `client.provider`,
+  currently `v1_realtime_transcription` or
+  `openai_v1_realtime_transcription`.
 
 ASR-specific metrics:
 

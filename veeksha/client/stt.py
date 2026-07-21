@@ -1,16 +1,13 @@
-"""STT clients for realtime streaming speech-to-text (vajra_openai_realtime, vllm_realtime).
+"""Provider-agnostic WebSocket client for streaming speech-to-text.
 
 Both providers stream PCM16 over a WebSocket and report transcription metrics
-(ttfc, end-to-end latency, RTF; see ``STTStreamResult`` for the timing metric
-definitions). They share one lifecycle in ``_STTClientBase``:
-audio is paced at 1x playback when ``ws_realtime_pacing`` is on, and the send
-and receive loops run concurrently so ``ttfc`` reflects when the first partial
-actually arrives rather than when the upload finishes. Each provider only
-supplies four small protocol hooks (open session, encode a chunk, EOF sentinel,
-parse a message).
+(TTFC, end-to-end latency, and RTF) through one concrete ``STTClient``
+lifecycle. Audio is paced at 1x playback when ``ws_realtime_pacing`` is on, and
+the send and receive loops run concurrently. ``provider`` selects an internal
+strategy for session setup, PCM framing, EOF, and event parsing.
 
-``STTClient(config)`` is a factory returning the client for ``config.provider``
-(see ``_PROVIDERS``), so the registry needs only one entry.
+STT accepts audio-file requests but always decodes and streams their PCM over a
+WebSocket. There is intentionally no separate HTTP/batch STT client.
 """
 
 from __future__ import annotations
@@ -22,14 +19,15 @@ import os
 import re
 import threading
 import time
-from abc import abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol
 
 import numpy as np
 
 from veeksha.client.base import BaseLLMClient
+from veeksha.client.utils import map_ws_transport_error, to_websocket_url
+from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.core.request import Request
 from veeksha.core.request_content import AudioChannelRequestContent
 from veeksha.core.response import ChannelResponse, RequestResult
@@ -40,6 +38,8 @@ if TYPE_CHECKING:
     from veeksha.config.client import STTClientConfig
 
 logger = init_logger(__name__)
+
+__all__ = ["STTClient"]
 
 BYTES_PER_SAMPLE = 2
 TranscriptSnapshotRow = dict[str, float | str]
@@ -206,20 +206,18 @@ class TranscriptSnapshotRecorder:
         return (now - self._audio_started_at) * 1000
 
 
-class _STTClientBase(BaseLLMClient):
-    """Shared streaming lifecycle for realtime STT providers.
+class STTClient(BaseLLMClient):
+    """Streaming PCM-in/text-out WebSocket lifecycle for every STT provider.
 
-    Subclasses set ``ws_path`` and implement the four protocol hooks; the
-    request lifecycle, 1x pacing, concurrent stream, error mapping, and metrics
-    assembly live here.
+    Provider differences are isolated in ``_STTProviderProtocol`` strategies.
     """
 
-    #: WebSocket path appended to ``api_base`` (set by subclasses).
-    ws_path: str = ""
-
-    def __init__(self, config: "STTClientConfig", **kwargs) -> None:
+    def __init__(self, config: "STTClientConfig", **kwargs: Any) -> None:
+        protocol_class = _STT_PROTOCOLS.get(config.provider)
+        if protocol_class is None:
+            raise ValueError(f"Unsupported STT provider: {config.provider}")
         super().__init__(config)
-        self._provider = config.provider
+        self._protocol = protocol_class()
         self._model = config.model
         self._sample_rate = config.sample_rate
         self._ws_chunk_size = config.ws_chunk_size
@@ -228,7 +226,9 @@ class _STTClientBase(BaseLLMClient):
         self._ws_ping_interval_s = config.ws_ping_interval_s
         self._ws_ping_timeout_s = config.ws_ping_timeout_s
         self._ws_compression = "deflate" if config.ws_permessage_deflate else None
-        self._ws_url = self._http_to_ws(self.ws_path)
+        self._ws_url = (
+            f"{to_websocket_url(str(self.api_base or ''))}{self._protocol.ws_path}"
+        )
 
         # Per-clip decode + wire-message cache, shared across the worker
         # threads that all hold this one client instance.
@@ -237,42 +237,19 @@ class _STTClientBase(BaseLLMClient):
         self._clip_locks: dict[str, threading.Lock] = {}
 
     # ------------------------------------------------------------------
-    # Provider protocol hooks
-    # ------------------------------------------------------------------
-
-    @abstractmethod
-    async def _open_session(self, ws) -> None:
-        """Complete the provider handshake before audio is sent."""
-
-    @abstractmethod
-    def _encode_chunk(self, chunk: bytes | memoryview) -> str | bytes:
-        """Frame a PCM16 chunk into the message the provider expects."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def _eof(self) -> str | bytes:
-        """Return the end-of-audio sentinel message."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def _parse_message(self, msg: dict) -> tuple[str, str]:
-        """Map a server message to ``(kind, text)``.
-
-        ``kind`` is ``"delta"``, ``"done"``, ``"error"``, or ``""`` (ignore).
-        """
-
-    # ------------------------------------------------------------------
     # Shared helpers
     # ------------------------------------------------------------------
 
-    def _http_to_ws(self, path: str) -> str:
-        """Convert the http(s) api_base to a ws(s) URL with ``path`` appended."""
-        base = self.api_base or ""
-        if base.startswith("https://"):
-            base = "wss://" + base[len("https://") :]
-        elif base.startswith("http://"):
-            base = "ws://" + base[len("http://") :]
-        return f"{base}{path}"
+    def _connect(self) -> Any:
+        import websockets
+
+        return websockets.connect(
+            self._ws_url,
+            max_size=None,
+            ping_interval=self._ws_ping_interval_s,
+            ping_timeout=self._ws_ping_timeout_s,
+            compression=self._ws_compression,
+        )
 
     async def _maybe_pace_until(self, target_at: float) -> None:
         """Sleep until an absolute audio schedule time when pacing is on."""
@@ -307,7 +284,7 @@ class _STTClientBase(BaseLLMClient):
             view = memoryview(pcm)
             full_end = len(pcm) - len(pcm) % self._ws_chunk_size
             wire_messages = [
-                self._encode_chunk(view[offset : offset + self._ws_chunk_size])
+                self._protocol.encode_chunk(view[offset : offset + self._ws_chunk_size])
                 for offset in range(0, full_end, self._ws_chunk_size)
             ]
             assets = _ClipAssets(pcm=pcm, wire_messages=wire_messages)
@@ -336,8 +313,6 @@ class _STTClientBase(BaseLLMClient):
         clip this PCM is a prefix of (chunk ``i`` at byte ``i * chunk_size``);
         the trailing partial chunk is encoded on the fly.
         """
-        import websockets
-
         ttfc: Optional[float] = None
         audio_started_at: Optional[float] = None
         audio_end_at: Optional[float] = None
@@ -350,13 +325,8 @@ class _STTClientBase(BaseLLMClient):
         transcript_chunks: list[str] = []
         snapshots = TranscriptSnapshotRecorder()
 
-        async with websockets.connect(
-            self._ws_url,
-            ping_interval=self._ws_ping_interval_s,
-            ping_timeout=self._ws_ping_timeout_s,
-            compression=self._ws_compression,
-        ) as ws:
-            await self._open_session(ws)
+        async with self._connect() as ws:
+            await self._protocol.open_session(ws, self._model)
             if on_request_dispatched is not None:
                 on_request_dispatched()
 
@@ -375,20 +345,24 @@ class _STTClientBase(BaseLLMClient):
                     if wire_messages is not None and chunk_end <= len(pcm_bytes):
                         message = wire_messages[byte_offset // self._ws_chunk_size]
                     else:
-                        message = self._encode_chunk(pcm_bytes[byte_offset:chunk_end])
+                        message = self._protocol.encode_chunk(
+                            pcm_bytes[byte_offset:chunk_end]
+                        )
                     await ws.send(message)
                 if audio_started_at is not None:
                     await self._maybe_pace_until(
                         audio_started_at
                         + len(pcm_bytes) / BYTES_PER_SAMPLE / self._sample_rate
                     )
-                await ws.send(self._eof())
+                await ws.send(self._protocol.eof_message())
                 audio_end_at = time.monotonic()
 
             send_task = asyncio.ensure_future(_send())
             try:
                 while True:
-                    kind, text = self._parse_message(json.loads(await ws.recv()))
+                    kind, text = self._protocol.parse_message(
+                        json.loads(await ws.recv())
+                    )
                     now = time.monotonic()
                     if kind == "delta":
                         # TTFC counts only deltas whose own payload carries
@@ -448,8 +422,8 @@ class _STTClientBase(BaseLLMClient):
                             time_to_final_transcript = (now - audio_end_at) * 1000
                         break
                     elif kind == "error":
-                        raise RuntimeError(
-                            f"{self._provider} streaming error: {text or 'unknown'}"
+                        raise _STTProtocolError(
+                            f"{self._protocol.provider} streaming error: {text or 'unknown'}"
                         )
             finally:
                 # Normal path: the sender is already done (servers only emit
@@ -548,7 +522,7 @@ class _STTClientBase(BaseLLMClient):
 
         logger.debug(
             "[STT %s] request_id=%d session_id=%d file=%s",
-            self._provider,
+            self._protocol.provider,
             request.id,
             session_id,
             audio_path,
@@ -598,22 +572,14 @@ class _STTClientBase(BaseLLMClient):
                     on_request_sent=fire_sent_once,
                     on_request_dispatched=fire_dispatched_once,
                 )
-        except TimeoutError:
-            error_code = 408
-            error_msg = f"STT request timed out after {self._request_timeout}s"
-        except (OSError, ConnectionError) as e:
-            # Includes ConnectionRefusedError when the server isn't up.
-            error_code = 503
-            error_msg = str(e)
-        except Exception as e:
-            error_code = 520
-            error_msg = str(e)
-            logger.error(
-                "[STT %s] request_id=%d error: %s",
-                self._provider,
+        except Exception as exc:
+            error_code, error_msg = _map_stt_error(exc, self._request_timeout)
+            logger.warning(
+                "[STT %s] request_id=%d error (%s): %s",
+                self._protocol.provider,
                 request.id,
-                e,
-                exc_info=True,
+                error_code,
+                error_msg,
             )
 
         finish_callbacks()
@@ -628,10 +594,13 @@ class _STTClientBase(BaseLLMClient):
             )
             # Report the input clip's byte count; the evaluator derives
             # duration/RTF from pcm_byte_count + sample_rate.
-            metrics_dict: dict = {
+            metrics_dict: dict[str, Any] = {
                 "audio_task": AudioTask.STT,
-                "ttfc": round(stream_result.ttfc or 0.0, 3),
-                "end_to_end_latency": round(total_latency_ms, 3),
+                AudioMetricKey.PROVIDER.value: self._protocol.provider,
+                AudioMetricKey.PROVIDER_MODEL.value: self._model,
+                AudioMetricKey.PROVIDER_PROTOCOL.value: self._protocol.protocol_name,
+                AudioMetricKey.TTFC.value: round(stream_result.ttfc or 0.0, 3),
+                AudioMetricKey.END_TO_END_LATENCY.value: round(total_latency_ms, 3),
                 "time_to_first_visible_text": (
                     round(stream_result.time_to_first_visible_text, 3)
                     if stream_result.time_to_first_visible_text is not None
@@ -647,11 +616,13 @@ class _STTClientBase(BaseLLMClient):
                     if stream_result.time_to_final_transcript is not None
                     else None
                 ),
-                "chunk_count": stream_result.chunk_count,
-                "pcm_byte_count": stream_result.pcm_byte_count,
-                "raw_pcm": True,
-                "input_tokens": len(stream_result.final_transcript.split()),
-                "sample_rate": self._sample_rate,
+                AudioMetricKey.CHUNK_COUNT.value: stream_result.chunk_count,
+                AudioMetricKey.PCM_BYTE_COUNT.value: stream_result.pcm_byte_count,
+                AudioMetricKey.RAW_PCM.value: True,
+                AudioMetricKey.INPUT_TOKENS.value: len(
+                    stream_result.final_transcript.split()
+                ),
+                AudioMetricKey.SAMPLE_RATE.value: self._sample_rate,
                 "input_audio_duration_ms": round(input_audio_duration_ms, 3),
                 "partial_transcript": stream_result.partial_transcript,
                 "final_transcript": stream_result.final_transcript,
@@ -680,23 +651,40 @@ class _STTClientBase(BaseLLMClient):
         )
 
 
-class VllmRealtimeSTTClient(_STTClientBase):
-    """vllm_realtime: WebSocket /v1/realtime — base64 PCM16 chunks, deltas.
+class _STTProtocolError(Exception):
+    """Fatal provider event received after a WebSocket handshake."""
 
-    Server -> Client: ``{"type": "session.created"}`` then
-    ``transcription.delta`` / ``transcription.done`` / ``error``.
-    """
 
-    ws_path = "/v1/realtime"
+def _map_stt_error(exc: BaseException, timeout_s: float) -> tuple[int, str]:
+    if isinstance(exc, _STTProtocolError):
+        return 500, str(exc)
+    return map_ws_transport_error(
+        exc,
+        f"STT request timed out after {timeout_s}s",
+    )
 
-    async def _open_session(self, ws) -> None:
-        msg = json.loads(await ws.recv())
-        if msg.get("type") != "session.created":
-            raise RuntimeError(f"Expected session.created, got: {msg}")
-        await ws.send(json.dumps({"type": "session.update", "model": self._model}))
-        await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
 
-    def _encode_chunk(self, chunk: bytes | memoryview) -> str:
+class _STTProviderProtocol(Protocol):
+    """Provider-specific wire behavior behind the shared STT lifecycle."""
+
+    provider: str
+    protocol_name: str
+    ws_path: str
+
+    async def open_session(self, websocket: Any, model: str) -> None: ...
+
+    def encode_chunk(self, chunk: bytes | memoryview) -> str | bytes: ...
+
+    def eof_message(self) -> str | bytes: ...
+
+    def parse_message(self, msg: dict[str, Any]) -> tuple[str, str]: ...
+
+
+class _OpenAIRealtimeSTTProtocol:
+    """Shared OpenAI-style base64 PCM append framing."""
+
+    @staticmethod
+    def encode_chunk(chunk: bytes | memoryview) -> str:
         return json.dumps(
             {
                 "type": "input_audio_buffer.append",
@@ -704,10 +692,29 @@ class VllmRealtimeSTTClient(_STTClientBase):
             }
         )
 
-    def _eof(self) -> str:
+
+class _VllmRealtimeProtocol(_OpenAIRealtimeSTTProtocol):
+    """vllm_realtime: WebSocket /v1/realtime — base64 PCM16 chunks, deltas.
+
+    Server -> Client: ``{"type": "session.created"}`` then
+    ``transcription.delta`` / ``transcription.done`` / ``error``.
+    """
+
+    provider = "vllm"
+    protocol_name = "v1_realtime_transcription"
+    ws_path = "/v1/realtime"
+
+    async def open_session(self, websocket: Any, model: str) -> None:
+        msg = json.loads(await websocket.recv())
+        if msg.get("type") != "session.created":
+            raise _STTProtocolError(f"Expected session.created, got: {msg}")
+        await websocket.send(json.dumps({"type": "session.update", "model": model}))
+        await websocket.send(json.dumps({"type": "input_audio_buffer.commit"}))
+
+    def eof_message(self) -> str:
         return json.dumps({"type": "input_audio_buffer.commit", "final": True})
 
-    def _parse_message(self, msg: dict) -> tuple[str, str]:
+    def parse_message(self, msg: dict[str, Any]) -> tuple[str, str]:
         msg_type = msg.get("type")
         if msg_type == "transcription.delta":
             return "delta", msg.get("delta", "")
@@ -718,7 +725,7 @@ class VllmRealtimeSTTClient(_STTClientBase):
         return "", ""
 
 
-class VajraOpenAIRealtimeSTTClient(_STTClientBase):
+class _VajraOpenAIRealtimeProtocol(_OpenAIRealtimeSTTProtocol):
     """vajra_openai_realtime: WebSocket /openai/v1/realtime — OpenAI transcription.
 
     Drives Vajra's OpenAI-compatible realtime transcription endpoint. Server ->
@@ -728,36 +735,32 @@ class VajraOpenAIRealtimeSTTClient(_STTClientBase):
     manual-commit, one transcript per connection (PCM16 mono 16 kHz).
     """
 
+    provider = "vajra"
+    protocol_name = "openai_v1_realtime_transcription"
     ws_path = "/openai/v1/realtime?intent=transcription"
 
-    async def _open_session(self, ws) -> None:
-        msg = json.loads(await ws.recv())
+    async def open_session(self, websocket: Any, model: str) -> None:
+        msg = json.loads(await websocket.recv())
         if msg.get("type") != "transcription_session.created":
-            raise RuntimeError(f"Expected transcription_session.created, got: {msg}")
+            raise _STTProtocolError(
+                f"Expected transcription_session.created, got: {msg}"
+            )
         # Configure the session; unlike vllm_realtime, do NOT commit here — a
         # commit before any audio would finalize an empty transcript.
-        await ws.send(
+        await websocket.send(
             json.dumps(
                 {
                     "type": "transcription_session.update",
                     "input_audio_format": "pcm16",
-                    "input_audio_transcription": {"model": self._model},
+                    "input_audio_transcription": {"model": model},
                 }
             )
         )
 
-    def _encode_chunk(self, chunk: bytes | memoryview) -> str:
-        return json.dumps(
-            {
-                "type": "input_audio_buffer.append",
-                "audio": base64.b64encode(chunk).decode("utf-8"),
-            }
-        )
-
-    def _eof(self) -> str:
+    def eof_message(self) -> str:
         return json.dumps({"type": "input_audio_buffer.commit"})
 
-    def _parse_message(self, msg: dict) -> tuple[str, str]:
+    def parse_message(self, msg: dict[str, Any]) -> tuple[str, str]:
         msg_type = msg.get("type")
         if msg_type == "conversation.item.input_audio_transcription.delta":
             return "delta", msg.get("delta", "")
@@ -777,16 +780,7 @@ class VajraOpenAIRealtimeSTTClient(_STTClientBase):
         return "", ""
 
 
-_PROVIDERS: dict[str, type[_STTClientBase]] = {
-    "vllm_realtime": VllmRealtimeSTTClient,
-    "vajra_openai_realtime": VajraOpenAIRealtimeSTTClient,
+_STT_PROTOCOLS: dict[str, type[_STTProviderProtocol]] = {
+    "vllm_realtime": _VllmRealtimeProtocol,
+    "vajra_openai_realtime": _VajraOpenAIRealtimeProtocol,
 }
-
-
-def STTClient(config: "STTClientConfig", **kwargs) -> _STTClientBase:
-    """Factory: return the STT client for ``config.provider``."""
-    try:
-        cls = _PROVIDERS[config.provider]
-    except KeyError:
-        raise ValueError(f"Unsupported STT provider: {config.provider}")
-    return cls(config, **kwargs)

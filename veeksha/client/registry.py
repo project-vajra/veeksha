@@ -42,50 +42,10 @@ ClientRegistry.register(
 )
 
 ClientRegistry.register(
-    ClientType.REALTIME_TTS,
+    ClientType.STREAMING_TTS,
     _LazyLoader(
-        "veeksha.client.realtime_tts",
-        "RealtimeTTSClient",
-    ),
-)
-
-ClientRegistry.register(
-    ClientType.ELEVENLABS_STREAMING_TTS,
-    _LazyLoader(
-        "veeksha.client.native_streaming_tts",
-        "ElevenLabsStreamingTTSClient",
-    ),
-)
-
-ClientRegistry.register(
-    ClientType.DEEPGRAM_FLUX_STREAMING_TTS,
-    _LazyLoader(
-        "veeksha.client.native_streaming_tts",
-        "DeepgramFluxStreamingTTSClient",
-    ),
-)
-
-ClientRegistry.register(
-    ClientType.DEEPGRAM_AURA_STREAMING_TTS,
-    _LazyLoader(
-        "veeksha.client.native_streaming_tts",
-        "DeepgramAuraStreamingTTSClient",
-    ),
-)
-
-ClientRegistry.register(
-    ClientType.ELEVENLABS_HTTP_TTS,
-    _LazyLoader(
-        "veeksha.client.native_http_tts",
-        "ElevenLabsHTTPTTSClient",
-    ),
-)
-
-ClientRegistry.register(
-    ClientType.DEEPGRAM_FLUX_HTTP_TTS,
-    _LazyLoader(
-        "veeksha.client.native_http_tts",
-        "DeepgramFluxHTTPClient",
+        "veeksha.client.streaming_tts",
+        "StreamingTTSClient",
     ),
 )
 
@@ -94,13 +54,5 @@ ClientRegistry.register(
     _LazyLoader(
         "veeksha.client.stt",
         "STTClient",
-    ),
-)
-
-ClientRegistry.register(
-    ClientType.VAJRA_TTS_STREAM,
-    _LazyLoader(
-        "veeksha.client.vajra_tts_stream",
-        "VajraTTSStreamClient",
     ),
 )

@@ -1,16 +1,22 @@
 import asyncio
 import json
+from pathlib import Path
 
 import pytest
-import websockets
 
+from veeksha.client import STTClient
+from veeksha.client.registry import ClientRegistry
 from veeksha.client.stt import (
-    VajraOpenAIRealtimeSTTClient,
-    VllmRealtimeSTTClient,
+    _ClipAssets,
+    _map_stt_error,
     _slice_pcm16_bytes,
+    _STTProtocolError,
 )
 from veeksha.config.client import STTClientConfig
+from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.core.request import Request
+from veeksha.core.request_content import AudioChannelRequestContent
+from veeksha.types import ChannelModality, ClientType
 
 
 @pytest.mark.unit
@@ -73,36 +79,52 @@ def test_stt_client_config_rejects_nonpositive_ws_ping(field_name: str) -> None:
         )
 
 
-def _vajra_realtime_client() -> VajraOpenAIRealtimeSTTClient:
+@pytest.mark.unit
+def test_stt_errors_use_shared_websocket_mapping() -> None:
+    assert _map_stt_error(_STTProtocolError("provider failed"), 3.0) == (
+        500,
+        "provider failed",
+    )
+    assert _map_stt_error(TimeoutError(), 3.0) == (
+        408,
+        "STT request timed out after 3.0s",
+    )
+    assert _map_stt_error(OSError("unreachable"), 3.0) == (503, "unreachable")
+
+
+def _vajra_realtime_client() -> STTClient:
     config = STTClientConfig(
         provider="vajra_openai_realtime",
         model="mistralai/Voxtral-Mini-4B-Realtime-2602",
         api_base="http://localhost:8003",
     )
-    return VajraOpenAIRealtimeSTTClient(config)
+    return STTClient(config)
 
 
 @pytest.mark.unit
 def test_vajra_openai_realtime_parses_transcription_events() -> None:
     client = _vajra_realtime_client()
 
-    assert client._parse_message(
+    assert client._protocol.parse_message(
         {"type": "conversation.item.input_audio_transcription.delta", "delta": "hi"}
     ) == ("delta", "hi")
-    assert client._parse_message(
+    assert client._protocol.parse_message(
         {
             "type": "conversation.item.input_audio_transcription.completed",
             "transcript": "hi there",
         }
     ) == ("done", "hi there")
-    assert client._parse_message({"type": "input_audio_buffer.committed"}) == ("", "")
+    assert client._protocol.parse_message({"type": "input_audio_buffer.committed"}) == (
+        "",
+        "",
+    )
 
 
 @pytest.mark.unit
 def test_vajra_openai_realtime_maps_failed_item_to_error() -> None:
     client = _vajra_realtime_client()
 
-    kind, text = client._parse_message(
+    kind, text = client._protocol.parse_message(
         {
             "type": "conversation.item.input_audio_transcription.failed",
             "error": {"type": "server_error", "message": "boom"},
@@ -116,18 +138,65 @@ def test_vajra_openai_realtime_maps_failed_item_to_error() -> None:
 def test_vajra_openai_realtime_maps_session_error() -> None:
     client = _vajra_realtime_client()
 
-    assert client._parse_message(
+    assert client._protocol.parse_message(
         {"type": "error", "error": {"message": "bad request"}}
     ) == ("error", "bad request")
 
 
-def _vllm_realtime_client() -> VllmRealtimeSTTClient:
+def _vllm_realtime_client() -> STTClient:
     config = STTClientConfig(
         provider="vllm_realtime",
         model="mistralai/Voxtral-Mini-4B-Realtime-2602",
         api_base="http://localhost:8025",
     )
-    return VllmRealtimeSTTClient(config)
+    return STTClient(config)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    (
+        "provider",
+        "api_base",
+        "metric_provider",
+        "protocol_name",
+        "expected_ws_url",
+    ),
+    [
+        (
+            "vllm_realtime",
+            "http://localhost:8025",
+            "vllm",
+            "v1_realtime_transcription",
+            "ws://localhost:8025/v1/realtime",
+        ),
+        (
+            "vajra_openai_realtime",
+            "https://localhost:8003",
+            "vajra",
+            "openai_v1_realtime_transcription",
+            "wss://localhost:8003/openai/v1/realtime?intent=transcription",
+        ),
+    ],
+)
+def test_registry_exposes_one_stt_client_with_provider_strategies(
+    provider: str,
+    api_base: str,
+    metric_provider: str,
+    protocol_name: str,
+    expected_ws_url: str,
+) -> None:
+    config = STTClientConfig(
+        provider=provider,
+        model="mistralai/Voxtral-Mini-4B-Realtime-2602",
+        api_base=api_base,
+    )
+
+    client = ClientRegistry.get(ClientType.STT, config=config)
+
+    assert type(client) is STTClient
+    assert client._protocol.provider == metric_provider
+    assert client._protocol.protocol_name == protocol_name
+    assert client._ws_url == expected_ws_url
 
 
 @pytest.mark.unit
@@ -185,16 +254,10 @@ class _FakeConnection:
 
 
 @pytest.mark.unit
-def test_vllm_stream_fires_callbacks_after_handshake_and_first_content(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_vllm_stream_fires_callbacks_after_handshake_and_first_content() -> None:
     client = _vllm_realtime_client()
     websocket = _FakeVllmWebSocket()
-    monkeypatch.setattr(
-        websockets,
-        "connect",
-        lambda *_args, **_kwargs: _FakeConnection(websocket),
-    )
+    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
     events: list[str] = []
 
     result = asyncio.run(
@@ -207,3 +270,37 @@ def test_vllm_stream_fires_callbacks_after_handshake_and_first_content(
 
     assert result.final_transcript == "hello"
     assert events == ["dispatched", "sent"]
+
+
+@pytest.mark.unit
+def test_stt_request_emits_normalized_provider_metadata(tmp_path: Path) -> None:
+    client = _vllm_realtime_client()
+    websocket = _FakeVllmWebSocket()
+    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._clip_assets = lambda _path: _ClipAssets(  # type: ignore[method-assign]
+        pcm=b"\x00\x00",
+        wire_messages=[],
+    )
+    audio_file = tmp_path / "request.pcm"
+    audio_file.write_bytes(b"\x00\x00")
+    request = Request(
+        id=101,
+        channels={
+            ChannelModality.AUDIO: AudioChannelRequestContent(
+                input_audio=str(audio_file)
+            )
+        },
+    )
+
+    result = asyncio.run(client.send_request(request, session_id=3))
+
+    assert result.success
+    metrics = result.channels[ChannelModality.AUDIO].metrics
+    assert metrics[AudioMetricKey.PROVIDER.value] == "vllm"
+    assert metrics[AudioMetricKey.PROVIDER_MODEL.value] == (
+        "mistralai/Voxtral-Mini-4B-Realtime-2602"
+    )
+    assert (
+        metrics[AudioMetricKey.PROVIDER_PROTOCOL.value] == "v1_realtime_transcription"
+    )
+    assert metrics[AudioMetricKey.RAW_PCM.value] is True
