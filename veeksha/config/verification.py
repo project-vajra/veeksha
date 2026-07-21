@@ -32,6 +32,17 @@ class WhisperTranscriptionConfig:
         "float16",
         help="Compute type passed to faster-whisper, e.g. 'float16' or 'int8'.",
     )
+    language: str = field(
+        "en",
+        help=(
+            "Language code passed to faster-whisper. Pin this for comparable WER "
+            "runs instead of relying on automatic language detection."
+        ),
+    )
+    beam_size: int = field(
+        5,
+        help="Beam size passed to faster-whisper for deterministic WER scoring.",
+    )
 
     def __post_init__(self):
         if not self.model:
@@ -40,6 +51,10 @@ class WhisperTranscriptionConfig:
             raise ValueError("WhisperTranscriptionConfig.device is required")
         if not self.compute_type:
             raise ValueError("WhisperTranscriptionConfig.compute_type is required")
+        if not self.language:
+            raise ValueError("WhisperTranscriptionConfig.language is required")
+        if self.beam_size < 1:
+            raise ValueError("WhisperTranscriptionConfig.beam_size must be >= 1")
 
 
 @frozen_dataclass

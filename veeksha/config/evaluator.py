@@ -122,6 +122,32 @@ class AudioChannelPerformanceConfig(BaseChannelPerformanceConfig):
         10.0,
         help="Playback gaps at or below this duration are treated as transport noise.",
     )
+    fluidity_frame_ms: float = field(
+        20.0,
+        help=(
+            "Duration of each complete playable PCM frame used by the "
+            "Etalon-inspired audio fluidity metric."
+        ),
+    )
+    fluidity_startup_delay_ms: float = field(
+        0.0,
+        help=(
+            "Playback slack after the first complete frame for the primary "
+            "user_audio_fluidity_index metric. Set this explicitly when the "
+            "playback client intentionally buffers before starting."
+        ),
+    )
+    fluidity_attribution_mode: str = field(
+        "conservative",
+        help=(
+            "How to attribute fluidity misses to the TTS service. "
+            "'conservative' emits tts_service_fluidity_index only when all "
+            "text was sent before the first playable frame. "
+            "'source_oversupplied' treats every miss as service-caused and must "
+            "only be used with a trace that guarantees synthesis-eligible text "
+            "throughout playback. User fluidity is always reported."
+        ),
+    )
     persist_raw_timing: bool = field(
         False,
         help="Write metrics/audio_raw_timing.jsonl with raw per-event timestamps.",
@@ -142,6 +168,18 @@ class AudioChannelPerformanceConfig(BaseChannelPerformanceConfig):
             object.__setattr__(self, field_name, normalized)
         if self.min_reportable_stall_ms < 0:
             raise ValueError("min_reportable_stall_ms must be >= 0")
+        if self.fluidity_frame_ms <= 0:
+            raise ValueError("fluidity_frame_ms must be > 0")
+        if self.fluidity_startup_delay_ms < 0:
+            raise ValueError("fluidity_startup_delay_ms must be >= 0")
+        if self.fluidity_attribution_mode not in (
+            "conservative",
+            "source_oversupplied",
+        ):
+            raise ValueError(
+                "fluidity_attribution_mode must be one of "
+                "('conservative', 'source_oversupplied')"
+            )
 
 
 @frozen_dataclass

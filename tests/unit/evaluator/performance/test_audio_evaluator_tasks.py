@@ -85,6 +85,7 @@ def test_tts_task_preserves_playback_interactivity_metrics() -> None:
                 [100.0, 2400],
                 [180.0, 2400],
             ],
+            AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value: 70.0,
             AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value: 150.0,
             AudioMetricKey.AUDIO_DONE_OFFSET_MS.value: 230.0,
             AudioMetricKey.RESPONSE_DONE_OFFSET_MS.value: 240.0,
@@ -95,6 +96,19 @@ def test_tts_task_preserves_playback_interactivity_metrics() -> None:
     assert row["audio_task"] == "tts"
     assert row[AudioMetricKey.GENERATED_AUDIO_DURATION.value] == 100.0
     assert row[AudioMetricKey.ZERO_DELAY_STALL_COUNT.value] == 1
+    assert row[AudioMetricKey.REQUEST_START_TO_FIRST_PLAYABLE_AUDIO_MS.value] == 100.0
+    assert row[AudioMetricKey.FIRST_INPUT_TO_FIRST_PLAYABLE_AUDIO_MS.value] == 80.0
+    assert row[AudioMetricKey.TRIGGER_TO_FIRST_PLAYABLE_AUDIO_MS.value] == 30.0
+    assert row[AudioMetricKey.USER_AUDIO_FLUIDITY_INDEX.value] == pytest.approx(
+        4 / 7, abs=1e-5
+    )
+    assert row[AudioMetricKey.TTS_SERVICE_FLUIDITY_ELIGIBLE.value] == 0
+    assert AudioMetricKey.TTS_SERVICE_FLUIDITY_INDEX.value not in row
+    assert row[AudioMetricKey.UNATTRIBUTED_MISSED_DEADLINES.value] == 3
+    assert row[AudioMetricKey.DUPLEX_OVERLAP_OBSERVED.value] == 1
+    assert row[AudioMetricKey.AUDIO_PLAYABLE_FRAME_COUNT.value] == 5
+    assert row[AudioMetricKey.AUDIO_FLUIDITY_FRAME_MS.value] == 20.0
+    assert row[AudioMetricKey.AUDIO_FLUIDITY_STARTUP_DELAY_MS.value] == 0.0
     assert row[AudioMetricKey.INPUT_TEXT.value] == "hello"
 
 

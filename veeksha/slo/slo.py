@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Tuple
 
 from veeksha.config.slo import BaseSloConfig, ConstantSloConfig
 from veeksha.logger import init_logger
-from veeksha.slo.metrics import extract_metric_values
+from veeksha.slo.metrics import extract_metric_values, lower_is_better
 
 logger = init_logger(__name__)
 
@@ -56,17 +56,20 @@ class ConstantSlo(BaseSlo):
         metric_value = _percentile(values, self.config.percentile)
         threshold = self.get_threshold()
 
-        # Currently, supported SLO metrics are latency-like (lower is better).
         if math.isclose(metric_value, threshold, rel_tol=1e-9, abs_tol=1e-12):
             met = True
-        else:
+        elif lower_is_better(self.config.metric):
             met = metric_value < threshold
+        else:
+            met = metric_value > threshold
         return met, metric_value
 
     def __str__(self) -> str:
         return (
             f"ConstantSlo(metric={self.config.metric}, "
-            f"p{self.config.percentile*100:.0f} <= {self.config.value})"
+            f"p{self.config.percentile*100:.0f} "
+            f"{'<=' if lower_is_better(self.config.metric) else '>='} "
+            f"{self.config.value})"
         )
 
     def get_slo_metric_key(self) -> str:

@@ -7,6 +7,7 @@ server requests are made for a policy sweep.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Optional
@@ -29,6 +30,7 @@ class RequestTiming:
 
     text_deltas: list[tuple[float, int]]
     audio_chunks: list[tuple[float, float, float]]
+    response_trigger_ms: Optional[float]
     commit_ms: Optional[float]
     audio_done_ms: Optional[float]
     response_done_ms: Optional[float]
@@ -41,7 +43,7 @@ def _optional_float(metrics: Mapping, key: AudioMetricKey) -> Optional[float]:
         return None
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -58,7 +60,7 @@ def parse_request_timing(
             metrics.get(AudioMetricKey.SAMPLE_RATE.value, default_sample_rate)
             or default_sample_rate
         )
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         sample_rate = default_sample_rate
     if sample_rate <= 0:
         sample_rate = default_sample_rate
@@ -70,7 +72,7 @@ def parse_request_timing(
         try:
             offset_ms = float(entry[0])
             n_bytes = float(entry[1])
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
         if offset_ms < 0 or n_bytes <= 0:
             continue
@@ -106,7 +108,7 @@ def parse_request_timing(
             try:
                 offset_ms = float(entry[0])
                 n_chars = int(entry[1])
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 continue
             if offset_ms >= 0 and n_chars >= 0:
                 text_deltas.append((offset_ms, n_chars))
@@ -115,6 +117,9 @@ def parse_request_timing(
     return RequestTiming(
         text_deltas=text_deltas,
         audio_chunks=audio_chunks,
+        response_trigger_ms=_optional_float(
+            metrics, AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS
+        ),
         commit_ms=_optional_float(metrics, AudioMetricKey.INPUT_COMMIT_OFFSET_MS),
         audio_done_ms=_optional_float(metrics, AudioMetricKey.AUDIO_DONE_OFFSET_MS),
         response_done_ms=_optional_float(
@@ -136,6 +141,108 @@ class PlaybackSimResult:
     stall_free: bool
     buffer_margin_min_ms: float
     buffer_margin_mean_ms: float
+
+
+@dataclass(frozen=True)
+class AudioFluidityResult:
+    """Etalon-style deadline acceptance for fixed-duration playable audio.
+
+    Network chunks are first converted into complete ``frame_duration_ms`` PCM
+    frames.  A frame becomes available when cumulative received audio crosses
+    the next frame boundary.  This makes the score independent of how a
+    transport fragments the same playable-audio supply.
+
+    ``startup_delay_ms`` is playback slack after the first complete frame is
+    available.  Request-to-first-playable-frame latency is reported separately,
+    so this score isolates continuity after audio can begin.
+    """
+
+    startup_delay_ms: float
+    frame_duration_ms: float
+    playable_frame_count: int
+    total_deadlines: int
+    missed_deadlines: int
+    fluidity_index: float
+
+
+def _playable_frame_arrival_ms(
+    chunks: Sequence[tuple[float, float, float]],
+    frame_duration_ms: float,
+) -> list[float]:
+    """Return receipt times for complete fixed-duration PCM frames.
+
+    A partial tail shorter than one frame is deliberately excluded: it cannot
+    fill another complete playback period and counting it as a full frame would
+    over-penalize normal end-of-utterance delivery.
+    """
+    if frame_duration_ms <= 0:
+        raise ValueError("frame_duration_ms must be > 0")
+
+    arrivals: list[float] = []
+    cumulative_audio_ms = 0.0
+    next_frame_boundary_ms = frame_duration_ms
+    epsilon = frame_duration_ms * 1e-9
+
+    for receipt_ms, duration_ms, _ in chunks:
+        cumulative_audio_ms += duration_ms
+        while cumulative_audio_ms + epsilon >= next_frame_boundary_ms:
+            arrivals.append(receipt_ms)
+            next_frame_boundary_ms += frame_duration_ms
+    return arrivals
+
+
+def compute_audio_fluidity(
+    chunks: Sequence[tuple[float, float, float]],
+    *,
+    frame_duration_ms: float,
+    startup_delay_ms: float,
+) -> Optional[AudioFluidityResult]:
+    """Compute the Etalon fluidity-index analogue for playable audio frames.
+
+    The algorithm follows Etalon's deadline/slack/reset semantics.  Frames that
+    arrive early accumulate slack (playback buffer).  When an inter-frame gap
+    exceeds the frame deadline plus available slack, every elapsed playback
+    deadline is counted as missed and slack is reset.
+    """
+    if startup_delay_ms < 0:
+        raise ValueError("startup_delay_ms must be >= 0")
+
+    arrivals = _playable_frame_arrival_ms(chunks, frame_duration_ms)
+    if not arrivals:
+        return None
+
+    inter_frame_times_ms = [0.0]
+    inter_frame_times_ms.extend(
+        current - previous for previous, current in zip(arrivals, arrivals[1:])
+    )
+
+    total_deadlines = 0
+    missed_deadlines = 0
+    slack_ms = 0.0
+
+    for index, inter_frame_ms in enumerate(inter_frame_times_ms):
+        deadline_ms = startup_delay_ms if index == 0 else frame_duration_ms
+        if inter_frame_ms <= deadline_ms + slack_ms:
+            slack_ms += deadline_ms - inter_frame_ms
+            total_deadlines += 1
+            continue
+
+        misses = (
+            math.floor((inter_frame_ms - slack_ms - deadline_ms) / frame_duration_ms)
+            + 1
+        )
+        missed_deadlines += misses
+        total_deadlines += misses
+        slack_ms = 0.0
+
+    return AudioFluidityResult(
+        startup_delay_ms=startup_delay_ms,
+        frame_duration_ms=frame_duration_ms,
+        playable_frame_count=len(arrivals),
+        total_deadlines=total_deadlines,
+        missed_deadlines=missed_deadlines,
+        fluidity_index=(total_deadlines - missed_deadlines) / total_deadlines,
+    )
 
 
 def _simulate_from_start(
@@ -239,14 +346,24 @@ class InteractivityMetrics:
     """Stable and diagnostic metrics derived from one request timeline."""
 
     first_input_to_first_audio_ms: Optional[float]
+    first_input_to_first_playable_audio_ms: Optional[float]
+    trigger_to_first_playable_audio_ms: Optional[float]
     request_start_to_first_audio_ms: float
+    request_start_to_first_playable_audio_ms: Optional[float]
     audio_before_commit_ratio: Optional[float]
+    duplex_overlap_observed: bool
+    duplex_overlap_ms: float
     post_commit_audio_delivery_ms: Optional[float]
     required_startup_delay_ms: float
     fixed_delay_playback: dict[float, PlaybackSimResult]
     buffer_target_playback: dict[float, Optional[PlaybackSimResult]]
     streaming_rtf: Optional[float]
     done_after_last_audio_ms: Optional[float]
+    user_audio_fluidity: Optional[AudioFluidityResult]
+    tts_service_fluidity: Optional[AudioFluidityResult]
+    tts_service_fluidity_eligible: bool
+    unattributed_missed_deadlines: int
+    fluidity_by_startup_delay: dict[float, Optional[AudioFluidityResult]]
 
 
 def compute_interactivity_metrics(
@@ -255,6 +372,9 @@ def compute_interactivity_metrics(
     startup_delay_ms_values: Sequence[float],
     startup_buffer_ms_values: Sequence[float],
     min_reportable_stall_ms: float,
+    fluidity_frame_ms: float,
+    fluidity_startup_delay_ms: float,
+    fluidity_attribution_mode: str,
 ) -> InteractivityMetrics:
     """Derive all playback policies from a single captured request timeline."""
     chunks = timing.audio_chunks
@@ -263,12 +383,30 @@ def compute_interactivity_metrics(
     total_audio_ms = float(sum(chunk[1] for chunk in chunks))
     total_audio_bytes = float(sum(chunk[2] for chunk in chunks))
 
+    playable_frame_arrivals = _playable_frame_arrival_ms(chunks, fluidity_frame_ms)
+    first_playable_audio_ms = (
+        playable_frame_arrivals[0] if playable_frame_arrivals else None
+    )
+
     first_input_to_first_audio_ms = (
         first_audio_ms - timing.text_deltas[0][0] if timing.text_deltas else None
+    )
+    first_input_to_first_playable_audio_ms = (
+        first_playable_audio_ms - timing.text_deltas[0][0]
+        if timing.text_deltas and first_playable_audio_ms is not None
+        else None
+    )
+    trigger_to_first_playable_audio_ms = (
+        first_playable_audio_ms - timing.response_trigger_ms
+        if timing.response_trigger_ms is not None
+        and first_playable_audio_ms is not None
+        else None
     )
 
     audio_before_commit_ratio: Optional[float] = None
     post_commit_audio_delivery_ms: Optional[float] = None
+    duplex_overlap_observed = False
+    duplex_overlap_ms = 0.0
     if timing.commit_ms is not None:
         bytes_before_commit = sum(
             n_bytes
@@ -279,6 +417,15 @@ def compute_interactivity_metrics(
             bytes_before_commit / total_audio_bytes if total_audio_bytes > 0 else None
         )
         post_commit_audio_delivery_ms = max(0.0, last_audio_ms - timing.commit_ms)
+        if (
+            first_playable_audio_ms is not None
+            and first_playable_audio_ms < timing.commit_ms
+        ):
+            duplex_overlap_observed = True
+            duplex_overlap_ms = max(
+                0.0,
+                min(last_audio_ms, timing.commit_ms) - first_playable_audio_ms,
+            )
 
     fixed_delay_playback = {
         float(delay_ms): simulate_fixed_delay(
@@ -304,6 +451,51 @@ def compute_interactivity_metrics(
         for target_ms in startup_buffer_ms_values
     }
 
+    fluidity_delays = list(
+        dict.fromkeys(
+            [
+                *(float(value) for value in startup_delay_ms_values),
+                float(fluidity_startup_delay_ms),
+            ]
+        )
+    )
+    fluidity_by_startup_delay = {
+        delay_ms: compute_audio_fluidity(
+            chunks,
+            frame_duration_ms=fluidity_frame_ms,
+            startup_delay_ms=delay_ms,
+        )
+        for delay_ms in fluidity_delays
+    }
+    user_audio_fluidity = fluidity_by_startup_delay[float(fluidity_startup_delay_ms)]
+
+    # A raw playback miss is always valid as a user-experience observation, but
+    # it is not automatically attributable to the TTS service during duplex
+    # input: the upstream text source may simply have supplied nothing to
+    # synthesize. In conservative mode, publish a service score only when all
+    # text was available before playback could begin. A controlled oversupply
+    # trace may explicitly opt into service attribution.
+    complete_input_before_playback = bool(
+        timing.commit_ms is not None
+        and first_playable_audio_ms is not None
+        and timing.commit_ms <= first_playable_audio_ms
+    )
+    tts_service_fluidity_eligible = bool(
+        user_audio_fluidity is not None
+        and (
+            complete_input_before_playback
+            or fluidity_attribution_mode == "source_oversupplied"
+        )
+    )
+    tts_service_fluidity = (
+        user_audio_fluidity if tts_service_fluidity_eligible else None
+    )
+    unattributed_missed_deadlines = (
+        0
+        if tts_service_fluidity_eligible or user_audio_fluidity is None
+        else user_audio_fluidity.missed_deadlines
+    )
+
     streaming_rtf: Optional[float] = None
     if len(chunks) >= 2:
         delivered_after_first_ms = total_audio_ms - chunks[0][1]
@@ -318,12 +510,22 @@ def compute_interactivity_metrics(
 
     return InteractivityMetrics(
         first_input_to_first_audio_ms=first_input_to_first_audio_ms,
+        first_input_to_first_playable_audio_ms=(first_input_to_first_playable_audio_ms),
+        trigger_to_first_playable_audio_ms=trigger_to_first_playable_audio_ms,
         request_start_to_first_audio_ms=first_audio_ms,
+        request_start_to_first_playable_audio_ms=first_playable_audio_ms,
         audio_before_commit_ratio=audio_before_commit_ratio,
+        duplex_overlap_observed=duplex_overlap_observed,
+        duplex_overlap_ms=duplex_overlap_ms,
         post_commit_audio_delivery_ms=post_commit_audio_delivery_ms,
         required_startup_delay_ms=_required_startup_delay_ms(chunks),
         fixed_delay_playback=fixed_delay_playback,
         buffer_target_playback=buffer_target_playback,
         streaming_rtf=streaming_rtf,
         done_after_last_audio_ms=done_after_last_audio_ms,
+        user_audio_fluidity=user_audio_fluidity,
+        tts_service_fluidity=tts_service_fluidity,
+        tts_service_fluidity_eligible=tts_service_fluidity_eligible,
+        unattributed_missed_deadlines=unattributed_missed_deadlines,
+        fluidity_by_startup_delay=fluidity_by_startup_delay,
     )
