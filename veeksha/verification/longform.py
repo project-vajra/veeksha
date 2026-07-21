@@ -38,6 +38,7 @@ import time
 import zlib
 from collections import Counter
 from dataclasses import asdict, dataclass, field
+from importlib import import_module
 from pathlib import Path
 from typing import Any, Optional, Protocol, Sequence
 
@@ -262,7 +263,7 @@ class TorchScriptSimEmbedder:
     """WavLM-SV speaker embedder loaded from a TorchScript export."""
 
     def __init__(self, checkpoint_path: Path, device: str):
-        import torch
+        torch: Any = import_module("torch")
 
         self._torch = torch
         self._model = torch.jit.load(str(checkpoint_path), map_location=device)

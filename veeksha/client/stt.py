@@ -27,7 +27,6 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Optional
 
-import librosa
 import numpy as np
 
 from veeksha.client.base import BaseLLMClient
@@ -62,6 +61,8 @@ def _clean_transcript(text: str) -> str:
 
 def _audio_to_pcm16_bytes(audio_path: str, target_sr: int) -> bytes:
     """Load an audio file and convert to raw PCM16 bytes at target sample rate."""
+    import librosa
+
     audio, _ = librosa.load(audio_path, sr=target_sr, mono=True)
     pcm16 = (audio * 32767).astype(np.int16)
     return pcm16.tobytes()

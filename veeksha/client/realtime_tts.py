@@ -7,7 +7,9 @@ by the audio interactivity evaluator.
 Structurally mirrors the streaming HTTP :class:`~veeksha.client.tts.TTSClient`
 (same metric contract), but the transport is a
 WebSocket and the request is a paced sequence of ``conversation.item.create``
-events followed by an audio-only ``response.create`` event.
+events. In complete-text mode, an audio-only ``response.create`` follows the
+last item. In duplex mode, it is sent after a configurable amount of initial
+text and later items continue arriving while the response is active.
 """
 
 from __future__ import annotations
@@ -258,6 +260,7 @@ class RealtimeTTSClient(BaseLLMClient):
         ws_connect_latency: Optional[float] = None
         session_ready_offset: Optional[float] = None
         response_created_offset: Optional[float] = None
+        response_trigger_offset: Optional[float] = None
         input_complete_offset: Optional[float] = None
         audio_done_offset: Optional[float] = None
         response_done_offset: Optional[float] = None
@@ -277,12 +280,14 @@ class RealtimeTTSClient(BaseLLMClient):
         t_start = time.monotonic()
 
         async def send_loop(ws) -> None:
-            nonlocal input_complete_offset
+            nonlocal input_complete_offset, response_trigger_offset
             if pacer.initial_delay_s > 0:
                 await asyncio.sleep(pacer.initial_delay_s)
             # Pace by absolute deadlines so ws.send backpressure never
             # accumulates drift into subsequent gaps.
             deadline = time.monotonic()
+            response_triggered = False
+            sent_tokens = 0
             for seg in segments:
                 deadline += pacer.next_gap()
                 sleep_s = deadline - time.monotonic()
@@ -290,8 +295,19 @@ class RealtimeTTSClient(BaseLLMClient):
                     await asyncio.sleep(sleep_s)
                 await ws.send(self._protocol.conversation_item_create_json(seg.text))
                 text_delta_ts.append([(time.monotonic() - t_start) * 1000, seg.n_chars])
+                sent_tokens += seg.n_tokens
+                if (
+                    self._realtime_config.input_output_mode == "duplex"
+                    and not response_triggered
+                    and sent_tokens >= self._realtime_config.duplex_start_after_tokens
+                ):
+                    response_trigger_offset = (time.monotonic() - t_start) * 1000
+                    await ws.send(self._protocol.response_create_json())
+                    response_triggered = True
             input_complete_offset = (time.monotonic() - t_start) * 1000
-            await ws.send(self._protocol.response_create_json())
+            if not response_triggered:
+                response_trigger_offset = (time.monotonic() - t_start) * 1000
+                await ws.send(self._protocol.response_create_json())
 
         async def recv_loop(ws) -> None:
             nonlocal ttfc, session_ready_offset, response_created_offset
@@ -302,7 +318,7 @@ class RealtimeTTSClient(BaseLLMClient):
                 offset_ms = (time.monotonic() - t_start) * 1000
                 try:
                     event = json.loads(raw)
-                except (json.JSONDecodeError, TypeError, ValueError):
+                except json.JSONDecodeError, TypeError, ValueError:
                     continue
                 if not isinstance(event, dict):
                     continue
@@ -311,8 +327,12 @@ class RealtimeTTSClient(BaseLLMClient):
                 if kind is RealtimeEventKind.AUDIO_DELTA:
                     chunk = self._protocol.extract_audio(event)
                     if chunk:
+                        # TTFC retains the historical first-wire-audio meaning,
+                        # while the supply timeline represents decoded playable
+                        # PCM availability at the client.
+                        playable_offset_ms = (time.monotonic() - t_start) * 1000
                         audio_chunks.append(chunk)
-                        audio_chunk_ts.append([offset_ms, len(chunk)])
+                        audio_chunk_ts.append([playable_offset_ms, len(chunk)])
                         if ttfc is None:
                             ttfc = offset_ms
                         fire_sent_once()
@@ -400,6 +420,9 @@ class RealtimeTTSClient(BaseLLMClient):
             AudioMetricKey.WS_CONNECT_LATENCY_MS.value: _round_ms(ws_connect_latency),
             AudioMetricKey.SESSION_READY_OFFSET_MS.value: _round_ms(
                 session_ready_offset
+            ),
+            AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value: _round_ms(
+                response_trigger_offset
             ),
             AudioMetricKey.RESPONSE_CREATED_OFFSET_MS.value: _round_ms(
                 response_created_offset

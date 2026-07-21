@@ -19,6 +19,7 @@ from veeksha.config.score_tts_longform import (
     LongformSimConfig,
     ScoreTtsLongformConfig,
 )
+from veeksha.verification import longform as longform_verification
 from veeksha.verification.audio import normalize_text
 from veeksha.verification.longform import (
     AudioSource,
@@ -492,10 +493,24 @@ class TestPipelineWithFakes:
 
 
 class TestGracefulDegradation:
-    def test_all_models_unavailable(self, tmp_path: Path):
-        # In the test environment faster-whisper and torch are absent and
-        # sim.checkpoint_path is empty: every model track must degrade to a
-        # note while the energy track still runs.
+    def test_all_models_unavailable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr(
+            longform_verification,
+            "build_transcriber",
+            lambda _config: (None, "WER skipped: unavailable for test"),
+        )
+        monkeypatch.setattr(
+            longform_verification,
+            "build_utmos_scorer",
+            lambda _config: (None, "UTMOS skipped: unavailable for test"),
+        )
+        monkeypatch.setattr(
+            longform_verification,
+            "build_sim_embedder",
+            lambda _config: (None, "SIM skipped: checkpoint not available"),
+        )
         config = _make_config(tmp_path)
         result = run_score_tts_longform(config)
 

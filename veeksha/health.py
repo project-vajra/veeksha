@@ -1543,7 +1543,7 @@ class HealthChecker:
             ),
         }
         if flagged_count > 0:
-            sample_ids = flagged["request_id"].head(10).tolist()
+            sample_ids = flagged["request_id"][:10].tolist()
             results["Sample Request IDs"] = ", ".join(str(rid) for rid in sample_ids)
             results["Interpretation"] = (
                 "Audio duration at the server's length cap: the server likely "

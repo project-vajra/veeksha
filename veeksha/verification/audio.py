@@ -9,6 +9,7 @@ import string
 import threading
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
+from importlib import import_module
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
@@ -98,6 +99,7 @@ class LocalWhisperTranscriber:
     """In-process faster-whisper transcriber for WER verification."""
 
     def __init__(self, config: AudioVerificationConfig):
+        self.config = config
         whisper_config = config.wer.whisper
         try:
             from faster_whisper import WhisperModel
@@ -113,7 +115,13 @@ class LocalWhisperTranscriber:
         )
 
     def transcribe(self, audio_path: Path) -> str:
-        segments, _ = self.model.transcribe(str(audio_path))
+        whisper_config = self.config.wer.whisper
+        segments, _ = self.model.transcribe(
+            str(audio_path),
+            language=whisper_config.language,
+            task="transcribe",
+            beam_size=whisper_config.beam_size,
+        )
         return " ".join(segment.text.strip() for segment in segments).strip()
 
 
@@ -177,14 +185,12 @@ def normalize_text(text: str) -> str:
 
 
 def _jiwer_wer(reference: str, hypothesis: str) -> float:
-    try:
-        from jiwer import compute_measures
+    import jiwer
 
+    compute_measures = getattr(jiwer, "compute_measures", None)
+    if compute_measures is not None:
         return float(compute_measures(reference, hypothesis)["wer"])
-    except ImportError:
-        import jiwer
-
-        return float(jiwer.process_words(reference, hypothesis).wer)
+    return float(jiwer.process_words(reference, hypothesis).wer)
 
 
 def compute_wer(reference: str, hypothesis: str) -> float:
@@ -215,11 +221,11 @@ def _audio_path_to_f32_16k(path: Path) -> np.ndarray:
         return mono
 
     target_len = max(1, int(len(mono) * 16000 / int(sample_rate)))
-    return scipy.signal.resample(mono, target_len).astype(np.float32)
+    return np.asarray(scipy.signal.resample(mono, target_len), dtype=np.float32)
 
 
 def _resolve_utmos_device(device: str) -> str:
-    import torch
+    torch: Any = import_module("torch")
 
     device = device.strip()
     if device.startswith("cuda") and not torch.cuda.is_available():
@@ -241,7 +247,7 @@ def load_utmos_jit_model(hf_repo: str, jit_file: str, device: str) -> Any | None
             return _utmos_jit_model
 
         try:
-            import torch
+            torch: Any = import_module("torch")
             from huggingface_hub import hf_hub_download
 
             path = hf_hub_download(
@@ -269,7 +275,7 @@ def predict_utmos_f32_16k(
     wav_f32: np.ndarray, hf_repo: str, jit_file: str, device: str
 ) -> float | None:
     """Score 16 kHz mono float32 audio with UTMOS, or None if unavailable."""
-    import torch
+    torch: Any = import_module("torch")
 
     if len(wav_f32) == 0:
         return None
@@ -416,11 +422,21 @@ def verify_audio_outputs(
             len(summary.errors),
         )
 
-    if config.fail_on_threshold and summary.failed_requests:
-        raise AudioVerificationError(
-            f"{summary.failed_requests} audio requests exceeded WER threshold "
-            f"{config.wer.threshold}"
-        )
+    if config.fail_on_threshold:
+        failures = []
+        if summary.failed_requests:
+            failures.append(
+                f"{summary.failed_requests} audio requests exceeded WER threshold "
+                f"{config.wer.threshold}"
+            )
+        if summary.error_requests:
+            failures.append(
+                f"{summary.error_requests} audio requests could not be verified"
+            )
+        if summary.errors:
+            failures.append(f"{len(summary.errors)} run-level verification errors")
+        if failures:
+            raise AudioVerificationError("; ".join(failures))
 
     return summary
 

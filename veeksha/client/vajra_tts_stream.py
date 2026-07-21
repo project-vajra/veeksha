@@ -48,6 +48,9 @@ logger = init_logger(__name__)
 class VajraTTSStreamProtocol:
     """Vajra streaming-speech wire contract used by the benchmark client."""
 
+    provider = "vajra"
+    protocol_name = "native_streaming_text"
+
     def __init__(
         self, config: "VajraTTSStreamClientConfig", api_key: Optional[str]
     ) -> None:
@@ -221,6 +224,8 @@ class VajraTTSStreamClient(BaseLLMClient):
         ttfc: Optional[float] = None
         ws_connect_latency: Optional[float] = None
         session_ready_offset: Optional[float] = None
+        response_trigger_offset: Optional[float] = None
+        response_created_offset: Optional[float] = None
         input_complete_offset: Optional[float] = None
         audio_done_offset: Optional[float] = None
         session_done_offset: Optional[float] = None
@@ -240,7 +245,7 @@ class VajraTTSStreamClient(BaseLLMClient):
         t_start = time.monotonic()
 
         async def send_loop(ws) -> None:
-            nonlocal input_complete_offset
+            nonlocal input_complete_offset, response_trigger_offset
             if pacer.initial_delay_s > 0:
                 await asyncio.sleep(pacer.initial_delay_s)
             # Pace by absolute deadlines so ws.send backpressure never
@@ -251,14 +256,17 @@ class VajraTTSStreamClient(BaseLLMClient):
                 sleep_s = deadline - time.monotonic()
                 if sleep_s > 0:
                     await asyncio.sleep(sleep_s)
+                offset_ms = (time.monotonic() - t_start) * 1000
+                if response_trigger_offset is None:
+                    response_trigger_offset = offset_ms
                 await ws.send(self._protocol.input_text_json(seg.text))
-                text_delta_ts.append([(time.monotonic() - t_start) * 1000, seg.n_chars])
+                text_delta_ts.append([offset_ms, seg.n_chars])
             input_complete_offset = (time.monotonic() - t_start) * 1000
             await ws.send(self._protocol.input_done_json())
 
         async def recv_loop(ws) -> None:
-            nonlocal ttfc, session_ready_offset, audio_done_offset
-            nonlocal session_done_offset, sample_rate
+            nonlocal ttfc, session_ready_offset, response_created_offset
+            nonlocal audio_done_offset, session_done_offset, sample_rate
             while True:
                 raw = await ws.recv()
                 # Stamp receipt BEFORE any json decode work.
@@ -286,6 +294,8 @@ class VajraTTSStreamClient(BaseLLMClient):
                 if event_type == "audio.start":
                     if session_ready_offset is None:
                         session_ready_offset = offset_ms
+                    if response_created_offset is None:
+                        response_created_offset = offset_ms
                     server_sr = event.get("sample_rate")
                     if (
                         isinstance(server_sr, int)
@@ -350,6 +360,9 @@ class VajraTTSStreamClient(BaseLLMClient):
 
         metrics = {
             "audio_task": AudioTask.TTS,
+            AudioMetricKey.PROVIDER.value: self._protocol.provider,
+            AudioMetricKey.PROVIDER_MODEL.value: self._stream_config.model,
+            AudioMetricKey.PROVIDER_PROTOCOL.value: self._protocol.protocol_name,
             AudioMetricKey.TTFC.value: round(ttfc or 0.0, 3),
             AudioMetricKey.END_TO_END_LATENCY.value: round(total_latency_ms, 3),
             AudioMetricKey.CHUNK_COUNT.value: len(audio_chunks),
@@ -363,6 +376,12 @@ class VajraTTSStreamClient(BaseLLMClient):
             AudioMetricKey.WS_CONNECT_LATENCY_MS.value: _round_ms(ws_connect_latency),
             AudioMetricKey.SESSION_READY_OFFSET_MS.value: _round_ms(
                 session_ready_offset
+            ),
+            AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value: _round_ms(
+                response_trigger_offset
+            ),
+            AudioMetricKey.RESPONSE_CREATED_OFFSET_MS.value: _round_ms(
+                response_created_offset
             ),
             AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value: _round_ms(
                 input_complete_offset

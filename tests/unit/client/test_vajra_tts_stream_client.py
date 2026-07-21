@@ -248,6 +248,9 @@ def test_send_request_collects_audio_and_timeline_metrics(
     assert channel.content == b"\x01\x00" * 1200 + b"\x02\x00" * 1200
 
     metrics = channel.metrics
+    assert metrics[AudioMetricKey.PROVIDER.value] == "vajra"
+    assert metrics[AudioMetricKey.PROVIDER_MODEL.value] == "qwen-tts"
+    assert metrics[AudioMetricKey.PROVIDER_PROTOCOL.value] == "native_streaming_text"
     assert metrics[AudioMetricKey.CHUNK_COUNT.value] == 2
     assert metrics[AudioMetricKey.RAW_PCM.value] is True
     assert metrics[AudioMetricKey.SAMPLE_RATE.value] == 24000
@@ -262,6 +265,10 @@ def test_send_request_collects_audio_and_timeline_metrics(
     )
     assert metrics[AudioMetricKey.WS_CONNECT_LATENCY_MS.value] is not None
     assert metrics[AudioMetricKey.SESSION_READY_OFFSET_MS.value] is not None
+    assert metrics[AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value] == pytest.approx(
+        metrics[AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value][0][0], abs=0.001
+    )
+    assert metrics[AudioMetricKey.RESPONSE_CREATED_OFFSET_MS.value] is not None
     assert metrics[AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value] is not None
     assert metrics[AudioMetricKey.AUDIO_DONE_OFFSET_MS.value] is not None
     assert metrics[AudioMetricKey.RESPONSE_DONE_OFFSET_MS.value] is not None

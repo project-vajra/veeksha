@@ -33,6 +33,9 @@ class AudioMetricKey(StrEnum):
     INPUT_CHARS = "input_chars"
     INPUT_TOKENS = "input_tokens"
     INPUT_TEXT = "input_text"
+    PROVIDER = "provider"
+    PROVIDER_MODEL = "provider_model"
+    PROVIDER_PROTOCOL = "provider_protocol"
     SESSION_SIZE = "session_size"
     SESSION_DURATION = "session_duration"
 
@@ -48,6 +51,7 @@ class AudioMetricKey(StrEnum):
     )
     WS_CONNECT_LATENCY_MS = "ws_connect_latency_ms"
     SESSION_READY_OFFSET_MS = "session_ready_offset_ms"  # nullable
+    RESPONSE_TRIGGER_OFFSET_MS = "response_trigger_offset_ms"
     RESPONSE_CREATED_OFFSET_MS = "response_created_offset_ms"  # nullable
     INPUT_COMMIT_OFFSET_MS = "input_commit_offset_ms"
     AUDIO_DONE_OFFSET_MS = "audio_done_offset_ms"  # nullable
@@ -55,8 +59,15 @@ class AudioMetricKey(StrEnum):
 
     # Stable request-level interactivity keys emitted by the evaluator.
     FIRST_INPUT_TO_FIRST_AUDIO_MS = "first_input_to_first_audio_ms"
+    FIRST_INPUT_TO_FIRST_PLAYABLE_AUDIO_MS = "first_input_to_first_playable_audio_ms"
+    TRIGGER_TO_FIRST_PLAYABLE_AUDIO_MS = "trigger_to_first_playable_audio_ms"
     REQUEST_START_TO_FIRST_AUDIO_MS = "request_start_to_first_audio_ms"
+    REQUEST_START_TO_FIRST_PLAYABLE_AUDIO_MS = (
+        "request_start_to_first_playable_audio_ms"
+    )
     AUDIO_BEFORE_COMMIT_RATIO = "audio_before_commit_ratio"
+    DUPLEX_OVERLAP_OBSERVED = "duplex_overlap_observed"
+    DUPLEX_OVERLAP_MS = "duplex_overlap_ms"
     POST_COMMIT_AUDIO_DELIVERY_MS = "post_commit_audio_delivery_ms"
     REQUIRED_STARTUP_DELAY_MS = "required_startup_delay_ms"
     ZERO_DELAY_STALL_COUNT = "zero_delay_stall_count"
@@ -67,3 +78,15 @@ class AudioMetricKey(StrEnum):
     # Diagnostic delivery/finalization metrics.
     STREAMING_RTF = "streaming_rtf"
     DONE_AFTER_LAST_AUDIO_MS = "done_after_last_audio_ms"
+
+    # Etalon-inspired playable-frame deadline metrics. The untagged user score
+    # uses AudioChannelPerformanceConfig.fluidity_startup_delay_ms.
+    USER_AUDIO_FLUIDITY_INDEX = "user_audio_fluidity_index"
+    TTS_SERVICE_FLUIDITY_INDEX = "tts_service_fluidity_index"
+    TTS_SERVICE_FLUIDITY_ELIGIBLE = "tts_service_fluidity_eligible"
+    UNATTRIBUTED_MISSED_DEADLINES = "unattributed_missed_deadlines"
+    AUDIO_FLUIDITY_TOTAL_DEADLINES = "audio_fluidity_total_deadlines"
+    AUDIO_FLUIDITY_MISSED_DEADLINES = "audio_fluidity_missed_deadlines"
+    AUDIO_PLAYABLE_FRAME_COUNT = "audio_playable_frame_count"
+    AUDIO_FLUIDITY_FRAME_MS = "audio_fluidity_frame_ms"
+    AUDIO_FLUIDITY_STARTUP_DELAY_MS = "audio_fluidity_startup_delay_ms"

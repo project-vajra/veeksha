@@ -20,7 +20,13 @@ logger = init_logger(__name__)
 
 # Clients that stream paced text in and audio out over a websocket and emit
 # the realtime AudioMetricKey contract (audio chunk timestamps + done offsets).
-_REALTIME_TTS_CLIENT_TYPES = (ClientType.REALTIME_TTS, ClientType.VAJRA_TTS_STREAM)
+_REALTIME_TTS_CLIENT_TYPES = (
+    ClientType.REALTIME_TTS,
+    ClientType.VAJRA_TTS_STREAM,
+    ClientType.ELEVENLABS_STREAMING_TTS,
+    ClientType.DEEPGRAM_FLUX_STREAMING_TTS,
+    ClientType.DEEPGRAM_AURA_STREAMING_TTS,
+)
 
 
 @dataclass

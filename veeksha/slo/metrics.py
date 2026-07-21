@@ -7,8 +7,14 @@ from typing import Any, Dict, Iterable, List, Optional
 
 def lower_is_better(metric: str) -> bool:
     """Return whether lower values are better for the given metric."""
-    # Today we only support latency-like metrics.
-    return True
+    higher_is_better = {
+        "audio_before_commit_ratio",
+        "duplex_overlap_observed",
+        "tts_service_fluidity_eligible",
+        "tts_service_fluidity_index",
+        "user_audio_fluidity_index",
+    }
+    return metric not in higher_is_better
 
 
 def extract_metric_values(
@@ -67,5 +73,5 @@ def _coerce_float(value: Any) -> Optional[float]:
         return None
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None

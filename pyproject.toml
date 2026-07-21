@@ -110,6 +110,7 @@ known_third_party = "wandb"
 extend_skip = ["veeksha/_version.py"]
 
 [tool.pyright]
+pythonVersion = "3.14"
 include = ["veeksha"]
 exclude = [
     "**/__pycache__",
