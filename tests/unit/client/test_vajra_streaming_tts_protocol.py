@@ -7,10 +7,15 @@ from veeksha.client.streaming_tts import (
     StreamingTTSClient,
     VajraStreamingProtocol,
 )
-from veeksha.config.client import StreamingTTSClientConfig, TextPacingConfig
+from veeksha.config.client import (
+    StreamingTTSClientConfig,
+    TextPacingConfig,
+    TTSAbortConfig,
+)
 from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.core.request import Request
 from veeksha.core.request_content import TextChannelRequestContent
+from veeksha.core.response import RequestResult
 from veeksha.types import ChannelModality
 
 
@@ -59,6 +64,50 @@ def test_config_defaults_skip_validation_for_polymorphic_instantiation() -> None
     # children with defaults; that must not raise.
     config = StreamingTTSClientConfig()
     assert config.model == ""
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"fraction": 1.5}, "fraction must be in"),
+        ({"fraction": -0.1}, "fraction must be in"),
+        ({"trigger": "bogus"}, "trigger must be one of"),
+        ({"value": 0.0}, "value must be > 0"),
+        (
+            {"trigger": "input_fraction", "value": 2.0},
+            r"in \(0, 1\]",
+        ),
+    ],
+)
+def test_abort_config_rejects_invalid(kwargs: dict[str, object], match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        TTSAbortConfig(**kwargs)
+
+
+@pytest.mark.unit
+def test_abort_config_selection_is_deterministic_and_bounded() -> None:
+    abort = TTSAbortConfig(fraction=0.5)
+    other = TTSAbortConfig(fraction=0.5)
+
+    assert [abort.selects(session_id) for session_id in range(16)] == [
+        other.selects(session_id) for session_id in range(16)
+    ]
+    assert not any(
+        TTSAbortConfig(fraction=0.0).selects(session_id) for session_id in range(64)
+    )
+    assert all(
+        TTSAbortConfig(fraction=1.0).selects(session_id) for session_id in range(64)
+    )
+
+
+@pytest.mark.unit
+def test_abort_config_is_restricted_to_vajra_provider() -> None:
+    with pytest.raises(ValueError, match="only for provider='vajra'"):
+        _config(
+            provider="openai_realtime",
+            abort=TTSAbortConfig(fraction=1.0),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +255,7 @@ def _run_request(
     websocket: _FakeVajraWebSocket,
     monkeypatch: pytest.MonkeyPatch,
     events: list[str],
-):
+) -> RequestResult:
     monkeypatch.setattr(client, "_connect", lambda: _FakeConnection(websocket))
     return asyncio.run(
         client.send_request(
@@ -325,3 +374,132 @@ def test_send_request_without_text_channel_returns_400() -> None:
 
     assert result.success is False
     assert result.error_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Mid-stream abort injection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_abort_audio_ms_closes_stream_after_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client(abort=TTSAbortConfig(fraction=1.0, trigger="audio_ms", value=50.0))
+    websocket = _FakeVajraWebSocket()
+    events: list[str] = []
+
+    result = _run_request(client, websocket, monkeypatch, events)
+
+    assert result.success is True
+    channel = result.channels[ChannelModality.AUDIO]
+    assert channel.metrics[AudioMetricKey.ABORTED.value] is True
+    assert channel.metrics[AudioMetricKey.CHUNK_COUNT.value] == 1
+    assert any(message["type"] == "input.done" for message in websocket.sent_messages)
+
+
+@pytest.mark.unit
+def test_abort_input_fraction_stops_before_input_done(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client(
+        abort=TTSAbortConfig(
+            fraction=1.0,
+            trigger="input_fraction",
+            value=0.5,
+        )
+    )
+    websocket = _FakeVajraWebSocket()
+    events: list[str] = []
+
+    result = _run_request(client, websocket, monkeypatch, events)
+
+    assert result.success is True
+    text_messages = [
+        message
+        for message in websocket.sent_messages
+        if message["type"] == "input.text"
+    ]
+    assert len(text_messages) == 2
+    assert not any(
+        message["type"] == "input.done" for message in websocket.sent_messages
+    )
+    assert (
+        result.channels[ChannelModality.AUDIO].metrics[AudioMetricKey.ABORTED.value]
+        is True
+    )
+
+
+class _BlockingAfterStartWebSocket(_FakeVajraWebSocket):
+    """Return audio.start, then block until the abort watchdog cancels recv."""
+
+    async def recv(self) -> str | bytes:
+        recv_idx = self._recv_index
+        self._recv_index += 1
+        if recv_idx == 0:
+            await self._first_text.wait()
+            return json.dumps({"type": "audio.start", "sample_rate": 24000})
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+
+@pytest.mark.unit
+def test_abort_wall_clock_closes_stalled_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client(
+        abort=TTSAbortConfig(
+            fraction=1.0,
+            trigger="wall_clock_s",
+            value=0.05,
+        )
+    )
+    websocket = _BlockingAfterStartWebSocket()
+    events: list[str] = []
+
+    result = _run_request(client, websocket, monkeypatch, events)
+
+    assert result.success is True
+    assert (
+        result.channels[ChannelModality.AUDIO].metrics[AudioMetricKey.ABORTED.value]
+        is True
+    )
+
+
+@pytest.mark.unit
+def test_wall_clock_watchdog_does_not_abort_completed_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client(
+        abort=TTSAbortConfig(
+            fraction=1.0,
+            trigger="wall_clock_s",
+            value=1.0,
+        )
+    )
+    websocket = _FakeVajraWebSocket()
+    events: list[str] = []
+
+    result = _run_request(client, websocket, monkeypatch, events)
+
+    assert result.success is True
+    assert (
+        result.channels[ChannelModality.AUDIO].metrics[AudioMetricKey.ABORTED.value]
+        is False
+    )
+
+
+@pytest.mark.unit
+def test_unselected_session_is_not_aborted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client()
+    websocket = _FakeVajraWebSocket()
+    events: list[str] = []
+
+    result = _run_request(client, websocket, monkeypatch, events)
+
+    channel = result.channels[ChannelModality.AUDIO]
+    assert result.success is True
+    assert channel.metrics[AudioMetricKey.ABORTED.value] is False
+    assert channel.metrics[AudioMetricKey.CHUNK_COUNT.value] == 2

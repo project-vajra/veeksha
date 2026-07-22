@@ -1,4 +1,5 @@
 import json
+import random
 from typing import Optional
 
 from vidhi import BasePolyConfig, field, frozen_dataclass
@@ -253,6 +254,78 @@ class TextPacingConfig:
 
 
 @frozen_dataclass
+class TTSAbortConfig:
+    """Mid-stream abort injection for adversarial Vajra streaming-TTS tests.
+
+    A deterministic fraction of sessions deliberately closes the WebSocket
+    partway through synthesis. This exercises server abort, slot-reclaim, and
+    staging-teardown paths that a normal load sweep does not touch.
+    """
+
+    fraction: float = field(
+        0.0,
+        help=(
+            "Fraction of sessions in [0, 1] that abort mid-stream. "
+            "Zero disables abort injection."
+        ),
+    )
+    trigger: str = field(
+        "audio_ms",
+        help=(
+            "Abort trigger: audio_ms after receiving value milliseconds of "
+            "audio, input_fraction after sending value fraction of text "
+            "deltas, or wall_clock_s value seconds after request start."
+        ),
+    )
+    value: float = field(
+        1000.0,
+        help=(
+            "Trigger threshold in milliseconds, input fraction, or seconds "
+            "according to trigger."
+        ),
+    )
+    seed: int = field(
+        1234,
+        help=(
+            "Base seed for deterministic per-session selection using "
+            "Random(f'{seed}:{session_id}')."
+        ),
+    )
+
+    _TRIGGERS = ("audio_ms", "input_fraction", "wall_clock_s")
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.fraction <= 1.0:
+            raise ValueError(
+                f"TTSAbortConfig.fraction must be in [0, 1]; got {self.fraction}"
+            )
+        if self.trigger not in self._TRIGGERS:
+            raise ValueError(
+                f"TTSAbortConfig.trigger must be one of {self._TRIGGERS}; "
+                f"got {self.trigger!r}"
+            )
+        if self.value <= 0:
+            raise ValueError(f"TTSAbortConfig.value must be > 0; got {self.value}")
+        if self.trigger == "input_fraction" and self.value > 1.0:
+            raise ValueError(
+                "TTSAbortConfig.value must be in (0, 1] when trigger is "
+                f"'input_fraction'; got {self.value}"
+            )
+
+    @property
+    def enabled(self) -> bool:
+        return self.fraction > 0.0
+
+    def selects(self, session_id: int) -> bool:
+        """Return the deterministic abort decision for the session."""
+        if self.fraction <= 0.0:
+            return False
+        if self.fraction >= 1.0:
+            return True
+        return random.Random(f"{self.seed}:{session_id}").random() < self.fraction
+
+
+@frozen_dataclass
 class StreamingTTSClientConfig(BaseClientConfig):
     """Provider-agnostic paced text-in/audio-out WebSocket TTS configuration."""
 
@@ -273,6 +346,10 @@ class StreamingTTSClientConfig(BaseClientConfig):
     pacing: TextPacingConfig = field(
         default_factory=TextPacingConfig,
         help="Upstream LLM text pacing configuration.",
+    )
+    abort: TTSAbortConfig = field(
+        default_factory=TTSAbortConfig,
+        help="Adversarial mid-stream abort injection for the Vajra provider.",
     )
     input_output_mode: str = field(
         "complete_text",
@@ -332,6 +409,11 @@ class StreamingTTSClientConfig(BaseClientConfig):
             raise ValueError(
                 f"Unsupported streaming TTS provider: {self.provider or '<empty>'}. "
                 f"Supported: {', '.join(self._SUPPORTED_PROVIDERS)}"
+            )
+        if self.abort.enabled and self.provider != "vajra":
+            raise ValueError(
+                "StreamingTTSClientConfig.abort is supported only for "
+                "provider='vajra'."
             )
         if not self.model:
             raise ValueError("StreamingTTSClientConfig.model is required.")

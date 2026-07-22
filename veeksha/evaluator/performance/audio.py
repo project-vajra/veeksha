@@ -79,6 +79,7 @@ class AudioRequestMetrics:
     interactivity: InteractivityMetrics | None = None
     ws_connect_latency_ms: float | None = None
     suspected_length_cap_truncation: bool = False
+    aborted: bool = False
 
 
 class AudioPerformanceEvaluator:
@@ -153,6 +154,7 @@ class AudioPerformanceEvaluator:
         self._first_dispatch_at: float | None = None
         self._last_completion_at: float | None = None
         self._suspected_truncation_count = 0
+        self._aborted_count = 0
 
     def register_request(
         self,
@@ -208,6 +210,7 @@ class AudioPerformanceEvaluator:
         end_to_end_latency = float(cm.get(AudioMetricKey.END_TO_END_LATENCY.value, 0.0))
         chunk_count = int(cm.get(AudioMetricKey.CHUNK_COUNT.value, 0))
         raw_pcm = bool(cm.get(AudioMetricKey.RAW_PCM.value, False))
+        aborted = bool(cm.get(AudioMetricKey.ABORTED.value, False))
         sample_rate = int(
             cm.get(AudioMetricKey.SAMPLE_RATE.value, DEFAULT_AUDIO_SAMPLE_RATE)
         )
@@ -253,10 +256,12 @@ class AudioPerformanceEvaluator:
         input_text = str(cm.get(AudioMetricKey.INPUT_TEXT.value, ""))
 
         # Duration at the server's length cap (within one codec chunk) is the
-        # only client-visible signal of silent server-side truncation.
+        # only client-visible signal of silent server-side truncation. An
+        # intentionally aborted stream is partial by construction.
         max_expected_audio_ms = self.channel_config.max_expected_audio_ms
         suspected_length_cap_truncation = (
-            audio_task is AudioTask.TTS
+            not aborted
+            and audio_task is AudioTask.TTS
             and max_expected_audio_ms is not None
             and generated_audio_duration >= max_expected_audio_ms - LENGTH_CAP_CHUNK_MS
         )
@@ -270,7 +275,11 @@ class AudioPerformanceEvaluator:
         )
         interactivity: InteractivityMetrics | None = None
         raw_timing_row: dict[str, Any] | None = None
-        if audio_task is AudioTask.TTS and self.channel_config.interactivity_enabled:
+        if (
+            not aborted
+            and audio_task is AudioTask.TTS
+            and self.channel_config.interactivity_enabled
+        ):
             timing = parse_request_timing(cm, sample_rate)
             if timing is not None:
                 interactivity = compute_interactivity_metrics(
@@ -341,13 +350,14 @@ class AudioPerformanceEvaluator:
                 interactivity=interactivity,
                 ws_connect_latency_ms=ws_connect_latency_ms,
                 suspected_length_cap_truncation=suspected_length_cap_truncation,
+                aborted=aborted,
             )
             self._completed_metrics.append(metrics)
+            if aborted:
+                self._aborted_count += 1
             if suspected_length_cap_truncation:
                 self._suspected_truncation_count += 1
 
-            self._total_input_chars += input_chars
-            self._total_generated_audio_duration_ms += generated_audio_duration
             if (
                 self._first_dispatch_at is None
                 or dispatched_at < self._first_dispatch_at
@@ -384,16 +394,19 @@ class AudioPerformanceEvaluator:
                 }
             )
 
-            self.summaries[AudioMetricKey.TTFC.value].put(ttfc)
-            self.summaries[AudioMetricKey.END_TO_END_LATENCY.value].put(
-                end_to_end_latency
-            )
-            self.summaries[AudioMetricKey.GENERATED_AUDIO_DURATION.value].put(
-                generated_audio_duration
-            )
-            self.summaries[AudioMetricKey.RTF.value].put(rtf)
-            self.summaries[AudioMetricKey.CHUNK_COUNT.value].put(chunk_count)
-            self.summaries[AudioMetricKey.INPUT_TOKENS.value].put(input_tokens)
+            if not aborted:
+                self._total_input_chars += input_chars
+                self._total_generated_audio_duration_ms += generated_audio_duration
+                self.summaries[AudioMetricKey.TTFC.value].put(ttfc)
+                self.summaries[AudioMetricKey.END_TO_END_LATENCY.value].put(
+                    end_to_end_latency
+                )
+                self.summaries[AudioMetricKey.GENERATED_AUDIO_DURATION.value].put(
+                    generated_audio_duration
+                )
+                self.summaries[AudioMetricKey.RTF.value].put(rtf)
+                self.summaries[AudioMetricKey.CHUNK_COUNT.value].put(chunk_count)
+                self.summaries[AudioMetricKey.INPUT_TOKENS.value].put(input_tokens)
 
             if asr_metrics is not None:
                 asr_values = {
@@ -609,6 +622,9 @@ class AudioPerformanceEvaluator:
                 self._suspected_truncation_count
             )
 
+        if self._aborted_count > 0:
+            perf_summary["aborted_requests_count"] = self._aborted_count
+
         if self._interactive_request_count > 0:
             count = self._interactive_request_count
             perf_summary["interactive_requests_count"] = count
@@ -741,6 +757,7 @@ class AudioPerformanceEvaluator:
                 AudioMetricKey.INPUT_CHARS.value: metrics.input_chars,
                 AudioMetricKey.INPUT_TOKENS.value: metrics.input_tokens,
                 AudioMetricKey.INPUT_TEXT.value: metrics.input_text,
+                AudioMetricKey.ABORTED.value: int(metrics.aborted),
             }
             if self.channel_config.max_expected_audio_ms is not None:
                 row["suspected_length_cap_truncation"] = int(

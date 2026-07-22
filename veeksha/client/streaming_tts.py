@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -24,7 +25,7 @@ from veeksha.client.utils import (
     segment_text,
     to_websocket_url,
 )
-from veeksha.core.audio_contract import AudioMetricKey
+from veeksha.core.audio_contract import AudioMetricKey, pcm_bytes_to_duration_ms
 from veeksha.core.request import Request
 from veeksha.core.request_content import TextChannelRequestContent
 from veeksha.core.response import ChannelResponse, RequestResult
@@ -53,6 +54,13 @@ class StreamingProtocolEvent:
 
 class StreamingTTSError(Exception):
     """Fatal provider event received after a WebSocket handshake."""
+
+
+class _ClientAbort(Exception):
+    """Signal a deliberate mid-stream client hang-up.
+
+    This is an expected adversarial outcome, not a server or transport error.
+    """
 
 
 class StreamingProviderProtocol(Protocol):
@@ -491,6 +499,12 @@ _ERROR_PRIORITY: tuple[type[BaseException], ...] = (
 )
 
 
+_ABORT_ERROR_PRIORITY: tuple[type[BaseException], ...] = (
+    _ClientAbort,
+    *_ERROR_PRIORITY,
+)
+
+
 def _map_error(exc: BaseException) -> tuple[int, str]:
     if isinstance(exc, StreamingTTSError):
         return 500, str(exc)
@@ -565,6 +579,20 @@ class StreamingTTSClient(BaseLLMClient):
             segment.n_tokens for segment in segments
         )
 
+        abort_config = self._streaming_config.abort
+        abort_input_after: int | None = None
+        abort_audio_ms: float | None = None
+        abort_wall_s: float | None = None
+        if abort_config.selects(session_id):
+            if abort_config.trigger == "input_fraction":
+                abort_input_after = max(
+                    1, math.ceil(abort_config.value * len(segments))
+                )
+            elif abort_config.trigger == "audio_ms":
+                abort_audio_ms = abort_config.value
+            elif abort_config.trigger == "wall_clock_s":
+                abort_wall_s = abort_config.value
+
         audio_chunks: list[bytes] = []
         audio_chunk_timestamps: list[list[float | int]] = []
         text_delta_timestamps: list[list[float | int]] = []
@@ -578,6 +606,8 @@ class StreamingTTSClient(BaseLLMClient):
         response_done_offset: float | None = None
         sample_rate = self._streaming_config.sample_rate
         sent_fired = False
+        aborted = False
+        stream_completed = asyncio.Event()
         start = time.monotonic()
 
         def fire_sent_once() -> None:
@@ -594,7 +624,7 @@ class StreamingTTSClient(BaseLLMClient):
             response_triggered = False
             sent_tokens = 0
 
-            for segment in segments:
+            for segment_idx, segment in enumerate(segments):
                 deadline += pacer.next_gap()
                 sleep_s = deadline - time.monotonic()
                 if sleep_s > 0:
@@ -622,6 +652,12 @@ class StreamingTTSClient(BaseLLMClient):
                         await websocket.send(trigger_message)
                     response_triggered = True
 
+                if (
+                    abort_input_after is not None
+                    and segment_idx + 1 >= abort_input_after
+                ):
+                    raise _ClientAbort()
+
             input_complete_offset = (time.monotonic() - start) * 1000
             if self._protocol.explicit_response_trigger and not response_triggered:
                 response_trigger_offset = (time.monotonic() - start) * 1000
@@ -635,6 +671,7 @@ class StreamingTTSClient(BaseLLMClient):
         async def recv_loop(websocket: ClientConnection) -> None:
             nonlocal ttfc, session_ready_offset, response_created_offset
             nonlocal audio_done_offset, response_done_offset, sample_rate
+            received_audio_ms = 0.0
             while True:
                 raw = await websocket.recv()
                 wire_offset_ms = (time.monotonic() - start) * 1000
@@ -666,11 +703,24 @@ class StreamingTTSClient(BaseLLMClient):
                     if response_created_offset is None:
                         response_created_offset = wire_offset_ms
                     fire_sent_once()
+                    if abort_audio_ms is not None:
+                        received_audio_ms += pcm_bytes_to_duration_ms(
+                            len(event.audio), sample_rate
+                        )
+                        if received_audio_ms >= abort_audio_ms:
+                            raise _ClientAbort()
                 if event.audio_done and audio_done_offset is None:
                     audio_done_offset = wire_offset_ms
                 if event.terminal:
                     response_done_offset = wire_offset_ms
+                    stream_completed.set()
                     return
+
+        async def abort_watchdog(delay_s: float) -> None:
+            try:
+                await asyncio.wait_for(stream_completed.wait(), timeout=delay_s)
+            except TimeoutError as error:
+                raise _ClientAbort() from error
 
         error_code: int | None = None
         error_msg: str | None = None
@@ -687,15 +737,29 @@ class StreamingTTSClient(BaseLLMClient):
                     async with asyncio.TaskGroup() as task_group:
                         task_group.create_task(send_loop(websocket))
                         task_group.create_task(recv_loop(websocket))
+                        if abort_wall_s is not None:
+                            task_group.create_task(abort_watchdog(abort_wall_s))
         except Exception as exc:
-            flattened = flatten_ws_exception(exc, _ERROR_PRIORITY)
-            error_code, error_msg = _map_error(flattened)
-            logger.warning(
-                "%s streaming TTS error: (%s) %s",
-                self._protocol.provider,
-                error_code,
-                error_msg,
-            )
+            flattened = flatten_ws_exception(exc, _ABORT_ERROR_PRIORITY)
+            if isinstance(flattened, _ClientAbort):
+                aborted = True
+                logger.debug(
+                    "%s streaming TTS request_id=%d session_id=%d aborted "
+                    "mid-stream (trigger=%s value=%s)",
+                    self._protocol.provider,
+                    request.id,
+                    session_id,
+                    abort_config.trigger,
+                    abort_config.value,
+                )
+            else:
+                error_code, error_msg = _map_error(flattened)
+                logger.warning(
+                    "%s streaming TTS error: (%s) %s",
+                    self._protocol.provider,
+                    error_code,
+                    error_msg,
+                )
 
         completed_at = time.monotonic()
         latency_ms = (completed_at - start) * 1000
@@ -715,6 +779,7 @@ class StreamingTTSClient(BaseLLMClient):
             AudioMetricKey.INPUT_CHARS.value: len(input_text),
             AudioMetricKey.INPUT_TOKENS.value: input_tokens,
             AudioMetricKey.INPUT_TEXT.value: input_text,
+            AudioMetricKey.ABORTED.value: aborted,
             AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value: text_delta_timestamps,
             AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value: audio_chunk_timestamps,
             AudioMetricKey.WS_CONNECT_LATENCY_MS.value: _round_ms(ws_connect_latency),
@@ -737,7 +802,7 @@ class StreamingTTSClient(BaseLLMClient):
         }
 
         channels: dict[ChannelModality, ChannelResponse] = {}
-        if success or audio_chunks or text_delta_timestamps:
+        if success or audio_chunks or text_delta_timestamps or aborted:
             channels[ChannelModality.AUDIO] = ChannelResponse(
                 modality=ChannelModality.AUDIO,
                 content=b"".join(audio_chunks),

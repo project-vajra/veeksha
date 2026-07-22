@@ -4,7 +4,7 @@
 
 This branch is the feature-complete reconciliation of:
 
-- `users/anirudha/tts_v2` at `60a181f9279410b23eab1a7ced0ae9131c349c1e`
+- `users/anirudha/tts_v2` at `30e11b222dc42d881818fef50045ca6f7e1809d9`
 - `asmitks:users/asmitks/tts-duplex-fluidity` at `94a015cc7acd07c68185a7ccde244ebebf2dc604`, reviewed as [project-vajra/veeksha#203](https://github.com/project-vajra/veeksha/pull/203)
 - destination: `users/ksukrit/universal_voice`
 
@@ -16,13 +16,14 @@ Both source tips have the exact same parent baseline,
 not between two drifting repositories: it is two independent feature series
 built on the same ASR/TTS baseline.
 
-The destination was built from the `tts_v2` tip and merged with the PR 203
-tip using a two-parent merge. Source commits and attribution remain in history;
-nothing was squashed.
+The destination was initially built from `tts_v2` at `60a181f9` and merged
+with the PR 203 tip using a two-parent merge. Those initial source commits and
+attribution remain in history. The follow-up `30e11b22` was reconciled after
+client consolidation and is documented at the end of this log.
 
 | Source series | Commits after common base | Diff from common base |
 | --- | --- | --- |
-| `users/anirudha/tts_v2` | 4 | 20 files, +3,780 / -84 |
+| `users/anirudha/tts_v2` | 5 | 21 files, +4,179 / -97 |
 | PR 203 / `users/asmitks/tts-duplex-fluidity` | 2 | 34 files, +3,263 / -45 |
 
 ### Source commit inventory
@@ -33,6 +34,7 @@ nothing was squashed.
 2. `d4bb354e` - silent duration-at-cap truncation detection
 3. `34023715` - zombie-session health check using Vajra worker telemetry
 4. `60a181f9` - position-resolved long-form TTS scoring CLI
+5. `30e11b22` - deterministic mid-stream abort injection for the host-tail canary
 
 PR 203:
 
@@ -103,6 +105,7 @@ All of these capabilities are included in the destination.
 | Feature | Implementation and evidence | Verification |
 | --- | --- | --- |
 | Native Vajra streaming-text TTS | `VajraTTSStreamClient` uses `/v1/audio/speech/stream`; sends `session.config`, paced `input.text` events, then `input.done`; receives binary PCM plus `audio.start`, `audio.done`, and `session.done` | Code and unit verified |
+| Mid-stream abort canary | Deterministically selected Vajra sessions hang up by input fraction, received-audio duration, or wall-clock time; aborted requests are bucketed separately and excluded from server-quality aggregates | Code and unit verified; live Vajra canary required |
 | Silent server-cap truncation detection | `AudioChannelPerformanceConfig.max_expected_audio_ms` validates a positive cap; requests within 320 ms of the cap are marked `suspected_length_cap_truncation`; health fails when marked requests exist | Code and unit verified |
 | Vajra zombie-session detection | Start/end snapshots of `/debug/tts_worker_stats` compare talker finished-session deltas with benchmark completions; surplus fails, deficit is noted, missing/unavailable telemetry skips | Code and unit verified; live Vajra telemetry required |
 | Long-form TTS scoring CLI | `veeksha score-tts-longform` accepts WAV or raw PCM and writes `summary.json`, `curves.csv`, and `report.txt` | Code and unit verified |
@@ -332,8 +335,8 @@ contract.
 
 | Check | Result |
 | --- | --- |
-| Exact common ancestor and source SHAs | PASS |
-| Two-parent merge topology retained | PASS: both source tips are parents of the reconciliation merge commit |
+| Common ancestor, initial source SHAs, and follow-up source SHA | PASS |
+| Initial two-parent topology retained | PASS: `60a181f9` and `94a015cc` are parents of the reconciliation merge; `30e11b22` is the post-consolidation follow-up documented below |
 | Unresolved conflict markers | PASS |
 | `git diff --check` | PASS |
 | Python compile check for reconciliation edits | PASS |
@@ -364,3 +367,54 @@ contract.
 - Provider protocol adapters are covered with deterministic fake
   HTTP/WebSocket tests. A release using external providers should still run a
   credentialed smoke test against each selected provider/model.
+
+## Follow-up integration: adversarial mid-stream abort injection
+
+Source commit: `30e11b222dc42d881818fef50045ca6f7e1809d9` (parent
+`60a181f9279410b23eab1a7ced0ae9131c349c1e`). Integration date:
+2026-07-21.
+
+### Integrated behavior
+
+- `TTSAbortConfig` is nested under the consolidated
+  `StreamingTTSClientConfig.abort` field. A positive abort fraction is
+  accepted only for `provider: vajra`, preserving the source capability
+  boundary without restoring a provider-specific public client or config.
+- Session selection is deterministic from `seed` and `session_id`; fractions
+  of zero and one select none and all sessions, respectively.
+- `input_fraction` closes after the configured fraction of paced text deltas
+  and before `input.done`; `audio_ms` closes after receiving the configured
+  PCM duration; `wall_clock_s` closes independently after the configured
+  request time so a stalled receive loop is still interrupted.
+- A deliberate `_ClientAbort` outranks transport errors emitted while the
+  task group unwinds. The request remains successful and exports
+  `AudioMetricKey.ABORTED`, including for a dataless early hang-up.
+- The audio evaluator exports the per-request abort flag and
+  `aborted_requests_count`, but excludes aborted requests from latency,
+  duration, RTF, chunk, token, aggregate-throughput, interactivity, fluidity,
+  stall, and length-cap-truncation aggregates.
+- The wall-clock watchdog was made terminal-aware during reconciliation: if
+  the provider completes before the abort deadline, the watchdog exits
+  immediately instead of waiting and falsely relabeling a completed request.
+
+### Reconciliation decisions
+
+| Source form | Destination decision |
+| --- | --- |
+| `VajraTTSStreamClientConfig.abort` | Place `abort` on the single public `StreamingTTSClientConfig`, with enabled use restricted to `provider: vajra` |
+| `veeksha/client/vajra_tts_stream.py` send/receive loops | Integrate all triggers into the shared lifecycle in `veeksha/client/streaming_tts.py`; no duplicate provider lifecycle restored |
+| Source wall-clock task always reached its deadline | End the watchdog when a terminal provider event arrives, preventing false aborts after normal completion |
+| Source evaluator abort bucket | Preserve it alongside provider identity, playable-frame, duplex, fluidity, stall, ASR, and truncation metrics already present in the consolidated evaluator |
+
+### Follow-up verification
+
+| Check | Result |
+| --- | --- |
+| Abort client/config and evaluator task suites | PASS: 36 passed, 0 failed, 0 skipped |
+| Unified provider/config and audio-interactivity suites | PASS: 34 passed, 0 failed, 0 skipped |
+| Full repository unit suite | PASS: 453 passed with the two unchanged localhost port-allocation tests deselected; the unfiltered run was 453/455 with only the known occupied-port failures |
+| Formatter and import checks | PASS: Black, isort, and autoflake on all six changed Python files |
+| Static analysis | PASS: Pyright reported 0 errors, warnings, or information diagnostics on the four changed implementation modules |
+| Python compile check | PASS |
+| `git diff --check` | PASS |
+| Live Vajra abort/slot-reclaim/staging-teardown canary | NOT RUN: requires a deployed Vajra TTS endpoint and worker telemetry |

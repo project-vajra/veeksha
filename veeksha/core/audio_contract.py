@@ -38,6 +38,7 @@ class AudioMetricKey(StrEnum):
     PROVIDER_PROTOCOL = "provider_protocol"
     SESSION_SIZE = "session_size"
     SESSION_DURATION = "session_duration"
+    ABORTED = "aborted"
 
     # ----- Realtime input-streaming interactivity keys -----
     # Time convention for all realtime event-time values below: every *_offset_ms
