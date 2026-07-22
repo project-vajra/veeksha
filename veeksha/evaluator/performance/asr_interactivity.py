@@ -70,12 +70,15 @@ def compute_interactivity_stats(
         token_ids.setdefault(token, len(token_ids)) for token in reference_tokens
     ]
 
-    matcher = difflib.SequenceMatcher(autojunk=False)
-    matcher.set_seq1(reference_token_ids)
+    matcher = difflib.SequenceMatcher[int](
+        a=reference_token_ids,
+        b=[],
+        autojunk=False,
+    )
 
     previous_transcript: Optional[str] = None
-    previous_hypothesis_ids: Optional[list[int]] = None
-    previous_blocks: Optional[list[difflib.Match]] = None
+    previous_hypothesis_ids: list[int] = []
+    previous_blocks: list[difflib.Match] = []
 
     for snapshot in sorted(snapshots, key=lambda item: item.elapsed_ms):
         # Streaming partials often repeat the previous transcript (or reduce

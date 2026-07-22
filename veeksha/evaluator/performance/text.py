@@ -1009,6 +1009,7 @@ class TextPerformanceEvaluator:
 
         try:
             import rekha as rk  # type: ignore[import-not-found]
+
             from veeksha.evaluator.plot_utils import (
                 apply_axis_scale,
                 format_axis_label,

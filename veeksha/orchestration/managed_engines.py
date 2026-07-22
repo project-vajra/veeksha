@@ -1,4 +1,4 @@
-"""Managed server lifecycle runners for orchestrated Veeksha sweeps."""
+"""Managed server lifecycle runners for Veeksha benchmarks."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import IO, Optional
+from typing import IO, Generic, Optional, TypeVar
 
 import requests
 
@@ -26,19 +26,25 @@ from veeksha.orchestration.server_manager import BaseServerManager
 
 _ENGINE_DETAILS_FILENAME = "engine_details.json"
 
+ManagedConfigT = TypeVar("ManagedConfigT", bound=ManagedServerConfig)
+DockerConfigT = TypeVar(
+    "DockerConfigT",
+    bound=VllmServerConfig | SglangServerConfig,
+)
+
 
 class EngineError(RuntimeError):
     """Base engine lifecycle error."""
 
 
-class EngineRestartLimitExceeded(EngineError):
-    """Raised when the configured restart budget is exhausted."""
-
-
-class BaseEngineRunner(BaseServerManager, ABC):
+class BaseEngineRunner(
+    BaseServerManager[ManagedConfigT],
+    ABC,
+    Generic[ManagedConfigT],
+):
     def __init__(
         self,
-        config: ManagedServerConfig,
+        config: ManagedConfigT,
         output_dir: str | Path,
         *,
         terminator: Optional[ProcessTerminator] = None,
@@ -102,7 +108,7 @@ class BaseEngineRunner(BaseServerManager, ABC):
         except requests.RequestException:
             return False
 
-    def wait_for_ready(self, timeout: Optional[int] = None) -> bool:
+    def wait_for_ready(self, timeout: Optional[float] = None) -> bool:
         try:
             self._wait_for_ready_or_raise(timeout=timeout)
         except (EngineError, TimeoutError):
@@ -125,19 +131,6 @@ class BaseEngineRunner(BaseServerManager, ABC):
             + self.tail_logs()
         )
 
-    def restart(self) -> None:
-        if self.restart_count >= self.config.max_restarts:
-            raise EngineRestartLimitExceeded(
-                f"engine restart budget exhausted ({self.config.max_restarts})"
-            )
-        self.restart_count += 1
-        self.stop()
-        self.start()
-
-    def reset_restart_budget(self) -> None:
-        """Reset the restart counter so ``max_restarts`` applies per sweep run."""
-        self.restart_count = 0
-
     def _write_engine_details(self, payload: dict[str, object]) -> Path:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         path = self.output_dir / _ENGINE_DETAILS_FILENAME
@@ -152,7 +145,7 @@ class BaseEngineRunner(BaseServerManager, ABC):
         return path
 
 
-class VajraSubprocessRunner(BaseEngineRunner):
+class VajraSubprocessRunner(BaseEngineRunner[VajraServerConfig]):
     def __init__(
         self,
         config: VajraServerConfig,
@@ -161,7 +154,6 @@ class VajraSubprocessRunner(BaseEngineRunner):
         terminator: Optional[ProcessTerminator] = None,
     ):
         super().__init__(config, output_dir, terminator=terminator)
-        self.config = config
         self._process: Optional[subprocess.Popen] = None
         self._stdout_file: Optional[IO[str]] = None
         self._stderr_file: Optional[IO[str]] = None
@@ -280,16 +272,18 @@ class VajraSubprocessRunner(BaseEngineRunner):
         }
 
 
-class VllmOmniDockerRunner(BaseEngineRunner):
+class VllmOmniDockerRunner(
+    BaseEngineRunner[DockerConfigT],
+    Generic[DockerConfigT],
+):
     def __init__(
         self,
-        config: VllmServerConfig | SglangServerConfig,
+        config: DockerConfigT,
         output_dir: str | Path,
         *,
         terminator: Optional[ProcessTerminator] = None,
     ):
         super().__init__(config, output_dir, terminator=terminator)
-        self.config = config
         self._container_name = _unique_container_name(config.container_name_prefix)
         self._container_id: Optional[str] = None
         self._log_process: Optional[subprocess.Popen] = None
@@ -515,7 +509,7 @@ class VllmOmniDockerRunner(BaseEngineRunner):
         return value
 
 
-class SglangOmniDockerRunner(VllmOmniDockerRunner):
+class SglangOmniDockerRunner(VllmOmniDockerRunner[SglangServerConfig]):
     """Runs sglang-omni's OpenAI-compatible server in a Docker container.
 
     Differences from the vLLM Omni runner:
@@ -538,7 +532,6 @@ class SglangOmniDockerRunner(VllmOmniDockerRunner):
         terminator: Optional[ProcessTerminator] = None,
     ):
         super().__init__(config, output_dir, terminator=terminator)
-        self.config = config
 
     def _log_prefix(self) -> str:
         return "sglang_docker"
@@ -580,16 +573,3 @@ class SglangOmniDockerRunner(VllmOmniDockerRunner):
 
 def _unique_container_name(prefix: str) -> str:
     return f"{prefix}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
-
-
-def create_engine_runner(
-    config: ManagedServerConfig, output_dir: str | Path
-) -> BaseEngineRunner:
-    from veeksha.orchestration.registry import ServerManagerRegistry
-
-    manager = ServerManagerRegistry.get(
-        config.get_type(), config=config, output_dir=str(output_dir)
-    )
-    if not isinstance(manager, BaseEngineRunner):
-        raise EngineError(f"unsupported engine manager: {type(manager).__name__}")
-    return manager

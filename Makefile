@@ -19,7 +19,7 @@ lint/pyright: ## run type checking
 	pyright
 
 lint/codespell:
-	codespell --skip './env/**,./docs/_build/**,./veeksha.egg-info/**,./test_output/**,./benchmark_results/**,./build/**,./wandb/**' -L inout
+	codespell --skip './env/**,./docs/_build/**,./veeksha.egg-info/**,./test_output/**,./benchmark_results/**,./build/**,./wandb/**,./veeksha/evaluator/performance/asr_normalizer/english_abbreviations.py' -L inout
 
 lint: lint/isort lint/black lint/autoflake lint/codespell lint/pyright	## check style
 

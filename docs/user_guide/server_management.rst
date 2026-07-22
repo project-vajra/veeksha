@@ -11,8 +11,9 @@ Supported servers
 
 Veeksha currently supports:
 
-- **SGLang**
-- **vLLM**
+- **vLLM Omni** in Docker
+- **SGLang Omni** in Docker
+- **Vajra** as a subprocess from a separate source checkout and environment
 
 
 Basic configuration
@@ -23,75 +24,128 @@ Add a ``server`` section to your benchmark config:
 .. code-block:: yaml
 
     server:
-      type: sglang            # or vllm
-      env_path: sglang_env    # Python environment with server installed
-      model: meta-llama/Llama-3-8B-Instruct
+      type: vllm
+      image: vllm-omni:0.21-local
+      hf_model: meta-llama/Llama-3.2-1B-Instruct
+      deploy_config: /absolute/path/to/vllm_omni_deploy.yaml
+      bootstrap: ""
+      docker_gpus: all
       host: localhost
       port: 30000
 
-    # Client settings are automatically configured by the server
+    # Model, API base, and key are supplied by the managed endpoint.
     client:
       type: openai_chat_completions
       request_timeout: 120
 
-When ``server`` is configured:
+When ``server`` is configured, Veeksha starts it, waits for health, applies
+``client.api_base``, ``client.model``, and ``client.api_key``, runs the
+benchmark, and always shuts the server down.
 
-1. Veeksha launches the server before the benchmark
-2. Waits for the server to be healthy
-3. Automatically sets ``client.api_base``, ``client.model``, and ``client.api_key``
-4. Runs the benchmark
-5. Shuts down the server when complete
+For a ``!expand`` sweep, resolved benchmark configs are grouped by their
+complete ``server`` config. One server is reused by every run in a group.
+Expanding any server field creates a separate group and lifecycle.
 
 
 Server configuration options
 ----------------------------
 
-All server types share these common options:
+All server types share network, endpoint, startup, and GPU allocation fields:
+
+.. code-block:: yaml
+
+    server:
+      type: vllm
+      model: served-model
+      host: localhost
+      port: 30000
+      api_key: token-abc123
+      gpu_ids: [0, 1]
+      tensor_parallel_size: 2
+      require_contiguous_gpus: true
+      startup_timeout: 300
+      health_check_interval: 2.0
+      health_url: null
+
+``gpu_ids``
+    Explicit host GPU IDs. If omitted, Veeksha allocates
+    ``tensor_parallel_size`` GPUs. Docker configs can instead set
+    ``docker_gpus`` to an argument accepted by ``docker run --gpus``, such as
+    ``all`` or ``device=0,1``.
+
+``model``
+    Model name written into the endpoint and applied to the client. It
+    defaults to ``hf_model`` for vLLM and to ``model_name`` or ``model_path``
+    for SGLang.
+
+vLLM Omni container
+~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: yaml
+
+    server:
+      type: vllm
+      image: vllm-omni:0.21-local
+      hf_model: meta-llama/Llama-3.2-1B-Instruct
+      deploy_config: /absolute/path/to/vllm_omni_deploy.yaml
+      container_deploy_config: /etc/vllm-omni/deploy.yaml  # optional
+      docker_gpus: all
+      engine_args:
+        - --trust-remote-code
+      env:
+        HF_TOKEN: token-value
+      pass_env: []
+      volumes: []
+
+``deploy_config`` must be a host file. Veeksha mounts it read-only into the
+container and passes the container path to ``vllm serve --deploy-config``.
+
+SGLang Omni container
+~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: yaml
 
     server:
       type: sglang
-      env_path: /path/to/sglang_env    # Python environment
-      model: meta-llama/Llama-3-8B-Instruct
+      image: frankleeeee/sglang-omni:dev
+      model_path: Qwen/Qwen2.5-Omni-7B
+      model_name: qwen-omni
+      deploy_config: /absolute/path/to/sglang_omni_deploy.yaml
+      source_dir: /absolute/path/to/sglang-omni
+      docker_gpus: all
+      shm_size: 32g
 
-      # Network settings
-      host: localhost
-      port: 30000
-      api_key: token-abc123            # Generated API key
+The default SGLang bootstrap mounts ``source_dir``, creates a container-local
+virtual environment, and installs SGLang Omni before serving. For an image that
+already contains ``sgl-omni``, set ``bootstrap: ""``; then ``source_dir`` is
+not required.
 
-      # GPU configuration
-      gpu_ids: [0, 1]                  # Specific GPUs (null = auto-assign)
-      tensor_parallel_size: 2          # Number of GPUs for TP
-      require_contiguous_gpus: true    # Require consecutive GPU IDs
+Vajra subprocess
+~~~~~~~~~~~~~~~~
 
-      # Model settings
-      dtype: auto                      # float16, bfloat16, or auto
-      max_model_len: 8192              # Maximum context length
+.. code-block:: yaml
 
-      # Startup settings
-      startup_timeout: 300             # Seconds to wait for server
-      health_check_interval: 2.0       # Seconds between health checks
+    server:
+      type: vajra
+      model: served-model
+      setup_dir: /absolute/path/to/vajra
+      command:
+        - /absolute/path/to/vajra/env/bin/python
+        - -m
+        - vajra.entrypoints.api_server.server
+        - --port
+        - "30000"
 
-      # Additional server arguments
-      additional_args: '{"enable_prefix_caching": true}'
-
-``env_path``
-    Path to a Python virtual environment or conda environment containing
-    the server installation. Can be relative or absolute.
-
-``gpu_ids``
-    Explicit list of GPU IDs to use. If ``null``, GPUs are auto-assigned
-    based on availability and ``tensor_parallel_size``.
-
-``additional_args``
-    JSON string or dict of extra arguments passed to the server command.
+The interpreter must be the Vajra environment's absolute Python path. Veeksha
+records the source checkout's current Git commit with the benchmark artifacts.
 
 
 GPU resource management
 -----------------------
 
-Veeksha includes a resource manager for multi-GPU systems:
+Veeksha includes a resource manager for multi-GPU systems. The snippets below
+show only allocation fields; combine them with the required engine fields from
+the container examples above.
 
 **Auto-assignment**
 
@@ -127,15 +181,19 @@ The resource manager finds 4 contiguous available GPUs.
 Server logs
 -----------
 
-Server stdout/stderr are written to the benchmark output directory:
+Container logs and reproducibility details are written under the output
+directory used for that lifecycle:
 
 .. code-block:: text
 
-    benchmark_output/09:01:2026-10:30:00-abc123/
-    ├── server_logs_sglang_localhost_30000_20260109-110406.log
+    benchmark_output/sweep_.../
+    ├── managed_server_01/
+    │   ├── engine_details.json
+    │   └── vllm_docker_1.log
+    ├── <benchmark-run>/
     └── ...
 
-This is useful for debugging server issues.
+``engine_details.json`` records the image, image hash, container ID, and name.
 
 
 Example: Full managed benchmark
@@ -148,13 +206,14 @@ Example: Full managed benchmark
     output_dir: benchmark_output
 
     server:
-      type: sglang
-      env_path: ~/envs/sglang
-      model: meta-llama/Llama-3-8B-Instruct
+      type: vllm
+      image: vllm-omni:0.21-local
+      hf_model: meta-llama/Llama-3.2-1B-Instruct
+      deploy_config: /absolute/path/to/vllm_omni_deploy.yaml
+      bootstrap: ""
+      docker_gpus: all
       host: localhost
       port: 30000
-      tensor_parallel_size: 1
-      max_model_len: 8192
       startup_timeout: 300
 
     client:
@@ -229,18 +288,22 @@ Create a base config and run with different servers:
 
 .. code-block:: bash
 
-    # Run with vLLM
+    # Run with vLLM Omni
     uvx -p 3.14t veeksha benchmark \
         --config base_config.yml \
         --server.type vllm \
-        --server.env_path vllm_env \
-        --server.model meta-llama/Llama-3.2-1B-Instruct \
+        --server.image vllm-omni:0.21-local \
+        --server.hf_model meta-llama/Llama-3.2-1B-Instruct \
+        --server.deploy_config /path/to/vllm_deploy.yaml \
+        --server.docker_gpus all \
         --output_dir results/vllm
 
-    # Run with SGLang
+    # Run with a pre-baked SGLang Omni image
     uvx -p 3.14t veeksha benchmark \
         --config base_config.yml \
         --server.type sglang \
-        --server.env_path sglang_env \
-        --server.model meta-llama/Llama-3-8B-Instruct \
+        --server.model_path Qwen/Qwen2.5-Omni-7B \
+        --server.deploy_config /path/to/sglang_deploy.yaml \
+        --server.bootstrap "" \
+        --server.docker_gpus all \
         --output_dir results/sglang

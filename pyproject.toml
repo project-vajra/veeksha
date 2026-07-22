@@ -49,7 +49,6 @@ dependencies = [
 
 [project.scripts]
 veeksha = "veeksha.__main__:main"
-"veeksha-launcher" = "veeksha.launcher:main"
 
 [project.urls]
 Homepage = "https://github.com/project-vajra/veeksha"
@@ -96,6 +95,7 @@ veeksha = [
     "data/corpus.txt",
     "dashboard/templates/*",
     "dashboard/static/*",
+    "sample_configs/*.yml",
 ]
 
 [tool.setuptools_scm]

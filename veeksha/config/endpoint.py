@@ -1,6 +1,4 @@
-"""Inference endpoint contract shared by launchers and benchmarks."""
-
-from __future__ import annotations
+"""Inference endpoint contract shared by managed servers and benchmarks."""
 
 from dataclasses import asdict, fields, replace
 from typing import Any, Optional

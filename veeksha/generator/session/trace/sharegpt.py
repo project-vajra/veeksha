@@ -24,6 +24,7 @@ from veeksha.generator.session.trace.base_flavor import (
     TraceFlavorGeneratorBase,
 )
 from veeksha.logger import init_logger
+from veeksha.types import ChannelModality
 
 logger = init_logger(__name__)
 
@@ -159,8 +160,6 @@ class ShareGPTTraceFlavorGenerator(TraceFlavorGeneratorBase):
         self.flavor_config = flavor_config
         self.seed_manager = seed_manager
         self.tokenizer_provider = tokenizer_provider
-        from veeksha.types import ChannelModality
-
         self.tokenizer = tokenizer_provider.for_modality(ChannelModality.TEXT)
 
         if not os.path.exists(config.trace_file):
@@ -250,6 +249,6 @@ class ShareGPTTraceFlavorGenerator(TraceFlavorGeneratorBase):
     def wrap(self) -> pd.DataFrame:
         """Wrap trace for new epoch with shuffled session order."""
         df = self.trace_df.copy()
-        max_sid = int(df["session_id"].max()) if not df.empty else 0
+        max_sid = int(df["session_id"].to_numpy().max()) if not df.empty else 0
         df["session_id"] = df["session_id"] + max_sid + 1
         return self._shuffle_sessions(df)

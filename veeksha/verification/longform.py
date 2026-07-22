@@ -220,9 +220,8 @@ class FasterWhisperChunkTranscriber:
     """
 
     def __init__(self, config: LongformAsrConfig):
-        from faster_whisper import WhisperModel
-
-        self._model = WhisperModel(
+        whisper_model_class = import_module("faster_whisper").WhisperModel
+        self._model = whisper_model_class(
             config.model,
             device=config.device,
             compute_type=config.compute_type,

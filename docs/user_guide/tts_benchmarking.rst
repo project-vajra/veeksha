@@ -166,83 +166,16 @@ Run a benchmark
 This complete example uses the Seed-TTS text trace and ElevenLabs streaming.
 Set ``ELEVENLABS_API_KEY`` in the environment and replace ``voice_id``.
 
-.. code-block:: yaml
-
-    seed: 42
-    output_dir: benchmark_output/tts_elevenlabs_streaming
-
-    client:
-      type: streaming_tts
-      provider: elevenlabs
-      api_base: https://api.elevenlabs.io
-      model: eleven_flash_v2_5
-      voice_id: YOUR_VOICE_ID
-      api_key_env: ELEVENLABS_API_KEY
-      sample_rate: 24000
-      pacing:
-        tokens_per_second: 20
-        tokens_per_delta: 1
-        gap_distribution: fixed
-
-    session_generator:
-      type: trace
-      wrap_mode: false
-      flavor:
-        type: seed_tts_text
-        min_tokens: 20
-        max_tokens: 150
-
-    traffic_scheduler:
-      type: concurrent
-      target_concurrent_sessions: 1
-      rampup_seconds: 0
-
-    evaluators:
-      - type: performance
-        target_channels: [audio]
-        audio_channel:
-          interactivity_enabled: true
-          fluidity_frame_ms: 20
-          fluidity_startup_delay_ms: 0
-          startup_delay_ms_values: [0, 100, 300]
-          fluidity_attribution_mode: conservative
-          persist_raw_timing: true
-        slos:
-          - type: constant
-            name: P90 trigger-to-first-playable audio under 1 second
-            metric: trigger_to_first_playable_audio_ms
-            percentile: 0.90
-            value: 1000
-          - type: constant
-            name: P1 user fluidity at least 0.99
-            metric: user_audio_fluidity_index
-            percentile: 0.01
-            value: 0.99
-      - type: audio_quality
-        target_channels: [audio]
-        save_audio_files: true
-        verification:
-          wer:
-            enabled: true
-            threshold: 0.05
-            whisper:
-              model: large-v3
-              device: cpu
-              compute_type: int8
-              language: en
-              beam_size: 5
-          utmos:
-            enabled: false
-
-    runtime:
-      max_sessions: 100
-      benchmark_timeout: 1800
+.. literalinclude:: ../../veeksha/sample_configs/tts_streaming_elevenlabs.yml
+   :language: yaml
+   :caption: veeksha/sample_configs/tts_streaming_elevenlabs.yml
 
 Run it with:
 
 .. code-block:: console
 
-    uvx -p 3.14t veeksha benchmark --config tts_benchmark.veeksha.yml
+    uvx -p 3.14t veeksha benchmark \
+      --config veeksha/sample_configs/tts_streaming_elevenlabs.yml
 
 WER requires the optional ``audio-verification`` dependencies (including
 faster-whisper). UTMOS requires its corresponding optional dependency group.
@@ -310,6 +243,68 @@ special eight-token protocol rule.
 Keep the trace seed, input texts, pacing, PCM format, region, concurrency sweep,
 and retry policy identical across providers. Report request failures and rate
 limits rather than silently retrying them away.
+
+Adversarial abort testing
+-------------------------
+
+Vajra's native streaming provider can deliberately disconnect a deterministic
+fraction of sessions partway through synthesis. This exercises server-side
+abort, slot-reclamation, and staging teardown under load:
+
+.. code-block:: yaml
+
+    client:
+      type: streaming_tts
+      provider: vajra
+      api_base: http://localhost:8003
+      model: your-vajra-tts-model
+      abort:
+        fraction: 0.1
+        trigger: audio_ms
+        value: 1000
+        seed: 1234
+
+``trigger`` accepts ``audio_ms``, ``input_fraction``, or ``wall_clock_s``;
+``value`` uses milliseconds, a fraction in ``(0, 1]``, or seconds,
+respectively. Selection is deterministic for a given ``seed`` and session ID.
+Abort injection is rejected for non-Vajra providers.
+
+Intentionally aborted requests remain visible in request-level output and in
+``aborted_requests_count``. They are excluded from normal audio latency,
+duration, RTF, fluidity, and audio-throughput aggregates because their output is
+partial by construction.
+
+Health boundaries and live validation
+-------------------------------------
+
+If the server has a known output-length cap, set
+``evaluators[].audio_channel.max_expected_audio_ms``. A non-aborted TTS request
+whose generated audio reaches that duration, within one 320 ms codec chunk, is
+reported as suspected length-cap truncation. For example:
+
+.. code-block:: yaml
+
+    evaluators:
+      - type: performance
+        target_channels: [audio]
+        audio_channel:
+          max_expected_audio_ms: 163840
+
+Vajra zombie-session accounting is enabled only when the benchmark has a Vajra
+``endpoint`` with ``health_url`` configured. The server must expose
+``/debug/tts_worker_stats`` and run with ``VAJRA_TTS_TELEMETRY_DIR`` set.
+Veeksha snapshots cumulative Talker completion counters before and after the
+run and compares their delta with benchmark completions. A positive surplus
+means disconnected clients left server-side work running during the measured
+window. Missing or disabled telemetry is reported as a skipped health check,
+not silently treated as measured evidence.
+
+Offline tests cover configuration, protocol state machines, abort behavior, and
+metric accounting. They cannot validate live provider availability,
+credential scope, regional routing, rate limits, billed cost, or vendor-side
+model changes. Run credentialed smoke tests before publishing cross-provider
+results, keep provider secrets in environment variables, and record region,
+model identifier, pricing date, and retry policy with the result.
 
 Outputs
 -------

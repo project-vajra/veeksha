@@ -19,11 +19,10 @@ warnings.filterwarnings(
     "ignore", message=".*global interpreter lock.*", category=RuntimeWarning
 )
 
-from vidhi import parse_cli_sweep
-
 from veeksha.capacity_search import run_capacity_search
 from veeksha.cli.base import VeekshaCommand
 from veeksha.cli.benchmarks import run_cli as run_benchmark
+from veeksha.cli.parsing import parse_cli_sweep
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.config.score_tts_longform import ScoreTtsLongformConfig

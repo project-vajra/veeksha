@@ -21,7 +21,10 @@ from veeksha.config.generator.session import (
     TraceSessionGeneratorConfig,
 )
 from veeksha.core.request import Request
-from veeksha.core.request_content import AudioChannelRequestContent
+from veeksha.core.request_content import (
+    AudioChannelRequestContent,
+    BaseChannelRequestContent,
+)
 from veeksha.core.seeding import SeedManager
 from veeksha.core.session import Session
 from veeksha.core.tokenizer import TokenizerProvider
@@ -63,10 +66,11 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
         # Ground truth is mandatory; fail at load, not silently per request.
         col = self.trace_df["expected_transcript"]
         missing = col.isna() | (col.astype(str).str.strip() == "")
-        if missing.any():
+        missing_count = int(np.count_nonzero(missing.to_numpy()))
+        if missing_count:
             examples = self.trace_df.loc[missing, "audio_file"].head(3).tolist()
             raise ValueError(
-                f"{int(missing.sum())} audio trace row(s) missing "
+                f"{missing_count} audio trace row(s) missing "
                 f"expected_transcript (e.g. {examples})."
             )
 
@@ -80,10 +84,11 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
             lambda p: p if os.path.isabs(str(p)) else os.path.join(audio_base, str(p))
         )
         missing_audio = ~self.trace_df["audio_file"].apply(os.path.exists)
-        if missing_audio.any():
+        missing_audio_count = int(np.count_nonzero(missing_audio.to_numpy()))
+        if missing_audio_count:
             examples = self.trace_df.loc[missing_audio, "audio_file"].head(3).tolist()
             raise FileNotFoundError(
-                f"{int(missing_audio.sum())} audio trace file(s) missing "
+                f"{missing_audio_count} audio trace file(s) missing "
                 f"(e.g. {examples})."
             )
 
@@ -111,7 +116,7 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
         row = group.iloc[0]
         audio_file = str(row["audio_file"])
 
-        channels = {
+        channels: dict[ChannelModality, BaseChannelRequestContent] = {
             ChannelModality.AUDIO: AudioChannelRequestContent(
                 input_audio=audio_file,
             )
@@ -149,8 +154,15 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
             if column in {"session_id", "audio_file"}:
                 continue
             value = row[column]
-            if not isinstance(value, (dict, list)) and pd.isna(value):
-                continue
+            if not isinstance(value, (dict, list)):
+                is_missing = pd.isna(value)
+                if not isinstance(is_missing, (bool, np.bool_)):
+                    raise TypeError(
+                        f"Audio trace column {column!r} must contain scalar, "
+                        f"mapping, or list values; got {type(value).__name__}"
+                    )
+                if bool(is_missing):
+                    continue
             if isinstance(value, np.generic):
                 value = value.item()
             metadata[column] = value
@@ -237,6 +249,6 @@ class AudioTraceFlavorGenerator(TraceFlavorGeneratorBase):
     def wrap(self) -> pd.DataFrame:
         """Wrap trace for new epoch with shuffled session order."""
         df = self.trace_df.copy()
-        max_sid = int(df["session_id"].max()) if not df.empty else 0
+        max_sid = int(df["session_id"].to_numpy().max()) if not df.empty else 0
         df["session_id"] = df["session_id"] + max_sid + 1
         return self._shuffle_sessions(df)

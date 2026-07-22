@@ -13,11 +13,20 @@ import os
 import threading
 from abc import ABC
 from collections import defaultdict
+from importlib import import_module
 from typing import Any, Dict, Optional, Set, Tuple, cast
+
+from lm_eval.evaluator_utils import (  # pyright: ignore[reportMissingImports]  # type: ignore[import-not-found]
+    consolidate_group_results,
+    consolidate_results,
+    get_subtask_list,
+    prepare_print_tasks,
+)
 
 from veeksha.config.evaluator import BaseEvaluatorConfig, LMEvalAccuracyEvaluatorConfig
 from veeksha.core.seeding import SeedManager
 from veeksha.evaluator.base import BaseEvaluator, EvaluationResult
+from veeksha.generator.session.lmeval import LMEvalSessionGenerator
 from veeksha.logger import init_logger
 from veeksha.types import ChannelModality, LMEvalOutputType
 
@@ -62,8 +71,7 @@ class LMEvalAccuracyEvaluator(BaseAccuracyEvaluator):
             output_dir=output_dir,
             benchmark_start_time=benchmark_start_time,
         )
-
-        from veeksha.generator.session.lmeval import LMEvalSessionGenerator
+        self.config: LMEvalAccuracyEvaluatorConfig = config
 
         if not isinstance(session_generator, LMEvalSessionGenerator):
             raise ValueError(
@@ -269,13 +277,6 @@ class LMEvalAccuracyEvaluator(BaseAccuracyEvaluator):
         raise KeyError("Unsupported logprobs structure for completions response.")
 
     def _evaluate_lmeval(self) -> Dict[str, Any]:
-        from lm_eval.evaluator_utils import (  # pyright: ignore[reportMissingImports]  # type: ignore[import-not-found]
-            consolidate_group_results,
-            consolidate_results,
-            get_subtask_list,
-            prepare_print_tasks,
-        )
-
         # Bind generator-owned tasks and compute lm-eval metrics
         eval_tasks = self.session_generator.eval_tasks
         limits = self.session_generator.limits
@@ -409,11 +410,7 @@ class LMEvalAccuracyEvaluator(BaseAccuracyEvaluator):
     def _log_wandb_metrics(self) -> None:
         """Log lm-eval accuracy metrics to Weights & Biases (if a run is active)."""
         try:
-            from typing import Any as _Any
-
-            import wandb  # type: ignore[import-not-found]
-
-            wandb = cast(_Any, wandb)
+            wandb = cast(Any, import_module("wandb"))
             if not getattr(wandb, "run", None):
                 return
 
@@ -472,10 +469,8 @@ class LMEvalAccuracyEvaluator(BaseAccuracyEvaluator):
                 }
             )
 
-        except Exception as e:
-            from veeksha.logger import init_logger
-
-            init_logger(__name__).warning("Failed to log lm-eval wandb metrics: %s", e)
+        except Exception as error:
+            logger.warning("Failed to log lm-eval wandb metrics: %s", error)
 
     # ---------------------------------------------------------------------
     # Progress tracking

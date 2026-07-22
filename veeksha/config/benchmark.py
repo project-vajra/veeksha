@@ -1,8 +1,9 @@
 from typing import Optional
 
-from vidhi import field, frozen_dataclass, parse_cli_sweep
+from vidhi import field, frozen_dataclass
 
 from veeksha.cli.base import VeekshaCommand
+from veeksha.cli.parsing import parse_cli_sweep
 from veeksha.config.client import (
     BaseClientConfig,
     OpenAIChatCompletionsClientConfig,

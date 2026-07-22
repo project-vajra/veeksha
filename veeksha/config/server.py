@@ -1,8 +1,4 @@
-"""
-Server configuration for launcher-managed inference systems.
-"""
-
-from __future__ import annotations
+"""Server configuration for benchmark-managed inference systems."""
 
 import sys
 from pathlib import Path
@@ -70,7 +66,6 @@ class BaseServerConfig(BasePolyConfig):
     setup_dir: Optional[str] = field(
         None, help="Source checkout used by subprocess engines."
     )
-    max_restarts: int = field(3, help="Maximum server restarts per sweep run.")
 
     def __post_init__(self) -> None:
         if self.port <= 0:
@@ -79,8 +74,6 @@ class BaseServerConfig(BasePolyConfig):
             raise ValueError("server.startup_timeout must be positive")
         if self.health_check_interval <= 0:
             raise ValueError("server.health_check_interval must be positive")
-        if self.max_restarts < 0:
-            raise ValueError("server.max_restarts must be >= 0")
         if self.tensor_parallel_size <= 0:
             raise ValueError("server.tensor_parallel_size must be positive")
         if self.gpu_ids is not None and any(gpu_id < 0 for gpu_id in self.gpu_ids):
@@ -127,7 +120,7 @@ class BaseServerConfig(BasePolyConfig):
 
     @property
     def type(self) -> str:
-        """String discriminator used by launcher-compatible config payloads."""
+        """String discriminator used by benchmark config payloads."""
         return str(self.get_type())
 
     @property

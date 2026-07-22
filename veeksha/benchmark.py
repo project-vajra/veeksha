@@ -19,6 +19,7 @@ from veeksha.config.endpoint import EndpointConfig
 from veeksha.core.seeding import SeedManager
 from veeksha.core.thread_pool import ThreadPoolManager
 from veeksha.core.trace_recorder import TraceRecorder
+from veeksha.evaluator.base import EvaluationResult
 from veeksha.generator.session.registry import SessionGeneratorRegistry
 from veeksha.health import HealthChecker, maybe_build_tts_zombie_probe
 from veeksha.logger import init_logger
@@ -388,62 +389,67 @@ def _with_endpoint(
     )
 
 
+def _run_initialized_benchmark(
+    benchmark_config: BenchmarkConfig,
+) -> EvaluationResult:
+    maybe_init_wandb_run(benchmark_config, run_kind="benchmark")
+    try:
+        result = _run_benchmark(benchmark_config)
+        maybe_log_benchmark_scalars(benchmark_config.output_dir)
+        maybe_log_benchmark_artifacts(benchmark_config)
+        return result
+    finally:
+        maybe_finish_wandb_run(benchmark_config.output_dir)
+
+
+def run_benchmark_with_endpoint(
+    benchmark_config: BenchmarkConfig,
+    endpoint: EndpointConfig,
+) -> EvaluationResult:
+    """Run one benchmark against an endpoint managed by the caller."""
+    logger.info("Running benchmark with config:\n%s", benchmark_config)
+    _init_output_dir(benchmark_config)
+    return _run_initialized_benchmark(_with_endpoint(benchmark_config, endpoint))
+
+
 def manage_benchmark_run(
     benchmark_config: BenchmarkConfig,
-):
+) -> EvaluationResult:
     """Run a benchmark, handling optional server orchestration.
 
-    1. If server config exists: spin up server, update client config, run benchmark
-    2. If no server config: run benchmark directly
+    If a server config exists, launch it and apply its endpoint. Otherwise,
+    apply an explicit endpoint when configured and run directly.
 
     Args:
         benchmark_config: The benchmark configuration.
 
     Returns:
-        EvaluationResult from the evaluator.
+        Evaluation result from the configured evaluators.
     """
     logger.info("Running benchmark with config:\n%s", benchmark_config)
-
     _init_output_dir(benchmark_config)
 
     if benchmark_config.server is not None:
-        logger.info(f"Launching {benchmark_config.server.engine} server...")
-        updated_benchmark_config = None
-        result = None
-        try:
-            with managed_server(
-                benchmark_config.server, output_dir=benchmark_config.output_dir
-            ) as server_info:
-                endpoint = server_info["endpoint"]
-                logger.info(f"Server ready at {endpoint.api_base}")
+        logger.info("Launching %s server...", benchmark_config.server.engine)
+        with managed_server(
+            benchmark_config.server,
+            output_dir=benchmark_config.output_dir,
+        ) as server_info:
+            endpoint = server_info["endpoint"]
+            logger.info("Server ready at %s", endpoint.api_base)
+            try:
+                return _run_initialized_benchmark(
+                    _with_endpoint(benchmark_config, endpoint)
+                )
+            finally:
+                logger.info("Server shutting down...")
 
-                updated_benchmark_config = _with_endpoint(benchmark_config, endpoint)
-
-                maybe_init_wandb_run(updated_benchmark_config, run_kind="benchmark")
-                try:
-                    result = _run_benchmark(updated_benchmark_config)
-                finally:
-                    logger.info("Server shutting down...")
-
-            maybe_log_benchmark_scalars(updated_benchmark_config.output_dir)
-            maybe_log_benchmark_artifacts(updated_benchmark_config)
-            return result
-        finally:
-            if updated_benchmark_config is not None:
-                maybe_finish_wandb_run(updated_benchmark_config.output_dir)
-    else:
-        if benchmark_config.endpoint is not None:
-            benchmark_config = _with_endpoint(
-                benchmark_config, benchmark_config.endpoint
-            )
-        maybe_init_wandb_run(benchmark_config, run_kind="benchmark")
-        try:
-            result = _run_benchmark(benchmark_config)
-            maybe_log_benchmark_scalars(benchmark_config.output_dir)
-            maybe_log_benchmark_artifacts(benchmark_config)
-            return result
-        finally:
-            maybe_finish_wandb_run(benchmark_config.output_dir)
+    if benchmark_config.endpoint is not None:
+        benchmark_config = _with_endpoint(
+            benchmark_config,
+            benchmark_config.endpoint,
+        )
+    return _run_initialized_benchmark(benchmark_config)
 
 
 if __name__ == "__main__":

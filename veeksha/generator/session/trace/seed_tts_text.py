@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from importlib import import_module
 from pathlib import Path
 from typing import Any, List
 
+import numpy as np
 import pandas as pd
 
 from veeksha.config.generator.session import (
@@ -24,7 +26,7 @@ logger = init_logger(__name__)
 def _load_hf_dataset(flavor_config: SeedTTSTextTraceFlavorConfig) -> Any:
     """Load the Seed TTS text dataset from HF or a local compatible copy."""
     try:
-        import datasets
+        datasets = import_module("datasets")
     except ImportError as exc:
         raise ImportError(
             "SeedTTSTextTraceFlavorGenerator requires the 'datasets' package."
@@ -175,7 +177,13 @@ class SeedTTSTextTraceFlavorGenerator(TraceFlavorGeneratorBase):
 
         for source_index, row in raw_df.iterrows():
             value = row[text_col]
-            if pd.isna(value):
+            is_missing = pd.isna(value)
+            if not isinstance(is_missing, (bool, np.bool_)):
+                raise TypeError(
+                    f"Seed TTS text column {text_col!r} must contain scalar "
+                    f"values; got {type(value).__name__}"
+                )
+            if bool(is_missing):
                 skipped_empty += 1
                 continue
 
@@ -272,6 +280,6 @@ class SeedTTSTextTraceFlavorGenerator(TraceFlavorGeneratorBase):
 
     def wrap(self) -> pd.DataFrame:
         df = self.trace_df.copy()
-        max_sid = int(df["session_id"].max()) if not df.empty else 0
+        max_sid = int(df["session_id"].to_numpy().max()) if not df.empty else 0
         df["session_id"] = df["session_id"] + max_sid + 1
         return self._shuffle_sessions(df)

@@ -102,13 +102,13 @@ class LocalWhisperTranscriber:
         self.config = config
         whisper_config = config.wer.whisper
         try:
-            from faster_whisper import WhisperModel
-        except ImportError as exc:
+            whisper_model_class = import_module("faster_whisper").WhisperModel
+        except ModuleNotFoundError as exc:
             raise AudioVerificationError(
                 "WER verification requires faster-whisper. Install the audio-verification extra."
             ) from exc
 
-        self.model = WhisperModel(
+        self.model = whisper_model_class(
             whisper_config.model,
             device=whisper_config.device,
             compute_type=whisper_config.compute_type,

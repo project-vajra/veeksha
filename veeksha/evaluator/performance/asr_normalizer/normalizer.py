@@ -93,7 +93,7 @@ _symbol_only_table = _SymbolOnlyTable()
 
 def remove_symbols_and_diacritics(s: str, keep=""):
     """
-    Replace any other markers, symbols, and punctuations with a space, and drop any diacritics (category 'Mn' and some
+    Replace any other markers, symbols, and punctuation with a space, and drop any diacritics (category 'Mn' and some
     manual mappings)
     """
     table = _symbol_and_diacritic_tables.get(keep)
@@ -104,7 +104,7 @@ def remove_symbols_and_diacritics(s: str, keep=""):
 
 def remove_symbols(s: str):
     """
-    Replace any other markers, symbols, punctuations with a space, keeping diacritics
+    Replace any other markers, symbols, and punctuation with a space, keeping diacritics
     """
     return unicodedata.normalize("NFKC", s).translate(_symbol_only_table)
 
@@ -144,7 +144,7 @@ class BasicMultilingualTextNormalizer:
         s = re.sub(r"\(([^)]+?)\)", "", s)  # remove words between parenthesis
         s = self.clean(s).lower()
 
-        # Remove punctuations and extra spaces
+        # Remove punctuation and extra spaces
         s = re.sub(r"[^\w\s]", "", s)
         s = re.sub(r"\s+", " ", s).strip()
 
@@ -155,7 +155,9 @@ _NUMERIC_RE = re.compile(r"^\d+(\.\d+)?$")
 _AND_A_HALF_RE = re.compile(r"\band\s+a\s+half\b")
 _LETTER_DIGIT_RE = re.compile(r"([a-z])([0-9])")
 _DIGIT_LETTER_RE = re.compile(r"([0-9])([a-z])")
-_DIGIT_SUFFIX_SPACE_RE = re.compile(r"([0-9])\s+(st|nd|rd|th|s)\b")
+_DIGIT_SUFFIX_SPACE_RE = re.compile(
+    r"([0-9])\s+(st|nd|rd|th|s)\b"  # codespell:ignore nd
+)
 _CURRENCY_CENTS_RE = re.compile(r"([€£$])([0-9]+) (?:and )?¢([0-9]{1,2})\b")
 _ZERO_CENTS_RE = re.compile(r"[€£$]0.([0-9]{1,2})\b")
 _ONE_READABILITY_RE = re.compile(r"\b1(s?)\b")
@@ -200,7 +202,7 @@ class EnglishNumberNormalizer:
         self.ones_ordinal = {
             "zeroth": (0, "th"),
             "first": (1, "st"),
-            "second": (2, "nd"),
+            "second": (2, "nd"),  # codespell:ignore nd
             "third": (3, "rd"),
             "fifth": (5, "th"),
             "twelfth": (12, "th"),
@@ -389,7 +391,7 @@ class EnglishNumberNormalizer:
                     if (
                         prev in self.tens and ones < 10
                     ):  # replace the last zero with the digit
-                        value = value[:-1] + str(ones)
+                        value = str(value)[:-1] + str(ones)
                     else:
                         value = str(value) + str(ones)
                 elif ones < 10:
@@ -409,7 +411,7 @@ class EnglishNumberNormalizer:
                     yield output(str(ones) + suffix)
                 elif isinstance(value, str) or prev in self.ones:
                     if prev in self.tens and ones < 10:
-                        yield output(value[:-1] + str(ones) + suffix)
+                        yield output(str(value)[:-1] + str(ones) + suffix)
                     else:
                         yield output(str(value) + str(ones) + suffix)
                 elif ones < 10:
@@ -451,13 +453,17 @@ class EnglishNumberNormalizer:
                 if value is None:
                     value = multiplier
                 elif isinstance(value, str) or value == 0:
-                    f = to_fraction(value)
-                    p = f * multiplier if f is not None else None
-                    if f is not None and p.denominator == 1:
-                        value = p.numerator
-                    else:
+                    fraction = to_fraction(str(value))
+                    if fraction is None:
                         yield output(value)
                         value = multiplier
+                    else:
+                        product = fraction * multiplier
+                        if product.denominator == 1:
+                            value = product.numerator
+                        else:
+                            yield output(value)
+                            value = multiplier
                 else:
                     before = value // 1000 * 1000
                     residual = value % 1000
@@ -467,13 +473,17 @@ class EnglishNumberNormalizer:
                 if value is None:
                     yield output(str(multiplier) + suffix)
                 elif isinstance(value, str):
-                    f = to_fraction(value)
-                    p = f * multiplier if f is not None else None
-                    if f is not None and p.denominator == 1:
-                        yield output(str(p.numerator) + suffix)
-                    else:
+                    fraction = to_fraction(value)
+                    if fraction is None:
                         yield output(value)
                         yield output(str(multiplier) + suffix)
+                    else:
+                        product = fraction * multiplier
+                        if product.denominator == 1:
+                            yield output(str(product.numerator) + suffix)
+                        else:
+                            yield output(value)
+                            yield output(str(multiplier) + suffix)
                 else:  # int
                     before = value // 1000 * 1000
                     residual = value % 1000

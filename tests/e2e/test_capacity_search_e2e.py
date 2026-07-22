@@ -5,17 +5,18 @@ import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
+from vidhi import create_class_from_dict
 
 from veeksha.capacity_search import run_capacity_search
 from veeksha.config.capacity_search import CapacitySearchConfig
-from vidhi import create_class_from_dict
 from veeksha.core.request_content import TextChannelRequestContent
 
 SAMPLE_CONFIG_URL = "veeksha/sample_configs/capacity_search_rate.yml"
+
 
 class MockOpenAIHandler(BaseHTTPRequestHandler):
     def _write_json(self, status_code: int, payload: dict) -> None:
@@ -73,10 +74,22 @@ class LocalHTTPServerManager:
         self._thread: threading.Thread | None = None
 
     def launch(self):
-        self._server = HTTPServer((self.config.host, self.config.port), self.handler_cls)
+        self._server = HTTPServer(
+            (self.config.host, self.config.port), self.handler_cls
+        )
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
         return True, None
+
+    def start(self) -> None:
+        is_started, error = self.launch()
+        assert is_started, error
+
+    def stop(self) -> None:
+        self.shutdown()
+
+    def get_endpoint(self):
+        return self.config.get_endpoint()
 
     def wait_for_ready(self, timeout=None):
         return True
@@ -94,15 +107,16 @@ def _find_free_port() -> int:
         s.bind(("localhost", 0))
         return s.getsockname()[1]
 
+
 # @pytest.mark.e2e
 def test_capacity_search_rate_benchmark(tmp_path) -> None:
     # 1. Load config
     with open(SAMPLE_CONFIG_URL, "r") as f:
         config_dict = yaml.safe_load(f)
-    
+
     # 2. Modify config for test
     config_dict["output_dir"] = str(tmp_path)
-    
+
     # Speed up the test
     config_dict["max_iterations"] = 3
     config_dict["start_value"] = 5  # Start higher to try to find something
@@ -116,32 +130,47 @@ def test_capacity_search_rate_benchmark(tmp_path) -> None:
     free_port = _find_free_port()
     config_dict["benchmark_config"]["server"] = {
         "type": "vllm",
+        "image": "vllm-omni:test",
+        "hf_model": "mock-model",
         "model": "mock-model",
+        "deploy_config": "/tmp/test-vllm-deploy.yml",
+        "bootstrap": "",
+        "docker_gpus": "all",
         "host": "localhost",
         "port": free_port,
         "api_key": "dummy",
+        "health_url": f"http://localhost:{free_port}/health",
     }
 
     # Force fixed body length to avoid ambiguity/mocks
-    config_dict["benchmark_config"]["session_generator"]["channels"][0]["body_length_generator"] = {"type": "fixed", "value": 10}
-    
+    config_dict["benchmark_config"]["session_generator"]["channels"][0][
+        "body_length_generator"
+    ] = {"type": "fixed", "value": 10}
+
     # 3. Create CapacitySearchConfig
     capacity_config = create_class_from_dict(CapacitySearchConfig, config_dict)
-    
+
     # 4. Spin up a real HTTP server via the managed_server stack by patching the registry
     def _make_manager(_key, config, output_dir):
-        return LocalHTTPServerManager(config, handler_cls=MockOpenAIHandler, output_dir=output_dir)
+        return LocalHTTPServerManager(
+            config, handler_cls=MockOpenAIHandler, output_dir=output_dir
+        )
 
-    with patch("veeksha.orchestration.benchmark_orchestrator.ServerManagerRegistry.get", side_effect=_make_manager), \
-         patch("veeksha.benchmark.build_hf_tokenizer_handle_from_model") as mock_build_tok_bench, \
-         patch("veeksha.core.tokenizer.build_hf_tokenizer_handle_from_model") as mock_build_tok_core:
-        
+    with (
+        patch(
+            "veeksha.orchestration.benchmark_orchestrator.ServerManagerRegistry.get",
+            side_effect=_make_manager,
+        ),
+        patch(
+            "veeksha.config.client.build_hf_tokenizer_handle_from_model"
+        ) as mock_build_tok,
+    ):
+
         mock_handle = MagicMock()
         mock_handle.encode.return_value = [1] * 10
         mock_handle.decode.return_value = "mock_text"
         mock_handle.count_tokens.return_value = 0
-        mock_build_tok_bench.return_value = mock_handle
-        mock_build_tok_core.return_value = mock_handle
+        mock_build_tok.return_value = mock_handle
 
         # Mock the channel generator to return a realistic TextChannelRequestContent
         mock_channel_gen = MagicMock()
@@ -156,17 +185,17 @@ def test_capacity_search_rate_benchmark(tmp_path) -> None:
         ):
             # 5. Run
             result = run_capacity_search(capacity_config)
-            
+
             # 6. Verify
             # Search should run iterations.
             assert len(result["history"]) > 0  # At least one attempt should run
-        
+
         # Check result structure
         assert "best_value" in result
         assert "history" in result
         assert len(result["history"]) >= 1
-        
+
         # We expect it to find *some* value since our mock server is very fast
         # (It returns instantly, so it should handle high rates)
-        # However, due to startup overhead etc, it might fail early. 
+        # However, due to startup overhead etc, it might fail early.
         # But at least one iteration should run.

@@ -1,11 +1,10 @@
 seed: 42
-output_dir: "benchmark_output/stt_vajra"
+output_dir: benchmark_output/stt_vllm_realtime
 
 client:
   type: stt
-  provider: vajra_openai_realtime
-  api_base: "http://localhost:8003"
-  # Drives Vajra through the OpenAI-compatible realtime transcription WebSocket.
+  provider: vllm_realtime
+  api_base: http://localhost:8025
   model: mistralai/Voxtral-Mini-4B-Realtime-2602
   sample_rate: 16000
   ws_chunk_size: 2048
@@ -22,18 +21,18 @@ session_generator:
 
 traffic_scheduler:
   type: concurrent
-  target_concurrent_sessions: 8
+  target_concurrent_sessions: !expand [1, 2, 4, 8, 16, 32, 64]
   rampup_seconds: 0
 
 evaluators:
   - type: performance
-    target_channels: ["audio"]
+    target_channels: [audio]
     stream_metrics: true
     stream_metrics_interval: 10.0
     slos:
-      # Capacity gate: p99 first-partial latency climbs once the engine can't
+      # Capacity gate: p99 first-partial latency climbs once the engine cannot
       # keep up at 1x pacing. (RTF is >=1 by construction when paced.)
-      - name: "P99 time-to-first-chunk under 500ms"
+      - name: P99 time-to-first-chunk under 500ms
         metric: ttfc
         percentile: 0.99
         value: 500
@@ -52,7 +51,7 @@ trace_recorder:
 
 wandb:
   enabled: false
-  project: "stt-benchmark"
-  run_name: "stt_vajra_openai_realtime_voxtral"
-  tags: ["stt", "vajra", "voxtral", "openai_realtime"]
+  project: stt-benchmark
+  run_name: stt_vllm_voxtral
+  tags: [stt, vllm_realtime, voxtral]
   log_artifacts: false

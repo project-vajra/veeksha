@@ -2,9 +2,13 @@
 seed: 42
 
 server:
-  type: sglang
-  env_path: sglang_env
-  model: meta-llama/Llama-3.2-1B-Instruct
+  type: vllm
+  image: vllm-omni:0.21-local
+  hf_model: meta-llama/Llama-3.2-1B-Instruct
+  # Host path mounted read-only into the vLLM Omni container.
+  deploy_config: /path/to/vllm_omni_deploy.yaml
+  bootstrap: ""
+  docker_gpus: all
   host: localhost
   port: 30003
 

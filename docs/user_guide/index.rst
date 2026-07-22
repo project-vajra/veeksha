@@ -10,6 +10,7 @@ integrating with external tools.
    configuration
    output_files
    trace_flavors
+   asr_benchmarking
    tts_benchmarking
    capacity_search
    sweeps

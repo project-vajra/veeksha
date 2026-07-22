@@ -6,14 +6,17 @@ of LLM inference servers (launch, health check, shutdown).
 """
 
 import abc
+import copy
+import json
 import os
+import re
 import socket
 import subprocess
 import tempfile
 import time
 from dataclasses import replace
 from pathlib import Path
-from typing import IO, Any, Dict, Optional
+from typing import IO, Any, Dict, Generic, Optional, TypeVar
 
 import requests
 
@@ -23,22 +26,24 @@ from veeksha.orchestration.resource_manager import ResourceManager
 
 logger = init_logger(__name__)
 
+ServerConfigT = TypeVar("ServerConfigT", bound=BaseServerConfig)
 
-class BaseServerManager(abc.ABC):
+
+class BaseServerManager(abc.ABC, Generic[ServerConfigT]):
     """Abstract base class for managing LLM inference servers.
 
     Subclasses should implement engine-specific launch commands and
     health check logic.
     """
 
-    def __init__(self, config: BaseServerConfig, output_dir: Optional[str] = None):
+    def __init__(self, config: ServerConfigT, output_dir: Optional[str] = None):
         """Initialize the server manager.
 
         Args:
             config: Server configuration
             output_dir: Directory for server logs.
         """
-        self.config: BaseServerConfig = config
+        self.config: ServerConfigT = config
         self.output_dir = output_dir
         self.process: Optional[subprocess.Popen] = None
         self._is_running = False
@@ -47,7 +52,6 @@ class BaseServerManager(abc.ABC):
         self._delete_log_file_on_cleanup = True
         self.resource_manager = ResourceManager()
         self._allocated_job_id: Optional[str] = None  # Track allocated resources
-        self.restart_count = 0
         self.start_count = 0
 
     @property
@@ -115,17 +119,6 @@ class BaseServerManager(abc.ABC):
 
     def stop(self) -> None:
         self.shutdown()
-
-    def restart(self) -> None:
-        max_restarts = getattr(self.config, "max_restarts", None)
-        if max_restarts is not None and self.restart_count >= max_restarts:
-            raise RuntimeError(f"server restart budget exhausted ({max_restarts})")
-        self.restart_count += 1
-        self.stop()
-        self.start()
-
-    def reset_restart_budget(self) -> None:
-        self.restart_count = 0
 
     def _create_log_file(self) -> IO[str]:
         """Create a log file for the server process."""
@@ -292,7 +285,7 @@ class BaseServerManager(abc.ABC):
             logger.debug(f"Health check failed: {e}")
             return False
 
-    def wait_for_ready(self, timeout: Optional[int] = None) -> bool:
+    def wait_for_ready(self, timeout: Optional[float] = None) -> bool:
         """Wait for server to become ready.
 
         Args:
@@ -321,8 +314,6 @@ class BaseServerManager(abc.ABC):
                             "Free memory on device" in logs
                             and "is less than desired GPU memory utilization" in logs
                         ):
-                            import re
-
                             match = re.search(
                                 r"Free memory on device \(([0-9.]+)/([0-9.]+) GiB\).*desired GPU memory utilization.*\(([0-9.]+), ([0-9.]+) GiB\)",
                                 logs,
@@ -483,9 +474,6 @@ class BaseServerManager(abc.ABC):
         Returns:
             Dictionary of parsed additional arguments
         """
-        import copy
-        import json
-
         additional_args = self.config.additional_args
         if additional_args is None:
             return {}

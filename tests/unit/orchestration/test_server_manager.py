@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest  # type: ignore[import]
+import requests
 
 from veeksha.config.server import VllmServerConfig
 from veeksha.orchestration.server_manager import BaseServerManager
@@ -10,11 +11,15 @@ from veeksha.orchestration.server_manager import BaseServerManager
 pytestmark = pytest.mark.unit
 
 
-class FakeServerManager(BaseServerManager):
+class FakeServerManager(BaseServerManager[VllmServerConfig]):
     """Concrete implementation for testing."""
 
     def _build_launch_command(self) -> list[str]:
         return ["python", "-m", "mock_server"]
+
+    def _is_port_in_use(self) -> bool:
+        """Keep unit tests independent of listeners on the host."""
+        return False
 
 
 def _server_config(**kwargs) -> VllmServerConfig:
@@ -122,8 +127,6 @@ class TestBaseServerManager:
     @patch("requests.get")
     def test_health_check_failure_exception(self, mock_get, manager):
         """Test health check failure due to exception."""
-        import requests
-
         mock_get.side_effect = requests.exceptions.RequestException(
             "Connection refused"
         )
