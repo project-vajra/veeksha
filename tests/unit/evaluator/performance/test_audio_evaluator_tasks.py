@@ -161,7 +161,24 @@ def _tts_metrics() -> dict:
         AudioMetricKey.CHUNK_COUNT.value: 1,
         AudioMetricKey.RAW_PCM.value: True,
         AudioMetricKey.SAMPLE_RATE.value: 24000,
+        AudioMetricKey.TEXT_PACING_UNIT.value: "whitespace_word",
+        AudioMetricKey.TEXT_PACING_RATE.value: 50.0,
     }
+
+
+def test_tts_request_exports_explicit_text_pacing_semantics() -> None:
+    evaluator = _evaluator(interactivity_enabled=False)
+
+    _record(
+        evaluator,
+        request_id=1,
+        content=b"\0" * 960,
+        metrics=_tts_metrics(),
+    )
+
+    row = evaluator._export_request_rows()[0]
+    assert row[AudioMetricKey.TEXT_PACING_UNIT.value] == "whitespace_word"
+    assert row[AudioMetricKey.TEXT_PACING_RATE.value] == 50.0
 
 
 def test_duration_at_cap_is_counted_as_suspected_truncation() -> None:

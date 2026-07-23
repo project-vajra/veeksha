@@ -1,7 +1,7 @@
 """Shared client-side helpers for streaming audio clients.
 
-Text segmentation (emulating an upstream LLM's per-token output), delta pacing
-(emulating its decode cadence), URL normalization, and WebSocket error
+Text segmentation (emulating an upstream LLM's word-by-word output), delta
+pacing (emulating its decode cadence), URL normalization, and WebSocket error
 flattening/mapping are transport-agnostic; they live here so each client stays
 focused on its lifecycle and metric contract.
 """
@@ -14,11 +14,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
-from websockets.exceptions import (
-    ConnectionClosedError,
-    InvalidHandshake,
-    InvalidStatus,
-)
+from websockets.exceptions import ConnectionClosedError, InvalidHandshake, InvalidStatus
 
 from veeksha.config.generator.interval import (
     FixedIntervalGeneratorConfig,
@@ -32,7 +28,7 @@ if TYPE_CHECKING:
 
 
 # ---------------------------------------------------------------------------
-# Text segmentation (LLM-token emulation)
+# Text segmentation (whitespace-word emulation)
 # ---------------------------------------------------------------------------
 
 
@@ -41,7 +37,8 @@ class TextSegment:
     """Text for one paced Realtime conversation item.
 
     ``text`` is the exact substring streamed for this delta (whitespace
-    preserved); ``n_tokens`` is the number of whitespace tokens it groups.
+    preserved); ``n_tokens`` is the number of whitespace-delimited words it
+    groups. The attribute name is retained for metric compatibility.
     """
 
     text: str
@@ -50,7 +47,7 @@ class TextSegment:
 
 
 def segment_text(text: str, tokens_per_delta: int) -> list[TextSegment]:
-    """Split ``text`` into paced deltas of ``tokens_per_delta`` whitespace tokens.
+    """Split ``text`` into paced deltas of ``tokens_per_delta`` words.
 
     Each token is a ``\\S+`` run plus its trailing whitespace (via
     ``re.findall(r"\\S+\\s*")``); any leading whitespace is prepended to the
@@ -91,7 +88,7 @@ def segment_text(text: str, tokens_per_delta: int) -> list[TextSegment]:
 
 
 class TextDeltaPacer:
-    """Emits inter-delta gaps emulating an upstream LLM's decode cadence.
+    """Emits inter-delta gaps at a configured whitespace-word cadence.
 
     ``mean_gap_s = tokens_per_delta / tokens_per_second``. A ``poisson``
     distribution jitters the gaps around that mean (seeded, so runs are

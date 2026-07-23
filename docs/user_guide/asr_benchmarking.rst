@@ -5,8 +5,8 @@ Client and transport model
 --------------------------
 
 ``client.type: stt`` always selects one provider-agnostic realtime WebSocket
-client. ``client.provider`` chooses either the ``vllm_realtime`` or
-``vajra_openai_realtime`` wire strategy; it does not select a different client
+client. ``client.provider`` chooses the Vajra, vLLM, Deepgram Flux, Deepgram
+Nova, or ElevenLabs Scribe wire adapter; it does not select a different client
 lifecycle.
 
 Requests name an audio file, which the client decodes to PCM16 and streams while
@@ -17,9 +17,9 @@ There is no separate HTTP or batch STT client.
 Sample configurations
 ---------------------
 
-The packaged samples use the same trace, pacing, evaluator, and concurrency
-sweep for both supported providers. Only the endpoint and wire strategy differ.
-Each ``!expand`` list produces seven native Veeksha sweep runs.
+The packaged samples use the same trace, pacing, evaluator, and metric contract.
+Only the endpoint and wire adapter differ. Vajra and vLLM samples sweep native
+engine concurrency; hosted API samples use one session with repeated requests.
 
 Vajra OpenAI-compatible realtime transcription:
 
@@ -39,6 +39,14 @@ Run either sample from a source checkout:
 
    uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_vajra.yml
    uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_vllm_realtime.yml
+
+Hosted API adapters use the same client and evaluator:
+
+.. code-block:: console
+
+   uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_deepgram_flux.yml
+   uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_deepgram_nova.yml
+   uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_elevenlabs.yml
 
 Trace generation
 ----------------
@@ -122,11 +130,13 @@ Common audio metrics:
 * ``chunk_count``: number of transcript deltas observed, or one when only a
   final transcript is returned.
 * ``input_tokens``: whitespace token count of the final transcript.
-* ``provider``: normalized serving provider family, ``vllm`` or ``vajra``.
+* ``provider``: normalized serving provider family, such as ``vajra``, ``vllm``,
+  ``deepgram``, or ``elevenlabs``.
 * ``provider_model``: configured transcription model identifier.
 * ``provider_protocol``: concrete wire protocol selected by
-  ``client.provider``, currently ``v1_realtime_transcription`` or
-  ``openai_v1_realtime_transcription``.
+  ``client.provider``: ``v1_realtime_transcription``,
+  ``openai_v1_realtime_transcription``, ``deepgram_v2_flux_listen``,
+  ``deepgram_v1_listen``, or ``elevenlabs_scribe_v2_realtime``.
 
 ASR-specific metrics:
 
@@ -154,6 +164,10 @@ ASR-specific metrics:
 * ``final_wer``: WER for ``final_transcript`` against
   ``expected_transcript``. Present for every completed STT request with a
   reference transcript.
+
+The performance evaluator computes final corpus, sample-mean, and
+duration-weighted WER automatically for every STT sample configuration; no
+separate quality evaluator is required.
 
 Replay viewer
 -------------

@@ -87,8 +87,10 @@ Metrics
      - WebSocket-connect initiation to the first complete PCM playback frame.
        Report this separately as cold-session or connection-inclusive latency.
    * - ``ttfc``
-     - Request start to the first wire audio chunk. A tiny partial chunk may not
-       yet be playable, so this is retained as a transport diagnostic.
+     - Synthesis trigger to the first non-empty wire audio chunk. This is the
+       canonical steady-state time-to-first-content metric and excludes
+       WebSocket setup. A tiny partial chunk may not yet be playable, so use
+       ``trigger_to_first_playable_audio_ms`` for playback readiness.
    * - ``rtf``
      - End-to-end request time divided by generated audio duration. It includes
        paced upstream text input.
@@ -140,6 +142,15 @@ is trivially one. Compare batch models on first-playable latency, end-to-end
 latency, RTF, cost, and quality; do not use batch fluidity to rank streaming
 behavior.
 
+Text pacing unit
+----------------
+
+``pacing.tokens_per_second`` and ``pacing.tokens_per_delta`` are legacy field
+names. The current segmenter counts whitespace-delimited words, not model
+tokenizer IDs. Veeksha records ``text_pacing_unit=whitespace_word`` and the
+configured rate on every streaming TTS request so published runs cannot confuse
+word pacing with Claude, SentencePiece, or BPE token pacing.
+
 Trace sources
 -------------
 
@@ -176,6 +187,15 @@ Run it with:
 
     uvx -p 3.14t veeksha benchmark \
       --config veeksha/sample_configs/tts_streaming_elevenlabs.yml
+
+Deepgram Flux and Aura use the same client lifecycle:
+
+.. code-block:: console
+
+    uvx -p 3.14t veeksha benchmark \
+      --config veeksha/sample_configs/tts_streaming_deepgram_flux.yml
+    uvx -p 3.14t veeksha benchmark \
+      --config veeksha/sample_configs/tts_streaming_deepgram_aura.yml
 
 WER requires the optional ``audio-verification`` dependencies (including
 faster-whisper). UTMOS requires its corresponding optional dependency group.
@@ -214,11 +234,12 @@ For Deepgram Flux streaming, replace only the client block:
       type: streaming_tts
       provider: deepgram_flux
       api_base: https://api.deepgram.com
-      model: flux-alexis-en
+      model: flux-haley-en
       api_key_env: DEEPGRAM_API_KEY
       sample_rate: 24000
       pacing:
-        tokens_per_second: 20
+        # Legacy key: 50 whitespace-delimited words per second.
+        tokens_per_second: 50
         tokens_per_delta: 1
         gap_distribution: fixed
 
@@ -237,8 +258,9 @@ Do not treat ``response.create`` ordering or output overlap alone as proof of
 semantic duplex synthesis. A conforming run must also pass full-reference TTS
 WER (or a stronger text-coverage check) so a server that speaks only the prefix
 available at trigger time cannot be reported as successful streaming. The
-``duplex_start_after_tokens`` value is a configurable workload threshold, not a
-special eight-token protocol rule.
+``duplex_start_after_tokens`` is a legacy field name whose value is currently a
+configurable whitespace-word threshold, not a special eight-token protocol
+rule.
 
 Keep the trace seed, input texts, pacing, PCM format, region, concurrency sweep,
 and retry policy identical across providers. Report request failures and rate

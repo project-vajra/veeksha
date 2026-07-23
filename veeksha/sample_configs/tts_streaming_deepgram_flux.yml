@@ -1,15 +1,13 @@
 seed: 42
-output_dir: benchmark_output/tts_elevenlabs_streaming
+output_dir: benchmark_output/tts_deepgram_flux_streaming
 
 client:
   type: streaming_tts
-  provider: elevenlabs
-  api_base: https://api.elevenlabs.io
-  model: !expand [eleven_flash_v2_5, eleven_multilingual_v2]
-  voice_id: YOUR_VOICE_ID
-  api_key_env: ELEVENLABS_API_KEY
+  provider: deepgram_flux
+  api_base: https://api.deepgram.com
+  api_key_env: DEEPGRAM_API_KEY
+  model: flux-haley-en
   sample_rate: 24000
-  auto_mode: true
   pacing:
     # Legacy key: the current pacing unit is a whitespace-delimited word.
     tokens_per_second: 50
@@ -45,11 +43,6 @@ evaluators:
         metric: ttfc
         percentile: 0.90
         value: 1000
-      - type: constant
-        name: P1 user fluidity at least 0.99
-        metric: user_audio_fluidity_index
-        percentile: 0.01
-        value: 0.99
   - type: audio_quality
     target_channels: [audio]
     save_audio_files: true

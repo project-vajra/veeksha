@@ -43,7 +43,7 @@ def _optional_float(metrics: Mapping, key: AudioMetricKey) -> Optional[float]:
         return None
     try:
         return float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -60,7 +60,7 @@ def parse_request_timing(
             metrics.get(AudioMetricKey.SAMPLE_RATE.value, default_sample_rate)
             or default_sample_rate
         )
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         sample_rate = default_sample_rate
     if sample_rate <= 0:
         sample_rate = default_sample_rate
@@ -72,7 +72,7 @@ def parse_request_timing(
         try:
             offset_ms = float(entry[0])
             n_bytes = float(entry[1])
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             continue
         if offset_ms < 0 or n_bytes <= 0:
             continue
@@ -108,7 +108,7 @@ def parse_request_timing(
             try:
                 offset_ms = float(entry[0])
                 n_chars = int(entry[1])
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 continue
             if offset_ms >= 0 and n_chars >= 0:
                 text_deltas.append((offset_ms, n_chars))

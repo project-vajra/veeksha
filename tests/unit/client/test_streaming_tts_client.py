@@ -27,11 +27,8 @@ from veeksha.client.streaming_tts import (
     StreamingTTSError,
     _map_error,
 )
-from veeksha.client.utils import flatten_ws_exception
-from veeksha.config.client import (
-    StreamingTTSClientConfig,
-    TextPacingConfig,
-)
+from veeksha.client.utils import TextDeltaPacer, flatten_ws_exception, segment_text
+from veeksha.config.client import StreamingTTSClientConfig, TextPacingConfig
 from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.core.request import Request
 from veeksha.core.request_content import TextChannelRequestContent
@@ -56,8 +53,9 @@ class _FakeWebSocket:
                 await self.events.put(json.dumps({"audio": audio, "isFinal": False}))
             elif event.get("text") == "":
                 await self.events.put(json.dumps({"isFinal": True}))
-        elif self.provider == "deepgram_aura" and event.get("type") == "Flush":
+        elif self.provider == "deepgram_aura" and event.get("type") == "Speak":
             await self.events.put(bytes(960))
+        elif self.provider == "deepgram_aura" and event.get("type") == "Flush":
             await self.events.put(json.dumps({"type": "Flushed", "sequence_id": 0}))
         elif event.get("type") == "Speak" and self.provider == "deepgram":
             if not self.speech_started:
@@ -91,6 +89,17 @@ class _FakeConnection:
         return None
 
 
+class _SilentElevenLabsWebSocket(_FakeWebSocket):
+    def __init__(self) -> None:
+        super().__init__("elevenlabs")
+
+    async def send(self, raw: str | bytes) -> None:
+        self.sent.append(raw)
+        event = json.loads(raw)
+        if event.get("text") == "":
+            await self.events.put(json.dumps({"isFinal": True}))
+
+
 def _request() -> Request:
     return Request(
         id=11,
@@ -102,6 +111,16 @@ def _request() -> Request:
 
 def _pacing() -> TextPacingConfig:
     return TextPacingConfig(tokens_per_second=1000, tokens_per_delta=1)
+
+
+@pytest.mark.unit
+def test_text_pacing_uses_whitespace_words_at_a_continuous_rate() -> None:
+    pacing = TextPacingConfig(tokens_per_second=2, tokens_per_delta=1)
+    segments = segment_text("one two three", pacing.tokens_per_delta)
+    pacer = TextDeltaPacer(pacing, seed=42)
+
+    assert [segment.text for segment in segments] == ["one ", "two ", "three"]
+    assert [pacer.next_gap() for _ in segments] == [0.5, 0.5, 0.5]
 
 
 @pytest.mark.unit
@@ -140,6 +159,13 @@ def test_streaming_providers_share_text_audio_lifecycle(provider: str) -> None:
     assert metrics[AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value] == pytest.approx(
         metrics[AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value][0][0], abs=0.001
     )
+    assert metrics[AudioMetricKey.TTFC.value] == pytest.approx(
+        metrics[AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value][0][0]
+        - metrics[AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value],
+        abs=1.0,
+    )
+    assert metrics[AudioMetricKey.TEXT_PACING_UNIT.value] == "whitespace_word"
+    assert metrics[AudioMetricKey.TEXT_PACING_RATE.value] == 1000
     assert (
         metrics[AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value][0][0]
         < metrics[AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value]
@@ -188,7 +214,7 @@ def test_streaming_protocol_urls_use_raw_pcm_and_provider_auth() -> None:
 
 
 @pytest.mark.unit
-def test_deepgram_aura_adapter_handles_audio_after_flush() -> None:
+def test_deepgram_aura_adapter_streams_audio_before_flush_completion() -> None:
     config = StreamingTTSClientConfig(
         provider="deepgram_aura",
         api_base="https://api.deepgram.com",
@@ -209,13 +235,38 @@ def test_deepgram_aura_adapter_handles_audio_after_flush() -> None:
     commit_ms = metrics[AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value]
     trigger_ms = metrics[AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value]
     assert trigger_ms < commit_ms
-    assert first_audio_ms >= commit_ms
+    assert first_audio_ms < commit_ms
+    assert metrics[AudioMetricKey.TTFC.value] == pytest.approx(
+        first_audio_ms - trigger_ms,
+        abs=1.0,
+    )
     assert [json.loads(raw)["type"] for raw in websocket.sent] == [
         "Speak",
         "Speak",
         "Speak",
         "Flush",
     ]
+
+
+@pytest.mark.unit
+def test_streaming_tts_rejects_terminal_response_without_audio() -> None:
+    config = StreamingTTSClientConfig(
+        provider="elevenlabs",
+        api_base="https://api.elevenlabs.io",
+        api_key="test-key",
+        model="eleven_flash_v2_5",
+        voice_id="test-voice",
+        pacing=_pacing(),
+    )
+    client = StreamingTTSClient(config)
+    websocket = _SilentElevenLabsWebSocket()
+    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+
+    result = asyncio.run(client.send_request(_request(), session_id=1))
+
+    assert not result.success
+    assert result.error_code == 502
+    assert result.error_msg == "elevenlabs completed the TTS stream without audio"
 
 
 @pytest.mark.unit

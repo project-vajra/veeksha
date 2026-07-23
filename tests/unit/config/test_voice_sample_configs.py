@@ -14,7 +14,12 @@ SAMPLE_CONFIG_DIR = Path(__file__).resolve().parents[3] / "veeksha" / "sample_co
     [
         ("stt_vajra.yml", "stt", 7),
         ("stt_vllm_realtime.yml", "stt", 7),
-        ("tts_streaming_elevenlabs.yml", "streaming_tts", 1),
+        ("stt_deepgram_flux.yml", "stt", 1),
+        ("stt_deepgram_nova.yml", "stt", 1),
+        ("stt_elevenlabs.yml", "stt", 1),
+        ("tts_streaming_deepgram_flux.yml", "streaming_tts", 1),
+        ("tts_streaming_deepgram_aura.yml", "streaming_tts", 1),
+        ("tts_streaming_elevenlabs.yml", "streaming_tts", 2),
     ],
 )
 def test_voice_sample_config_deserializes(

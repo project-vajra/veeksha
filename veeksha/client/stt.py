@@ -1,10 +1,10 @@
 """Provider-agnostic WebSocket client for streaming speech-to-text.
 
-Both providers stream PCM16 over a WebSocket and report transcription metrics
+All providers stream PCM16 over a WebSocket and report transcription metrics
 (TTFC, end-to-end latency, and RTF) through one concrete ``STTClient``
 lifecycle. Audio is paced at 1x playback when ``ws_realtime_pacing`` is on, and
 the send and receive loops run concurrently. ``provider`` selects an internal
-strategy for session setup, PCM framing, EOF, and event parsing.
+adapter for authentication, URL construction, PCM framing, EOF, and events.
 
 STT accepts audio-file requests but always decodes and streams their PCM over a
 WebSocket. There is intentionally no separate HTTP/batch STT client.
@@ -22,11 +22,18 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol
+from urllib.parse import urlencode, urljoin
 
 import numpy as np
+from websockets.asyncio.client import connect
+from websockets.exceptions import ConnectionClosedOK
 
 from veeksha.client.base import BaseLLMClient
-from veeksha.client.utils import map_ws_transport_error, to_websocket_url
+from veeksha.client.utils import (
+    map_ws_transport_error,
+    resolve_provider_api_key,
+    to_websocket_url,
+)
 from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.core.request import Request
 from veeksha.core.request_content import AudioChannelRequestContent
@@ -126,7 +133,7 @@ _CLIP_CACHE_MAX_CLIPS = 64
 class _ClipAssets:
     """Deterministic per-clip artifacts shared by every session replaying it.
 
-    ``wire_messages[i]`` is the provider append-message for the full chunk
+    ``wire_messages[i]`` is the provider append-message for a non-final chunk
     ``pcm[i * chunk_size : (i + 1) * chunk_size]``; the trailing partial chunk
     (from the clip end or a per-session slice) is encoded on the fly.
     """
@@ -217,7 +224,13 @@ class STTClient(BaseLLMClient):
         if protocol_class is None:
             raise ValueError(f"Unsupported STT provider: {config.provider}")
         super().__init__(config)
-        self._protocol = protocol_class()
+        api_key = resolve_provider_api_key(
+            config.api_key,
+            config.api_key_env,
+            protocol_class.default_api_key_env,
+            required=protocol_class.requires_api_key,
+        )
+        self._protocol = protocol_class(config, api_key)
         self._model = config.model
         self._sample_rate = config.sample_rate
         self._ws_chunk_size = config.ws_chunk_size
@@ -226,9 +239,7 @@ class STTClient(BaseLLMClient):
         self._ws_ping_interval_s = config.ws_ping_interval_s
         self._ws_ping_timeout_s = config.ws_ping_timeout_s
         self._ws_compression = "deflate" if config.ws_permessage_deflate else None
-        self._ws_url = (
-            f"{to_websocket_url(str(self.api_base or ''))}{self._protocol.ws_path}"
-        )
+        self._ws_url = self._protocol.build_ws_url(str(self.api_base or ""))
 
         # Per-clip decode + wire-message cache, shared across the worker
         # threads that all hold this one client instance.
@@ -241,14 +252,13 @@ class STTClient(BaseLLMClient):
     # ------------------------------------------------------------------
 
     def _connect(self) -> Any:
-        import websockets
-
-        return websockets.connect(
+        return connect(
             self._ws_url,
             max_size=None,
             ping_interval=self._ws_ping_interval_s,
             ping_timeout=self._ws_ping_timeout_s,
             compression=self._ws_compression,
+            additional_headers=self._protocol.headers(),
         )
 
     async def _maybe_pace_until(self, target_at: float) -> None:
@@ -284,7 +294,9 @@ class STTClient(BaseLLMClient):
             view = memoryview(pcm)
             full_end = len(pcm) - len(pcm) % self._ws_chunk_size
             wire_messages = [
-                self._protocol.encode_chunk(view[offset : offset + self._ws_chunk_size])
+                self._protocol.encode_chunk(
+                    view[offset : offset + self._ws_chunk_size], final=False
+                )
                 for offset in range(0, full_end, self._ws_chunk_size)
             ]
             assets = _ClipAssets(pcm=pcm, wire_messages=wire_messages)
@@ -322,8 +334,19 @@ class STTClient(BaseLLMClient):
         partial_transcript: Optional[str] = None
         final_transcript = ""
         chunk_count = 0
-        transcript_chunks: list[str] = []
+        delta_chunks: list[str] = []
+        committed_chunks: list[str] = []
+        provisional_transcript = ""
         snapshots = TranscriptSnapshotRecorder()
+
+        def assembled_transcript() -> str:
+            parts = list(committed_chunks)
+            delta_text = _clean_transcript("".join(delta_chunks))
+            if delta_text:
+                parts.append(delta_text)
+            if provisional_transcript:
+                parts.append(provisional_transcript)
+            return _clean_transcript(" ".join(parts))
 
         async with self._connect() as ws:
             await self._protocol.open_session(ws, self._model)
@@ -342,11 +365,16 @@ class STTClient(BaseLLMClient):
                             + byte_offset / BYTES_PER_SAMPLE / self._sample_rate
                         )
                     chunk_end = byte_offset + self._ws_chunk_size
-                    if wire_messages is not None and chunk_end <= len(pcm_bytes):
+                    final_chunk = chunk_end >= len(pcm_bytes)
+                    if (
+                        wire_messages is not None
+                        and chunk_end <= len(pcm_bytes)
+                        and not final_chunk
+                    ):
                         message = wire_messages[byte_offset // self._ws_chunk_size]
                     else:
                         message = self._protocol.encode_chunk(
-                            pcm_bytes[byte_offset:chunk_end]
+                            pcm_bytes[byte_offset:chunk_end], final=final_chunk
                         )
                     await ws.send(message)
                 if audio_started_at is not None:
@@ -354,21 +382,34 @@ class STTClient(BaseLLMClient):
                         audio_started_at
                         + len(pcm_bytes) / BYTES_PER_SAMPLE / self._sample_rate
                     )
-                await ws.send(self._protocol.eof_message())
+                for message in self._protocol.finish_messages():
+                    await ws.send(message)
                 audio_end_at = time.monotonic()
 
             send_task = asyncio.ensure_future(_send())
             try:
                 while True:
-                    kind, text = self._protocol.parse_message(
-                        json.loads(await ws.recv())
-                    )
+                    try:
+                        raw_message = await ws.recv()
+                    except ConnectionClosedOK:
+                        if not self._protocol.clean_close_is_terminal:
+                            raise
+                        # Flux may close normally after its final EndOfTurn
+                        # instead of emitting a separate Metadata event. Wait
+                        # for our sender so an early provider close still
+                        # surfaces as a send failure rather than a success.
+                        await send_task
+                        kind, text = "done", ""
+                    else:
+                        kind, text = self._protocol.parse_message(
+                            json.loads(raw_message)
+                        )
                     now = time.monotonic()
-                    if kind == "delta":
-                        # TTFC counts only deltas whose own payload carries
-                        # transcript text after cleaning; empty progress /
-                        # keepalive deltas (e.g. Vajra's priming delta) and
-                        # pure control-token pads are skipped. See
+                    if kind in ("delta", "snapshot", "commit"):
+                        # TTFC counts only provider events whose own payload
+                        # carries transcript text after cleaning; empty
+                        # progress/keepalive events and pure control-token
+                        # pads are skipped. See
                         # STTStreamResult for how this differs from
                         # time_to_first_visible_text below.
                         if ttfc is None and _clean_transcript(text):
@@ -378,11 +419,19 @@ class STTClient(BaseLLMClient):
                             ttfc = (now - audio_started_at) * 1000
                             if on_request_sent is not None:
                                 on_request_sent()
-                        transcript_chunks.append(text)
-                        chunk_count += 1
-                        current_transcript = _clean_transcript(
-                            "".join(transcript_chunks)
-                        )
+                        if kind == "delta":
+                            delta_chunks.append(text)
+                        elif kind == "snapshot":
+                            provisional_transcript = _clean_transcript(text)
+                        else:
+                            committed = _clean_transcript(text)
+                            if committed:
+                                committed_chunks.append(committed)
+                            delta_chunks.clear()
+                            provisional_transcript = ""
+                        if _clean_transcript(text):
+                            chunk_count += 1
+                        current_transcript = assembled_transcript()
                         snapshots.add(now, current_transcript)
                         if time_to_first_visible_text is None and current_transcript:
                             assert (
@@ -398,7 +447,7 @@ class STTClient(BaseLLMClient):
                             partial_transcript = current_transcript
                     elif kind == "done":
                         final_transcript = _clean_transcript(
-                            text or "".join(transcript_chunks)
+                            text or assembled_transcript()
                         )
                         snapshots.add(now, final_transcript)
                         if final_transcript:
@@ -438,7 +487,7 @@ class STTClient(BaseLLMClient):
                     pass
 
         if not final_transcript:
-            final_transcript = _clean_transcript("".join(transcript_chunks))
+            final_transcript = assembled_transcript()
 
         return STTStreamResult(
             ttfc=ttfc,
@@ -669,22 +718,56 @@ class _STTProviderProtocol(Protocol):
 
     provider: str
     protocol_name: str
-    ws_path: str
+    default_api_key_env: str
+    requires_api_key: bool
+    clean_close_is_terminal: bool
+
+    def __init__(self, config: STTClientConfig, api_key: str | None) -> None: ...
+
+    def build_ws_url(self, api_base: str) -> str: ...
+
+    def headers(self) -> dict[str, str]: ...
 
     async def open_session(self, websocket: Any, model: str) -> None: ...
 
-    def encode_chunk(self, chunk: bytes | memoryview) -> str | bytes: ...
+    def encode_chunk(
+        self, chunk: bytes | memoryview, *, final: bool
+    ) -> str | bytes: ...
 
-    def eof_message(self) -> str | bytes: ...
+    def finish_messages(self) -> list[str | bytes]: ...
 
     def parse_message(self, msg: dict[str, Any]) -> tuple[str, str]: ...
+
+
+def _stt_ws_url(
+    api_base: str, path: str, query: dict[str, str | int | bool] | None = None
+) -> str:
+    normalized = api_base.rstrip("/") + "/"
+    url = to_websocket_url(urljoin(normalized, path.lstrip("/")))
+    return f"{url}?{urlencode(query)}" if query else url
 
 
 class _OpenAIRealtimeSTTProtocol:
     """Shared OpenAI-style base64 PCM append framing."""
 
-    @staticmethod
-    def encode_chunk(chunk: bytes | memoryview) -> str:
+    default_api_key_env = "OPENAI_API_KEY"
+    requires_api_key = False
+    clean_close_is_terminal = False
+    ws_path = ""
+
+    def __init__(self, config: "STTClientConfig", api_key: str | None) -> None:
+        self.config = config
+        self.api_key = api_key
+
+    def build_ws_url(self, api_base: str) -> str:
+        return _stt_ws_url(api_base, self.ws_path)
+
+    def headers(self) -> dict[str, str]:
+        if not self.api_key:
+            return {}
+        return {"Authorization": f"Bearer {self.api_key}"}
+
+    def encode_chunk(self, chunk: bytes | memoryview, *, final: bool = False) -> str:
         return json.dumps(
             {
                 "type": "input_audio_buffer.append",
@@ -711,8 +794,8 @@ class _VllmRealtimeProtocol(_OpenAIRealtimeSTTProtocol):
         await websocket.send(json.dumps({"type": "session.update", "model": model}))
         await websocket.send(json.dumps({"type": "input_audio_buffer.commit"}))
 
-    def eof_message(self) -> str:
-        return json.dumps({"type": "input_audio_buffer.commit", "final": True})
+    def finish_messages(self) -> list[str]:
+        return [json.dumps({"type": "input_audio_buffer.commit", "final": True})]
 
     def parse_message(self, msg: dict[str, Any]) -> tuple[str, str]:
         msg_type = msg.get("type")
@@ -757,8 +840,8 @@ class _VajraOpenAIRealtimeProtocol(_OpenAIRealtimeSTTProtocol):
             )
         )
 
-    def eof_message(self) -> str:
-        return json.dumps({"type": "input_audio_buffer.commit"})
+    def finish_messages(self) -> list[str]:
+        return [json.dumps({"type": "input_audio_buffer.commit"})]
 
     def parse_message(self, msg: dict[str, Any]) -> tuple[str, str]:
         msg_type = msg.get("type")
@@ -780,7 +863,176 @@ class _VajraOpenAIRealtimeProtocol(_OpenAIRealtimeSTTProtocol):
         return "", ""
 
 
+class _DeepgramSTTProtocol:
+    """Shared raw-PCM framing and authentication for Deepgram Listen APIs."""
+
+    provider = "deepgram"
+    default_api_key_env = "DEEPGRAM_API_KEY"
+    requires_api_key = True
+    clean_close_is_terminal = False
+    endpoint = ""
+
+    def __init__(self, config: "STTClientConfig", api_key: str | None) -> None:
+        self.config = config
+        self.api_key = api_key or ""
+
+    def headers(self) -> dict[str, str]:
+        return {"Authorization": f"Token {self.api_key}"}
+
+    async def open_session(self, websocket: Any, model: str) -> None:
+        # Successful WebSocket upgrade means both Deepgram Listen APIs are
+        # ready; neither requires a client-side session initialization frame.
+        return None
+
+    def encode_chunk(self, chunk: bytes | memoryview, *, final: bool = False) -> bytes:
+        return bytes(chunk)
+
+    def finish_messages(self) -> list[str]:
+        return [json.dumps({"type": "CloseStream"})]
+
+    @staticmethod
+    def _error(msg: dict[str, Any]) -> tuple[str, str]:
+        return (
+            "error",
+            str(msg.get("description") or msg.get("message") or msg.get("code") or msg),
+        )
+
+
+class _DeepgramNovaProtocol(_DeepgramSTTProtocol):
+    protocol_name = "deepgram_v1_listen"
+    endpoint = "v1/listen"
+
+    def build_ws_url(self, api_base: str) -> str:
+        return _stt_ws_url(
+            api_base,
+            self.endpoint,
+            {
+                "model": self.config.model,
+                "encoding": "linear16",
+                "sample_rate": self.config.sample_rate,
+                "channels": 1,
+                "language": self.config.language,
+                "interim_results": "true",
+                "punctuate": "true",
+                "smart_format": "false",
+                "mip_opt_out": str(self.config.mip_opt_out).lower(),
+            },
+        )
+
+    def parse_message(self, msg: dict[str, Any]) -> tuple[str, str]:
+        msg_type = msg.get("type")
+        if msg_type == "Results":
+            channel = msg.get("channel")
+            alternatives = (
+                channel.get("alternatives") if isinstance(channel, dict) else None
+            )
+            first = (
+                alternatives[0]
+                if isinstance(alternatives, list) and alternatives
+                else {}
+            )
+            text = first.get("transcript", "") if isinstance(first, dict) else ""
+            return ("commit" if msg.get("is_final") else "snapshot"), str(text)
+        if msg_type == "Metadata":
+            return "done", ""
+        if msg_type in ("Error", "error"):
+            return self._error(msg)
+        return "", ""
+
+
+class _DeepgramFluxProtocol(_DeepgramSTTProtocol):
+    protocol_name = "deepgram_v2_flux_listen"
+    endpoint = "v2/listen"
+    clean_close_is_terminal = True
+
+    def build_ws_url(self, api_base: str) -> str:
+        return _stt_ws_url(
+            api_base,
+            self.endpoint,
+            {
+                "model": self.config.model,
+                "encoding": "linear16",
+                "sample_rate": self.config.sample_rate,
+                "mip_opt_out": str(self.config.mip_opt_out).lower(),
+            },
+        )
+
+    def parse_message(self, msg: dict[str, Any]) -> tuple[str, str]:
+        msg_type = msg.get("type")
+        if msg_type == "TurnInfo":
+            kind = "commit" if msg.get("event") == "EndOfTurn" else "snapshot"
+            return kind, str(msg.get("transcript") or "")
+        if msg_type == "Metadata":
+            return "done", ""
+        if msg_type in ("Error", "error"):
+            return self._error(msg)
+        return "", ""
+
+
+class _ElevenLabsSTTProtocol:
+    provider = "elevenlabs"
+    protocol_name = "elevenlabs_scribe_v2_realtime"
+    default_api_key_env = "ELEVENLABS_API_KEY"
+    requires_api_key = True
+    clean_close_is_terminal = False
+
+    def __init__(self, config: "STTClientConfig", api_key: str | None) -> None:
+        self.config = config
+        self.api_key = api_key or ""
+
+    def build_ws_url(self, api_base: str) -> str:
+        return _stt_ws_url(
+            api_base,
+            "v1/speech-to-text/realtime",
+            {
+                "model_id": self.config.model,
+                "audio_format": f"pcm_{self.config.sample_rate}",
+                "language_code": self.config.language,
+                "commit_strategy": "manual",
+                "include_timestamps": "false",
+            },
+        )
+
+    def headers(self) -> dict[str, str]:
+        return {"xi-api-key": self.api_key}
+
+    async def open_session(self, websocket: Any, model: str) -> None:
+        msg = json.loads(await websocket.recv())
+        if msg.get("message_type") != "session_started":
+            raise _STTProtocolError(f"Expected session_started, got: {msg}")
+
+    def encode_chunk(self, chunk: bytes | memoryview, *, final: bool = False) -> str:
+        return json.dumps(
+            {
+                "message_type": "input_audio_chunk",
+                "audio_base_64": base64.b64encode(chunk).decode("ascii"),
+                "sample_rate": self.config.sample_rate,
+                "commit": final,
+            }
+        )
+
+    def finish_messages(self) -> list[str]:
+        # The final audio chunk carries commit=true, so no second sentinel is
+        # needed and no empty audio message can distort provider behavior.
+        return []
+
+    def parse_message(self, msg: dict[str, Any]) -> tuple[str, str]:
+        msg_type = msg.get("message_type")
+        if msg_type == "partial_transcript":
+            return "snapshot", str(msg.get("text") or "")
+        if msg_type == "committed_transcript":
+            return "done", str(msg.get("text") or "")
+        if isinstance(msg_type, str) and (
+            msg_type.endswith("_error") or msg_type in {"error", "auth_error"}
+        ):
+            return "error", str(msg.get("message") or msg.get("error") or msg)
+        return "", ""
+
+
 _STT_PROTOCOLS: dict[str, type[_STTProviderProtocol]] = {
     "vllm_realtime": _VllmRealtimeProtocol,
     "vajra_openai_realtime": _VajraOpenAIRealtimeProtocol,
+    "deepgram_flux": _DeepgramFluxProtocol,
+    "deepgram_nova": _DeepgramNovaProtocol,
+    "elevenlabs": _ElevenLabsSTTProtocol,
 }

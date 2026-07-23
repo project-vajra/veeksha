@@ -33,6 +33,8 @@ class AudioMetricKey(StrEnum):
     INPUT_CHARS = "input_chars"
     INPUT_TOKENS = "input_tokens"
     INPUT_TEXT = "input_text"
+    TEXT_PACING_UNIT = "text_pacing_unit"
+    TEXT_PACING_RATE = "text_pacing_rate"
     PROVIDER = "provider"
     PROVIDER_MODEL = "provider_model"
     PROVIDER_PROTOCOL = "provider_protocol"

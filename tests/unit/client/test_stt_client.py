@@ -1,13 +1,19 @@
 import asyncio
+import base64
 import json
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import pytest
+from websockets.exceptions import ConnectionClosedOK
 
 from veeksha.client import STTClient
 from veeksha.client.registry import ClientRegistry
 from veeksha.client.stt import (
     _ClipAssets,
+    _DeepgramFluxProtocol,
+    _DeepgramNovaProtocol,
+    _ElevenLabsSTTProtocol,
     _map_stt_error,
     _slice_pcm16_bytes,
     _STTProtocolError,
@@ -200,6 +206,161 @@ def test_registry_exposes_one_stt_client_with_provider_strategies(
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("provider", "model", "path", "protocol_name"),
+    [
+        (
+            "deepgram_flux",
+            "flux-general-en",
+            "/v2/listen",
+            "deepgram_v2_flux_listen",
+        ),
+        ("deepgram_nova", "nova-3", "/v1/listen", "deepgram_v1_listen"),
+        (
+            "elevenlabs",
+            "scribe_v2_realtime",
+            "/v1/speech-to-text/realtime",
+            "elevenlabs_scribe_v2_realtime",
+        ),
+    ],
+)
+def test_cloud_stt_providers_share_one_client_lifecycle(
+    provider: str, model: str, path: str, protocol_name: str
+) -> None:
+    client = STTClient(
+        STTClientConfig(
+            provider=provider,
+            model=model,
+            api_base=(
+                "https://api.elevenlabs.io"
+                if provider == "elevenlabs"
+                else "https://api.deepgram.com"
+            ),
+            api_key="test-key",
+        )
+    )
+
+    parsed = urlparse(client._ws_url)
+    query = parse_qs(parsed.query)
+    assert type(client) is STTClient
+    assert parsed.scheme == "wss"
+    assert parsed.path == path
+    assert query["model_id" if provider == "elevenlabs" else "model"] == [model]
+    assert client._protocol.protocol_name == protocol_name
+
+
+@pytest.mark.unit
+def test_deepgram_stt_adapters_use_binary_pcm_and_normalized_events() -> None:
+    flux_config = STTClientConfig(
+        provider="deepgram_flux",
+        model="flux-general-en",
+        api_base="https://api.deepgram.com",
+        api_key="test-key",
+    )
+    flux = _DeepgramFluxProtocol(flux_config, "test-key")
+    assert flux.headers() == {"Authorization": "Token test-key"}
+    assert flux.encode_chunk(memoryview(b"\x01\x02"), final=False) == b"\x01\x02"
+    assert flux.finish_messages() == [json.dumps({"type": "CloseStream"})]
+    assert flux.parse_message(
+        {"type": "TurnInfo", "event": "Update", "transcript": "hello"}
+    ) == ("snapshot", "hello")
+    assert flux.parse_message(
+        {"type": "TurnInfo", "event": "EndOfTurn", "transcript": "hello there"}
+    ) == ("commit", "hello there")
+    assert flux.parse_message({"type": "Metadata"}) == ("done", "")
+
+    nova_config = STTClientConfig(
+        provider="deepgram_nova",
+        model="nova-3",
+        api_base="https://api.deepgram.com",
+        api_key="test-key",
+    )
+    nova = _DeepgramNovaProtocol(nova_config, "test-key")
+    partial = {
+        "type": "Results",
+        "is_final": False,
+        "channel": {"alternatives": [{"transcript": "hello"}]},
+    }
+    final = {**partial, "is_final": True}
+    assert nova.parse_message(partial) == ("snapshot", "hello")
+    assert nova.parse_message(final) == ("commit", "hello")
+
+
+@pytest.mark.unit
+def test_repeated_committed_turns_are_not_deduplicated() -> None:
+    client = STTClient(
+        STTClientConfig(
+            provider="deepgram_flux",
+            model="flux-general-en",
+            api_base="https://api.deepgram.com",
+            api_key="test-key",
+            ws_realtime_pacing=False,
+        )
+    )
+    websocket = _FakeDeepgramFluxWebSocket(
+        transcripts=["yes", "yes"],
+    )
+    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign, arg-type]
+
+    result = asyncio.run(client._stream(b"\x00\x00"))
+
+    assert result.final_transcript == "yes yes"
+
+
+@pytest.mark.unit
+def test_elevenlabs_stt_adapter_commits_only_the_final_pcm_chunk() -> None:
+    config = STTClientConfig(
+        provider="elevenlabs",
+        model="scribe_v2_realtime",
+        api_base="https://api.elevenlabs.io",
+        api_key="test-key",
+    )
+    protocol = _ElevenLabsSTTProtocol(config, "test-key")
+
+    first = json.loads(protocol.encode_chunk(b"\x01\x02", final=False))
+    last = json.loads(protocol.encode_chunk(b"\x03\x04", final=True))
+
+    assert protocol.headers() == {"xi-api-key": "test-key"}
+    assert base64.b64decode(first["audio_base_64"]) == b"\x01\x02"
+    assert first["commit"] is False
+    assert last["commit"] is True
+    assert protocol.finish_messages() == []
+    assert protocol.parse_message(
+        {"message_type": "partial_transcript", "text": "hello"}
+    ) == ("snapshot", "hello")
+    assert protocol.parse_message(
+        {"message_type": "committed_transcript", "text": "hello there"}
+    ) == ("done", "hello there")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("provider", "env_name"),
+    [
+        ("deepgram_flux", "DEEPGRAM_API_KEY"),
+        ("deepgram_nova", "DEEPGRAM_API_KEY"),
+        ("elevenlabs", "ELEVENLABS_API_KEY"),
+    ],
+)
+def test_cloud_stt_provider_requires_api_key(
+    provider: str, env_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv(env_name, raising=False)
+    with pytest.raises(ValueError, match=env_name):
+        STTClient(
+            STTClientConfig(
+                provider=provider,
+                model=(
+                    "scribe_v2_realtime"
+                    if provider == "elevenlabs"
+                    else "flux-general-en"
+                ),
+                api_base="https://provider.example",
+            )
+        )
+
+
+@pytest.mark.unit
 def test_stt_send_request_finishes_lifecycle_callbacks_on_invalid_audio() -> None:
     client = _vllm_realtime_client()
     events: list[str] = []
@@ -251,6 +412,68 @@ class _FakeConnection:
 
     async def __aexit__(self, *_args) -> None:
         return None
+
+
+class _FakeDeepgramFluxWebSocket:
+    def __init__(self, transcripts: list[str] | None = None) -> None:
+        self._audio_sent = asyncio.Event()
+        if transcripts is None:
+            self._events = [
+                json.dumps(
+                    {
+                        "type": "TurnInfo",
+                        "event": "Update",
+                        "transcript": "hello",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "TurnInfo",
+                        "event": "EndOfTurn",
+                        "transcript": "hello there",
+                    }
+                ),
+            ]
+        else:
+            self._events = [
+                json.dumps(
+                    {
+                        "type": "TurnInfo",
+                        "event": "EndOfTurn",
+                        "transcript": transcript,
+                    }
+                )
+                for transcript in transcripts
+            ]
+
+    async def recv(self) -> str:
+        await self._audio_sent.wait()
+        if self._events:
+            return self._events.pop(0)
+        raise ConnectionClosedOK(None, None)
+
+    async def send(self, _message: str | bytes) -> None:
+        self._audio_sent.set()
+
+
+@pytest.mark.unit
+def test_deepgram_flux_clean_close_finalizes_the_last_turn() -> None:
+    client = STTClient(
+        STTClientConfig(
+            provider="deepgram_flux",
+            model="flux-general-en",
+            api_base="https://api.deepgram.com",
+            api_key="test-key",
+            ws_realtime_pacing=False,
+        )
+    )
+    websocket = _FakeDeepgramFluxWebSocket()
+    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign, arg-type]
+
+    result = asyncio.run(client._stream(b"\x00\x00"))
+
+    assert result.final_transcript == "hello there"
+    assert result.ttfc is not None
 
 
 @pytest.mark.unit

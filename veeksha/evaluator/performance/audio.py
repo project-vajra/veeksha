@@ -72,6 +72,8 @@ class AudioRequestMetrics:
     asr: ASRRequestMetrics | None = None
     input_tokens: int = 0
     input_text: str = ""
+    text_pacing_unit: str = ""
+    text_pacing_rate: float | None = None
     provider: str = ""
     provider_model: str = ""
     provider_protocol: str = ""
@@ -254,6 +256,11 @@ class AudioPerformanceEvaluator:
         input_chars = int(cm.get(AudioMetricKey.INPUT_CHARS.value, 0) or 0)
         input_tokens = int(cm.get(AudioMetricKey.INPUT_TOKENS.value, 0) or 0)
         input_text = str(cm.get(AudioMetricKey.INPUT_TEXT.value, ""))
+        text_pacing_unit = str(cm.get(AudioMetricKey.TEXT_PACING_UNIT.value, ""))
+        raw_text_pacing_rate = cm.get(AudioMetricKey.TEXT_PACING_RATE.value)
+        text_pacing_rate = (
+            float(raw_text_pacing_rate) if raw_text_pacing_rate is not None else None
+        )
 
         # Duration at the server's length cap (within one codec chunk) is the
         # only client-visible signal of silent server-side truncation. An
@@ -341,6 +348,8 @@ class AudioPerformanceEvaluator:
                 audio_task=audio_task,
                 asr=asr_metrics,
                 input_text=input_text,
+                text_pacing_unit=text_pacing_unit,
+                text_pacing_rate=text_pacing_rate,
                 provider=provider,
                 provider_model=provider_model,
                 provider_protocol=provider_protocol,
@@ -759,6 +768,10 @@ class AudioPerformanceEvaluator:
                 AudioMetricKey.INPUT_TEXT.value: metrics.input_text,
                 AudioMetricKey.ABORTED.value: int(metrics.aborted),
             }
+            if metrics.text_pacing_unit:
+                row[AudioMetricKey.TEXT_PACING_UNIT.value] = metrics.text_pacing_unit
+            if metrics.text_pacing_rate is not None:
+                row[AudioMetricKey.TEXT_PACING_RATE.value] = metrics.text_pacing_rate
             if self.channel_config.max_expected_audio_ms is not None:
                 row["suspected_length_cap_truncation"] = int(
                     metrics.suspected_length_cap_truncation
@@ -941,6 +954,12 @@ class AudioPerformanceEvaluator:
             "provider_model": channel_metrics.get(AudioMetricKey.PROVIDER_MODEL.value),
             "provider_protocol": channel_metrics.get(
                 AudioMetricKey.PROVIDER_PROTOCOL.value
+            ),
+            AudioMetricKey.TEXT_PACING_UNIT.value: channel_metrics.get(
+                AudioMetricKey.TEXT_PACING_UNIT.value
+            ),
+            AudioMetricKey.TEXT_PACING_RATE.value: channel_metrics.get(
+                AudioMetricKey.TEXT_PACING_RATE.value
             ),
             "commit_ms": (
                 round(timing.commit_ms, 1) if timing.commit_ms is not None else None

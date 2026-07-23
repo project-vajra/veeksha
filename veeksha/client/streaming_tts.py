@@ -622,7 +622,7 @@ class StreamingTTSClient(BaseLLMClient):
                 await asyncio.sleep(pacer.initial_delay_s)
             deadline = time.monotonic()
             response_triggered = False
-            sent_tokens = 0
+            sent_words = 0
 
             for segment_idx, segment in enumerate(segments):
                 deadline += pacer.next_gap()
@@ -630,21 +630,25 @@ class StreamingTTSClient(BaseLLMClient):
                 if sleep_s > 0:
                     await asyncio.sleep(sleep_s)
                 offset_ms = (time.monotonic() - start) * 1000
-                await websocket.send(self._protocol.text_message(segment.text))
-                text_delta_timestamps.append([offset_ms, segment.n_chars])
-                sent_tokens += segment.n_tokens
-
                 if (
                     not self._protocol.explicit_response_trigger
                     and not response_triggered
                 ):
+                    # Native streaming providers treat the first real text
+                    # append as the synthesis trigger. Record it before the
+                    # await so a very fast response cannot race the timestamp.
                     response_trigger_offset = offset_ms
                     response_triggered = True
-                elif (
+
+                await websocket.send(self._protocol.text_message(segment.text))
+                text_delta_timestamps.append([offset_ms, segment.n_chars])
+                sent_words += segment.n_tokens
+
+                if (
                     self._protocol.explicit_response_trigger
                     and not response_triggered
                     and self._streaming_config.input_output_mode == "duplex"
-                    and sent_tokens >= self._streaming_config.duplex_start_after_tokens
+                    and sent_words >= self._streaming_config.duplex_start_after_tokens
                 ):
                     response_trigger_offset = (time.monotonic() - start) * 1000
                     trigger_message = self._protocol.response_trigger_message()
@@ -664,6 +668,7 @@ class StreamingTTSClient(BaseLLMClient):
                 trigger_message = self._protocol.response_trigger_message()
                 if trigger_message is not None:
                     await websocket.send(trigger_message)
+                response_triggered = True
 
             for message in self._protocol.finish_messages():
                 await websocket.send(message)
@@ -699,7 +704,11 @@ class StreamingTTSClient(BaseLLMClient):
                         [playable_offset_ms, len(event.audio)]
                     )
                     if ttfc is None:
-                        ttfc = wire_offset_ms
+                        if response_trigger_offset is None:
+                            raise StreamingTTSError(
+                                "received audio before the synthesis trigger"
+                            )
+                        ttfc = wire_offset_ms - response_trigger_offset
                     if response_created_offset is None:
                         response_created_offset = wire_offset_ms
                     fire_sent_once()
@@ -763,6 +772,11 @@ class StreamingTTSClient(BaseLLMClient):
 
         completed_at = time.monotonic()
         latency_ms = (completed_at - start) * 1000
+        if error_code is None and not aborted and not audio_chunks:
+            error_code = 502
+            error_msg = (
+                f"{self._protocol.provider} completed the TTS stream without audio"
+            )
         success = error_code is None and error_msg is None
         fire_sent_once()
 
@@ -779,6 +793,8 @@ class StreamingTTSClient(BaseLLMClient):
             AudioMetricKey.INPUT_CHARS.value: len(input_text),
             AudioMetricKey.INPUT_TOKENS.value: input_tokens,
             AudioMetricKey.INPUT_TEXT.value: input_text,
+            AudioMetricKey.TEXT_PACING_UNIT.value: "whitespace_word",
+            AudioMetricKey.TEXT_PACING_RATE.value: pacing.tokens_per_second,
             AudioMetricKey.ABORTED.value: aborted,
             AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value: text_delta_timestamps,
             AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value: audio_chunk_timestamps,

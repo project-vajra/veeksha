@@ -222,12 +222,27 @@ class TTSClientConfig(BaseClientConfig):
 
 @frozen_dataclass
 class TextPacingConfig:
-    """LLM decode-rate emulation for paced streaming text input."""
+    """Word-rate emulation for paced streaming text input.
+
+    The legacy field names say ``token`` for configuration compatibility, but
+    Veeksha currently segments text on whitespace. One pacing token is
+    therefore one whitespace-delimited word, not a provider tokenizer ID.
+    """
 
     tokens_per_second: float = field(
-        20.0, help="Emulated upstream LLM decode rate (whitespace tokens/sec)."
+        20.0,
+        help=(
+            "Emulated upstream text rate in whitespace-delimited words/sec. "
+            "The field name is retained for configuration compatibility."
+        ),
     )
-    tokens_per_delta: int = field(1, help="Whitespace tokens per input append event.")
+    tokens_per_delta: int = field(
+        1,
+        help=(
+            "Whitespace-delimited words per input append event. The field "
+            "name is retained for configuration compatibility."
+        ),
+    )
     gap_distribution: str = field(
         "fixed", help="Inter-delta gap distribution: fixed | poisson."
     )
@@ -360,7 +375,10 @@ class StreamingTTSClientConfig(BaseClientConfig):
     )
     duplex_start_after_tokens: int = field(
         1,
-        help="Input tokens before an explicit duplex response trigger.",
+        help=(
+            "Whitespace-delimited input words before an explicit duplex "
+            "response trigger. The field name is retained for compatibility."
+        ),
     )
     language: Optional[str] = field(
         None, help="Optional language for protocols that support it."
@@ -461,7 +479,8 @@ class STTClientConfig(BaseClientConfig):
     provider: str = field(
         "",
         help=(
-            "STT provider name. Supported: 'vajra_openai_realtime', " "'vllm_realtime'."
+            "STT provider name. Supported: vajra_openai_realtime, "
+            "vllm_realtime, deepgram_flux, deepgram_nova, elevenlabs."
         ),
     )
     sample_rate: int = field(16000, help="Expected audio sample rate in Hz.")
@@ -501,7 +520,22 @@ class STTClientConfig(BaseClientConfig):
     )
     model: str = field("", help="The STT model ID.")
 
-    _SUPPORTED_PROVIDERS = ("vllm_realtime", "vajra_openai_realtime")
+    api_key_env: Optional[str] = field(
+        None,
+        help="Optional provider API-key environment variable override.",
+    )
+    language: str = field("en", help="Requested transcription language.")
+    mip_opt_out: bool = field(
+        False, help="Opt out of the Deepgram Model Improvement Program."
+    )
+
+    _SUPPORTED_PROVIDERS = (
+        "vllm_realtime",
+        "vajra_openai_realtime",
+        "deepgram_flux",
+        "deepgram_nova",
+        "elevenlabs",
+    )
 
     @classmethod
     def get_type(cls) -> ClientType:
