@@ -169,6 +169,11 @@ class STTStreamResult:
     transcript_snapshots: list[TranscriptSnapshotRow]
     chunk_count: int
     pcm_byte_count: int
+    # preflight timing (client record book, populated only when enabled)
+    client_sent_at: Optional[float] = None
+    chunk_recv_times: Optional[list[float]] = None
+    input_send_times: Optional[list[float]] = None
+    input_send_deadlines: Optional[list[float]] = None
 
 
 class TranscriptSnapshotRecorder:
@@ -323,6 +328,7 @@ class _STTClientBase(BaseLLMClient):
         wire_messages: Optional[list[str | bytes]] = None,
         on_request_sent: Optional[Callable[[], None]] = None,
         on_request_dispatched: Optional[Callable[[], None]] = None,
+        request_id: Optional[int] = None,
     ) -> STTStreamResult:
         """Stream pre-decoded PCM16 to the provider and collect the transcript.
 
@@ -349,11 +355,28 @@ class _STTClientBase(BaseLLMClient):
         transcript_chunks: list[str] = []
         snapshots = TranscriptSnapshotRecorder()
 
+        # t_cs: request handed to the transport (always recorded, so the harness
+        # lifecycle dispatch-drift metrics cover STT on normal runs too).
+        client_sent_at = time.monotonic()
+
+        # preflight timing (recorded only when enabled). Only the request id is
+        # sent to the server; the scorer joins the two record books by request_id.
+        preflight_enabled = getattr(self.config, "record_preflight_timing", False)
+        chunk_recv_times: list[float] = []
+        input_send_times: list[float] = []  # t_cs_i, per paced audio chunk
+        input_send_deadlines: list[float] = []
+        extra_headers = (
+            {"X-Veeksha-Request-Id": str(request_id)}
+            if preflight_enabled and request_id is not None
+            else None
+        )
+
         async with websockets.connect(
             self._ws_url,
             ping_interval=self._ws_ping_interval_s,
             ping_timeout=self._ws_ping_timeout_s,
             compression=self._ws_compression,
+            additional_headers=extra_headers,
         ) as ws:
             await self._open_session(ws)
             if on_request_dispatched is not None:
@@ -376,6 +399,13 @@ class _STTClientBase(BaseLLMClient):
                     else:
                         message = self._encode_chunk(pcm_bytes[byte_offset:chunk_end])
                     await ws.send(message)
+                    if preflight_enabled and audio_started_at is not None:
+                        # t_cs_i vs the audio-clock deadline this chunk paces to.
+                        input_send_times.append(time.monotonic())
+                        input_send_deadlines.append(
+                            audio_started_at
+                            + byte_offset / BYTES_PER_SAMPLE / self._sample_rate
+                        )
                 if audio_started_at is not None:
                     await self._maybe_pace_until(
                         audio_started_at
@@ -388,8 +418,11 @@ class _STTClientBase(BaseLLMClient):
             try:
                 while True:
                     kind, text = self._parse_message(json.loads(await ws.recv()))
-                    now = time.monotonic()
+                    now = time.monotonic()  # t_cr_i
+
                     if kind == "delta":
+                        if preflight_enabled:
+                            chunk_recv_times.append(now)
                         # TTFC counts only deltas whose own payload carries
                         # transcript text after cleaning; empty progress /
                         # keepalive deltas (e.g. Vajra's priming delta) and
@@ -475,6 +508,10 @@ class _STTClientBase(BaseLLMClient):
             transcript_snapshots=snapshots.snapshots,
             chunk_count=chunk_count,
             pcm_byte_count=len(pcm_bytes),
+            client_sent_at=client_sent_at,
+            chunk_recv_times=chunk_recv_times if preflight_enabled else None,
+            input_send_times=input_send_times if preflight_enabled else None,
+            input_send_deadlines=input_send_deadlines if preflight_enabled else None,
         )
 
     # ------------------------------------------------------------------
@@ -596,6 +633,7 @@ class _STTClientBase(BaseLLMClient):
                     wire_messages,
                     on_request_sent=fire_sent_once,
                     on_request_dispatched=fire_dispatched_once,
+                    request_id=request.id,
                 )
         except TimeoutError:
             error_code = 408
@@ -676,6 +714,20 @@ class _STTClientBase(BaseLLMClient):
             error_code=error_code,
             error_msg=error_msg,
             client_completed_at=completed_at,
+            client_sent_at=(
+                stream_result.client_sent_at if stream_result is not None else None
+            ),
+            chunk_recv_times=(
+                stream_result.chunk_recv_times if stream_result is not None else None
+            ),
+            input_send_times=(
+                stream_result.input_send_times if stream_result is not None else None
+            ),
+            input_send_deadlines=(
+                stream_result.input_send_deadlines
+                if stream_result is not None
+                else None
+            ),
         )
 
 

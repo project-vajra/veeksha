@@ -196,21 +196,25 @@ class RealtimeTTSClient(BaseLLMClient):
         self._realtime_config = config
         self._protocol = _build_realtime_protocol(config, api_key=self.api_key)
 
-    def _connect(self):
+    def _connect(self, extra_headers: Optional[dict] = None):
         """Return the websocket connect context manager.
 
         A seam so tests can override the transport. ``max_size=None`` lifts the
         inbound-frame cap (audio deltas can be large); ``compression=None``
         keeps binary PCM uncompressed. The asyncio transport sets ``TCP_NODELAY``
-        by default, so no explicit socket option is required.
+        by default, so no explicit socket option is required. ``extra_headers``
+        (preflight only) adds the request-id correlation header.
         """
         open_timeout = min(self._realtime_config.request_timeout, 30)
+        headers = self._protocol.headers()
+        if extra_headers:
+            headers = {**headers, **extra_headers}
         return connect(
             self._protocol.build_ws_url(str(self.api_base)),
             max_size=None,
             compression=None,
             open_timeout=open_timeout,
-            additional_headers=self._protocol.headers(),
+            additional_headers=headers,
         )
 
     async def send_request(
@@ -274,7 +278,16 @@ class RealtimeTTSClient(BaseLLMClient):
         error_code: Optional[int] = None
         error_msg: Optional[str] = None
 
+        # preflight timing (recorded only when enabled). Only the request id is
+        # sent to the server; the scorer joins the two record books by request_id.
+        preflight_enabled = getattr(self.config, "record_preflight_timing", False)
+        client_sent_at: Optional[float] = None
+        chunk_recv_times: list[float] = []
+        input_send_times: list[float] = []  # t_cs_i, per paced text segment
+        input_send_deadlines: list[float] = []  # intended send instant per segment
+
         t_start = time.monotonic()
+        client_sent_at = t_start
 
         async def send_loop(ws) -> None:
             nonlocal input_complete_offset
@@ -289,6 +302,10 @@ class RealtimeTTSClient(BaseLLMClient):
                 if sleep_s > 0:
                     await asyncio.sleep(sleep_s)
                 await ws.send(self._protocol.conversation_item_create_json(seg.text))
+                if preflight_enabled:
+                    # t_cs_i (actual send) vs deadline (intended) -> pacing error.
+                    input_send_times.append(time.monotonic())
+                    input_send_deadlines.append(deadline)
                 text_delta_ts.append([(time.monotonic() - t_start) * 1000, seg.n_chars])
             input_complete_offset = (time.monotonic() - t_start) * 1000
             await ws.send(self._protocol.response_create_json())
@@ -298,8 +315,9 @@ class RealtimeTTSClient(BaseLLMClient):
             nonlocal audio_done_offset, response_done_offset, sample_rate
             while True:
                 raw = await ws.recv()
-                # Stamp receipt BEFORE any json/base64 decode work.
-                offset_ms = (time.monotonic() - t_start) * 1000
+                # Stamp receipt BEFORE any json/base64 decode work (t_cr_i).
+                recv_time = time.monotonic()
+                offset_ms = (recv_time - t_start) * 1000
                 try:
                     event = json.loads(raw)
                 except (json.JSONDecodeError, TypeError, ValueError):
@@ -313,6 +331,8 @@ class RealtimeTTSClient(BaseLLMClient):
                     if chunk:
                         audio_chunks.append(chunk)
                         audio_chunk_ts.append([offset_ms, len(chunk)])
+                        if preflight_enabled:
+                            chunk_recv_times.append(recv_time)
                         if ttfc is None:
                             ttfc = offset_ms
                         fire_sent_once()
@@ -348,9 +368,12 @@ class RealtimeTTSClient(BaseLLMClient):
                     raise RealtimeServerError(event)
                 # OTHER: keep receiving until response.done.
 
+        extra_headers = (
+            {"X-Veeksha-Request-Id": str(request.id)} if preflight_enabled else None
+        )
         try:
             async with asyncio.timeout(self._realtime_config.request_timeout):
-                async with self._connect() as ws:
+                async with self._connect(extra_headers) as ws:
                     ws_connect_latency = (time.monotonic() - t_start) * 1000
                     await ws.send(self._protocol.session_update_json())
                     # Analog of the HTTP-200 ack: the scheduler's dispatch pacing
@@ -431,6 +454,10 @@ class RealtimeTTSClient(BaseLLMClient):
             error_code=error_code,
             error_msg=error_msg,
             client_completed_at=completed_at,
+            client_sent_at=client_sent_at,
+            chunk_recv_times=chunk_recv_times if preflight_enabled else None,
+            input_send_times=input_send_times if preflight_enabled else None,
+            input_send_deadlines=input_send_deadlines if preflight_enabled else None,
         )
 
 

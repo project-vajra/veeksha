@@ -210,7 +210,7 @@ def _run_request(
     monkeypatch: pytest.MonkeyPatch,
     events: list[str],
 ):
-    monkeypatch.setattr(client, "_connect", lambda: _FakeConnection(websocket))
+    monkeypatch.setattr(client, "_connect", lambda *a, **k: _FakeConnection(websocket))
     return asyncio.run(
         client.send_request(
             _request(),
