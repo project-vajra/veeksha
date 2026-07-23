@@ -6,8 +6,8 @@ Client and transport model
 
 ``client.type: stt`` always selects one provider-agnostic realtime WebSocket
 client. ``client.provider`` chooses the Vajra, vLLM, Deepgram Flux, Deepgram
-Nova, or ElevenLabs Scribe wire adapter; it does not select a different client
-lifecycle.
+Nova, ElevenLabs Scribe, Mistral Voxtral, or Cartesia Ink wire adapter; it does
+not select a different client lifecycle.
 
 Requests name an audio file, which the client decodes to PCM16 and streams while
 receiving partial and final transcripts concurrently. Disabling
@@ -47,6 +47,8 @@ Hosted API adapters use the same client and evaluator:
    uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_deepgram_flux.yml
    uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_deepgram_nova.yml
    uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_elevenlabs.yml
+   uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_mistral.yml
+   uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_cartesia.yml
 
 Trace generation
 ----------------
@@ -131,12 +133,14 @@ Common audio metrics:
   final transcript is returned.
 * ``input_tokens``: whitespace token count of the final transcript.
 * ``provider``: normalized serving provider family, such as ``vajra``, ``vllm``,
-  ``deepgram``, or ``elevenlabs``.
+  ``deepgram``, ``elevenlabs``, ``mistral``, or ``cartesia``.
 * ``provider_model``: configured transcription model identifier.
 * ``provider_protocol``: concrete wire protocol selected by
   ``client.provider``: ``v1_realtime_transcription``,
   ``openai_v1_realtime_transcription``, ``deepgram_v2_flux_listen``,
-  ``deepgram_v1_listen``, or ``elevenlabs_scribe_v2_realtime``.
+  ``deepgram_v1_listen``, ``elevenlabs_scribe_v2_realtime``,
+  ``mistral_realtime_transcription``, or
+  ``cartesia_stt_websocket_manual``.
 
 ASR-specific metrics:
 

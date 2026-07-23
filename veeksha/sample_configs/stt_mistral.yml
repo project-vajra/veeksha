@@ -1,13 +1,12 @@
 seed: 42
-output_dir: benchmark_output/stt_elevenlabs
+output_dir: benchmark_output/stt_mistral
 
 client:
   type: stt
-  provider: elevenlabs
-  api_base: https://api.elevenlabs.io
-  api_key_env: ELEVENLABS_API_KEY
-  model: scribe_v2_realtime
-  language: en
+  provider: mistral
+  api_base: https://api.mistral.ai
+  api_key_env: MISTRAL_API_KEY
+  model: voxtral-mini-transcribe-realtime-2602
   sample_rate: 16000
   ws_chunk_size: 2560
   ws_realtime_pacing: true

@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 from urllib.parse import quote, urlencode, urljoin
 
 import httpx
+import numpy as np
 
 from veeksha.client.base import BaseLLMClient
 from veeksha.client.utils import resolve_provider_api_key
@@ -54,6 +57,41 @@ class HTTPProviderProtocol(Protocol):
 
     def build_request(self, api_base: str, text: str) -> TTSHTTPRequest: ...
 
+    def validate_response(self, response: httpx.Response) -> None: ...
+
+    def iter_audio_chunks(
+        self, response: httpx.Response, chunk_size: int
+    ) -> AsyncIterator[bytes]: ...
+
+
+class _RawAudioHTTPProtocol:
+    """Shared raw-byte response handling for audio HTTP endpoints."""
+
+    _ALLOWED_MEDIA_TYPES = {
+        "application/octet-stream",
+        "application/x-wav",
+        "binary/octet-stream",
+    }
+
+    def validate_response(self, response: httpx.Response) -> None:
+        content_type = response.headers.get("Content-Type", "")
+        media_type = content_type.partition(";")[0].strip().lower()
+        if (
+            media_type
+            and not media_type.startswith("audio/")
+            and media_type not in self._ALLOWED_MEDIA_TYPES
+        ):
+            raise TTSProtocolError(
+                f"Expected an audio byte response, got Content-Type {content_type!r}"
+            )
+
+    async def iter_audio_chunks(
+        self, response: httpx.Response, chunk_size: int
+    ) -> AsyncIterator[bytes]:
+        async for chunk in response.aiter_bytes(chunk_size=chunk_size):
+            if chunk:
+                yield chunk
+
 
 def _audio_speech_url(api_base: str) -> str:
     normalized_base = api_base.rstrip("/")
@@ -62,7 +100,7 @@ def _audio_speech_url(api_base: str) -> str:
     return urljoin(f"{normalized_base}/", "audio/speech")
 
 
-class OpenAIHTTPProtocol:
+class OpenAIHTTPProtocol(_RawAudioHTTPProtocol):
     provider = "openai"
     protocol_name = "v1_audio_speech"
     default_api_key_env = "OPENAI_API_KEY"
@@ -91,7 +129,7 @@ class OpenAIHTTPProtocol:
         )
 
 
-class ElevenLabsHTTPProtocol:
+class ElevenLabsHTTPProtocol(_RawAudioHTTPProtocol):
     provider = "elevenlabs"
     protocol_name = "v1_text_to_speech"
     default_api_key_env = "ELEVENLABS_API_KEY"
@@ -125,7 +163,7 @@ class ElevenLabsHTTPProtocol:
         )
 
 
-class DeepgramFluxHTTPProtocol:
+class DeepgramFluxHTTPProtocol(_RawAudioHTTPProtocol):
     provider = "deepgram"
     protocol_name = "v2_flux_speak_http"
     default_api_key_env = "DEEPGRAM_API_KEY"
@@ -157,10 +195,106 @@ class DeepgramFluxHTTPProtocol:
         )
 
 
+def _float32_pcm_to_pcm16(raw_audio: bytes) -> bytes:
+    """Normalize Mistral's float32 little-endian PCM into Veeksha PCM16."""
+    if len(raw_audio) % 4:
+        raise TTSProtocolError(
+            "Mistral returned a float32 PCM chunk whose size is not divisible by 4"
+        )
+    samples = np.frombuffer(raw_audio, dtype="<f4")
+    if not np.all(np.isfinite(samples)):
+        raise TTSProtocolError("Mistral returned non-finite float32 PCM samples")
+    return (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+
+
+class MistralHTTPProtocol:
+    """Mistral TTS: complete text in, SSE-streamed float32 PCM out."""
+
+    provider = "mistral"
+    protocol_name = "v1_audio_speech_sse"
+    default_api_key_env = "MISTRAL_API_KEY"
+    requires_api_key = True
+    raw_pcm = True
+
+    def __init__(self, config: TTSClientConfig, api_key: str | None) -> None:
+        self.config = config
+        self.api_key = api_key or ""
+
+    def build_request(self, api_base: str, text: str) -> TTSHTTPRequest:
+        return TTSHTTPRequest(
+            url=_audio_speech_url(api_base),
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream",
+            },
+            payload={
+                "model": self.config.model,
+                "input": text,
+                "voice_id": self.config.voice_id,
+                "response_format": "pcm",
+                "stream": True,
+            },
+        )
+
+    def validate_response(self, response: httpx.Response) -> None:
+        content_type = response.headers.get("Content-Type", "")
+        media_type = content_type.partition(";")[0].strip().lower()
+        if media_type != "text/event-stream":
+            raise TTSProtocolError(
+                "Expected a Mistral text/event-stream response, "
+                f"got Content-Type {content_type!r}"
+            )
+
+    async def iter_audio_chunks(
+        self, response: httpx.Response, chunk_size: int
+    ) -> AsyncIterator[bytes]:
+        del chunk_size  # SSE events define provider chunk boundaries.
+        event_name: str | None = None
+        async for line in response.aiter_lines():
+            if line.startswith("event:"):
+                event_name = line.removeprefix("event:").strip()
+                continue
+            if not line.startswith("data:"):
+                continue
+            raw_data = line.removeprefix("data:").strip()
+            if not raw_data or raw_data == "[DONE]":
+                continue
+            try:
+                event = json.loads(raw_data)
+            except json.JSONDecodeError as exc:
+                raise TTSProtocolError(f"Invalid Mistral SSE JSON: {exc}") from exc
+            if not isinstance(event, dict):
+                continue
+            event_type = event_name or event.get("type") or event.get("event")
+            event_name = None
+            event_data = event.get("data")
+            payload = event_data if isinstance(event_data, dict) else event
+            if event_type == "speech.audio.done":
+                break
+            if event_type == "error":
+                raise TTSProtocolError(
+                    str(payload.get("message") or payload.get("error") or event)
+                )
+            encoded_audio = payload.get("audio_data")
+            if event_type != "speech.audio.delta" and not encoded_audio:
+                continue
+            if not isinstance(encoded_audio, str) or not encoded_audio:
+                raise TTSProtocolError("Mistral audio delta omitted audio_data")
+            try:
+                float32_audio = base64.b64decode(encoded_audio, validate=True)
+            except (TypeError, ValueError) as exc:
+                raise TTSProtocolError(f"Invalid Mistral audio_data: {exc}") from exc
+            pcm16_audio = _float32_pcm_to_pcm16(float32_audio)
+            if pcm16_audio:
+                yield pcm16_audio
+
+
 _HTTP_PROTOCOLS: dict[str, type[HTTPProviderProtocol]] = {
     "openai": OpenAIHTTPProtocol,
     "elevenlabs": ElevenLabsHTTPProtocol,
     "deepgram_flux": DeepgramFluxHTTPProtocol,
+    "mistral": MistralHTTPProtocol,
 }
 
 
@@ -188,24 +322,6 @@ class TTSClient(BaseLLMClient):
                 timeout=self._http_config.request_timeout
             )
         return self._client_storage.client
-
-    @staticmethod
-    def _validate_audio_response(response: httpx.Response) -> None:
-        content_type = response.headers.get("Content-Type", "")
-        media_type = content_type.partition(";")[0].strip().lower()
-        allowed = {
-            "application/octet-stream",
-            "application/x-wav",
-            "binary/octet-stream",
-        }
-        if (
-            media_type
-            and not media_type.startswith("audio/")
-            and media_type not in allowed
-        ):
-            raise TTSProtocolError(
-                f"Expected an audio byte response, got Content-Type {content_type!r}"
-            )
 
     async def send_request(
         self,
@@ -252,14 +368,12 @@ class TTSClient(BaseLLMClient):
                 timeout=self._http_config.request_timeout,
             ) as response:
                 response.raise_for_status()
-                self._validate_audio_response(response)
+                self._protocol.validate_response(response)
                 if on_request_dispatched is not None:
                     on_request_dispatched()
-                async for chunk in response.aiter_bytes(
-                    chunk_size=self._http_config.chunk_size
+                async for chunk in self._protocol.iter_audio_chunks(
+                    response, self._http_config.chunk_size
                 ):
-                    if not chunk:
-                        continue
                     offset_ms = (time.monotonic() - start) * 1000
                     if ttfc is None:
                         ttfc = offset_ms
@@ -334,6 +448,7 @@ class TTSClient(BaseLLMClient):
                     AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value: (
                         audio_chunk_timestamps
                     ),
+                    AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value: 0.0,
                     AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value: 0.0,
                     AudioMetricKey.AUDIO_DONE_OFFSET_MS.value: rounded_latency,
                     AudioMetricKey.RESPONSE_DONE_OFFSET_MS.value: rounded_latency,

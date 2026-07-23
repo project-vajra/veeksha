@@ -20,6 +20,7 @@ if (
 
 from veeksha.client.streaming_tts import (
     _ERROR_PRIORITY,
+    CartesiaStreamingProtocol,
     DeepgramAuraStreamingProtocol,
     DeepgramFluxStreamingProtocol,
     ElevenLabsStreamingProtocol,
@@ -55,6 +56,13 @@ class _FakeWebSocket:
                 await self.events.put(json.dumps({"isFinal": True}))
         elif self.provider == "deepgram_aura" and event.get("type") == "Speak":
             await self.events.put(bytes(960))
+        elif self.provider == "cartesia" and event.get("continue") is True:
+            audio = base64.b64encode(bytes(960)).decode("ascii")
+            await self.events.put(
+                json.dumps({"type": "chunk", "data": audio, "done": False})
+            )
+        elif self.provider == "cartesia" and event.get("continue") is False:
+            await self.events.put(json.dumps({"type": "done", "done": True}))
         elif self.provider == "deepgram_aura" and event.get("type") == "Flush":
             await self.events.put(json.dumps({"type": "Flushed", "sequence_id": 0}))
         elif event.get("type") == "Speak" and self.provider == "deepgram":
@@ -124,7 +132,7 @@ def test_text_pacing_uses_whitespace_words_at_a_continuous_rate() -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("provider", ["elevenlabs", "deepgram"])
+@pytest.mark.parametrize("provider", ["elevenlabs", "deepgram", "cartesia"])
 def test_streaming_providers_share_text_audio_lifecycle(provider: str) -> None:
     if provider == "elevenlabs":
         config = StreamingTTSClientConfig(
@@ -136,12 +144,23 @@ def test_streaming_providers_share_text_audio_lifecycle(provider: str) -> None:
             pacing=_pacing(),
         )
         client: Any = StreamingTTSClient(config)
-    else:
+    elif provider == "deepgram":
         config = StreamingTTSClientConfig(
             provider="deepgram_flux",
             api_base="https://api.deepgram.com",
             api_key="test-key",
             model="flux-alexis-en",
+            pacing=_pacing(),
+        )
+        client = StreamingTTSClient(config)
+    else:
+        config = StreamingTTSClientConfig(
+            provider="cartesia",
+            api_base="https://api.cartesia.ai",
+            api_key="test-key",
+            model="sonic-3.5",
+            voice_id="test-voice",
+            language="en",
             pacing=_pacing(),
         )
         client = StreamingTTSClient(config)
@@ -211,6 +230,33 @@ def test_streaming_protocol_urls_use_raw_pcm_and_provider_auth() -> None:
     assert "encoding=linear16" in aura.build_ws_url(str(aura_config.api_base))
     assert "speed=1.0" in aura.build_ws_url(str(aura_config.api_base))
     assert aura.headers() == {"Authorization": "Token deepgram-key"}
+
+    cartesia_config = StreamingTTSClientConfig(
+        provider="cartesia",
+        api_base="https://api.cartesia.ai",
+        api_key="cartesia-key",
+        model="sonic-3.5",
+        voice_id="voice/id",
+        language="en",
+    )
+    cartesia = CartesiaStreamingProtocol(cartesia_config, "cartesia-key")
+    assert cartesia.build_ws_url(str(cartesia_config.api_base)).endswith(
+        "/tts/websocket"
+    )
+    assert cartesia.headers() == {
+        "Authorization": "Bearer cartesia-key",
+        "Cartesia-Version": "2026-03-01",
+    }
+    generation = json.loads(cartesia.text_message("hello "))
+    assert generation["model_id"] == "sonic-3.5"
+    assert generation["transcript"] == "hello "
+    assert generation["continue"] is True
+    assert generation["output_format"] == {
+        "container": "raw",
+        "encoding": "pcm_s16le",
+        "sample_rate": 24000,
+    }
+    assert json.loads(cartesia.finish_messages()[0])["continue"] is False
 
 
 @pytest.mark.unit

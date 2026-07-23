@@ -1,18 +1,15 @@
 seed: 42
-output_dir: benchmark_output/tts_deepgram_flux_streaming
+output_dir: benchmark_output/tts_mistral_streaming_output
 
 client:
-  type: streaming_tts
-  provider: deepgram_flux
-  api_base: https://api.deepgram.com
-  api_key_env: DEEPGRAM_API_KEY
-  model: flux-haley-en
+  # Mistral streams audio output over SSE after receiving complete text.
+  type: tts
+  provider: mistral
+  api_base: https://api.mistral.ai
+  api_key_env: MISTRAL_API_KEY
+  model: voxtral-mini-tts-2603
+  voice_id: YOUR_MISTRAL_VOICE_ID
   sample_rate: 24000
-  pacing:
-    # Legacy key: the current pacing unit is a whitespace-delimited word.
-    tokens_per_second: 50
-    tokens_per_delta: 1
-    gap_distribution: fixed
 
 session_generator:
   type: trace

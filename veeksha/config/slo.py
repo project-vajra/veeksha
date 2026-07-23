@@ -6,6 +6,7 @@ from veeksha.types import SloType
 
 SUPPORTED_SLO_METRICS = {
     "ttfc",
+    "interactivity",
     "tbc",
     "tpot",
     "e2e",

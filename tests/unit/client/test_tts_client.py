@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import importlib.util
+import json
 import sys
 import types
 from typing import Any
 
 import httpx
+import numpy as np
 import pytest
 
 if (
@@ -20,8 +23,10 @@ if (
 from veeksha.client.tts import (
     DeepgramFluxHTTPProtocol,
     ElevenLabsHTTPProtocol,
+    MistralHTTPProtocol,
     OpenAIHTTPProtocol,
     TTSClient,
+    _float32_pcm_to_pcm16,
 )
 from veeksha.config.client import TTSClientConfig
 from veeksha.core.audio_contract import AudioMetricKey
@@ -73,6 +78,8 @@ def _config(provider: str) -> TTSClientConfig:
         kwargs.update(model="gpt-4o-mini-tts", voice_id="alloy", raw_pcm=True)
     elif provider == "elevenlabs":
         kwargs.update(model="eleven_flash_v2_5", voice_id="test-voice")
+    elif provider == "mistral":
+        kwargs.update(model="voxtral-mini-tts-2603", voice_id="test-voice")
     else:
         kwargs.update(model="flux-alexis-en")
     return TTSClientConfig(**kwargs)
@@ -85,6 +92,7 @@ def _config(provider: str) -> TTSClientConfig:
         ("openai", "openai"),
         ("elevenlabs", "elevenlabs"),
         ("deepgram_flux", "deepgram"),
+        ("mistral", "mistral"),
     ],
 )
 def test_http_providers_share_streaming_audio_lifecycle(
@@ -93,12 +101,28 @@ def test_http_providers_share_streaming_audio_lifecycle(
     config = _config(provider)
     client = TTSClient(config)
     request = httpx.Request("POST", "https://provider.example/speak")
-    response = httpx.Response(
-        200,
-        content=bytes(4_800),
-        headers={"Content-Type": "audio/l16"},
-        request=request,
-    )
+    if provider == "mistral":
+        float32_audio = np.zeros(2_400, dtype="<f4").tobytes()
+        encoded_audio = base64.b64encode(float32_audio).decode("ascii")
+        content = (
+            "event: speech.audio.delta\n"
+            f"data: {json.dumps({'audio_data': encoded_audio})}\n\n"
+            "event: speech.audio.done\n"
+            "data: {}\n\n"
+        ).encode()
+        response = httpx.Response(
+            200,
+            content=content,
+            headers={"Content-Type": "text/event-stream"},
+            request=request,
+        )
+    else:
+        response = httpx.Response(
+            200,
+            content=bytes(4_800),
+            headers={"Content-Type": "audio/l16"},
+            request=request,
+        )
     fake_client = _FakeAsyncClient(response)
     client._get_client = lambda: fake_client  # type: ignore[method-assign]
     events: list[str] = []
@@ -120,6 +144,7 @@ def test_http_providers_share_streaming_audio_lifecycle(
     assert metrics[AudioMetricKey.PROVIDER_MODEL.value] == config.model
     assert metrics[AudioMetricKey.RAW_PCM.value]
     assert metrics[AudioMetricKey.CHUNK_COUNT.value] == 1
+    assert metrics[AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value] == 0.0
     assert (
         metrics[AudioMetricKey.TTFC.value]
         <= metrics[AudioMetricKey.END_TO_END_LATENCY.value]
@@ -157,6 +182,24 @@ def test_http_protocols_keep_provider_specific_url_payload_and_auth() -> None:
     assert "encoding=linear16" in deepgram_request.url
     assert "container=none" in deepgram_request.url
     assert deepgram_request.headers["Authorization"] == "Token deepgram-key"
+
+    mistral_config = _config("mistral")
+    mistral = MistralHTTPProtocol(mistral_config, "mistral-key")
+    mistral_request = mistral.build_request(str(mistral_config.api_base), "hello")
+    assert mistral_request.url.endswith("/v1/audio/speech")
+    assert mistral_request.headers["Authorization"] == "Bearer mistral-key"
+    assert mistral_request.headers["Accept"] == "text/event-stream"
+    assert mistral_request.payload["response_format"] == "pcm"
+    assert mistral_request.payload["stream"] is True
+
+
+@pytest.mark.unit
+def test_mistral_float32_pcm_is_normalized_to_pcm16() -> None:
+    samples = np.array([-1.0, -0.5, 0.0, 0.5, 1.0], dtype="<f4")
+
+    pcm16 = np.frombuffer(_float32_pcm_to_pcm16(samples.tobytes()), dtype="<i2")
+
+    assert pcm16.tolist() == [-32767, -16383, 0, 16383, 32767]
 
 
 @pytest.mark.unit

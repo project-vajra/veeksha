@@ -40,6 +40,10 @@ request lifecycle and metric contract:
      - ``deepgram_flux``
      - Deepgram Flux ``POST /v2/speak``
      - Complete text with an HTTP PCM response
+   * - ``tts``
+     - ``mistral``
+     - Mistral ``POST /v1/audio/speech`` SSE
+     - Complete text with streamed float32 PCM normalized to PCM16
    * - ``streaming_tts``
      - ``openai_realtime``
      - OpenAI Realtime-compatible WebSocket
@@ -60,11 +64,17 @@ request lifecycle and metric contract:
      - ``deepgram_aura``
      - Deepgram Aura ``/v1/speak`` WebSocket
      - Paced ``Speak`` messages followed by ``Flush``
+   * - ``streaming_tts``
+     - ``cartesia``
+     - Cartesia ``/tts/websocket`` contexts
+     - Paced transcript appends with PCM16 audio output
 
 The native protocols follow the vendor specifications for `ElevenLabs
 stream-input <https://elevenlabs.io/docs/api-reference/text-to-speech/v-1-text-to-speech-voice-id-stream-input>`_,
 `Deepgram Flux <https://developers.deepgram.com/docs/flux-tts/quickstart>`_,
-and `Deepgram Aura <https://developers.deepgram.com/reference/text-to-speech/speak-streaming>`_.
+`Deepgram Aura <https://developers.deepgram.com/reference/text-to-speech/speak-streaming>`_,
+`Mistral speech <https://docs.mistral.ai/api/endpoint/audio/speech>`_, and
+`Cartesia WebSocket TTS <https://docs.cartesia.ai/api-reference/tts/websocket>`_.
 
 Metrics
 -------
@@ -137,10 +147,12 @@ text. Therefore:
 - ``source_oversupplied`` may be used only by a controlled workload that
   guarantees enough eligible text throughout playback.
 
-Batch HTTP output has all audio buffered when playback begins, so its fluidity
-is trivially one. Compare batch models on first-playable latency, end-to-end
-latency, RTF, cost, and quality; do not use batch fluidity to rank streaming
-behavior.
+Complete-text HTTP and SSE requests make all source text available at the
+trigger, but their audio response can still arrive incrementally. Their
+first-playable latency and output-delivery fluidity are meaningful; they do not
+measure text/audio overlap. A non-streaming response whose full body is
+delivered as one chunk will naturally have fluidity one and should not be used
+to claim incremental streaming behavior.
 
 Text pacing unit
 ----------------
@@ -197,6 +209,16 @@ Deepgram Flux and Aura use the same client lifecycle:
     uvx -p 3.14t veeksha benchmark \
       --config veeksha/sample_configs/tts_streaming_deepgram_aura.yml
 
+Mistral streams audio output after receiving complete text; Cartesia accepts
+incremental text over its WebSocket:
+
+.. code-block:: console
+
+    uvx -p 3.14t veeksha benchmark \
+      --config veeksha/sample_configs/tts_mistral.yml
+    uvx -p 3.14t veeksha benchmark \
+      --config veeksha/sample_configs/tts_streaming_cartesia.yml
+
 WER requires the optional ``audio-verification`` dependencies (including
 faster-whisper). UTMOS requires its corresponding optional dependency group.
 Install those groups in the Veeksha environment before enabling the quality
@@ -245,8 +267,10 @@ For Deepgram Flux streaming, replace only the client block:
 
 For Aura, keep ``type: streaming_tts`` and set ``provider: deepgram_aura``.
 For complete-text HTTP controls, use ``type: tts`` with either
-``provider: elevenlabs`` or ``provider: deepgram_flux``. The OpenAI-compatible
-HTTP speech contract is ``type: tts`` with ``provider: openai``.
+``provider: elevenlabs``, ``provider: deepgram_flux``, or
+``provider: mistral``. The OpenAI-compatible HTTP speech contract is
+``type: tts`` with ``provider: openai``. Cartesia's incremental context
+protocol is ``type: streaming_tts`` with ``provider: cartesia``.
 
 Vajra's native streaming contract uses ``type: streaming_tts`` with
 ``provider: vajra``. A Vajra endpoint implementing the OpenAI Realtime

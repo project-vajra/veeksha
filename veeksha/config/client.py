@@ -149,7 +149,9 @@ class TTSClientConfig(BaseClientConfig):
 
     provider: str = field(
         "",
-        help=("HTTP TTS provider. Supported: openai, elevenlabs, deepgram_flux."),
+        help=(
+            "HTTP TTS provider. Supported: openai, elevenlabs, deepgram_flux, mistral."
+        ),
     )
     voice_id: str = field("", help="Voice identifier when required by the provider.")
     sample_rate: int = field(DEFAULT_AUDIO_SAMPLE_RATE, help="Audio sample rate in Hz.")
@@ -175,8 +177,8 @@ class TTSClientConfig(BaseClientConfig):
         False, help="Opt out of the Deepgram Model Improvement Program."
     )
 
-    _SUPPORTED_PROVIDERS = ("openai", "elevenlabs", "deepgram_flux")
-    _VOICE_REQUIRED_PROVIDERS = ("openai", "elevenlabs")
+    _SUPPORTED_PROVIDERS = ("openai", "elevenlabs", "deepgram_flux", "mistral")
+    _VOICE_REQUIRED_PROVIDERS = ("openai", "elevenlabs", "mistral")
 
     @classmethod
     def get_type(cls) -> ClientType:
@@ -348,7 +350,7 @@ class StreamingTTSClientConfig(BaseClientConfig):
         "",
         help=(
             "Streaming TTS provider. Supported: openai_realtime, vajra, "
-            "elevenlabs, deepgram_flux, deepgram_aura."
+            "elevenlabs, deepgram_flux, deepgram_aura, cartesia."
         ),
     )
     voice_id: str = field("", help="Optional provider voice identifier.")
@@ -401,6 +403,14 @@ class StreamingTTSClientConfig(BaseClientConfig):
     mip_opt_out: bool = field(
         False, help="Opt out of the Deepgram Model Improvement Program."
     )
+    cartesia_version: str = field("2026-03-01", help="Cartesia API version header.")
+    max_buffer_delay_ms: Optional[int] = field(
+        None,
+        help=(
+            "Optional Cartesia server-side transcript buffer cap in milliseconds. "
+            "None leaves the provider's immediate streaming behavior unchanged."
+        ),
+    )
 
     _SUPPORTED_PROVIDERS = (
         "openai_realtime",
@@ -408,6 +418,7 @@ class StreamingTTSClientConfig(BaseClientConfig):
         "elevenlabs",
         "deepgram_flux",
         "deepgram_aura",
+        "cartesia",
     )
 
     @classmethod
@@ -430,16 +441,15 @@ class StreamingTTSClientConfig(BaseClientConfig):
             )
         if self.abort.enabled and self.provider != "vajra":
             raise ValueError(
-                "StreamingTTSClientConfig.abort is supported only for "
-                "provider='vajra'."
+                "StreamingTTSClientConfig.abort is supported only for provider='vajra'."
             )
         if not self.model:
             raise ValueError("StreamingTTSClientConfig.model is required.")
         if self.api_base is None:
             raise ValueError("StreamingTTSClientConfig.api_base is required.")
-        if self.provider == "elevenlabs" and not self.voice_id:
+        if self.provider in ("elevenlabs", "cartesia") and not self.voice_id:
             raise ValueError(
-                "StreamingTTSClientConfig.voice_id is required for elevenlabs."
+                f"StreamingTTSClientConfig.voice_id is required for {self.provider}."
             )
         if self.sample_rate <= 0:
             raise ValueError("StreamingTTSClientConfig.sample_rate must be > 0")
@@ -467,6 +477,13 @@ class StreamingTTSClientConfig(BaseClientConfig):
                 )
         if self.provider == "deepgram_aura" and not 0.7 <= self.speed <= 1.5:
             raise ValueError("Deepgram Aura speed must be between 0.7 and 1.5")
+        if self.provider == "cartesia":
+            if not self.cartesia_version:
+                raise ValueError("cartesia_version is required for Cartesia")
+            if self.max_buffer_delay_ms is not None and not (
+                0 <= self.max_buffer_delay_ms <= 5000
+            ):
+                raise ValueError("max_buffer_delay_ms must be between 0 and 5000")
 
     def build_tokenizer_provider(self) -> TokenizerProvider:
         return build_word_split_tokenizer_provider(self.model)
@@ -480,7 +497,8 @@ class STTClientConfig(BaseClientConfig):
         "",
         help=(
             "STT provider name. Supported: vajra_openai_realtime, "
-            "vllm_realtime, deepgram_flux, deepgram_nova, elevenlabs."
+            "vllm_realtime, deepgram_flux, deepgram_nova, elevenlabs, "
+            "mistral, cartesia."
         ),
     )
     sample_rate: int = field(16000, help="Expected audio sample rate in Hz.")
@@ -528,6 +546,11 @@ class STTClientConfig(BaseClientConfig):
     mip_opt_out: bool = field(
         False, help="Opt out of the Deepgram Model Improvement Program."
     )
+    target_streaming_delay_ms: Optional[int] = field(
+        None,
+        help="Optional Mistral transcription context delay in milliseconds.",
+    )
+    cartesia_version: str = field("2026-03-01", help="Cartesia API version header.")
 
     _SUPPORTED_PROVIDERS = (
         "vllm_realtime",
@@ -535,6 +558,8 @@ class STTClientConfig(BaseClientConfig):
         "deepgram_flux",
         "deepgram_nova",
         "elevenlabs",
+        "mistral",
+        "cartesia",
     )
 
     @classmethod
@@ -569,6 +594,13 @@ class STTClientConfig(BaseClientConfig):
             raise ValueError("STTClientConfig.ws_ping_interval_s must be > 0 or None")
         if self.ws_ping_timeout_s is not None and self.ws_ping_timeout_s <= 0:
             raise ValueError("STTClientConfig.ws_ping_timeout_s must be > 0 or None")
+        if (
+            self.target_streaming_delay_ms is not None
+            and self.target_streaming_delay_ms < 0
+        ):
+            raise ValueError("STTClientConfig.target_streaming_delay_ms must be >= 0")
+        if self.provider == "cartesia" and not self.cartesia_version:
+            raise ValueError("cartesia_version is required for Cartesia")
 
     def build_tokenizer_provider(self) -> TokenizerProvider:
         """STT models use a simple word-split tokenizer."""

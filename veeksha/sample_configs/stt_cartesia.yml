@@ -1,15 +1,16 @@
 seed: 42
-output_dir: benchmark_output/stt_elevenlabs
+output_dir: benchmark_output/stt_cartesia
 
 client:
   type: stt
-  provider: elevenlabs
-  api_base: https://api.elevenlabs.io
-  api_key_env: ELEVENLABS_API_KEY
-  model: scribe_v2_realtime
+  provider: cartesia
+  api_base: https://api.cartesia.ai
+  api_key_env: CARTESIA_API_KEY
+  model: ink-2
   language: en
   sample_rate: 16000
-  ws_chunk_size: 2560
+  # 100 ms of PCM16 mono, matching Cartesia's recommended input cadence.
+  ws_chunk_size: 3200
   ws_realtime_pacing: true
 
 session_generator:

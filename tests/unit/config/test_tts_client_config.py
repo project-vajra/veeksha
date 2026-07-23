@@ -40,6 +40,13 @@ from veeksha.types import ClientType
             "TTSClientConfig",
         ),
         (
+            "tts",
+            "mistral",
+            "voxtral-mini-tts-2603",
+            {"voice_id": "voice"},
+            "TTSClientConfig",
+        ),
+        (
             "streaming_tts",
             "openai_realtime",
             "realtime-tts",
@@ -72,6 +79,13 @@ from veeksha.types import ClientType
             "deepgram_aura",
             "aura-2-thalia-en",
             {},
+            "StreamingTTSClientConfig",
+        ),
+        (
+            "streaming_tts",
+            "cartesia",
+            "sonic-3.5",
+            {"voice_id": "voice"},
             "StreamingTTSClientConfig",
         ),
     ],

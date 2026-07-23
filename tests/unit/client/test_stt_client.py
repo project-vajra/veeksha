@@ -10,10 +10,12 @@ from websockets.exceptions import ConnectionClosedOK
 from veeksha.client import STTClient
 from veeksha.client.registry import ClientRegistry
 from veeksha.client.stt import (
+    _CartesiaSTTProtocol,
     _ClipAssets,
     _DeepgramFluxProtocol,
     _DeepgramNovaProtocol,
     _ElevenLabsSTTProtocol,
+    _MistralSTTProtocol,
     _map_stt_error,
     _slice_pcm16_bytes,
     _STTProtocolError,
@@ -222,6 +224,18 @@ def test_registry_exposes_one_stt_client_with_provider_strategies(
             "/v1/speech-to-text/realtime",
             "elevenlabs_scribe_v2_realtime",
         ),
+        (
+            "mistral",
+            "voxtral-mini-transcribe-realtime-2602",
+            "/v1/audio/transcriptions/realtime",
+            "mistral_realtime_transcription",
+        ),
+        (
+            "cartesia",
+            "ink-2",
+            "/stt/websocket",
+            "cartesia_stt_websocket_manual",
+        ),
     ],
 )
 def test_cloud_stt_providers_share_one_client_lifecycle(
@@ -231,11 +245,11 @@ def test_cloud_stt_providers_share_one_client_lifecycle(
         STTClientConfig(
             provider=provider,
             model=model,
-            api_base=(
-                "https://api.elevenlabs.io"
-                if provider == "elevenlabs"
-                else "https://api.deepgram.com"
-            ),
+            api_base={
+                "elevenlabs": "https://api.elevenlabs.io",
+                "mistral": "https://api.mistral.ai",
+                "cartesia": "https://api.cartesia.ai",
+            }.get(provider, "https://api.deepgram.com"),
             api_key="test-key",
         )
     )
@@ -333,6 +347,77 @@ def test_elevenlabs_stt_adapter_commits_only_the_final_pcm_chunk() -> None:
     ) == ("done", "hello there")
 
 
+class _MistralHandshakeWebSocket:
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+
+    async def recv(self) -> str:
+        return json.dumps({"type": "session.created", "session": {}})
+
+    async def send(self, message: str) -> None:
+        self.sent.append(message)
+
+
+@pytest.mark.unit
+def test_mistral_stt_adapter_uses_realtime_pcm_protocol() -> None:
+    config = STTClientConfig(
+        provider="mistral",
+        model="voxtral-mini-transcribe-realtime-2602",
+        api_base="https://api.mistral.ai",
+        api_key="test-key",
+        target_streaming_delay_ms=240,
+    )
+    protocol = _MistralSTTProtocol(config, "test-key")
+    websocket = _MistralHandshakeWebSocket()
+
+    asyncio.run(protocol.open_session(websocket, config.model))
+
+    session_update = json.loads(websocket.sent[0])
+    assert protocol.headers() == {"Authorization": "Bearer test-key"}
+    assert session_update["session"]["audio_format"] == {
+        "encoding": "pcm_s16le",
+        "sample_rate": 16000,
+    }
+    assert session_update["session"]["target_streaming_delay_ms"] == 240
+    encoded = json.loads(protocol.encode_chunk(b"\x01\x02", final=False))
+    assert base64.b64decode(encoded["audio"]) == b"\x01\x02"
+    assert protocol.finish_messages() == [
+        json.dumps({"type": "input_audio.flush"}),
+        json.dumps({"type": "input_audio.end"}),
+    ]
+    assert protocol.parse_message(
+        {"type": "transcription.text.delta", "text": "hello"}
+    ) == ("delta", "hello")
+    assert protocol.parse_message(
+        {"type": "transcription.done", "text": "hello there"}
+    ) == ("done", "hello there")
+
+
+@pytest.mark.unit
+def test_cartesia_stt_adapter_uses_manual_finalize_protocol() -> None:
+    config = STTClientConfig(
+        provider="cartesia",
+        model="ink-2",
+        api_base="https://api.cartesia.ai",
+        api_key="test-key",
+    )
+    protocol = _CartesiaSTTProtocol(config, "test-key")
+
+    assert protocol.headers() == {
+        "Authorization": "Bearer test-key",
+        "Cartesia-Version": "2026-03-01",
+    }
+    assert protocol.encode_chunk(memoryview(b"\x01\x02"), final=False) == b"\x01\x02"
+    assert protocol.finish_messages() == ["finalize", "close"]
+    assert protocol.parse_message(
+        {"type": "transcript", "is_final": False, "text": "hello"}
+    ) == ("snapshot", "hello")
+    assert protocol.parse_message(
+        {"type": "transcript", "is_final": True, "text": "hello there"}
+    ) == ("commit", "hello there")
+    assert protocol.parse_message({"type": "done"}) == ("done", "")
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize(
     ("provider", "env_name"),
@@ -340,6 +425,8 @@ def test_elevenlabs_stt_adapter_commits_only_the_final_pcm_chunk() -> None:
         ("deepgram_flux", "DEEPGRAM_API_KEY"),
         ("deepgram_nova", "DEEPGRAM_API_KEY"),
         ("elevenlabs", "ELEVENLABS_API_KEY"),
+        ("mistral", "MISTRAL_API_KEY"),
+        ("cartesia", "CARTESIA_API_KEY"),
     ],
 )
 def test_cloud_stt_provider_requires_api_key(
@@ -353,7 +440,10 @@ def test_cloud_stt_provider_requires_api_key(
                 model=(
                     "scribe_v2_realtime"
                     if provider == "elevenlabs"
-                    else "flux-general-en"
+                    else {
+                        "mistral": "voxtral-mini-transcribe-realtime-2602",
+                        "cartesia": "ink-2",
+                    }.get(provider, "flux-general-en")
                 ),
                 api_base="https://provider.example",
             )

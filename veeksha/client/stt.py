@@ -207,9 +207,9 @@ class TranscriptSnapshotRecorder:
         )
 
     def _elapsed_ms(self, now: float) -> float:
-        assert (
-            self._audio_started_at is not None
-        ), "snapshot recorded before any audio was sent"
+        assert self._audio_started_at is not None, (
+            "snapshot recorded before any audio was sent"
+        )
         return (now - self._audio_started_at) * 1000
 
 
@@ -413,9 +413,9 @@ class STTClient(BaseLLMClient):
                         # STTStreamResult for how this differs from
                         # time_to_first_visible_text below.
                         if ttfc is None and _clean_transcript(text):
-                            assert (
-                                audio_started_at is not None
-                            ), "delta arrived before any audio was sent"
+                            assert audio_started_at is not None, (
+                                "delta arrived before any audio was sent"
+                            )
                             ttfc = (now - audio_started_at) * 1000
                             if on_request_sent is not None:
                                 on_request_sent()
@@ -434,9 +434,9 @@ class STTClient(BaseLLMClient):
                         current_transcript = assembled_transcript()
                         snapshots.add(now, current_transcript)
                         if time_to_first_visible_text is None and current_transcript:
-                            assert (
-                                audio_started_at is not None
-                            ), "transcript arrived before any audio was sent"
+                            assert audio_started_at is not None, (
+                                "transcript arrived before any audio was sent"
+                            )
                             time_to_first_visible_text = (now - audio_started_at) * 1000
                         if (
                             audio_end_at is not None
@@ -452,16 +452,16 @@ class STTClient(BaseLLMClient):
                         snapshots.add(now, final_transcript)
                         if final_transcript:
                             if ttfc is None:
-                                assert (
-                                    audio_started_at is not None
-                                ), "completion arrived before any audio was sent"
+                                assert audio_started_at is not None, (
+                                    "completion arrived before any audio was sent"
+                                )
                                 ttfc = (now - audio_started_at) * 1000
                                 if on_request_sent is not None:
                                     on_request_sent()
                             if time_to_first_visible_text is None:
-                                assert (
-                                    audio_started_at is not None
-                                ), "transcript arrived before any audio was sent"
+                                assert audio_started_at is not None, (
+                                    "transcript arrived before any audio was sent"
+                                )
                                 time_to_first_visible_text = (
                                     now - audio_started_at
                                 ) * 1000
@@ -1029,10 +1029,132 @@ class _ElevenLabsSTTProtocol:
         return "", ""
 
 
+class _MistralSTTProtocol:
+    """Mistral realtime transcription WebSocket protocol."""
+
+    provider = "mistral"
+    protocol_name = "mistral_realtime_transcription"
+    default_api_key_env = "MISTRAL_API_KEY"
+    requires_api_key = True
+    clean_close_is_terminal = False
+
+    def __init__(self, config: "STTClientConfig", api_key: str | None) -> None:
+        self.config = config
+        self.api_key = api_key or ""
+
+    def build_ws_url(self, api_base: str) -> str:
+        return _stt_ws_url(
+            api_base,
+            "v1/audio/transcriptions/realtime",
+            {"model": self.config.model},
+        )
+
+    def headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.api_key}"}
+
+    async def open_session(self, websocket: Any, model: str) -> None:
+        del model  # Model is selected in the WebSocket query string.
+        msg = json.loads(await websocket.recv())
+        if msg.get("type") != "session.created":
+            raise _STTProtocolError(f"Expected session.created, got: {msg}")
+        session: dict[str, Any] = {
+            "audio_format": {
+                "encoding": "pcm_s16le",
+                "sample_rate": self.config.sample_rate,
+            }
+        }
+        if self.config.target_streaming_delay_ms is not None:
+            session["target_streaming_delay_ms"] = self.config.target_streaming_delay_ms
+        await websocket.send(json.dumps({"type": "session.update", "session": session}))
+
+    def encode_chunk(self, chunk: bytes | memoryview, *, final: bool = False) -> str:
+        del final
+        return json.dumps(
+            {
+                "type": "input_audio.append",
+                "audio": base64.b64encode(chunk).decode("ascii"),
+            }
+        )
+
+    def finish_messages(self) -> list[str]:
+        return [
+            json.dumps({"type": "input_audio.flush"}),
+            json.dumps({"type": "input_audio.end"}),
+        ]
+
+    def parse_message(self, msg: dict[str, Any]) -> tuple[str, str]:
+        msg_type = msg.get("type")
+        if msg_type == "transcription.text.delta":
+            return "delta", str(msg.get("text") or "")
+        if msg_type == "transcription.done":
+            return "done", str(msg.get("text") or "")
+        if msg_type == "error":
+            error = msg.get("error")
+            if isinstance(error, dict):
+                return "error", str(error.get("message") or error)
+            return "error", str(error or msg)
+        return "", ""
+
+
+class _CartesiaSTTProtocol:
+    """Cartesia manual realtime STT protocol with explicit finalization."""
+
+    provider = "cartesia"
+    protocol_name = "cartesia_stt_websocket_manual"
+    default_api_key_env = "CARTESIA_API_KEY"
+    requires_api_key = True
+    clean_close_is_terminal = False
+
+    def __init__(self, config: "STTClientConfig", api_key: str | None) -> None:
+        self.config = config
+        self.api_key = api_key or ""
+
+    def build_ws_url(self, api_base: str) -> str:
+        return _stt_ws_url(
+            api_base,
+            "stt/websocket",
+            {
+                "model": self.config.model,
+                "encoding": "pcm_s16le",
+                "sample_rate": self.config.sample_rate,
+                "language": self.config.language,
+            },
+        )
+
+    def headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Cartesia-Version": self.config.cartesia_version,
+        }
+
+    async def open_session(self, websocket: Any, model: str) -> None:
+        del websocket, model
+
+    def encode_chunk(self, chunk: bytes | memoryview, *, final: bool = False) -> bytes:
+        del final
+        return bytes(chunk)
+
+    def finish_messages(self) -> list[str]:
+        return ["finalize", "close"]
+
+    def parse_message(self, msg: dict[str, Any]) -> tuple[str, str]:
+        msg_type = msg.get("type")
+        if msg_type == "transcript":
+            kind = "commit" if msg.get("is_final") else "snapshot"
+            return kind, str(msg.get("text") or "")
+        if msg_type == "done":
+            return "done", ""
+        if msg_type == "error":
+            return "error", str(msg.get("message") or msg.get("title") or msg)
+        return "", ""
+
+
 _STT_PROTOCOLS: dict[str, type[_STTProviderProtocol]] = {
     "vllm_realtime": _VllmRealtimeProtocol,
     "vajra_openai_realtime": _VajraOpenAIRealtimeProtocol,
     "deepgram_flux": _DeepgramFluxProtocol,
     "deepgram_nova": _DeepgramNovaProtocol,
     "elevenlabs": _ElevenLabsSTTProtocol,
+    "mistral": _MistralSTTProtocol,
+    "cartesia": _CartesiaSTTProtocol,
 }

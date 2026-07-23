@@ -1,12 +1,14 @@
 seed: 42
-output_dir: benchmark_output/tts_deepgram_flux_streaming
+output_dir: benchmark_output/tts_cartesia_streaming
 
 client:
   type: streaming_tts
-  provider: deepgram_flux
-  api_base: https://api.deepgram.com
-  api_key_env: DEEPGRAM_API_KEY
-  model: flux-haley-en
+  provider: cartesia
+  api_base: https://api.cartesia.ai
+  api_key_env: CARTESIA_API_KEY
+  model: sonic-3.5
+  voice_id: YOUR_CARTESIA_VOICE_ID
+  language: en
   sample_rate: 24000
   pacing:
     # Legacy key: the current pacing unit is a whitespace-delimited word.
@@ -43,6 +45,11 @@ evaluators:
         metric: trigger_to_first_playable_audio_ms
         percentile: 0.90
         value: 1000
+      - type: constant
+        name: P1 user fluidity at least 0.99
+        metric: user_audio_fluidity_index
+        percentile: 0.01
+        value: 0.99
   - type: audio_quality
     target_channels: [audio]
     save_audio_files: true

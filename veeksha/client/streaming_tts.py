@@ -405,6 +405,85 @@ class ElevenLabsStreamingProtocol(_ImplicitResponseProtocol):
         )
 
 
+class CartesiaStreamingProtocol(_ImplicitResponseProtocol):
+    """Cartesia context protocol with incremental transcript appends."""
+
+    provider = "cartesia"
+    protocol_name = "tts_websocket_context"
+    default_api_key_env = "CARTESIA_API_KEY"
+    requires_api_key = True
+    has_ready_event = False
+    _CONTEXT_ID = "veeksha"
+
+    def __init__(self, config: StreamingTTSClientConfig, api_key: str | None) -> None:
+        self.config = config
+        self.api_key = api_key or ""
+
+    def build_ws_url(self, api_base: str) -> str:
+        normalized = api_base.rstrip("/") + "/"
+        return to_websocket_url(urljoin(normalized, "tts/websocket"))
+
+    def headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Cartesia-Version": self.config.cartesia_version,
+        }
+
+    def initial_messages(self) -> list[str]:
+        return []
+
+    def _generation_message(self, transcript: str, *, continuing: bool) -> str:
+        payload: dict[str, Any] = {
+            "model_id": self.config.model,
+            "transcript": transcript,
+            "voice": {"mode": "id", "id": self.config.voice_id},
+            "language": self.config.language or "en",
+            "context_id": self._CONTEXT_ID,
+            "output_format": {
+                "container": "raw",
+                "encoding": "pcm_s16le",
+                "sample_rate": self.config.sample_rate,
+            },
+            "continue": continuing,
+        }
+        if self.config.max_buffer_delay_ms is not None:
+            payload["max_buffer_delay_ms"] = self.config.max_buffer_delay_ms
+        return json.dumps(payload)
+
+    def text_message(self, text: str) -> str:
+        return self._generation_message(text, continuing=True)
+
+    def finish_messages(self) -> list[str]:
+        return [self._generation_message("", continuing=False)]
+
+    def parse(self, raw: str | bytes) -> StreamingProtocolEvent:
+        if isinstance(raw, bytes):
+            return StreamingProtocolEvent(error="Unexpected binary Cartesia frame")
+        event = _decode_json_object(raw)
+        if event is None:
+            return StreamingProtocolEvent()
+        event_type = event.get("type")
+        if event_type == "error":
+            return StreamingProtocolEvent(
+                error=str(event.get("message") or event.get("title") or event)
+            )
+        if event_type == "chunk":
+            encoded_audio = event.get("data")
+            if not isinstance(encoded_audio, str) or not encoded_audio:
+                return StreamingProtocolEvent(error="Cartesia chunk omitted audio data")
+            try:
+                audio = base64.b64decode(encoded_audio, validate=True)
+            except (ValueError, TypeError) as exc:
+                return StreamingProtocolEvent(error=f"Invalid Cartesia audio: {exc}")
+            return StreamingProtocolEvent(
+                audio=audio,
+                response_started=True,
+            )
+        if event_type == "done" or event.get("done") is True:
+            return StreamingProtocolEvent(audio_done=True, terminal=True)
+        return StreamingProtocolEvent()
+
+
 class _DeepgramStreamingProtocol(_ImplicitResponseProtocol):
     provider = "deepgram"
     default_api_key_env = "DEEPGRAM_API_KEY"
@@ -488,6 +567,7 @@ _STREAMING_PROTOCOLS: dict[str, type[StreamingProviderProtocol]] = {
     "openai_realtime": OpenAIRealtimeProtocol,
     "vajra": VajraStreamingProtocol,
     "elevenlabs": ElevenLabsStreamingProtocol,
+    "cartesia": CartesiaStreamingProtocol,
     "deepgram_flux": DeepgramFluxStreamingProtocol,
     "deepgram_aura": DeepgramAuraStreamingProtocol,
 }
