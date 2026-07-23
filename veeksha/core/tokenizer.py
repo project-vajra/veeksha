@@ -11,8 +11,6 @@ from typing import (
     TypeVar,
 )
 
-from transformers import AutoTokenizer
-
 from veeksha.types import ChannelModality
 
 RawContent = TypeVar("RawContent")
@@ -69,6 +67,11 @@ def build_hf_tokenizer_handle(tokenizer) -> TokenizerHandle[str]:
 
 def build_hf_tokenizer_handle_from_model(model: str) -> TokenizerHandle[str]:
     """Instantiate a Hugging Face tokenizer from a model name and wrap it."""
+
+    # Imported lazily: transformers/tokenizers is heavy and (on free-threaded
+    # CPython) re-enables the GIL on import, so only pay that cost when an HF
+    # tokenizer is actually requested.
+    from transformers import AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(model, trust_remote_code=True)
     return build_hf_tokenizer_handle(tokenizer)
