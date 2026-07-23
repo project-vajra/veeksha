@@ -7,7 +7,8 @@ client:
   api_base: https://api.cartesia.ai
   api_key_env: CARTESIA_API_KEY
   model: sonic-3.5
-  voice_id: YOUR_CARTESIA_VOICE_ID
+  # Cartesia public voice: Skylar - Friendly Guide (English).
+  voice_id: db6b0ed5-d5d3-463d-ae85-518a07d3c2b4
   language: en
   sample_rate: 24000
   pacing:

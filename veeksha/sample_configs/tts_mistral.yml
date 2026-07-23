@@ -8,7 +8,8 @@ client:
   api_base: https://api.mistral.ai
   api_key_env: MISTRAL_API_KEY
   model: voxtral-mini-tts-2603
-  voice_id: YOUR_MISTRAL_VOICE_ID
+  # Mistral preset: Paul - Neutral (English US).
+  voice_id: c69964a6-ab8b-4f8a-9465-ec0925096ec8
   sample_rate: 24000
 
 session_generator:
