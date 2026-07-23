@@ -30,12 +30,12 @@ evaluators:
     stream_metrics: true
     stream_metrics_interval: 10.0
     slos:
-      # Capacity gate: p99 first-partial latency climbs once the engine cannot
-      # keep up at 1x pacing. (RTF is >=1 by construction when paced.)
-      - name: P99 time-to-first-chunk under 500ms
-        metric: ttfc
-        percentile: 0.99
-        value: 500
+      # Brief-compatible interactivity: spoken word end to the first streamed
+      # transcript snapshot in which that word is visible.
+      - name: P90 spoken-word-end to first returned text under 1 second
+        metric: interactivity
+        percentile: 0.90
+        value: 1000
         type: constant
 
 runtime:

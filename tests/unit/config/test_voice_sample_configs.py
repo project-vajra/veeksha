@@ -8,6 +8,24 @@ from veeksha.config.benchmark import BenchmarkConfig
 
 SAMPLE_CONFIG_DIR = Path(__file__).resolve().parents[3] / "veeksha" / "sample_configs"
 
+STT_HEADLINE_CONFIGS = [
+    "stt_vajra.yml",
+    "stt_vllm_realtime.yml",
+    "stt_deepgram_flux.yml",
+    "stt_deepgram_nova.yml",
+    "stt_elevenlabs.yml",
+    "stt_mistral.yml",
+    "stt_cartesia.yml",
+]
+
+TTS_HEADLINE_CONFIGS = [
+    "tts_streaming_deepgram_flux.yml",
+    "tts_streaming_deepgram_aura.yml",
+    "tts_streaming_elevenlabs.yml",
+    "tts_mistral.yml",
+    "tts_streaming_cartesia.yml",
+]
+
 
 @pytest.mark.parametrize(
     ("filename", "client_type", "num_runs"),
@@ -52,3 +70,20 @@ def test_stt_sample_config_sweeps_canonical_concurrency(filename: str) -> None:
         config["traffic_scheduler"]["target_concurrent_sessions"]
         for config in expanded_configs
     ] == [1, 2, 4, 8, 16, 32, 64]
+
+
+@pytest.mark.parametrize("filename", STT_HEADLINE_CONFIGS)
+def test_stt_samples_use_brief_word_boundary_latency(filename: str) -> None:
+    raw_config = load_yaml_config(str(SAMPLE_CONFIG_DIR / filename))
+
+    assert raw_config["evaluators"][0]["slos"][0]["metric"] == "interactivity"
+
+
+@pytest.mark.parametrize("filename", TTS_HEADLINE_CONFIGS)
+def test_tts_samples_use_brief_trigger_to_playable_latency(filename: str) -> None:
+    raw_config = load_yaml_config(str(SAMPLE_CONFIG_DIR / filename))
+
+    assert (
+        raw_config["evaluators"][0]["slos"][0]["metric"]
+        == "trigger_to_first_playable_audio_ms"
+    )

@@ -117,6 +117,28 @@ Request metrics
 
 Request-level metrics are written to ``request_level_metrics.jsonl``.
 
+Brief-compatible headline latency
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For the Avartha Voice Inference Brief, streaming STT ``TTFB`` is
+``interactivity``, not raw ``ttfc``. For every reference word that can be
+matched to the evolving transcript, Veeksha records:
+
+.. code-block:: text
+
+   word latency =
+       first client timestamp whose transcript contains the matched word
+       - reference end-of-word timestamp
+
+The per-request ``interactivity`` value is the mean of those matched-word
+latencies. The brief's median STT value is P50 across request-level
+``interactivity`` values. The packaged SLOs additionally gate P90 below one
+second. Word timestamps and transcript snapshots are both relative to the first
+PCM byte sent; the WebSocket handshake is therefore excluded.
+
+``ttfc`` remains a useful diagnostic for first transcript activity after the
+first input PCM byte, but it is not the brief's spoken-word-boundary metric.
+
 Common audio metrics:
 
 * ``ttfc``: time from the first audio byte sent to the first transcript delta
