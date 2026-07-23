@@ -56,13 +56,14 @@ class _FakeWebSocket:
                 await self.events.put(json.dumps({"isFinal": True}))
         elif self.provider == "deepgram_aura" and event.get("type") == "Speak":
             await self.events.put(bytes(960))
-        elif self.provider == "cartesia" and event.get("continue") is True:
-            audio = base64.b64encode(bytes(960)).decode("ascii")
-            await self.events.put(
-                json.dumps({"type": "chunk", "data": audio, "done": False})
-            )
-        elif self.provider == "cartesia" and event.get("continue") is False:
-            await self.events.put(json.dumps({"type": "done", "done": True}))
+        elif self.provider == "cartesia":
+            if event.get("continue") is True:
+                audio = base64.b64encode(bytes(960)).decode("ascii")
+                await self.events.put(
+                    json.dumps({"type": "chunk", "data": audio, "done": False})
+                )
+            elif event.get("continue") is False:
+                await self.events.put(json.dumps({"type": "done", "done": True}))
         elif self.provider == "deepgram_aura" and event.get("type") == "Flush":
             await self.events.put(json.dumps({"type": "Flushed", "sequence_id": 0}))
         elif event.get("type") == "Speak" and self.provider == "deepgram":
@@ -238,25 +239,86 @@ def test_streaming_protocol_urls_use_raw_pcm_and_provider_auth() -> None:
         model="sonic-3.5",
         voice_id="voice/id",
         language="en",
+        max_buffer_delay_ms=3000,
     )
     cartesia = CartesiaStreamingProtocol(cartesia_config, "cartesia-key")
-    assert cartesia.build_ws_url(str(cartesia_config.api_base)).endswith(
-        "/tts/websocket"
+    assert (
+        cartesia.build_ws_url(str(cartesia_config.api_base))
+        == "wss://api.cartesia.ai/tts/websocket"
     )
     assert cartesia.headers() == {
-        "Authorization": "Bearer cartesia-key",
+        "X-API-Key": "cartesia-key",
         "Cartesia-Version": "2026-03-01",
     }
-    generation = json.loads(cartesia.text_message("hello "))
-    assert generation["model_id"] == "sonic-3.5"
-    assert generation["transcript"] == "hello "
-    assert generation["continue"] is True
-    assert generation["output_format"] == {
+
+    first = json.loads(cartesia.text_message("hello "))
+    second = json.loads(cartesia.text_message("world"))
+    finish = json.loads(cartesia.finish_messages()[0])
+    assert first["model_id"] == "sonic-3.5"
+    assert first["transcript"] == "hello "
+    assert first["language"] == "en"
+    assert first["context_id"] == second["context_id"] == finish["context_id"]
+    assert first["continue"] is True
+    assert second["continue"] is True
+    assert finish["continue"] is False
+    assert finish["transcript"] == ""
+    assert first["output_format"] == {
         "container": "raw",
         "encoding": "pcm_s16le",
         "sample_rate": 24000,
     }
-    assert json.loads(cartesia.finish_messages()[0])["continue"] is False
+    assert first["max_buffer_delay_ms"] == 3000
+
+    audio = base64.b64encode(b"pcm").decode("ascii")
+    chunk = cartesia.parse(json.dumps({"type": "chunk", "data": audio}))
+    assert chunk.audio == b"pcm"
+    assert chunk.response_started
+    malformed_chunk = cartesia.parse(json.dumps({"type": "chunk"}))
+    assert malformed_chunk.error == "Cartesia chunk omitted audio data"
+    error = cartesia.parse(
+        json.dumps({"type": "error", "error_code": "bad_context"})
+    )
+    assert error.error == "bad_context"
+    done = cartesia.parse(json.dumps({"type": "done", "done": True}))
+    assert done.audio_done
+    assert done.terminal
+
+    another_context = CartesiaStreamingProtocol(
+        cartesia_config, "cartesia-key"
+    ).context_id
+    assert another_context != cartesia.context_id
+
+
+@pytest.mark.unit
+def test_cartesia_client_uses_a_fresh_context_for_each_request() -> None:
+    config = StreamingTTSClientConfig(
+        provider="cartesia",
+        api_base="https://api.cartesia.ai",
+        api_key="test-key",
+        model="sonic-3.5",
+        voice_id="test-voice",
+        language="en",
+        max_buffer_delay_ms=3000,
+        pacing=_pacing(),
+    )
+    client = StreamingTTSClient(config)
+    websockets: list[_FakeWebSocket] = []
+
+    def connect_factory() -> _FakeConnection:
+        websocket = _FakeWebSocket("cartesia")
+        websockets.append(websocket)
+        return _FakeConnection(websocket)
+
+    client._connect = connect_factory  # type: ignore[method-assign]
+    first_result = asyncio.run(client.send_request(_request(), session_id=1))
+    second_result = asyncio.run(client.send_request(_request(), session_id=2))
+
+    assert first_result.success
+    assert second_result.success
+    context_ids = {
+        json.loads(websocket.sent[0])["context_id"] for websocket in websockets
+    }
+    assert len(context_ids) == 2
 
 
 @pytest.mark.unit

@@ -408,7 +408,7 @@ class StreamingTTSClientConfig(BaseClientConfig):
         None,
         help=(
             "Optional Cartesia server-side transcript buffer cap in milliseconds. "
-            "None leaves the provider's immediate streaming behavior unchanged."
+            "Set it explicitly for reproducible benchmark runs."
         ),
     )
 

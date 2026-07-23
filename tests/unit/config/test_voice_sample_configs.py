@@ -87,3 +87,13 @@ def test_tts_samples_use_brief_trigger_to_playable_latency(filename: str) -> Non
         raw_config["evaluators"][0]["slos"][0]["metric"]
         == "trigger_to_first_playable_audio_ms"
     )
+
+
+def test_cartesia_tts_headline_sample_pins_voice_and_buffer() -> None:
+    raw_config = load_yaml_config(
+        str(SAMPLE_CONFIG_DIR / "tts_streaming_cartesia.yml")
+    )
+    config = create_class_from_dict(BenchmarkConfig, raw_config)
+
+    assert config.client.voice_id == "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
+    assert config.client.max_buffer_delay_ms == 3000

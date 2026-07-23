@@ -11,6 +11,7 @@ client:
   voice_id: db6b0ed5-d5d3-463d-ae85-518a07d3c2b4
   language: en
   sample_rate: 24000
+  max_buffer_delay_ms: 3000
   pacing:
     # Legacy key: the current pacing unit is a whitespace-delimited word.
     tokens_per_second: 50

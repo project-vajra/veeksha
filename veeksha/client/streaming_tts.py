@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 from urllib.parse import quote, urlencode, urljoin
+from uuid import uuid4
 
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import InvalidStatus
@@ -413,11 +414,11 @@ class CartesiaStreamingProtocol(_ImplicitResponseProtocol):
     default_api_key_env = "CARTESIA_API_KEY"
     requires_api_key = True
     has_ready_event = False
-    _CONTEXT_ID = "veeksha"
 
     def __init__(self, config: StreamingTTSClientConfig, api_key: str | None) -> None:
         self.config = config
         self.api_key = api_key or ""
+        self.context_id = str(uuid4())
 
     def build_ws_url(self, api_base: str) -> str:
         normalized = api_base.rstrip("/") + "/"
@@ -425,7 +426,7 @@ class CartesiaStreamingProtocol(_ImplicitResponseProtocol):
 
     def headers(self) -> dict[str, str]:
         return {
-            "Authorization": f"Bearer {self.api_key}",
+            "X-API-Key": self.api_key,
             "Cartesia-Version": self.config.cartesia_version,
         }
 
@@ -438,7 +439,7 @@ class CartesiaStreamingProtocol(_ImplicitResponseProtocol):
             "transcript": transcript,
             "voice": {"mode": "id", "id": self.config.voice_id},
             "language": self.config.language or "en",
-            "context_id": self._CONTEXT_ID,
+            "context_id": self.context_id,
             "output_format": {
                 "container": "raw",
                 "encoding": "pcm_s16le",
@@ -464,9 +465,13 @@ class CartesiaStreamingProtocol(_ImplicitResponseProtocol):
             return StreamingProtocolEvent()
         event_type = event.get("type")
         if event_type == "error":
-            return StreamingProtocolEvent(
-                error=str(event.get("message") or event.get("title") or event)
+            message = (
+                event.get("message")
+                or event.get("title")
+                or event.get("error_code")
+                or json.dumps(event)
             )
+            return StreamingProtocolEvent(error=str(message))
         if event_type == "chunk":
             encoded_audio = event.get("data")
             if not isinstance(encoded_audio, str) or not encoded_audio:
@@ -475,10 +480,7 @@ class CartesiaStreamingProtocol(_ImplicitResponseProtocol):
                 audio = base64.b64decode(encoded_audio, validate=True)
             except (ValueError, TypeError) as exc:
                 return StreamingProtocolEvent(error=f"Invalid Cartesia audio: {exc}")
-            return StreamingProtocolEvent(
-                audio=audio,
-                response_started=True,
-            )
+            return StreamingProtocolEvent(audio=audio, response_started=True)
         if event_type == "done" or event.get("done") is True:
             return StreamingProtocolEvent(audio_done=True, terminal=True)
         return StreamingProtocolEvent()
@@ -652,6 +654,9 @@ class StreamingTTSClient(BaseLLMClient):
             )
 
         input_text = text_content.input_text
+        # Protocol instances are request-scoped so providers such as Cartesia can
+        # safely retain per-utterance continuation state under concurrency.
+        protocol = type(self._protocol)(self._streaming_config, self.api_key)
         pacing = self._streaming_config.pacing
         segments = segment_text(input_text, pacing.tokens_per_delta)
         pacer = TextDeltaPacer(pacing, seed=pacing.seed + request.id)
@@ -710,28 +715,25 @@ class StreamingTTSClient(BaseLLMClient):
                 if sleep_s > 0:
                     await asyncio.sleep(sleep_s)
                 offset_ms = (time.monotonic() - start) * 1000
-                if (
-                    not self._protocol.explicit_response_trigger
-                    and not response_triggered
-                ):
+                if not protocol.explicit_response_trigger and not response_triggered:
                     # Native streaming providers treat the first real text
                     # append as the synthesis trigger. Record it before the
                     # await so a very fast response cannot race the timestamp.
                     response_trigger_offset = offset_ms
                     response_triggered = True
 
-                await websocket.send(self._protocol.text_message(segment.text))
+                await websocket.send(protocol.text_message(segment.text))
                 text_delta_timestamps.append([offset_ms, segment.n_chars])
                 sent_words += segment.n_tokens
 
                 if (
-                    self._protocol.explicit_response_trigger
+                    protocol.explicit_response_trigger
                     and not response_triggered
                     and self._streaming_config.input_output_mode == "duplex"
                     and sent_words >= self._streaming_config.duplex_start_after_tokens
                 ):
                     response_trigger_offset = (time.monotonic() - start) * 1000
-                    trigger_message = self._protocol.response_trigger_message()
+                    trigger_message = protocol.response_trigger_message()
                     if trigger_message is not None:
                         await websocket.send(trigger_message)
                     response_triggered = True
@@ -743,14 +745,14 @@ class StreamingTTSClient(BaseLLMClient):
                     raise _ClientAbort()
 
             input_complete_offset = (time.monotonic() - start) * 1000
-            if self._protocol.explicit_response_trigger and not response_triggered:
+            if protocol.explicit_response_trigger and not response_triggered:
                 response_trigger_offset = (time.monotonic() - start) * 1000
-                trigger_message = self._protocol.response_trigger_message()
+                trigger_message = protocol.response_trigger_message()
                 if trigger_message is not None:
                     await websocket.send(trigger_message)
                 response_triggered = True
 
-            for message in self._protocol.finish_messages():
+            for message in protocol.finish_messages():
                 await websocket.send(message)
 
         async def recv_loop(websocket: ClientConnection) -> None:
@@ -760,7 +762,7 @@ class StreamingTTSClient(BaseLLMClient):
             while True:
                 raw = await websocket.recv()
                 wire_offset_ms = (time.monotonic() - start) * 1000
-                event = self._protocol.parse(raw)
+                event = protocol.parse(raw)
                 if event.error:
                     raise StreamingTTSError(event.error)
                 if event.ready and session_ready_offset is None:
@@ -772,7 +774,7 @@ class StreamingTTSClient(BaseLLMClient):
                         logger.warning(
                             "%s sent sample_rate=%d (configured %d); "
                             "using the provider value",
-                            self._protocol.provider,
+                            protocol.provider,
                             event.sample_rate,
                             sample_rate,
                         )
@@ -817,9 +819,9 @@ class StreamingTTSClient(BaseLLMClient):
             async with asyncio.timeout(self._streaming_config.request_timeout):
                 async with self._connect() as websocket:
                     ws_connect_latency = (time.monotonic() - start) * 1000
-                    for message in self._protocol.initial_messages():
+                    for message in protocol.initial_messages():
                         await websocket.send(message)
-                    if not self._protocol.has_ready_event:
+                    if not protocol.has_ready_event:
                         session_ready_offset = (time.monotonic() - start) * 1000
                     if on_request_dispatched is not None:
                         on_request_dispatched()
@@ -835,7 +837,7 @@ class StreamingTTSClient(BaseLLMClient):
                 logger.debug(
                     "%s streaming TTS request_id=%d session_id=%d aborted "
                     "mid-stream (trigger=%s value=%s)",
-                    self._protocol.provider,
+                    protocol.provider,
                     request.id,
                     session_id,
                     abort_config.trigger,
@@ -845,7 +847,7 @@ class StreamingTTSClient(BaseLLMClient):
                 error_code, error_msg = _map_error(flattened)
                 logger.warning(
                     "%s streaming TTS error: (%s) %s",
-                    self._protocol.provider,
+                    protocol.provider,
                     error_code,
                     error_msg,
                 )
@@ -855,20 +857,20 @@ class StreamingTTSClient(BaseLLMClient):
         if error_code is None and not aborted and not audio_chunks:
             error_code = 502
             error_msg = (
-                f"{self._protocol.provider} completed the TTS stream without audio"
+                f"{protocol.provider} completed the TTS stream without audio"
             )
         success = error_code is None and error_msg is None
         fire_sent_once()
 
         metrics = {
             "audio_task": AudioTask.TTS,
-            AudioMetricKey.PROVIDER.value: self._protocol.provider,
+            AudioMetricKey.PROVIDER.value: protocol.provider,
             AudioMetricKey.PROVIDER_MODEL.value: self._streaming_config.model,
-            AudioMetricKey.PROVIDER_PROTOCOL.value: self._protocol.protocol_name,
+            AudioMetricKey.PROVIDER_PROTOCOL.value: protocol.protocol_name,
             AudioMetricKey.TTFC.value: round(ttfc or 0.0, 3),
             AudioMetricKey.END_TO_END_LATENCY.value: round(latency_ms, 3),
             AudioMetricKey.CHUNK_COUNT.value: len(audio_chunks),
-            AudioMetricKey.RAW_PCM.value: self._protocol.raw_pcm,
+            AudioMetricKey.RAW_PCM.value: protocol.raw_pcm,
             AudioMetricKey.SAMPLE_RATE.value: sample_rate,
             AudioMetricKey.INPUT_CHARS.value: len(input_text),
             AudioMetricKey.INPUT_TOKENS.value: input_tokens,

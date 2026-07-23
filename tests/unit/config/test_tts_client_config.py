@@ -163,3 +163,15 @@ def test_tts_configs_reject_unknown_provider(client_type: str) -> None:
                 }
             },
         )
+
+
+@pytest.mark.parametrize("max_buffer_delay_ms", [-1, 5001])
+def test_cartesia_rejects_invalid_buffer_delay(max_buffer_delay_ms: int) -> None:
+    with pytest.raises(ValueError, match="max_buffer_delay_ms"):
+        StreamingTTSClientConfig(
+            provider="cartesia",
+            api_base="https://api.cartesia.ai",
+            model="sonic-3.5",
+            voice_id="voice",
+            max_buffer_delay_ms=max_buffer_delay_ms,
+        )
