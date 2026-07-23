@@ -14,6 +14,7 @@ from veeksha.config.evaluator import (
     AudioChannelPerformanceConfig,
     PerformanceEvaluatorConfig,
 )
+from veeksha.config.traffic import ConcurrentTrafficConfig
 from veeksha.health import (
     HealthChecker,
     TTSWorkerStatsSnapshot,
@@ -132,6 +133,61 @@ def test_truncation_check_runs_only_when_cap_configured(tmp_path: Path) -> None:
     without_cap = _health_checker(tmp_path, flagged_rows, max_expected_audio_ms=None)
     check_names = [result.summary["name"] for result in without_cap.run_checks()]
     assert "Suspected Length-Cap Truncation Check" not in check_names
+
+
+# ---------------------------------------------------------------------------
+# Session concurrency check
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_concurrency_check_uses_client_completion_for_audio_latency(
+    tmp_path: Path,
+) -> None:
+    metrics_file = tmp_path / "request_level_metrics.jsonl"
+    _write_metrics(
+        metrics_file,
+        [
+            {
+                "request_id": 0,
+                "session_id": 0,
+                "session_size": 1,
+                "scheduler_dispatched_at": 0.0,
+                "client_completed_at": 1.0,
+                "end_to_end_latency": 1000.0,
+            },
+            {
+                "request_id": 1,
+                "session_id": 1,
+                "session_size": 1,
+                "scheduler_dispatched_at": 1.1,
+                "client_completed_at": 2.0,
+                "end_to_end_latency": 900.0,
+            },
+        ],
+    )
+    checker = HealthChecker(
+        trace_file=str(tmp_path / "missing_trace.jsonl"),
+        metrics_file=str(metrics_file),
+        benchmark_config=BenchmarkConfig(
+            traffic_scheduler=ConcurrentTrafficConfig(
+                target_concurrent_sessions=1,
+                rampup_seconds=0,
+            ),
+            evaluators=_benchmark_config(max_expected_audio_ms=None).evaluators,
+        ),
+    )
+    assert checker.load_data()
+
+    result = checker.check_session_concurrency()
+
+    assert result.passed is True
+    overall_results = next(
+        section["results"]
+        for section in result.summary["sections"]
+        if section["title"] == "Overall Statistics"
+    )
+    assert overall_results["Max Observed Concurrency"] == "1"
 
 
 # ---------------------------------------------------------------------------
