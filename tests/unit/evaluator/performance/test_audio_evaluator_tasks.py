@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import io
+import wave
+
+import numpy as np
 import pytest
 
 from veeksha.config.evaluator import (
@@ -66,6 +70,16 @@ def _record(
             client_completed_at=101.0,
         ),
     )
+
+
+def _wav_bytes(pcm_bytes: bytes, sample_rate: int = 24000) -> bytes:
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm_bytes)
+    return buffer.getvalue()
 
 
 def test_tts_task_preserves_playback_interactivity_metrics() -> None:
@@ -297,3 +311,114 @@ def test_audio_response_without_task_is_rejected() -> None:
                 AudioMetricKey.SAMPLE_RATE.value: 16000,
             },
         )
+
+
+def test_audio_integrity_raw_and_wav_use_same_final_pcm16_boundary() -> None:
+    evaluator = _evaluator(interactivity_enabled=False)
+    clean_pcm = np.tile(
+        np.asarray([0, 8192, -8192, 16384, -16384], dtype="<i2"), 16
+    ).tobytes()
+
+    _record(
+        evaluator,
+        request_id=1,
+        content=clean_pcm,
+        metrics=_tts_metrics(),
+    )
+    _record(
+        evaluator,
+        request_id=2,
+        content=_wav_bytes(clean_pcm, sample_rate=22050),
+        metrics={
+            **_tts_metrics(),
+            AudioMetricKey.RAW_PCM.value: False,
+        },
+    )
+
+    rows = {row["request_id"]: row for row in evaluator._export_request_rows()}
+    for metric_name in (
+        AudioMetricKey.PCM_SAMPLE_COUNT.value,
+        AudioMetricKey.PEAK_ABS_AMPLITUDE.value,
+        AudioMetricKey.CLIPPED_SAMPLE_FRACTION.value,
+        AudioMetricKey.RMS.value,
+        AudioMetricKey.NON_FINITE_SAMPLE_COUNT.value,
+        AudioMetricKey.AUDIO_SUSPECT.value,
+    ):
+        assert rows[1][metric_name] == rows[2][metric_name]
+    assert rows[1][AudioMetricKey.AUDIO_SUSPECT.value] == 0
+
+    summary = evaluator.get_summary()
+    assert summary[AudioMetricKey.AUDIO_SUSPECT.value] is False
+    assert summary["audio_integrity_requests_count"] == 2
+    assert summary["audio_suspect_requests_count"] == 0
+    assert summary["audio_suspect_requests_fraction"] == 0.0
+
+
+def test_audio_integrity_clipped_request_sets_request_and_summary_gate() -> None:
+    evaluator = _evaluator(interactivity_enabled=False)
+    clipped_pcm = np.tile(np.asarray([32767, -32768, 0, 0], dtype="<i2"), 16).tobytes()
+
+    _record(
+        evaluator,
+        request_id=1,
+        content=clipped_pcm,
+        metrics=_tts_metrics(),
+    )
+
+    row = evaluator._export_request_rows()[0]
+    assert row[AudioMetricKey.CLIPPED_SAMPLE_FRACTION.value] == 0.5
+    assert row[AudioMetricKey.AUDIO_SUSPECT.value] == 1
+
+    summary = evaluator.get_summary()
+    assert summary[AudioMetricKey.AUDIO_SUSPECT.value] is True
+    assert summary["audio_suspect_requests_count"] == 1
+    assert summary["audio_suspect_requests_fraction"] == 1.0
+
+
+def test_audio_integrity_failed_request_keeps_metrics_but_not_summary_gate() -> None:
+    evaluator = _evaluator(interactivity_enabled=False)
+    evaluator.register_request(
+        request_id=1,
+        session_id=1,
+        dispatched_at=100.0,
+        content=None,
+    )
+    evaluator.record_request_completed(
+        request_id=1,
+        session_id=1,
+        completed_at=101.0,
+        response=RequestResult(
+            request_id=1,
+            session_id=1,
+            success=False,
+            channels={
+                ChannelModality.AUDIO: ChannelResponse(
+                    modality=ChannelModality.AUDIO,
+                    content=b"\0\0",
+                    metrics=_tts_metrics(),
+                )
+            },
+        ),
+    )
+
+    row = evaluator._export_request_rows()[0]
+    assert row[AudioMetricKey.PCM_SAMPLE_COUNT.value] == 1
+    assert row[AudioMetricKey.AUDIO_SUSPECT.value] == 0
+    assert evaluator.get_summary()["audio_integrity_requests_count"] == 0
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value", "message"),
+    [
+        ("audio_integrity_min_peak_abs_amplitude", -0.1, "must be >= 0"),
+        ("audio_integrity_max_clipped_sample_fraction", 1.1, "must be in"),
+        ("audio_integrity_min_rms", -0.1, "must be >= 0"),
+        ("audio_integrity_max_rms", 0.0, "must be > 0"),
+        ("audio_integrity_max_non_finite_sample_count", -1, "must be >= 0"),
+    ],
+)
+def test_audio_integrity_config_rejects_invalid_thresholds(
+    field_name: str, value: float | int, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        AudioChannelPerformanceConfig(**{field_name: value})

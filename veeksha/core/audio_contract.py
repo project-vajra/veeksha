@@ -6,12 +6,161 @@ audio evaluators. Transport-specific protocol handling lives in the clients.
 
 from __future__ import annotations
 
+import io
+import wave
+from dataclasses import dataclass
 from enum import StrEnum
+
+import numpy as np
 
 # 16-bit mono PCM at 24 kHz is the shared baseline across TTS dialects.
 DEFAULT_AUDIO_SAMPLE_RATE = 24000
 BYTES_PER_SAMPLE = 2
 WAV_HEADER_BYTES = 44
+
+
+@dataclass(frozen=True)
+class PCM16Audio:
+    """Canonical mono PCM16 payload at the final client-consumer boundary."""
+
+    samples: np.ndarray
+    sample_rate: int
+
+
+@dataclass(frozen=True)
+class AudioIntegrityMetrics:
+    """Signal-integrity measurements over one canonical PCM sample array."""
+
+    sample_count: int
+    peak_abs_amplitude: float
+    clipped_sample_fraction: float
+    rms: float
+    non_finite_sample_count: int
+
+
+def decode_pcm16_audio(
+    audio_data: bytes | bytearray | memoryview,
+    *,
+    raw_pcm: bool,
+    sample_rate: int,
+) -> PCM16Audio:
+    """Decode raw or WAV-wrapped mono PCM16 into one canonical representation.
+
+    Raw PCM and WAV samples are both interpreted as signed little-endian int16.
+    Invalid or unsupported serialization is surfaced as ``ValueError`` instead
+    of being treated as empty audio.
+    """
+    if sample_rate <= 0:
+        raise ValueError(f"sample_rate must be > 0; got {sample_rate}")
+    if not isinstance(audio_data, (bytes, bytearray, memoryview)):
+        raise TypeError(
+            "audio_data must be bytes, bytearray, or memoryview; "
+            f"got {type(audio_data).__name__}"
+        )
+
+    payload = bytes(audio_data)
+    decoded_sample_rate = sample_rate
+    if not raw_pcm:
+        try:
+            with wave.open(io.BytesIO(payload), "rb") as wav_file:
+                if wav_file.getnchannels() != 1:
+                    raise ValueError(
+                        "Audio integrity measurement requires mono WAV input; "
+                        f"got {wav_file.getnchannels()} channels"
+                    )
+                if wav_file.getsampwidth() != BYTES_PER_SAMPLE:
+                    raise ValueError(
+                        "Audio integrity measurement requires 16-bit WAV input; "
+                        f"got {wav_file.getsampwidth() * 8}-bit samples"
+                    )
+                if wav_file.getcomptype() != "NONE":
+                    raise ValueError(
+                        "Audio integrity measurement requires uncompressed PCM WAV "
+                        f"input; got compression {wav_file.getcomptype()!r}"
+                    )
+                decoded_sample_rate = wav_file.getframerate()
+                payload = wav_file.readframes(wav_file.getnframes())
+        except (EOFError, wave.Error) as error:
+            raise ValueError(f"Invalid WAV payload: {error}") from error
+
+    if decoded_sample_rate <= 0:
+        raise ValueError(
+            f"Decoded PCM16 sample rate must be > 0; got {decoded_sample_rate}"
+        )
+    if len(payload) % BYTES_PER_SAMPLE != 0:
+        raise ValueError(
+            "PCM16 payload length must be divisible by 2 bytes; "
+            f"got {len(payload)} bytes"
+        )
+
+    samples = np.frombuffer(payload, dtype="<i2")
+    return PCM16Audio(samples=samples, sample_rate=decoded_sample_rate)
+
+
+def measure_normalized_audio(samples: np.ndarray) -> AudioIntegrityMetrics:
+    """Measure normalized audio, retaining diagnostics for non-finite values."""
+    values = np.asarray(samples, dtype=np.float64)
+    if values.ndim != 1:
+        raise ValueError(
+            f"Audio integrity measurement requires a 1-D array; got {values.ndim}-D"
+        )
+
+    sample_count = int(values.size)
+    finite_mask = np.isfinite(values)
+    non_finite_sample_count = int(sample_count - np.count_nonzero(finite_mask))
+    finite_values = values[finite_mask]
+    if finite_values.size == 0:
+        peak_abs_amplitude = 0.0
+        clipped_sample_fraction = 0.0
+        rms = 0.0
+    else:
+        abs_values = np.abs(finite_values)
+        peak_abs_amplitude = float(np.max(abs_values))
+        clipped_sample_fraction = (
+            float(np.count_nonzero(abs_values >= 1.0) / sample_count)
+            if sample_count > 0
+            else 0.0
+        )
+        rms = float(np.sqrt(np.mean(np.square(finite_values), dtype=np.float64)))
+
+    return AudioIntegrityMetrics(
+        sample_count=sample_count,
+        peak_abs_amplitude=peak_abs_amplitude,
+        clipped_sample_fraction=clipped_sample_fraction,
+        rms=rms,
+        non_finite_sample_count=non_finite_sample_count,
+    )
+
+
+def measure_pcm16_audio(audio: PCM16Audio) -> AudioIntegrityMetrics:
+    """Measure serialized PCM16 using exact int16 rail values for clipping."""
+    samples = audio.samples
+    sample_count = int(samples.size)
+    if sample_count == 0:
+        return AudioIntegrityMetrics(
+            sample_count=0,
+            peak_abs_amplitude=0.0,
+            clipped_sample_fraction=0.0,
+            rms=0.0,
+            non_finite_sample_count=0,
+        )
+
+    clipped_sample_count = np.count_nonzero(
+        (samples == np.iinfo(np.int16).min) | (samples == np.iinfo(np.int16).max)
+    )
+    min_sample = int(np.min(samples))
+    max_sample = int(np.max(samples))
+    peak_abs_amplitude = max(abs(min_sample), abs(max_sample)) / 32768.0
+    float_samples = samples.astype(np.float64)
+    rms = float(np.sqrt(np.dot(float_samples, float_samples) / sample_count) / 32768.0)
+
+    return AudioIntegrityMetrics(
+        sample_count=sample_count,
+        peak_abs_amplitude=peak_abs_amplitude,
+        clipped_sample_fraction=float(clipped_sample_count / sample_count),
+        rms=rms,
+        non_finite_sample_count=0,
+    )
 
 
 def pcm_bytes_to_duration_ms(
@@ -30,6 +179,12 @@ class AudioMetricKey(StrEnum):
     RAW_PCM = "raw_pcm"
     SAMPLE_RATE = "sample_rate"
     PCM_BYTE_COUNT = "pcm_byte_count"
+    PCM_SAMPLE_COUNT = "pcm_sample_count"
+    PEAK_ABS_AMPLITUDE = "peak_abs_amplitude"
+    CLIPPED_SAMPLE_FRACTION = "clipped_sample_fraction"
+    RMS = "rms"
+    NON_FINITE_SAMPLE_COUNT = "non_finite_sample_count"
+    AUDIO_SUSPECT = "audio_suspect"
     INPUT_CHARS = "input_chars"
     INPUT_TOKENS = "input_tokens"
     INPUT_TEXT = "input_text"

@@ -145,6 +145,41 @@ SLO results are saved to ``metrics/slo_results.json``:
     }
 
 
+Audio integrity
+---------------
+
+Generated HTTP and realtime audio is decoded at the evaluator's final consumer
+boundary into mono, little-endian PCM16. Raw PCM and WAV-wrapped PCM therefore
+use the same measurement path. Invalid PCM16 serialization, unsupported WAV
+formats, and malformed WAV payloads fail evaluation instead of being treated as
+empty audio.
+
+The audio evaluator records these fields in
+``request_level_metrics.jsonl`` by default:
+
+* ``peak_abs_amplitude``: maximum absolute normalized PCM amplitude.
+* ``clipped_sample_fraction``: fraction of samples exactly equal to either
+  int16 rail.
+* ``rms``: normalized root-mean-square amplitude.
+* ``non_finite_sample_count``: count of NaN or infinite samples. Serialized
+  PCM16 cannot represent them, so this must be zero at the consumer boundary.
+* ``audio_suspect``: one when the request violates the configured integrity
+  policy, otherwise zero.
+
+The default policy is configured on ``audio_channel`` and is enabled with
+``audio_integrity_enabled: true``. It flags empty audio, peak below ``0.0001``,
+clipped fraction above ``0.001`` (0.1%), RMS below ``0.0001`` or above ``0.5``,
+or any non-finite sample. All thresholds are configurable through the
+``audio_integrity_*`` fields on ``AudioChannelPerformanceConfig``.
+
+``summary_stats.json`` reports ``audio_suspect`` as true when any eligible,
+non-aborted successful request is suspect. It also reports
+``audio_integrity_requests_count``, ``audio_suspect_requests_count``, and
+``audio_suspect_requests_fraction``. Deliberately aborted and failed requests
+retain diagnostic request-level measurements but do not trip the run-level
+gate.
+
+
 Output files
 ------------
 

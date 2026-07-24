@@ -136,6 +136,36 @@ class AudioChannelPerformanceConfig(BaseChannelPerformanceConfig):
         "truncates silently at the cap, so duration-at-cap is the only "
         "client-visible signal.",
     )
+    audio_integrity_enabled: bool = field(
+        True,
+        help="Measure final-consumer PCM16 signal integrity and report "
+        "audio_suspect. Enabled by default for generated audio.",
+    )
+    audio_integrity_min_peak_abs_amplitude: float = field(
+        0.0001,
+        help="Minimum normalized absolute peak for non-empty generated audio. "
+        "Requests below this threshold are flagged audio_suspect.",
+    )
+    audio_integrity_max_clipped_sample_fraction: float = field(
+        0.001,
+        help="Maximum allowed fraction of PCM16 samples exactly on either int16 "
+        "rail. The default permits 0.1%; larger fractions are audio_suspect.",
+    )
+    audio_integrity_min_rms: float = field(
+        0.0001,
+        help="Minimum normalized RMS for non-empty generated audio. The default "
+        "is approximately -80 dBFS.",
+    )
+    audio_integrity_max_rms: float = field(
+        0.5,
+        help="Maximum normalized RMS for generated audio. The default is "
+        "approximately -6 dBFS and catches sustained saturation.",
+    )
+    audio_integrity_max_non_finite_sample_count: int = field(
+        0,
+        help="Maximum allowed non-finite sample count. PCM16 serialization cannot "
+        "represent NaN or infinity, so the default is zero.",
+    )
 
     @classmethod
     def get_type(cls) -> ChannelModality:
@@ -154,6 +184,22 @@ class AudioChannelPerformanceConfig(BaseChannelPerformanceConfig):
             raise ValueError("min_reportable_stall_ms must be >= 0")
         if self.max_expected_audio_ms is not None and self.max_expected_audio_ms <= 0:
             raise ValueError("max_expected_audio_ms must be > 0 or None")
+        if self.audio_integrity_min_peak_abs_amplitude < 0:
+            raise ValueError("audio_integrity_min_peak_abs_amplitude must be >= 0")
+        if not 0 <= self.audio_integrity_max_clipped_sample_fraction <= 1:
+            raise ValueError(
+                "audio_integrity_max_clipped_sample_fraction must be in [0, 1]"
+            )
+        if self.audio_integrity_min_rms < 0:
+            raise ValueError("audio_integrity_min_rms must be >= 0")
+        if self.audio_integrity_max_rms <= 0:
+            raise ValueError("audio_integrity_max_rms must be > 0")
+        if self.audio_integrity_min_rms > self.audio_integrity_max_rms:
+            raise ValueError(
+                "audio_integrity_min_rms must be <= audio_integrity_max_rms"
+            )
+        if self.audio_integrity_max_non_finite_sample_count < 0:
+            raise ValueError("audio_integrity_max_non_finite_sample_count must be >= 0")
 
 
 @frozen_dataclass
