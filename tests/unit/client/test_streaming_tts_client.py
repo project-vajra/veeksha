@@ -98,6 +98,16 @@ class _FakeConnection:
         return None
 
 
+class _FakePingWebSocket:
+    def __init__(self, rtt_s: float) -> None:
+        self.rtt_s = rtt_s
+
+    async def ping(self) -> asyncio.Future[float]:
+        pong_received = asyncio.get_running_loop().create_future()
+        pong_received.set_result(self.rtt_s)
+        return pong_received
+
+
 class _SilentElevenLabsWebSocket(_FakeWebSocket):
     def __init__(self) -> None:
         super().__init__("elevenlabs")
@@ -190,6 +200,45 @@ def test_streaming_providers_share_text_audio_lifecycle(provider: str) -> None:
         metrics[AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value][0][0]
         < metrics[AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value]
     )
+
+
+@pytest.mark.unit
+def test_websocket_rtt_probe_uses_independent_connections() -> None:
+    config = StreamingTTSClientConfig(
+        provider="deepgram_aura",
+        api_base="https://api.deepgram.com",
+        api_key="test-key",
+        model="aura-2-thalia-en",
+    )
+    client = StreamingTTSClient(config)
+    pending_rtt_s = iter((0.010, 0.020, 0.030))
+    opened_websockets: list[_FakePingWebSocket] = []
+
+    def connect_factory() -> _FakeConnection:
+        websocket = _FakePingWebSocket(next(pending_rtt_s))
+        opened_websockets.append(websocket)
+        return _FakeConnection(websocket)  # type: ignore[arg-type]
+
+    client._connect = connect_factory  # type: ignore[method-assign]
+
+    samples = asyncio.run(client.measure_websocket_rtt_ms(samples=3))
+
+    assert samples == pytest.approx([10.0, 20.0, 30.0])
+    assert len(opened_websockets) == 3
+
+
+@pytest.mark.unit
+def test_websocket_rtt_probe_rejects_nonpositive_sample_count() -> None:
+    config = StreamingTTSClientConfig(
+        provider="deepgram_aura",
+        api_base="https://api.deepgram.com",
+        api_key="test-key",
+        model="aura-2-thalia-en",
+    )
+    client = StreamingTTSClient(config)
+
+    with pytest.raises(ValueError, match="samples must be >= 1"):
+        asyncio.run(client.measure_websocket_rtt_ms(samples=0))
 
 
 @pytest.mark.unit

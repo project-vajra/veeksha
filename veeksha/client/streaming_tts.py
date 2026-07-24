@@ -633,6 +633,30 @@ class StreamingTTSClient(BaseLLMClient):
             additional_headers=self._protocol.headers(),
         )
 
+    async def measure_websocket_rtt_ms(self, samples: int = 5) -> list[float]:
+        """Measure ping/pong RTT on independent provider WebSocket connections.
+
+        The probe authenticates against the configured streaming-TTS endpoint
+        but doesn't send provider application messages or synthesis text.
+        Independent connections match the benchmark's one-connection-per-request
+        lifecycle while excluding DNS, TCP, TLS, and WebSocket handshake time
+        from the returned measurements.
+        """
+        if samples < 1:
+            raise ValueError("samples must be >= 1")
+
+        pong_timeout_s = min(float(self._streaming_config.request_timeout), 10.0)
+        rtt_samples_ms: list[float] = []
+        for _ in range(samples):
+            async with self._connect() as websocket:
+                pong_received = await websocket.ping()
+                rtt_s = await asyncio.wait_for(
+                    pong_received,
+                    timeout=pong_timeout_s,
+                )
+                rtt_samples_ms.append(rtt_s * 1000)
+        return rtt_samples_ms
+
     async def send_request(
         self,
         request: Request,
