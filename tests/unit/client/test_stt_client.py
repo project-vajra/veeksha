@@ -411,10 +411,10 @@ def test_cartesia_stt_adapter_uses_manual_finalize_protocol() -> None:
     assert protocol.finish_messages() == ["finalize", "close"]
     assert protocol.parse_message(
         {"type": "transcript", "is_final": False, "text": "hello"}
-    ) == ("snapshot", "hello")
+    ) == ("partial_delta", "hello")
     assert protocol.parse_message(
         {"type": "transcript", "is_final": True, "text": "hello there"}
-    ) == ("commit", "hello there")
+    ) == ("final_delta", "hello there")
     assert protocol.parse_message({"type": "done"}) == ("done", "")
 
 
@@ -504,6 +504,43 @@ class _FakeConnection:
         return None
 
 
+class _FakeCartesiaWebSocket:
+    def __init__(self) -> None:
+        self._session_closed = asyncio.Event()
+        self._events = [
+            {"type": "transcript", "is_final": False, "text": "2"},
+            {"type": "transcript", "is_final": True, "text": "2"},
+            {"type": "transcript", "is_final": False, "text": "021"},
+            {"type": "transcript", "is_final": True, "text": "021"},
+            {"type": "transcript", "is_final": False, "text": " abn"},
+            {"type": "transcript", "is_final": True, "text": " abn"},
+            {"type": "transcript", "is_final": False, "text": "ormally"},
+            {"type": "transcript", "is_final": True, "text": "ormally"},
+            {"type": "done"},
+        ]
+        self.sent: list[str | bytes] = []
+
+    async def recv(self) -> str:
+        await self._session_closed.wait()
+        return json.dumps(self._events.pop(0))
+
+    async def send(self, message: str | bytes) -> None:
+        self.sent.append(message)
+        if message == "close":
+            self._session_closed.set()
+
+
+class _FakeCartesiaConnection:
+    def __init__(self, websocket: _FakeCartesiaWebSocket) -> None:
+        self._websocket = websocket
+
+    async def __aenter__(self) -> _FakeCartesiaWebSocket:
+        return self._websocket
+
+    async def __aexit__(self, *_args) -> None:
+        return None
+
+
 class _FakeDeepgramFluxWebSocket:
     def __init__(self, transcripts: list[str] | None = None) -> None:
         self._audio_sent = asyncio.Event()
@@ -544,6 +581,32 @@ class _FakeDeepgramFluxWebSocket:
 
     async def send(self, _message: str | bytes) -> None:
         self._audio_sent.set()
+
+
+@pytest.mark.unit
+def test_cartesia_stream_concatenates_final_deltas_without_inserting_spaces() -> None:
+    client = STTClient(
+        STTClientConfig(
+            provider="cartesia",
+            model="ink-2",
+            api_base="https://api.cartesia.ai",
+            api_key="test-key",
+            ws_realtime_pacing=False,
+        )
+    )
+    websocket = _FakeCartesiaWebSocket()
+    client._connect = lambda: _FakeCartesiaConnection(websocket)  # type: ignore[method-assign]
+
+    result = asyncio.run(client._stream(b"\x00\x00"))
+
+    assert result.final_transcript == "2021 abnormally"
+    assert [snapshot["transcript"] for snapshot in result.transcript_snapshots] == [
+        "2",
+        "2021",
+        "2021 abn",
+        "2021 abnormally",
+    ]
+    assert websocket.sent[-2:] == ["finalize", "close"]
 
 
 @pytest.mark.unit

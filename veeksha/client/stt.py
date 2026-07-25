@@ -337,14 +337,18 @@ class STTClient(BaseLLMClient):
         delta_chunks: list[str] = []
         committed_chunks: list[str] = []
         provisional_transcript = ""
+        provisional_is_delta = False
         snapshots = TranscriptSnapshotRecorder()
 
         def assembled_transcript() -> str:
             parts = list(committed_chunks)
-            delta_text = _clean_transcript("".join(delta_chunks))
+            raw_delta_text = "".join(delta_chunks)
+            if provisional_is_delta:
+                raw_delta_text += provisional_transcript
+            delta_text = _clean_transcript(raw_delta_text)
             if delta_text:
                 parts.append(delta_text)
-            if provisional_transcript:
+            if provisional_transcript and not provisional_is_delta:
                 parts.append(provisional_transcript)
             return _clean_transcript(" ".join(parts))
 
@@ -405,7 +409,13 @@ class STTClient(BaseLLMClient):
                             json.loads(raw_message)
                         )
                     now = time.monotonic()
-                    if kind in ("delta", "snapshot", "commit"):
+                    if kind in (
+                        "delta",
+                        "snapshot",
+                        "partial_delta",
+                        "final_delta",
+                        "commit",
+                    ):
                         # TTFC counts only provider events whose own payload
                         # carries transcript text after cleaning; empty
                         # progress/keepalive events and pure control-token
@@ -423,12 +433,21 @@ class STTClient(BaseLLMClient):
                             delta_chunks.append(text)
                         elif kind == "snapshot":
                             provisional_transcript = _clean_transcript(text)
+                            provisional_is_delta = False
+                        elif kind == "partial_delta":
+                            provisional_transcript = text
+                            provisional_is_delta = True
+                        elif kind == "final_delta":
+                            delta_chunks.append(text)
+                            provisional_transcript = ""
+                            provisional_is_delta = False
                         else:
                             committed = _clean_transcript(text)
                             if committed:
                                 committed_chunks.append(committed)
                             delta_chunks.clear()
                             provisional_transcript = ""
+                            provisional_is_delta = False
                         if _clean_transcript(text):
                             chunk_count += 1
                         current_transcript = assembled_transcript()
@@ -1140,7 +1159,10 @@ class _CartesiaSTTProtocol:
     def parse_message(self, msg: dict[str, Any]) -> tuple[str, str]:
         msg_type = msg.get("type")
         if msg_type == "transcript":
-            kind = "commit" if msg.get("is_final") else "snapshot"
+            # Cartesia sends both provisional and final transcript payloads as
+            # deltas, so their leading/trailing whitespace must survive until
+            # the stream assembler concatenates them.
+            kind = "final_delta" if msg.get("is_final") else "partial_delta"
             return kind, str(msg.get("text") or "")
         if msg_type == "done":
             return "done", ""
