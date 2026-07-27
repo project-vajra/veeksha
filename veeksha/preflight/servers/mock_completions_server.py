@@ -19,8 +19,9 @@ import json
 import time
 from typing import List, Optional
 
+from aiohttp import web
+
 from veeksha.preflight.servers.base_mock import BaseMockServer
-from veeksha.preflight.servers.base_server import HttpRequest, write_response
 
 
 class MockCompletionsServer(BaseMockServer):
@@ -35,8 +36,9 @@ class MockCompletionsServer(BaseMockServer):
         self.ttfc_ms = ttfc_ms
         self.completion_text = completion_text
 
-    async def handle_post(self, req: HttpRequest, writer: asyncio.StreamWriter) -> None:
-        _, record = self.open_record(req)
+    async def handle_post(self, request: web.Request) -> web.StreamResponse:
+        _, record = self.open_record(request)
+        await request.read()
 
         deadline = record.server_recv_time + self.ttfc_ms / 1000.0
         slack = deadline - time.monotonic()
@@ -48,7 +50,7 @@ class MockCompletionsServer(BaseMockServer):
         body = json.dumps(
             {"choices": [{"text": self.completion_text, "index": 0}]}
         ).encode()
-        await write_response(writer, "200 OK", body, "application/json")
+        return web.Response(body=body, content_type="application/json")
 
 
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
