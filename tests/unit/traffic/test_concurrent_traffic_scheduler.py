@@ -289,3 +289,53 @@ def test_rampup_measured_from_dispatch_not_construction() -> None:
 
     scheduler._start_monotonic -= 30.0
     assert scheduler._current_target_concurrency() == 100
+
+
+@pytest.mark.unit
+def test_rampup_advances_without_completions() -> None:
+    """Admission keeps pace with the ramp when no session has completed.
+
+    The ramp is a function of time alone. Admission is otherwise driven by
+    scheduling and completion events, and sessions longer than the ramp
+    window produce neither inside it, so without a time-bounded wake the
+    target is sampled once during the initial scheduling burst and then not
+    again until the first completion — releasing the whole backlog at once.
+    """
+    config = ConcurrentTrafficConfig(
+        target_concurrent_sessions=100, rampup_seconds=60
+    )
+    scheduler = ConcurrentTrafficScheduler(config, SeedManager(seed=42))
+    scheduler.reset_reference_time()
+
+    for session_id in range(1, 101):
+        scheduler.schedule_session(make_linear_session(session_id, 1))
+
+    admitted_at_start = len(scheduler._sessions)
+    assert admitted_at_start < 100
+
+    # Half the ramp elapses with no session completing.
+    scheduler._start_monotonic -= 30.0
+    scheduler.wait_for_ready(timeout=0.001)
+
+    assert len(scheduler._sessions) > admitted_at_start
+    assert len(scheduler._sessions) <= 100
+
+
+@pytest.mark.unit
+def test_wait_for_ready_does_not_sleep_past_a_rampup_step() -> None:
+    """A dispatcher wait is bounded by the next ramp step while work is pending."""
+    config = ConcurrentTrafficConfig(
+        target_concurrent_sessions=60, rampup_seconds=60
+    )
+    scheduler = ConcurrentTrafficScheduler(config, SeedManager(seed=42))
+    scheduler.reset_reference_time()
+
+    # One step per second at 60 sessions over 60 s, so the bound is sub-second
+    # even though the caller asked to wait far longer.
+    step = scheduler._seconds_until_next_rampup_step()
+    assert step is not None
+    assert 0.0 <= step <= 1.0
+
+    scheduler._start_monotonic -= 120.0
+    assert scheduler._current_target_concurrency() == 60
+    assert scheduler._seconds_until_next_rampup_step() is None
