@@ -302,11 +302,12 @@ class RealtimeTTSClient(BaseLLMClient):
                 if sleep_s > 0:
                     await asyncio.sleep(sleep_s)
                 await ws.send(self._protocol.conversation_item_create_json(seg.text))
+                sent_at = time.monotonic()
                 if preflight_enabled:
                     # t_cs_i (actual send) vs deadline (intended) -> pacing error.
-                    input_send_times.append(time.monotonic())
+                    input_send_times.append(sent_at)
                     input_send_deadlines.append(deadline)
-                text_delta_ts.append([(time.monotonic() - t_start) * 1000, seg.n_chars])
+                text_delta_ts.append([(sent_at - t_start) * 1000, seg.n_chars])
             input_complete_offset = (time.monotonic() - t_start) * 1000
             await ws.send(self._protocol.response_create_json())
 

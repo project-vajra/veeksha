@@ -300,10 +300,11 @@ class VajraTTSStreamClient(BaseLLMClient):
                 if sleep_s > 0:
                     await asyncio.sleep(sleep_s)
                 await ws.send(self._protocol.input_text_json(seg.text))
+                sent_at = time.monotonic()
                 if preflight_enabled:
-                    input_send_times.append(time.monotonic())
+                    input_send_times.append(sent_at)
                     input_send_deadlines.append(deadline)
-                text_delta_ts.append([(time.monotonic() - t_start) * 1000, seg.n_chars])
+                text_delta_ts.append([(sent_at - t_start) * 1000, seg.n_chars])
                 # Abort after a fraction of the input deltas: the client stops
                 # feeding text and never sends input.done (hangs up mid-input).
                 if abort_input_after is not None and index + 1 >= abort_input_after:
