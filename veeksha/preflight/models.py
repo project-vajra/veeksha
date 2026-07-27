@@ -64,6 +64,7 @@ class MetricSummary:
     p50: float
     p99: float
     mean: float
+    stdev: float
     minimum: float
     maximum: float
 
@@ -74,6 +75,7 @@ class MetricSummary:
             "p50": self.p50,
             "p99": self.p99,
             "mean": self.mean,
+            "stdev": self.stdev,
             "min": self.minimum,
             "max": self.maximum,
         }
