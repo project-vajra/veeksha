@@ -234,6 +234,19 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
         with self._condition:
             return set(self._request_to_session.keys())
 
+    def reset_reference_time(self) -> None:
+        """Align the scheduler's clock with the current monotonic time.
+
+        The rampup window is measured from this reference. Warmup and session
+        pre-generation run between construction and the first dispatch, so a
+        construction-time reference lets a rampup shorter than that setup
+        elapse before any session is dispatched, admitting the full target at
+        once.
+        """
+        with self._condition:
+            self._start_monotonic = time.monotonic()
+            self._rampup_complete = False
+
     def _record_history(
         self,
         state: ScheduledSessionState,

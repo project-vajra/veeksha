@@ -260,3 +260,32 @@ def test_no_history_parent() -> None:
     req1 = scheduler.pop_ready()[0]
     assert req1 is not None
     assert req1.history == []
+
+
+@pytest.mark.unit
+def test_rampup_measured_from_dispatch_not_construction() -> None:
+    """Rampup survives a setup phase longer than the rampup window.
+
+    Warmup and session pre-generation run between scheduler construction and
+    the first dispatch. Measuring the rampup from construction lets the whole
+    window elapse during that setup, so every session is admitted at once and
+    the configured rampup is silently not delivered.
+    """
+    config = ConcurrentTrafficConfig(
+        target_concurrent_sessions=100, rampup_seconds=60
+    )
+    scheduler = ConcurrentTrafficScheduler(config, SeedManager(seed=42))
+
+    # Setup outlasts the rampup window, and the expired ramp latches.
+    scheduler._start_monotonic -= 120.0
+    assert scheduler._current_target_concurrency() == 100
+
+    scheduler.reset_reference_time()
+
+    assert scheduler._current_target_concurrency() == 0
+
+    scheduler._start_monotonic -= 30.0
+    assert scheduler._current_target_concurrency() == 50
+
+    scheduler._start_monotonic -= 30.0
+    assert scheduler._current_target_concurrency() == 100
