@@ -34,6 +34,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -53,6 +54,7 @@ AA_TRACE_OUTPUT_DIR = TRACES_ROOT / "asr" / "aa_public"
 AMI_TRACE_OUTPUT_DIR = TRACES_ROOT / "asr" / "ami_word_timed"
 DEFAULT_DATASETS = "aa_voxpopuli,aa_earnings22"
 MANIFEST_NAME = "manifest.jsonl"
+BUILD_INFO_NAME = "build_info.json"
 
 DEFAULT_SAMPLE_RATE = 16000
 DEFAULT_MIN_DURATION_S = 0.25
@@ -1149,6 +1151,76 @@ def write_manifest(path: Path, rows: list[dict[str, Any]]) -> None:
 
 
 ########################################################################
+# Build Provenance
+########################################################################
+
+
+def git_commit(repo_root: Path = REPO_ROOT) -> str | None:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except Exception:
+        return None
+
+
+def resolve_source_revisions(dataset_keys: Sequence[str]) -> dict[str, str | None]:
+    """Best-effort pin of upstream dataset versions for reproducibility."""
+    from huggingface_hub import HfApi
+
+    revisions: dict[str, str | None] = {}
+    for key in dataset_keys:
+        if key in AA_DATASET_KEYS:
+            try:
+                revisions[key] = HfApi().dataset_info(DATASETS[key]["repo"]).sha
+            except Exception:
+                revisions[key] = None
+        elif key == AMI_DATASET_KEY:
+            revisions[key] = AMI_ANNOTATIONS_ARCHIVE
+    return revisions
+
+
+def write_build_info(
+    *,
+    output_dir: Path,
+    args: argparse.Namespace,
+    dataset_keys: Sequence[str],
+    clip_count: int,
+) -> Path:
+    timestamping_enabled = not args.without_word_timestamping
+    info = {
+        "tool": "prepare_audio_traces.py",
+        "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "veeksha_git_commit": git_commit(),
+        "argv": sys.argv[1:],
+        "datasets": {key: dict(DATASETS[key]) for key in dataset_keys},
+        "source_revisions": resolve_source_revisions(dataset_keys),
+        "clip_count": clip_count,
+        "sample_rate": DEFAULT_SAMPLE_RATE,
+        "seed": DEFAULT_SEED,
+        "max_duration_s": args.max_duration,
+        "target_duration_s": args.target_duration,
+        "word_timestamping": (
+            {
+                "nemo_model": NEMO_MODEL,
+                "nemo_docker_image": NEMO_DOCKER_IMAGE,
+                "note": "ami_word_timed uses native AMI annotations",
+            }
+            if timestamping_enabled
+            else None
+        ),
+    }
+    path = output_dir / BUILD_INFO_NAME
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(info, f, indent=2)
+        f.write("\n")
+    return path
+
+
+########################################################################
 # Orchestration
 ########################################################################
 
@@ -1281,6 +1353,14 @@ def main() -> None:
 
     write_manifest(manifest_path, rows)
     print(f"\nWrote {len(rows)} clips -> {manifest_path}")
+
+    build_info_path = write_build_info(
+        output_dir=output_dir,
+        args=args,
+        dataset_keys=dataset_keys,
+        clip_count=len(rows),
+    )
+    print(f"Wrote build provenance -> {build_info_path}")
 
 
 if __name__ == "__main__":
