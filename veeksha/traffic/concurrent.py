@@ -98,9 +98,7 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
         if now >= self._rampup_seconds:
             return None
         admitted = int(self._target_concurrent * (now / self._rampup_seconds))
-        next_step_at = (
-            self._rampup_seconds * (admitted + 1) / self._target_concurrent
-        )
+        next_step_at = self._rampup_seconds * (admitted + 1) / self._target_concurrent
         return max(0.0, next_step_at - now)
 
     def _try_activate_pending_locked(self) -> None:
