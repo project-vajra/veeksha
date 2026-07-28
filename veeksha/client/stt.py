@@ -60,6 +60,33 @@ def _clean_transcript(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _warm_audio_stack(target_sr: int) -> None:
+    """Decode a scratch clip so the first request does not pay for it.
+
+    The first ``librosa.load`` call is expensive: it imports
+    ``librosa.core.audio`` and its dependencies. That would otherwise land
+    under the per-clip lock and stall every request in flight at benchmark
+    start.
+    """
+    try:
+        import io
+
+        import soundfile as sf
+
+        buf = io.BytesIO()
+        sf.write(
+            buf,
+            np.zeros(256, dtype="float32"),
+            target_sr,
+            format="WAV",
+            subtype="PCM_16",
+        )
+        buf.seek(0)
+        librosa.load(buf, sr=target_sr, mono=True)
+    except Exception:  # noqa: BLE001 - warming is best effort
+        pass
+
+
 def _audio_to_pcm16_bytes(audio_path: str, target_sr: int) -> bytes:
     """Load an audio file and convert to raw PCM16 bytes at target sample rate."""
     audio, _ = librosa.load(audio_path, sr=target_sr, mono=True)
@@ -239,6 +266,8 @@ class _STTClientBase(BaseLLMClient):
         self._clip_cache: OrderedDict[str, _ClipAssets] = OrderedDict()
         self._clip_cache_lock = threading.Lock()
         self._clip_locks: dict[str, threading.Lock] = {}
+
+        _warm_audio_stack(self._sample_rate)
 
     # ------------------------------------------------------------------
     # Provider protocol hooks
