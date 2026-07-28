@@ -19,6 +19,7 @@ from veeksha.client.stt import (
     _map_stt_error,
     _slice_pcm16_bytes,
     _STTProtocolError,
+    _TogetherSTTProtocol,
 )
 from veeksha.config.client import STTClientConfig
 from veeksha.core.audio_contract import AudioMetricKey
@@ -236,6 +237,12 @@ def test_registry_exposes_one_stt_client_with_provider_strategies(
             "/stt/websocket",
             "cartesia_stt_websocket_manual",
         ),
+        (
+            "together",
+            "nvidia/nemotron-3.5-asr-streaming-0.6b",
+            "/v1/realtime",
+            "together_openai_v1_realtime_transcription",
+        ),
     ],
 )
 def test_cloud_stt_providers_share_one_client_lifecycle(
@@ -249,6 +256,7 @@ def test_cloud_stt_providers_share_one_client_lifecycle(
                 "elevenlabs": "https://api.elevenlabs.io",
                 "mistral": "https://api.mistral.ai",
                 "cartesia": "https://api.cartesia.ai",
+                "together": "https://api.together.ai",
             }.get(provider, "https://api.deepgram.com"),
             api_key="test-key",
         )
@@ -418,6 +426,62 @@ def test_cartesia_stt_adapter_uses_manual_finalize_protocol() -> None:
     assert protocol.parse_message({"type": "done"}) == ("done", "")
 
 
+class _TogetherHandshakeWebSocket:
+    def __init__(self) -> None:
+        self.received = False
+
+    async def recv(self) -> str:
+        self.received = True
+        return json.dumps({"type": "session.created", "session": {}})
+
+
+@pytest.mark.unit
+def test_together_stt_adapter_uses_manual_realtime_protocol() -> None:
+    config = STTClientConfig(
+        provider="together",
+        model="nvidia/nemotron-3.5-asr-streaming-0.6b",
+        api_base="https://api.together.ai",
+        api_key="test-key",
+    )
+    protocol = _TogetherSTTProtocol(config, "test-key")
+    websocket = _TogetherHandshakeWebSocket()
+
+    asyncio.run(protocol.open_session(websocket, config.model))
+
+    parsed = urlparse(protocol.build_ws_url(str(config.api_base)))
+    query = parse_qs(parsed.query)
+    encoded = json.loads(protocol.encode_chunk(b"\x01\x02", final=False))
+    assert websocket.received
+    assert parsed.path == "/v1/realtime"
+    assert query == {
+        "intent": ["transcription"],
+        "model": ["nvidia/nemotron-3.5-asr-streaming-0.6b"],
+        "input_audio_format": ["pcm_s16le_16000"],
+        "language": ["en"],
+        "turn_detection": ["none"],
+    }
+    assert protocol.headers() == {
+        "Authorization": "Bearer test-key",
+        "OpenAI-Beta": "realtime=v1",
+    }
+    assert base64.b64decode(encoded["audio"]) == b"\x01\x02"
+    assert protocol.finish_messages() == [
+        json.dumps({"type": "input_audio_buffer.commit"})
+    ]
+    assert protocol.parse_message(
+        {
+            "type": "conversation.item.input_audio_transcription.delta",
+            "delta": "hello",
+        }
+    ) == ("snapshot", "hello")
+    assert protocol.parse_message(
+        {
+            "type": "conversation.item.input_audio_transcription.completed",
+            "transcript": "hello there",
+        }
+    ) == ("done", "hello there")
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize(
     ("provider", "env_name"),
@@ -427,6 +491,7 @@ def test_cartesia_stt_adapter_uses_manual_finalize_protocol() -> None:
         ("elevenlabs", "ELEVENLABS_API_KEY"),
         ("mistral", "MISTRAL_API_KEY"),
         ("cartesia", "CARTESIA_API_KEY"),
+        ("together", "TOGETHER_API_KEY"),
     ],
 )
 def test_cloud_stt_provider_requires_api_key(
@@ -443,10 +508,23 @@ def test_cloud_stt_provider_requires_api_key(
                     else {
                         "mistral": "voxtral-mini-transcribe-realtime-2602",
                         "cartesia": "ink-2",
+                        "together": "nvidia/nemotron-3.5-asr-streaming-0.6b",
                     }.get(provider, "flux-general-en")
                 ),
                 api_base="https://provider.example",
             )
+        )
+
+
+@pytest.mark.unit
+def test_together_stt_rejects_non_16khz_audio() -> None:
+    with pytest.raises(ValueError, match="requires sample_rate=16000"):
+        STTClientConfig(
+            provider="together",
+            model="nvidia/nemotron-3.5-asr-streaming-0.6b",
+            api_base="https://api.together.ai",
+            api_key="test-key",
+            sample_rate=8000,
         )
 
 

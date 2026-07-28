@@ -207,9 +207,9 @@ class TranscriptSnapshotRecorder:
         )
 
     def _elapsed_ms(self, now: float) -> float:
-        assert self._audio_started_at is not None, (
-            "snapshot recorded before any audio was sent"
-        )
+        assert (
+            self._audio_started_at is not None
+        ), "snapshot recorded before any audio was sent"
         return (now - self._audio_started_at) * 1000
 
 
@@ -423,9 +423,9 @@ class STTClient(BaseLLMClient):
                         # STTStreamResult for how this differs from
                         # time_to_first_visible_text below.
                         if ttfc is None and _clean_transcript(text):
-                            assert audio_started_at is not None, (
-                                "delta arrived before any audio was sent"
-                            )
+                            assert (
+                                audio_started_at is not None
+                            ), "delta arrived before any audio was sent"
                             ttfc = (now - audio_started_at) * 1000
                             if on_request_sent is not None:
                                 on_request_sent()
@@ -453,9 +453,9 @@ class STTClient(BaseLLMClient):
                         current_transcript = assembled_transcript()
                         snapshots.add(now, current_transcript)
                         if time_to_first_visible_text is None and current_transcript:
-                            assert audio_started_at is not None, (
-                                "transcript arrived before any audio was sent"
-                            )
+                            assert (
+                                audio_started_at is not None
+                            ), "transcript arrived before any audio was sent"
                             time_to_first_visible_text = (now - audio_started_at) * 1000
                         if (
                             audio_end_at is not None
@@ -471,16 +471,16 @@ class STTClient(BaseLLMClient):
                         snapshots.add(now, final_transcript)
                         if final_transcript:
                             if ttfc is None:
-                                assert audio_started_at is not None, (
-                                    "completion arrived before any audio was sent"
-                                )
+                                assert (
+                                    audio_started_at is not None
+                                ), "completion arrived before any audio was sent"
                                 ttfc = (now - audio_started_at) * 1000
                                 if on_request_sent is not None:
                                     on_request_sent()
                             if time_to_first_visible_text is None:
-                                assert audio_started_at is not None, (
-                                    "transcript arrived before any audio was sent"
-                                )
+                                assert (
+                                    audio_started_at is not None
+                                ), "transcript arrived before any audio was sent"
                                 time_to_first_visible_text = (
                                     now - audio_started_at
                                 ) * 1000
@@ -882,6 +882,64 @@ class _VajraOpenAIRealtimeProtocol(_OpenAIRealtimeSTTProtocol):
         return "", ""
 
 
+class _TogetherSTTProtocol(_OpenAIRealtimeSTTProtocol):
+    """Together realtime transcription with explicit client-side endpointing.
+
+    Together's interim transcription events replace the previous interim text,
+    so they are normalized as snapshots. Disabling server VAD ensures that the
+    single completion event corresponds to the explicit commit sent at EOF.
+    """
+
+    provider = "together"
+    protocol_name = "together_openai_v1_realtime_transcription"
+    default_api_key_env = "TOGETHER_API_KEY"
+    requires_api_key = True
+
+    def build_ws_url(self, api_base: str) -> str:
+        return _stt_ws_url(
+            api_base,
+            "v1/realtime",
+            {
+                "intent": "transcription",
+                "model": self.config.model,
+                "input_audio_format": "pcm_s16le_16000",
+                "language": self.config.language,
+                "turn_detection": "none",
+            },
+        )
+
+    def headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "OpenAI-Beta": "realtime=v1",
+        }
+
+    async def open_session(self, websocket: Any, model: str) -> None:
+        del model  # Model is selected in the WebSocket query string.
+        msg = json.loads(await websocket.recv())
+        if msg.get("type") != "session.created":
+            raise _STTProtocolError(f"Expected session.created, got: {msg}")
+
+    def finish_messages(self) -> list[str]:
+        return [json.dumps({"type": "input_audio_buffer.commit"})]
+
+    def parse_message(self, msg: dict[str, Any]) -> tuple[str, str]:
+        msg_type = msg.get("type")
+        if msg_type == "conversation.item.input_audio_transcription.delta":
+            return "snapshot", str(msg.get("delta") or "")
+        if msg_type == "conversation.item.input_audio_transcription.completed":
+            return "done", str(msg.get("transcript") or "")
+        if msg_type in (
+            "error",
+            "conversation.item.input_audio_transcription.failed",
+        ):
+            error = msg.get("error")
+            if isinstance(error, dict):
+                return "error", str(error.get("message") or error)
+            return "error", str(error or msg)
+        return "", ""
+
+
 class _DeepgramSTTProtocol:
     """Shared raw-PCM framing and authentication for Deepgram Listen APIs."""
 
@@ -1179,4 +1237,5 @@ _STT_PROTOCOLS: dict[str, type[_STTProviderProtocol]] = {
     "elevenlabs": _ElevenLabsSTTProtocol,
     "mistral": _MistralSTTProtocol,
     "cartesia": _CartesiaSTTProtocol,
+    "together": _TogetherSTTProtocol,
 }

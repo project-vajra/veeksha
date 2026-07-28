@@ -498,7 +498,7 @@ class STTClientConfig(BaseClientConfig):
         help=(
             "STT provider name. Supported: vajra_openai_realtime, "
             "vllm_realtime, deepgram_flux, deepgram_nova, elevenlabs, "
-            "mistral, cartesia."
+            "mistral, cartesia, together."
         ),
     )
     sample_rate: int = field(16000, help="Expected audio sample rate in Hz.")
@@ -560,6 +560,7 @@ class STTClientConfig(BaseClientConfig):
         "elevenlabs",
         "mistral",
         "cartesia",
+        "together",
     )
 
     @classmethod
@@ -601,6 +602,8 @@ class STTClientConfig(BaseClientConfig):
             raise ValueError("STTClientConfig.target_streaming_delay_ms must be >= 0")
         if self.provider == "cartesia" and not self.cartesia_version:
             raise ValueError("cartesia_version is required for Cartesia")
+        if self.provider == "together" and self.sample_rate != 16000:
+            raise ValueError("Together realtime STT requires sample_rate=16000")
 
     def build_tokenizer_provider(self) -> TokenizerProvider:
         """STT models use a simple word-split tokenizer."""

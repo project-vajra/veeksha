@@ -1,0 +1,42 @@
+seed: 42
+output_dir: benchmark_output/stt_together_nemotron_3_80ms
+
+client:
+  type: stt
+  provider: together
+  api_base: https://api.together.ai
+  api_key_env: TOGETHER_API_KEY
+  model: nvidia/nemotron-3-asr-streaming-0.6b
+  language: en
+  sample_rate: 16000
+  # 80 ms of PCM16 mono: 16,000 samples/s * 2 bytes/sample * 0.08 s.
+  ws_chunk_size: 2560
+  ws_realtime_pacing: true
+
+session_generator:
+  type: trace
+  trace_file: traces/asr/aa_public/manifest.jsonl
+  wrap_mode: true
+  flavor:
+    type: audio
+    audio_dir: ""
+
+traffic_scheduler:
+  type: concurrent
+  target_concurrent_sessions: 1
+  rampup_seconds: 0
+
+evaluators:
+  - type: performance
+    target_channels: [audio]
+    slos:
+      - type: constant
+        name: P90 spoken-word-end to first returned text under 1 second
+        metric: interactivity
+        percentile: 0.90
+        value: 1000
+
+runtime:
+  max_sessions: 100
+  # The balanced trace takes about 32 minutes at concurrency 1.
+  benchmark_timeout: 2400
