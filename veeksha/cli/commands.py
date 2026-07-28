@@ -6,6 +6,7 @@ veeksha prefill [options]
 veeksha decode [options]
 veeksha stress [options]
 veeksha score-tts-longform [options]
+veeksha health [options]
 """
 
 from __future__ import annotations
@@ -25,7 +26,9 @@ from veeksha.cli.benchmarks import run_cli as run_benchmark
 from veeksha.cli.parsing import parse_cli_sweep
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.capacity_search import CapacitySearchConfig
+from veeksha.config.health_check import HealthCheckConfig
 from veeksha.config.score_tts_longform import ScoreTtsLongformConfig
+from veeksha.health import run_health_check_cli
 from veeksha.microbench.config import (
     DecodeMicrobenchmarkConfig,
     PrefillMicrobenchmarkConfig,
@@ -46,6 +49,7 @@ _RUNNERS = {
     StressMicrobenchmarkConfig: lambda configs: [run_stress(c) for c in configs],
     DiffConfig: lambda configs: [run_diff(c) for c in configs],
     ScoreTtsLongformConfig: run_score_tts_longform_cli,
+    HealthCheckConfig: run_health_check_cli,
 }
 
 _VERSION_FLAGS = {"--version", "-V"}

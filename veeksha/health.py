@@ -1559,3 +1559,139 @@ class HealthChecker:
             },
             passed=passed,
         )
+
+
+# ---------------------------------------------------------------------------
+# Standalone `veeksha health` command
+# ---------------------------------------------------------------------------
+
+# Checks that need state captured while the benchmark is running and
+# therefore cannot be re-run from a finished output directory.
+_NON_RERUNNABLE_CHECKS = ("TTS Zombie Session Check",)
+
+_CARRY_OVER_NOTE = (
+    "  [carried over from the in-run report; this check needs live server "
+    "snapshots and cannot be re-run post-hoc]"
+)
+
+
+def load_benchmark_config_from_run_dir(run_dir: str) -> BenchmarkConfig:
+    """Reconstruct the benchmark config persisted in a run's config.yml."""
+    from vidhi import create_class_from_dict, load_yaml_config
+
+    config_path = os.path.join(run_dir, "config.yml")
+    if not os.path.isfile(config_path):
+        raise FileNotFoundError(
+            f"{config_path} not found; is '{run_dir}' a veeksha benchmark "
+            "output directory?"
+        )
+    return create_class_from_dict(BenchmarkConfig, load_yaml_config(config_path))
+
+
+def _extract_check_block(report_text: str, check_name: str) -> Optional[str]:
+    """Return one check's block from a health report, or None if absent.
+
+    Blocks are delimited the way ``HealthChecker.run_and_save`` writes them:
+    a separator line, the check name in upper case, and another separator.
+    Previously appended carry-over notes are stripped so a block is never
+    annotated twice.
+    """
+    separator = "=" * 60
+    lines = report_text.splitlines()
+    starts = [
+        i
+        for i in range(len(lines) - 2)
+        if lines[i] == separator and lines[i + 2] == separator
+    ]
+    for idx, start in enumerate(starts):
+        if lines[start + 1].strip().upper() != check_name.upper():
+            continue
+        end = starts[idx + 1] if idx + 1 < len(starts) else len(lines)
+        block_lines = [
+            line
+            for line in lines[start:end]
+            if line.strip() != _CARRY_OVER_NOTE.strip()
+        ]
+        return "\n".join(block_lines).rstrip("\n")
+    return None
+
+
+def run_health_check(
+    run_dir: str, output_file: Optional[str] = None
+) -> List[TestResult]:
+    """Re-run all health checks for a finished benchmark output directory.
+
+    Loads the persisted config.yml, re-runs every check the benchmark runs
+    inline, and writes the report (default:
+    ``<run_dir>/health_check_results.txt``). Checks that need live server
+    state cannot be re-run; if the in-run report recorded one, its section
+    is carried over verbatim and a synthetic result with its recorded
+    outcome is included so callers can still gate on it.
+    """
+    benchmark_config = load_benchmark_config_from_run_dir(run_dir)
+    metrics_file = os.path.join(run_dir, "metrics", "request_level_metrics.jsonl")
+    if not os.path.isfile(metrics_file):
+        raise FileNotFoundError(
+            f"{metrics_file} not found; health checks need the request-level "
+            "metrics written by the benchmark."
+        )
+    output_path = output_file or os.path.join(run_dir, "health_check_results.txt")
+
+    # Preserve non-re-runnable sections from the in-run report before the
+    # rewrite below discards them.
+    carried: List[Tuple[str, str, bool]] = []
+    in_run_report_path = os.path.join(run_dir, "health_check_results.txt")
+    if os.path.isfile(in_run_report_path):
+        with open(in_run_report_path) as report_file:
+            previous_report = report_file.read()
+        for check_name in _NON_RERUNNABLE_CHECKS:
+            block = _extract_check_block(previous_report, check_name)
+            if block is not None:
+                carried.append((check_name, block, "Result: FAILED" not in block))
+
+    checker = HealthChecker(
+        trace_file=os.path.join(run_dir, "traces", "dispatch_trace.jsonl"),
+        metrics_file=metrics_file,
+        benchmark_config=benchmark_config,
+    )
+    results = checker.run_and_save(output_path)
+    if not results:
+        return results
+
+    if carried:
+        with open(output_path, "a") as report_file:
+            for _, block, _ in carried:
+                report_file.write(f"{block}\n{_CARRY_OVER_NOTE}\n\n\n")
+        for check_name, _, passed in carried:
+            results.append(
+                TestResult(
+                    summary={"name": f"{check_name} (carried over)", "sections": []},
+                    passed=passed,
+                )
+            )
+    return results
+
+
+def run_health_check_cli(configs) -> None:
+    """CLI entry point for `veeksha health`."""
+    exit_with_failure = False
+    for config in configs:
+        try:
+            results = run_health_check(config.run_dir, config.output_file or None)
+        except FileNotFoundError as exc:
+            raise SystemExit(str(exc))
+        if not results:
+            raise SystemExit(
+                f"No health checks could run for '{config.run_dir}': "
+                "metrics/request_level_metrics.jsonl is empty or unreadable."
+            )
+        print(f"Health checks for {config.run_dir}:")
+        for result in results:
+            status = "PASSED" if result.passed else "FAILED"
+            print(f"  {status}  {result.summary['name']}")
+        failed_count = sum(1 for result in results if not result.passed)
+        print(f"{len(results) - failed_count}/{len(results)} health checks passed.")
+        if config.strict and failed_count > 0:
+            exit_with_failure = True
+    if exit_with_failure:
+        raise SystemExit(1)
