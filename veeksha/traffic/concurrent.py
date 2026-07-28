@@ -83,6 +83,26 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
                 state.pending_nodes.discard(node_id)
                 state.queued_nodes.add(node_id)
 
+    def _seconds_until_next_rampup_step(self) -> Optional[float]:
+        """Seconds until the ramp raises the target, or None once it is complete.
+
+        The ramp is a function of time alone, so a purely event-driven
+        admission loop cannot advance it: with sessions longer than the ramp
+        window, no completion fires inside the window and the target is never
+        re-sampled. Dispatcher waits are bounded by this so admission keeps
+        pace with the ramp instead of stalling until the first completion.
+        """
+        if self._rampup_complete or self._rampup_seconds <= 0:
+            return None
+        now = self._now()
+        if now >= self._rampup_seconds:
+            return None
+        admitted = int(self._target_concurrent * (now / self._rampup_seconds))
+        next_step_at = (
+            self._rampup_seconds * (admitted + 1) / self._target_concurrent
+        )
+        return max(0.0, next_step_at - now)
+
     def _try_activate_pending_locked(self) -> None:
         while (
             self._pending_sessions
@@ -108,6 +128,7 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
             Tuple of (request, session_id, session_size) if ready, None if timeout.
         """
         with self._condition:
+            self._try_activate_pending_locked()
             result = self._try_pop_ready_locked()
             if result is not None:
                 return result
@@ -118,9 +139,13 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
             else:
                 wait_time = timeout
 
+            seconds_to_step = self._seconds_until_next_rampup_step()
+            if seconds_to_step is not None and self._pending_sessions:
+                wait_time = min(wait_time, max(0.0001, seconds_to_step))
+
             self._condition.wait(timeout=wait_time)
 
-            # check again after waking
+            self._try_activate_pending_locked()
             return self._try_pop_ready_locked()
 
     def _try_pop_ready_locked(self) -> Optional[Tuple[Request, int, int]]:
@@ -233,6 +258,19 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
         """Return the set of request IDs currently in-flight."""
         with self._condition:
             return set(self._request_to_session.keys())
+
+    def reset_reference_time(self) -> None:
+        """Align the scheduler's clock with the current monotonic time.
+
+        The rampup window is measured from this reference. Warmup and session
+        pre-generation run between construction and the first dispatch, so a
+        construction-time reference lets a rampup shorter than that setup
+        elapse before any session is dispatched, admitting the full target at
+        once.
+        """
+        with self._condition:
+            self._start_monotonic = time.monotonic()
+            self._rampup_complete = False
 
     def _record_history(
         self,
