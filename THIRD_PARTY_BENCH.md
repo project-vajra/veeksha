@@ -56,34 +56,33 @@ emit an early scrap of text, which is not the same thing.
 
 ### Results — 100 sequential requests each
 
-Source: `benchmark_output/asr_100_sequential_summary.{csv,json}` (runs 23 Jul 2026),
-plus the two later runs below.
+Runs live under `benchmark_output/stt_<provider>/`.
 
 | Provider / model | Corpus WER % | VoxPopuli | Earnings22 | Interactivity p50 / p90 (ms) | First visible text p50 (ms) | RTF p50 | SLO |
 |---|---|---|---|---|---|---|---|
+| ElevenLabs `scribe_v2_realtime` | 6.25 | 2.19 | 7.92 | 740 / 858 | 2012 | 1.01 | pass |
+| Cartesia `ink-2` (96/97 req) | 6.17 | 1.85 | 7.97 | 1026 / 1111 | 1346 | 1.02 | **fail** |
+| Mistral `voxtral-mini-transcribe-realtime-2602` | 7.75 | 2.34 | 9.98 | 830 / 906 | 1258 | 1.13 | pass |
 | Deepgram Flux `flux-general-en` | 8.96 | 4.61 | 10.76 | 169 / 226 | 727 | 1.02 | pass |
 | Deepgram Nova-3 `nova-3` | 10.99 | 4.14 | 13.82 | 465 / 545 | 1032 | 1.04 | pass |
-| ElevenLabs `scribe_v2_realtime` | 6.25 | 2.19 | 7.92 | 740 / 858 | 2012 | 1.01 | pass |
-| Cartesia `ink-2` *(stale, see below)* | 10.33 | 2.89 | 13.40 | 1019 / 1107 | 1166 | 1.02 | **fail** |
-| Cartesia `ink-2` *(post-fix, 25 Jul, 96/97 req)* | **6.17** | 1.85 | 7.97 | 1026 / 1111 | 1346 | 1.02 | **fail** |
-| Mistral `voxtral-mini-transcribe-realtime-2602` | 7.75 | 2.34 | 9.98 | 830 / 906 | 1258 | 1.13 | pass |
-| Together `nemotron-3-asr-streaming-0.6b` (26 Jul, 100 req) | 14.43 | 6.32 | 17.78 | 320 / 410 | — | — | pass |
-| Together `nemotron-3.5-asr-streaming-0.6b` (26 Jul, 94/95 req) | 18.76 | 8.48 | 23.09 | 403 / 514 | — | — | pass |
+| Together `nemotron-3-asr-streaming-0.6b` | 14.43 | 6.32 | 17.78 | 320 / 410 | — | — | pass |
+| Together `nemotron-3.5-asr-streaming-0.6b` (94/95 req) | 18.76 | 8.48 | 23.09 | 403 / 514 | — | — | pass |
 
 Read: Flux is the latency leader (226 ms P90) at mid-pack accuracy; Scribe v2 and
-post-fix Ink-2 lead on accuracy but sit near or past the 1 s bar; Ink-2 is the only
-model that fails the interactivity SLO. Together's Nemotron models are fast but
-clearly the weakest on WER, and 3.5 is worse than 3 on this trace.
+Ink-2 lead on accuracy but sit near or past the 1 s bar; Ink-2 is the only model
+that fails the interactivity SLO. Together's Nemotron models are fast but clearly
+the weakest on WER, and 3.5 is worse than 3 on this trace.
 
 ### ASR caveats
 
-- **The Cartesia row in the summary CSV is stale.** Commit `3ac42a3` (25 Jul) fixed
-  transcript assembly for Cartesia — it emits *incremental deltas*, not snapshots,
-  so leading/trailing whitespace has to survive concatenation. Before the fix words
-  were glued together: corpus WER 10.33 % → **6.17 %** on the rerun. The summary CSV
-  was generated before that and has not been regenerated.
-- The Together Nemotron 3.5 run is partial (95 of 100 dispatched, 94 completed) and
-  the two Together runs are not in the summary CSV.
+- **`benchmark_output/asr_100_sequential_summary.{csv,json}` is out of date** — it
+  predates the Cartesia transcript-assembly fix (`3ac42a3`) and so carries a
+  Cartesia corpus WER of 10.33 % instead of 6.17 %, and it has no Together rows.
+  The table above is correct; regenerate the summary before using it.
+- Cartesia emits *incremental deltas*, not snapshots, so leading/trailing
+  whitespace must survive concatenation; without that its words glue together and
+  WER nearly doubles.
+- The Together Nemotron 3.5 run is partial (95 of 100 dispatched, 94 completed).
 - Every percentile in `summary_stats.json` is a **DDSketch estimate**
   (`relative_accuracy=0.001`), not an exact order statistic. Two different runs can
   report a byte-identical percentile because both true values land in the same
@@ -96,9 +95,10 @@ clearly the weakest on WER, and 3.5 is worse than 3 on this trace.
 
 ### Matrix
 
-5 models × 2 text corpora × 100 requests, concurrency 1, 23 Jul 2026 —
-`third_party_provider_main_100_20260723/` (an earlier 50-request pass sits in
-`third_party_numbers/` and is superseded).
+5 models × 2 text corpora × 100 requests, concurrency 1. Deepgram and Cartesia
+results live in `third_party_provider_main_100_20260723/`, ElevenLabs in
+`third_party_automode_20260727/`; both aggregate CSVs point at the runs they
+report. (`third_party_numbers/` holds a smaller earlier pass and is superseded.)
 
 Corpora — chosen to bracket the two real shapes of TTS input:
 
@@ -118,7 +118,8 @@ Corpora — chosen to bracket the two real shapes of TTS input:
 | `fluidity_attribution_mode` | `conservative` | Report the observed user timeline; blame TTS only when all text arrived before playback. |
 | `traffic_scheduler` | concurrency 1, `cancel_session_on_failure: true` | Steady-state per-request latency; fail loudly instead of retrying errors away. |
 | `runtime.*_threads` | 1 each, `pregenerate_sessions: false` | Removes client-side scheduling jitter from a single-stream latency measurement. |
-| Provider parity | ElevenLabs: Adam `pNInz6obpgDQGcFmaJgB`, `stability 0.5`, `similarity_boost 0.8`, `auto_mode: false`, `chunk_length_schedule [120,160,250,290]`, `apply_text_normalization: off`; Cartesia: Skylar `db6b0ed5…`, `cartesia_version 2026-03-01`, `max_buffer_delay_ms 3000` | Voice and buffering pinned so the two ElevenLabs models differ only by model; normalization off because it is plan-dependent. |
+| `auto_mode` (ElevenLabs) | `true` | **Always use `auto_mode: true`.** ElevenLabs then triggers generation itself instead of waiting for `chunk_length_schedule` to fill, which otherwise measures client-side text accumulation rather than provider latency. Supported on every model reachable over `stream-input` (Flash v2.5/v2, Turbo v2.5/v2, Multilingual v2); unavailable for `eleven_v3`, which has no WebSocket endpoint. |
+| Provider parity | ElevenLabs: Adam `pNInz6obpgDQGcFmaJgB`, `stability 0.5`, `similarity_boost 0.8`, `apply_text_normalization: off`; Cartesia: Skylar `db6b0ed5…`, `cartesia_version 2026-03-01`, `max_buffer_delay_ms 3000` | Voice pinned so the two ElevenLabs models differ only by model; normalization off because it is plan-dependent. |
 
 SLOs applied to every run: P90 < 1 s on `first_input_to_first_audio_ms`,
 `trigger_to_first_playable_audio_ms` and `ttfc`; P90 `rtf` < 1; P1
@@ -139,48 +140,48 @@ TTFA = `first_input_to_first_audio_ms`; NF = network-free estimate.
 
 | Model | Corpus | TTFA p50 / p90 (ms) | NF p50 (ms) | E2E p90 (ms) | RTF p90 | Fluidity P1 | SLOs |
 |---|---|---|---|---|---|---|---|
-| Deepgram `aura-2-thalia-en` | SeedTTS | 221 / 318 | 157 | 2948 | 0.75 | 1.00 | pass |
-| Deepgram `flux-haley-en` | SeedTTS | 299 / 400 | 236 | 3587 | 0.84 | 1.00 | pass |
-| ElevenLabs `eleven_flash_v2_5` | SeedTTS | 296 / 410 | 269 | 615 | 0.23 | 1.00 | pass |
-| Cartesia `sonic-3.5` | SeedTTS | 305 / 416 | 231 | 1605 | 0.53 | 1.00 | pass |
-| ElevenLabs `eleven_multilingual_v2` | SeedTTS | 553 / 746 | 526 | 964 | 0.29 | 1.00 | pass |
-| Deepgram `aura-2-thalia-en` | ShareGPT | 266 / 440 | 202 | 13400 | 0.66 | 0.988 | **fail** (fluidity) |
-| ElevenLabs `eleven_flash_v2_5` | ShareGPT | 487 / 570 | 460 | 1941 | 0.13 | 1.00 | pass |
-| ElevenLabs `eleven_multilingual_v2` | ShareGPT | 949 / 1059 | 922 | 3220 | 0.19 | 1.00 | **fail** (P90 TTFB > 1 s) |
-| Deepgram `flux-haley-en` | ShareGPT | 465 / 687 | 402 | — | — | — | **incomplete**: HTTP 408 at 41/100, reproduced on rerun |
-| Cartesia `sonic-3.5` | ShareGPT | 477 / 797 | 403 | — | — | — | **incomplete**: HTTP 500 "invalid input" at 47/100, reproduced on rerun |
+| ElevenLabs `eleven_flash_v2_5` | SeedTTS | **93 / 104** | 66 | 1438 | 0.20 | 1.00 | pass |
+| Deepgram `aura-2-thalia-en` | SeedTTS | 221 / 318 | 192 | 2948 | 0.75 | 1.00 | pass |
+| ElevenLabs `eleven_multilingual_v2` | SeedTTS | 252 / 283 | 225 | 3824 | 0.35 | 1.00 | pass |
+| Deepgram `flux-haley-en` | SeedTTS | 299 / 400 | 270 | 3587 | 0.84 | 1.00 | pass |
+| Cartesia `sonic-3.5` | SeedTTS | 305 / 416 | 228 | 1605 | 0.53 | 1.00 | pass |
+| ElevenLabs `eleven_flash_v2_5` | ShareGPT | **93 / 106** | 66 | 5648 | 0.17 | 1.00 | pass |
+| ElevenLabs `eleven_multilingual_v2` | ShareGPT | 249 / 270 | 222 | 16236 | 0.31 | 0.998 | pass |
+| Deepgram `aura-2-thalia-en` | ShareGPT | 266 / 440 | 236 | 13400 | 0.66 | 0.988 | **fail** (fluidity) |
+| Deepgram `flux-haley-en` | ShareGPT | 465 / 687 | 436 | — | — | — | **incomplete**: HTTP 408 at 41/100, reproduced on rerun |
+| Cartesia `sonic-3.5` | ShareGPT | 477 / 797 | 400 | — | — | — | **incomplete**: HTTP 500 "invalid input" at 47/100, reproduced on rerun |
 
-Read: every model clears 1 s TTFA on short SeedTTS prompts. Long ShareGPT turns are
-where they separate — Aura-2 is fastest to first audio but the only model that
-stalls during playback, Flash v2.5 is the strongest overall (570 ms P90, 0.13 RTF,
-no stalls), and Multilingual v2 misses the 1 s bar. Two provider/corpus cells could
-not be completed at all; the failures reproduced on rerun and are reported rather
-than retried away.
+Read: Flash v2.5 is the clear leader — ~93 ms to first audio on both corpora, no
+stalls, lowest RTF. Both ElevenLabs models are corpus-independent (93/93 and
+252/249 ms p50), because with `auto_mode: true` nothing accumulates before
+synthesis starts; Deepgram and Cartesia both slow down on the longer ShareGPT
+turns. Aura-2 is the only model that stalls during playback. Two provider/corpus
+cells could not be completed at all; the failures reproduced on rerun and are
+reported rather than retried away.
 
 ### Network-free adjustment
 
 `scripts/create_network_free_tts_results.py` opens N (=5) fresh authenticated WS
 connections per endpoint, sends a ping with no synthesis text, and subtracts the
 median ping/pong RTT from the observed TTFA percentiles. Measured RTTs were
-~63 ms (Deepgram), ~74 ms (Cartesia), ~27 ms (ElevenLabs) from this host.
+~30 ms (Deepgram), ~77 ms (Cartesia), ~27 ms (ElevenLabs) from this host.
 
 This is an estimate, not a decomposition: probes are unpaired and were taken
-*after* the benchmark (24 Jul). For the two incomplete rows the observed
+*after* the benchmark. For the two incomplete rows the observed
 percentiles are reconstructed from the run's saved CDF over completed requests.
 Use it to argue "the gap is not just our network", not as a compute-only number.
 
 ### TTS caveats
 
 - **No quality scoring.** `verification.wer` and `utmos` are `enabled: false` in
-  every config. 929 WAVs (453 MB) are saved under
-  `third_party_provider_main_100_20260723/<model>/<corpus>/audio_quality/` for
-  offline scoring later. Latency claims are currently unpaired with any
+  every config. WAVs are saved under `<results-root>/<model>/<corpus>/audio_quality/`
+  for offline scoring later. Latency claims are currently unpaired with any
   intelligibility check.
-- The `SESSION CONCURRENCY CHECK` failure recorded in every row is a **framework
-  bug, not a provider result**: `health.py` added second-based dispatch timestamps
-  to millisecond `end_to_end_latency`. Fixed in `aee4d9c8`, which landed ~3 h after
-  these runs, so the artifacts still carry the false failure.
-- DDSketch percentile caveat applies here too.
+- The `SESSION CONCURRENCY CHECK` failure recorded on the **Deepgram and Cartesia**
+  rows is a **framework bug, not a provider result**: `health.py` added
+  second-based dispatch timestamps to millisecond `end_to_end_latency`, fixed in
+  `aee4d9c8`. The ElevenLabs rows postdate the fix and report
+  `health_check_status: passed`.
 - The ShareGPT trace path in the configs is machine-local
   (`/scratch/sukrit/voice_eval/...`); the dataset is not in the repo.
 
@@ -200,21 +201,6 @@ Feature work (committed):
 - `3ac42a3b` — Cartesia STT delta assembly (`partial_delta` / `final_delta` kinds),
   the WER fix described above.
 
-Uncommitted in the working tree:
-
-- `veeksha/client/stt.py`, `veeksha/config/client.py`, docs, tests — the **Together
-  realtime STT adapter** (`together_openai_v1_realtime_transcription`): OpenAI-shape
-  realtime WS with `turn_detection=none` so endpointing is client-driven and the
-  single completion event pairs with our explicit EOF commit; `sample_rate` pinned
-  to 16 kHz.
-- `veeksha/sample_configs/stt_together_nemotron{,_3_80ms}.yml`.
-- `scripts/create_network_free_tts_results.py`.
-- `.gitignore`: `/third_party_numbers/` → `/third_party_*/` (keeps result trees out
-  of git).
-- `vajra_c{4,32,128,144,156}*_epinto6.yaml` — in-house Vajra STT concurrency sweeps
-  on the *same* `aa_public` trace, so these third-party numbers are the reference
-  line for them. Note they use `ws_chunk_size: 8224` (~257 ms) rather than the 80 ms
-  hosted cadence — a client-CPU tradeoff at c156, not an apples-to-apples input rate.
 
 ---
 
@@ -224,9 +210,9 @@ Uncommitted in the working tree:
 # ASR (one config per provider)
 uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_deepgram_flux.yml
 
-# TTS (one config per model × corpus)
+# TTS (one config per model × corpus; ElevenLabs uses the _auto_mode configs)
 uvx -p 3.14t veeksha benchmark \
-  --config veeksha/sample_configs/tts_streaming_elevenlabs_flash_v2_5_sharegpt.yml
+  --config veeksha/sample_configs/tts_streaming_elevenlabs_flash_v2_5_sharegpt_auto_mode.yml
 
 # Regenerate the trace
 .venv/bin/python scripts/prepare_audio_traces.py --clips-per-dataset 128 --max-duration 30
@@ -244,11 +230,10 @@ API keys come from the env vars named by each config's `api_key_env`.
 
 ## 5. Before publishing
 
-1. Regenerate the ASR summary with the post-fix Cartesia run and the Together rows.
+1. Regenerate `asr_100_sequential_summary.{csv,json}` so it matches the ASR table
+   above (correct Cartesia WER, Together rows present).
 2. Rerun the two failed ShareGPT TTS cells, or publish them explicitly as provider
    errors with the reproduction evidence.
 3. Score the saved TTS WAVs (WER + UTMOS) with one pinned judge configuration
    across all providers — latency without an intelligibility check is not a result.
-4. Rerun the TTS matrix (or re-derive health status) post-`aee4d9c8` so artifacts
-   stop carrying the false concurrency-check failure.
-5. Record region, pricing date and retry policy alongside any published table.
+4. Record region, pricing date and retry policy alongside any published table.
