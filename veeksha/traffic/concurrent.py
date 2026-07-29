@@ -96,6 +96,18 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
             self._pending_sessions.append(session)
             self._try_activate_pending_locked()
 
+    def reset_reference_time(self) -> None:
+        """Align the ramp clock with the benchmark start.
+
+        The scheduler is constructed before session pre-generation, which can
+        take longer than the entire ramp; without this reset the ramp ceiling
+        is already at full target when the first session arrives and the whole
+        backlog activates in one burst instead of ramping.
+        """
+        with self._condition:
+            self._start_monotonic = time.monotonic()
+            self._rampup_complete = False
+
     def wait_for_ready(
         self, timeout: float = 0.001
     ) -> Optional[Tuple[Request, int, int]]:
@@ -108,6 +120,12 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
             Tuple of (request, session_id, session_size) if ready, None if timeout.
         """
         with self._condition:
+            # Activation must track the ramp clock, not just scheduling and
+            # completion events: with all sessions pre-generated and pending,
+            # no such event fires during the ramp, so without this the ceiling
+            # is only consulted once the ramp has expired -- releasing the
+            # entire backlog at once.
+            self._try_activate_pending_locked()
             result = self._try_pop_ready_locked()
             if result is not None:
                 return result
@@ -142,6 +160,7 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
 
     def pop_ready(self) -> Optional[Tuple[Request, int, int]]:
         with self._condition:
+            self._try_activate_pending_locked()
             return self._try_pop_ready_locked()
 
     def _populate_history(
