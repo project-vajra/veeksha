@@ -17,12 +17,12 @@ session_generator:
     - type: text
       body_length_generator:
         type: fixed
-        length: 16
+        value: 16
   output_spec:
     text:
       output_length_generator:
         type: fixed
-        length: 8
+        value: 8
 
 # Tokenizer model used for synthetic prompt generation. Override only via
 # allow_config_override (not a free variable) — changing it changes the stream.

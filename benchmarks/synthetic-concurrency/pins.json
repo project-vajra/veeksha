@@ -11,9 +11,9 @@
     "transformers": "5.14.1"
   },
   "veeksha": {
-    "git_commit": "fdd53f0e223cc6739deb1708119babd2ecf93824",
-    "git_dirty": false,
+    "git_commit": "889b1bb4b1297e075d5b04b744971cb8c08d5482",
+    "git_dirty": true,
     "version": "0.4.5.post76"
   },
-  "workload_fingerprint": "blake2b:ee7bb336b7405dabdc3878cacca07635e710d117b70b75d65e588263ea6eefa9"
+  "workload_fingerprint": "blake2b:a79911b4180c267bd58233821da864211340c106967d4ebab35d66e6dd528f85"
 }
