@@ -2,8 +2,7 @@ from typing import Optional
 
 from vidhi import field, frozen_dataclass
 
-from veeksha.cli.base import VeekshaCommand
-from veeksha.cli.parsing import parse_cli_sweep
+from veeksha.cli.benchmark_command import BenchmarkCommand
 from veeksha.config.client import (
     BaseClientConfig,
     OpenAIChatCompletionsClientConfig,
@@ -28,8 +27,12 @@ from veeksha.config.wandb import WandbConfig  # noqa: F401
 
 
 @frozen_dataclass
-class BenchmarkConfig(VeekshaCommand, name="benchmark", default=True):
-    """Run a benchmark against an LLM inference server."""
+class BenchmarkConfig(BenchmarkCommand, name="run", default=True):
+    """Run a benchmark against an LLM inference server.
+
+    Invoked as ``veeksha benchmark run`` (or ``veeksha benchmark`` — run is the
+    default subcommand).
+    """
 
     output_dir: str = field(
         "benchmark_output",
@@ -72,19 +75,56 @@ class BenchmarkConfig(VeekshaCommand, name="benchmark", default=True):
         default_factory=WandbConfig,
         help="Weights & Biases logging configuration.",
     )
+    benchmark: Optional[str] = field(
+        None,
+        help=(
+            "Named benchmark to fetch and run from the Hub "
+            "(or a local definition directory). When set, the definition is "
+            "frozen: only declared free variables (knobs) and the run target "
+            "(endpoint/server, output_dir) may be set. Other config flags error "
+            "unless --allow_config_override is true."
+        ),
+    )
+    benchmark_revision: Optional[str] = field(
+        None,
+        help="Hub revision (tag or commit) for the named benchmark.",
+    )
+    allow_config_override: bool = field(
+        False,
+        help=(
+            "When running a named benchmark, allow non-knob config overrides. "
+            "Marks the run manifest as unpinned. Prefer declaring free "
+            "variables in the definition instead."
+        ),
+    )
+    allow_workload_drift: bool = field(
+        False,
+        help=(
+            "When a named benchmark's computed workload fingerprint does not "
+            "match its pins, log a warning instead of failing the run."
+        ),
+    )
 
     @classmethod
     def create_from_cli_args(cls):
-        """Create BenchmarkConfig instances from CLI
+        """Create BenchmarkConfig instances from CLI (including free variables).
 
         Returns:
             List of BenchmarkConfig instances (single or
             multiple configs if YAML expands to multiple configurations)
         """
-        return parse_cli_sweep(cls)
+        import sys
+
+        from veeksha.cli.benchmark_run_cli import parse_benchmark_run_configs
+
+        return parse_benchmark_run_configs(sys.argv[1:])
 
     def __post_init__(self):
         if not self.evaluators:
             raise ValueError("BenchmarkConfig.evaluators must be non-empty.")
         if self.server is not None and self.endpoint is not None:
             raise ValueError("BenchmarkConfig cannot set both server and endpoint")
+        if self.benchmark_revision and not self.benchmark:
+            raise ValueError(
+                "benchmark_revision requires --benchmark to name the definition"
+            )

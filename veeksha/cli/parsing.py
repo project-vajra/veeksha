@@ -115,6 +115,7 @@ def _parse_config_sweep(config_class: type[ConfigT]) -> list[ConfigT]:
         loaded_configs = _explode_config(walker, load_yaml_config(config_file))
 
     configs: list[ConfigT] = []
+    provided_keys = frozenset(cli_provided_args.keys())
     for file_config in loaded_configs:
         file_config = _process_iterable_args(
             file_config,
@@ -123,7 +124,14 @@ def _parse_config_sweep(config_class: type[ConfigT]) -> list[ConfigT]:
         )
         merged_config = _deep_merge(cli_nested, file_config)
         merged_config = _deep_merge(merged_config, cli_provided_nested)
-        configs.append(create_class_from_dict(config_class, merged_config))
+        instance = create_class_from_dict(config_class, merged_config)
+        # Stash which flat CLI keys the user actually set so named-benchmark
+        # runs can reject overrides of frozen definition fields.
+        try:
+            object.__setattr__(instance, "_cli_provided_keys", provided_keys)
+        except (AttributeError, TypeError):
+            pass
+        configs.append(instance)
 
     return configs
 

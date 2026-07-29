@@ -319,6 +319,14 @@ class SeedTTSTextTraceFlavorConfig(BaseTraceFlavorConfig):
     )
     subset: str = field("en", help="Dataset subset/config name. Defaults to English.")
     split: str = field("train", help="Dataset split to load.")
+    revision: str = field(
+        "",
+        help=(
+            "Optional Hugging Face dataset revision (commit SHA or tag). "
+            "When set, load_dataset pins to this revision so dataset drift "
+            "cannot silently change the workload."
+        ),
+    )
     text_column: str = field(
         "text", help="Column containing the target TTS synthesis text."
     )

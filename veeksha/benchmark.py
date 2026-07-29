@@ -7,11 +7,15 @@ from dataclasses import replace
 from queue import Queue
 from typing import Optional, Set
 
+from veeksha.benchmark_resolve import NamedBenchmarkError, check_workload_pin
 from veeksha.benchmark_utils import (
     _init_output_dir,
     _monitor_for_completion,
     build_evaluator,
+    collect_output_digests,
+    finalize_run_manifest,
     maybe_run_warmup,
+    write_run_manifest_start,
 )
 from veeksha.client.registry import ClientRegistry
 from veeksha.config.benchmark import BenchmarkConfig
@@ -19,6 +23,7 @@ from veeksha.config.endpoint import EndpointConfig
 from veeksha.core.seeding import SeedManager
 from veeksha.core.thread_pool import ThreadPoolManager
 from veeksha.core.trace_recorder import TraceRecorder
+from veeksha.core.workload_fingerprint import WorkloadFingerprint
 from veeksha.evaluator.base import EvaluationResult
 from veeksha.generator.session.registry import SessionGeneratorRegistry
 from veeksha.health import HealthChecker, maybe_build_tts_zombie_probe
@@ -58,8 +63,17 @@ def _warn_if_gil_enabled(stage: str) -> None:
         )
 
 
-def _maybe_pregenerate_sessions(benchmark_config, session_generator) -> Optional[list]:
-    """Pre-generate sessions when enabled in runtime config."""
+def _maybe_pregenerate_sessions(
+    benchmark_config,
+    session_generator,
+    workload_fingerprint: Optional[WorkloadFingerprint] = None,
+) -> Optional[list]:
+    """Pre-generate sessions when enabled in runtime config.
+
+    When a ``workload_fingerprint`` is provided, sessions are hashed here in
+    generation order so a pre-flight pin check can run before any request is
+    sent.
+    """
     if not (
         benchmark_config.runtime.pregenerate_sessions
         and benchmark_config.runtime.max_sessions > 0
@@ -72,6 +86,8 @@ def _maybe_pregenerate_sessions(benchmark_config, session_generator) -> Optional
         try:
             session = session_generator.generate_session()
             pregenerated_sessions.append(session)
+            if workload_fingerprint is not None:
+                workload_fingerprint.add_session(session)
         except StopIteration:
             logger.warning(
                 "Session generator exhausted at %d sessions",
@@ -93,6 +109,8 @@ def _run_main_loop(
     trace_recorder=None,
     benchmark_start_time: Optional[float] = None,
     pregenerated_sessions: Optional[list] = None,
+    workload_fingerprint: Optional[WorkloadFingerprint] = None,
+    fingerprint_pregenerated: bool = False,
 ) -> None:
     """Run the main benchmark loop with all workers."""
     logger.info("Starting main loop")
@@ -136,6 +154,8 @@ def _run_main_loop(
             "generator_lock": generator_lock,
             "session_counter": session_counter,
             "pregenerated_sessions": pregenerated_sessions,
+            "workload_fingerprint": workload_fingerprint,
+            "fingerprint_pregenerated": fingerprint_pregenerated,
         },
         pool_size=1,
     )
@@ -286,10 +306,53 @@ def _run_benchmark(
     # some session generators might define a warmup phase
     maybe_run_warmup(session_generator, client)
 
+    # Content hash over the generated request stream. Fed in generation order
+    # under the prefetch lock (or during pregeneration for pre-flight checks).
+    workload_fingerprint = WorkloadFingerprint()
+
     # Pre-generate all sessions if requested (before starting timer)
     pregenerated_sessions = _maybe_pregenerate_sessions(
-        benchmark_config, session_generator
+        benchmark_config, session_generator, workload_fingerprint
     )
+    fingerprint_pregenerated = pregenerated_sessions is not None
+
+    # Enrich the start-of-run manifest with tokenizer identity and, when this
+    # is a named benchmark, the resolved free variables / definition identity.
+    named_meta = getattr(benchmark_config, "_named_benchmark_meta", None) or {}
+    write_run_manifest_start(
+        benchmark_config,
+        tokenizer_model=getattr(tokenizer_provider, "model_name", None),
+        knobs=named_meta.get("knobs"),
+        benchmark_meta=(
+            {
+                "name": named_meta.get("name"),
+                "version": named_meta.get("version"),
+                "revision": named_meta.get("revision"),
+                "definition_dir": named_meta.get("definition_dir"),
+            }
+            if named_meta
+            else None
+        ),
+        unpinned=bool(named_meta.get("unpinned")),
+    )
+
+    # Pre-flight pin check: when sessions were pre-generated, the workload is
+    # already fully hashed — fail before any request leaves the client.
+    if named_meta and fingerprint_pregenerated and workload_fingerprint.session_count:
+        try:
+            check_workload_pin(
+                actual_digest=workload_fingerprint.digest(),
+                named_meta=named_meta,
+                allow_workload_drift=bool(benchmark_config.allow_workload_drift),
+                stage="preflight",
+            )
+        except NamedBenchmarkError as exc:
+            raise SystemExit(str(exc)) from exc
+        logger.info(
+            "Pre-flight workload pin OK: %s (%d sessions)",
+            workload_fingerprint.digest(),
+            workload_fingerprint.session_count,
+        )
 
     # Snapshot server-side finished-session counters (Vajra TTS endpoints only)
     # so the post-run health check can detect zombie sessions.
@@ -332,6 +395,8 @@ def _run_benchmark(
             trace_recorder=trace_recorder,
             benchmark_start_time=benchmark_start_time,
             pregenerated_sessions=pregenerated_sessions,
+            workload_fingerprint=workload_fingerprint,
+            fingerprint_pregenerated=fingerprint_pregenerated,
         )
     finally:
         if trace_recorder:
@@ -355,6 +420,42 @@ def _run_benchmark(
         "Benchmark phase 'evaluator_save' took %.2fs",
         time.monotonic() - save_started_at,
     )
+
+    finalize_run_manifest(
+        benchmark_config.output_dir,
+        workload_summary=workload_fingerprint.summary(),
+        outputs=collect_output_digests(benchmark_config.output_dir),
+    )
+    logger.info(
+        "Workload fingerprint: %s (%d sessions, %d requests)",
+        workload_fingerprint.digest(),
+        workload_fingerprint.session_count,
+        workload_fingerprint.request_count,
+    )
+
+    named_meta = getattr(benchmark_config, "_named_benchmark_meta", None)
+    if named_meta is not None:
+        import json as _json
+
+        from veeksha.benchmark_utils import RUN_MANIFEST_NAME
+
+        manifest_path = os.path.join(benchmark_config.output_dir, RUN_MANIFEST_NAME)
+        actual_inputs: dict = {}
+        try:
+            with open(manifest_path, encoding="utf-8") as handle:
+                actual_inputs = (_json.load(handle) or {}).get("inputs") or {}
+        except (OSError, _json.JSONDecodeError):
+            actual_inputs = {}
+        try:
+            check_workload_pin(
+                actual_digest=workload_fingerprint.digest(),
+                named_meta=named_meta,
+                allow_workload_drift=bool(benchmark_config.allow_workload_drift),
+                actual_inputs=actual_inputs,
+                stage="finalize",
+            )
+        except NamedBenchmarkError as exc:
+            raise SystemExit(str(exc)) from exc
 
     # health checks
     logger.info("Running health checks...")

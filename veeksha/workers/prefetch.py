@@ -6,6 +6,7 @@ from typing import List, Optional
 
 from veeksha.core.context import WorkerContext
 from veeksha.core.session import Session
+from veeksha.core.workload_fingerprint import WorkloadFingerprint
 from veeksha.generator.session.base import BaseSessionGenerator
 from veeksha.logger import init_logger
 from veeksha.traffic.base import BaseTrafficScheduler
@@ -53,6 +54,8 @@ class PrefetchWorker:
         worker_context: WorkerContext,
         session_counter: SharedSessionCounter,
         pregenerated_sessions: Optional[List[Session]] = None,
+        workload_fingerprint: Optional[WorkloadFingerprint] = None,
+        fingerprint_pregenerated: bool = False,
     ):
         """Initialize the prefetch worker.
 
@@ -63,6 +66,11 @@ class PrefetchWorker:
             worker_context: Worker context with stop event
             session_counter: Shared counter for tracking sessions across workers
             pregenerated_sessions: Optional list of pre-generated sessions to use
+            workload_fingerprint: Optional hasher fed in generation order under
+                ``generator_lock``. Not thread-safe on its own; the lock is the
+                only serialization it needs.
+            fingerprint_pregenerated: When True, pregenerated sessions were
+                already hashed during pregeneration — do not double-count them.
         """
         self.traffic_scheduler = traffic_scheduler
         self.session_generator = session_generator
@@ -71,6 +79,8 @@ class PrefetchWorker:
         self.session_counter = session_counter
         self._pregenerated_sessions = pregenerated_sessions
         self._pregenerated_index = 0
+        self._workload_fingerprint = workload_fingerprint
+        self._fingerprint_pregenerated = fingerprint_pregenerated
 
     def _get_poll_interval(self) -> float:
         """Calculate poll interval based on runtime duration.
@@ -85,6 +95,11 @@ class PrefetchWorker:
             return 0.0
         return self._MAX_POLL_INTERVAL_S
 
+    def _record_session(self, session: Session) -> None:
+        """Feed one session into the workload hasher. Caller holds the lock."""
+        if self._workload_fingerprint is not None:
+            self._workload_fingerprint.add_session(session)
+
     def _generate_session(self) -> Optional[Session]:
         """Generate next session in a thread-safe manner."""
         # If we have pre-generated sessions, use those
@@ -95,6 +110,11 @@ class PrefetchWorker:
                 session = self._pregenerated_sessions[self._pregenerated_index]
                 self._pregenerated_index += 1
                 self.session_counter._count += 1
+                # Pre-gen path already fingerprinted during pregeneration when
+                # fingerprint_pregenerated is set; otherwise hash on consume so
+                # the sequence still matches generation order.
+                if not self._fingerprint_pregenerated:
+                    self._record_session(session)
                 return session
 
         # Otherwise generate on-the-fly
@@ -105,6 +125,7 @@ class PrefetchWorker:
 
                 try:
                     session = self.session_generator.generate_session()
+                    self._record_session(session)
                     return session
                 except StopIteration:
                     logger.debug(

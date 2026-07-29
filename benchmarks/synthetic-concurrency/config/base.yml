@@ -1,0 +1,49 @@
+# Frozen base config for the synthetic-concurrency named benchmark.
+# Endpoint / free variables are supplied at run time.
+
+seed: 42
+
+traffic_scheduler:
+  type: concurrent
+  target_concurrent_sessions: 1
+  rampup_seconds: 0
+  cancel_session_on_failure: false
+
+session_generator:
+  type: synthetic
+  session_graph:
+    type: single_request
+  channels:
+    - type: text
+      body_length_generator:
+        type: fixed
+        length: 16
+  output_spec:
+    text:
+      output_length_generator:
+        type: fixed
+        length: 8
+
+# Tokenizer model used for synthetic prompt generation. Override only via
+# allow_config_override (not a free variable) — changing it changes the stream.
+client:
+  type: openai_chat_completions
+  model: gpt2
+  request_timeout: 60
+  api_base: http://127.0.0.1:9/v1
+  api_key: none
+  max_tokens_param: max_tokens
+
+runtime:
+  max_sessions: 8
+  pregenerate_sessions: true
+  benchmark_timeout: 120
+
+trace_recorder:
+  enabled: true
+  include_content: true
+
+evaluators:
+  - type: performance
+    target_channels: ["text"]
+    stream_metrics: false

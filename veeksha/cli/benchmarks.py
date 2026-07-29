@@ -16,6 +16,7 @@ from veeksha.benchmark import (
     manage_benchmark_run,
     run_benchmark_with_endpoint,
 )
+from veeksha.benchmark_resolve import NamedBenchmarkError, resolve_named_benchmark
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.utils import to_serializable_config_dict
 from veeksha.logger import init_logger
@@ -26,15 +27,39 @@ from veeksha.wandb_integration import dedup_tags, maybe_log_sweep_summary
 logger = init_logger(__name__)
 
 
+def _maybe_resolve_named(cfg: BenchmarkConfig) -> BenchmarkConfig:
+    """If ``cfg.benchmark`` is set, fetch the definition and apply free variables."""
+    if not cfg.benchmark:
+        return cfg
+    knob_overrides = getattr(cfg, "_knob_overrides", None)
+    try:
+        resolved, meta = resolve_named_benchmark(cfg, knob_overrides=knob_overrides)
+    except NamedBenchmarkError as exc:
+        raise SystemExit(str(exc)) from exc
+    # Carry CLI-provided keys and named-benchmark meta onto the resolved config
+    # (frozen dataclasses only accept new attrs via object.__setattr__).
+    provided = getattr(cfg, "_cli_provided_keys", None)
+    if provided is not None:
+        object.__setattr__(resolved, "_cli_provided_keys", provided)
+    if knob_overrides is not None:
+        object.__setattr__(resolved, "_knob_overrides", knob_overrides)
+    object.__setattr__(resolved, "_named_benchmark_meta", meta)
+    return resolved
+
+
 class BenchmarkCliRunner:
     """Runs one or more `BenchmarkConfig`s produced by the CLI/YAML loader."""
 
     def __init__(self, benchmark_configs: list[BenchmarkConfig]):
-        self._benchmark_configs = benchmark_configs
+        self._benchmark_configs = [_maybe_resolve_named(c) for c in benchmark_configs]
 
     @classmethod
     def from_cli(cls) -> "BenchmarkCliRunner":
-        return cls(BenchmarkConfig.create_from_cli_args())
+        import sys
+
+        from veeksha.cli.benchmark_run_cli import parse_benchmark_run_configs
+
+        return cls(parse_benchmark_run_configs(sys.argv[1:]))
 
     def run_all(self) -> None:
         """Run all benchmark configs, grouping sweeps by base output directory."""
@@ -156,4 +181,8 @@ def run_cli(configs: list[BenchmarkConfig]) -> None:
 
 
 def main() -> None:
-    run_cli(BenchmarkConfig.create_from_cli_args())
+    import sys
+
+    from veeksha.cli.benchmark_run_cli import parse_benchmark_run_configs
+
+    run_cli(parse_benchmark_run_configs(sys.argv[1:]))
