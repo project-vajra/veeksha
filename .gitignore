@@ -241,6 +241,9 @@ output/
 *.json
 result_outputs/
 
+# Named-benchmark pins are definition source, not results.
+!benchmarks/**/pins.json
+
 __pycache__
 **/__pycache__/
 

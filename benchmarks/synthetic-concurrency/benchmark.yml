@@ -67,8 +67,8 @@ pins:
     tokenizers: 0.22.2
   veeksha:
     version: 0.4.5.post76
-    git_commit: 38f57cc2a5381281f2e7e7027d76f15387e0a20e
-    git_dirty: true
+    git_commit: fdd53f0e223cc6739deb1708119babd2ecf93824
+    git_dirty: false
   knob_defaults:
     concurrency: 1
   sessions_sampled: 8
