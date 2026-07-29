@@ -49,7 +49,6 @@ Hosted API adapters use the same client and evaluator:
    uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_elevenlabs.yml
    uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_mistral.yml
    uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_cartesia.yml
-   uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_together_nemotron.yml
    uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_together_nemotron_3_80ms.yml
 
 Trace generation
@@ -119,11 +118,11 @@ Request metrics
 
 Request-level metrics are written to ``request_level_metrics.jsonl``.
 
-Brief-compatible headline latency
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Headline latency
+~~~~~~~~~~~~~~~~
 
-For the Avartha Voice Inference Brief, streaming STT ``TTFB`` is
-``interactivity``, not raw ``ttfc``. For every reference word that can be
+Veeksha reports streaming STT ``TTFB`` as ``interactivity``, not raw
+``ttfc``. For every reference word that can be
 matched to the evolving transcript, Veeksha records:
 
 .. code-block:: text
@@ -133,13 +132,15 @@ matched to the evolving transcript, Veeksha records:
        - reference end-of-word timestamp
 
 The per-request ``interactivity`` value is the mean of those matched-word
-latencies. The brief's median STT value is P50 across request-level
+latencies. The headline STT latency is P50 across request-level
 ``interactivity`` values. The packaged SLOs additionally gate P90 below one
 second. Word timestamps and transcript snapshots are both relative to the first
 PCM byte sent; the WebSocket handshake is therefore excluded.
 
 ``ttfc`` remains a useful diagnostic for first transcript activity after the
-first input PCM byte, but it is not the brief's spoken-word-boundary metric.
+first input PCM byte, but it is not a spoken-word-boundary metric: it rewards
+a provider that emits an early scrap of text, which is not the same as keeping
+up with speech.
 
 Common audio metrics:
 

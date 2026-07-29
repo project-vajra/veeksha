@@ -1,6 +1,6 @@
 # ElevenLabs Multilingual v2 with the Adam premade voice over /stream-input.
 seed: 42
-output_dir: third_party_numbers/eleven_multilingual_v2/seed_tts
+output_dir: benchmark_output/tts_streaming_eleven_multilingual_v2_seed_tts
 
 client:
   type: streaming_tts

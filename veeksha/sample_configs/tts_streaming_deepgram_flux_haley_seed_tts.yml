@@ -1,6 +1,6 @@
 # Deepgram Flux TTS: paced text-in and raw PCM audio-out over /v2/speak.
 seed: 42
-output_dir: third_party_numbers/flux-haley-en/seed_tts
+output_dir: benchmark_output/tts_streaming_flux-haley-en_seed_tts
 
 client:
   type: streaming_tts

@@ -1,6 +1,6 @@
 # Cartesia Sonic 3.5: paced text continuations in and raw PCM audio out over WebSocket.
 seed: 42
-output_dir: third_party_numbers/sonic-3.5/seed_tts
+output_dir: benchmark_output/tts_streaming_sonic-3.5_seed_tts
 
 client:
   type: streaming_tts

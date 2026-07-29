@@ -1,6 +1,6 @@
 # ElevenLabs Flash v2.5 with the Adam premade voice over /stream-input.
 seed: 42
-output_dir: third_party_numbers/eleven_flash_v2_5/seed_tts
+output_dir: benchmark_output/tts_streaming_eleven_flash_v2_5_seed_tts
 
 client:
   type: streaming_tts

@@ -1,6 +1,6 @@
 # Deepgram Aura 2: paced text-in and raw PCM audio-out over /v1/speak.
 seed: 42
-output_dir: third_party_numbers/aura-2-thalia-en/seed_tts
+output_dir: benchmark_output/tts_streaming_aura-2-thalia-en_seed_tts
 
 client:
   type: streaming_tts

@@ -98,7 +98,7 @@ def test_realtime_tts_sample_config_deserializes_with_common_workload(
     assert config.session_generator.flavor.max_chars == 500
     assert config.traffic_scheduler.target_concurrent_sessions == 1
     trace_dir = "seed_tts" if trace_flavor == "seed_tts_text" else "sharegpt"
-    assert config.output_dir == f"third_party_numbers/{model}/{trace_dir}"
+    assert config.output_dir == f"benchmark_output/tts_streaming_{model}_{trace_dir}"
     assert config.runtime.max_sessions == 100
     if provider == "cartesia":
         assert config.client.voice_id == "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"

@@ -1,6 +1,6 @@
 # ElevenLabs Multilingual v2 with the Adam premade voice over /stream-input.
 seed: 42
-output_dir: third_party_numbers/eleven_multilingual_v2/sharegpt
+output_dir: benchmark_output/tts_streaming_eleven_multilingual_v2_sharegpt
 
 client:
   type: streaming_tts
@@ -28,7 +28,9 @@ client:
 
 session_generator:
   type: trace
-  trace_file: /scratch/sukrit/voice_eval/veeksha/traces/sharegpt_data.json
+  # ShareGPT conversations JSON. Not shipped with the repo -- point this at a
+  # local copy of the dataset.
+  trace_file: /path/to/sharegpt_data.json
   wrap_mode: false
   flavor:
     type: sharegpt

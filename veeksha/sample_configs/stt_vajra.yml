@@ -31,7 +31,7 @@ evaluators:
     stream_metrics: true
     stream_metrics_interval: 10.0
     slos:
-      # Brief-compatible interactivity: spoken word end to the first streamed
+      # Headline interactivity: spoken word end to the first streamed
       # transcript snapshot in which that word is visible.
       - name: P90 spoken-word-end to first returned text under 1 second
         metric: interactivity

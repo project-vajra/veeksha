@@ -79,10 +79,10 @@ stream-input <https://elevenlabs.io/docs/api-reference/text-to-speech/v-1-text-t
 Metrics
 -------
 
-Brief-compatible headline latency
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Headline latency
+~~~~~~~~~~~~~~~~
 
-For the Avartha Voice Inference Brief, TTS ``TTFB`` means
+Veeksha reports TTS ``TTFB`` as
 ``trigger_to_first_playable_audio_ms``. On a streaming protocol, "request
 start" is the synthesis trigger on an already-established WebSocket session:
 ``response.create`` for an explicit Realtime protocol, or the first real
@@ -104,7 +104,7 @@ is therefore:
        first timestamp at which cumulative decoded PCM >= 960 bytes
        - synthesis trigger timestamp
 
-The brief's median TTS value is P50 of this request-level metric. The packaged
+The headline TTS latency is P50 of this request-level metric. The packaged
 benchmark SLOs additionally gate P90 below one second; the SLO percentile does
 not change the definition of an individual request's latency.
 
