@@ -1,0 +1,879 @@
+import asyncio
+import base64
+import json
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+import pytest
+from websockets.exceptions import ConnectionClosedOK
+
+from veeksha.client import STTClient
+from veeksha.client.registry import ClientRegistry
+from veeksha.client.stt import (
+    _CartesiaSTTProtocol,
+    _ClipAssets,
+    _decode_stt_json_message,
+    _DeepgramFluxProtocol,
+    _DeepgramNovaProtocol,
+    _ElevenLabsSTTProtocol,
+    _map_stt_error,
+    _MistralSTTProtocol,
+    _slice_pcm16_bytes,
+    _STTProtocolError,
+    _TogetherSTTProtocol,
+)
+from veeksha.config.client import STTClientConfig
+from veeksha.core.audio_contract import AudioMetricKey
+from veeksha.core.request import Request
+from veeksha.core.request_content import AudioChannelRequestContent
+from veeksha.types import ChannelModality, ClientType
+
+
+@pytest.mark.unit
+def test_slice_pcm16_bytes_uses_millisecond_offsets() -> None:
+    pcm = bytes(range(20))
+
+    sliced = _slice_pcm16_bytes(pcm, 1000, start_ms=2.0, end_ms=6.0)
+
+    assert sliced == pcm[4:12]
+
+
+@pytest.mark.unit
+def test_slice_pcm16_bytes_passthrough_without_offsets() -> None:
+    pcm = bytes(range(20))
+
+    assert _slice_pcm16_bytes(pcm, 1000, start_ms=None, end_ms=None) is pcm
+
+
+@pytest.mark.unit
+def test_slice_pcm16_bytes_open_ended_slices() -> None:
+    pcm = bytes(range(20))
+
+    assert _slice_pcm16_bytes(pcm, 1000, start_ms=None, end_ms=6.0) == pcm[:12]
+    assert _slice_pcm16_bytes(pcm, 1000, start_ms=2.0, end_ms=None) == pcm[4:]
+
+
+@pytest.mark.unit
+def test_slice_pcm16_bytes_rejects_negative_start() -> None:
+    pcm = bytes(range(20))
+
+    with pytest.raises(ValueError, match="must be non-negative"):
+        _slice_pcm16_bytes(pcm, 1000, start_ms=-1.0, end_ms=6.0)
+
+
+@pytest.mark.unit
+def test_slice_pcm16_bytes_rejects_end_not_after_start() -> None:
+    pcm = bytes(range(20))
+
+    with pytest.raises(ValueError, match="must be greater than"):
+        _slice_pcm16_bytes(pcm, 1000, start_ms=6.0, end_ms=6.0)
+
+
+@pytest.mark.unit
+def test_slice_pcm16_bytes_rejects_end_past_clip() -> None:
+    pcm = bytes(range(20))
+
+    with pytest.raises(ValueError, match="exceeds decoded clip length"):
+        _slice_pcm16_bytes(pcm, 1000, start_ms=0.0, end_ms=11.0)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("field_name", ["ws_ping_interval_s", "ws_ping_timeout_s"])
+def test_stt_client_config_rejects_nonpositive_ws_ping(field_name: str) -> None:
+    with pytest.raises(ValueError, match=f"{field_name} must be > 0 or None"):
+        STTClientConfig(
+            provider="vajra_openai_realtime",
+            model="mistralai/Voxtral-Mini-4B-Realtime-2602",
+            api_base="http://localhost:8003",
+            **{field_name: 0},
+        )
+
+
+@pytest.mark.unit
+def test_stt_errors_use_shared_websocket_mapping() -> None:
+    assert _map_stt_error(_STTProtocolError("provider failed"), 3.0) == (
+        500,
+        "provider failed",
+    )
+    assert _map_stt_error(TimeoutError(), 3.0) == (
+        408,
+        "STT request timed out after 3.0s",
+    )
+    assert _map_stt_error(OSError("unreachable"), 3.0) == (503, "unreachable")
+
+
+def _vajra_realtime_client() -> STTClient:
+    config = STTClientConfig(
+        provider="vajra_openai_realtime",
+        model="mistralai/Voxtral-Mini-4B-Realtime-2602",
+        api_base="http://localhost:8003",
+    )
+    return STTClient(config)
+
+
+@pytest.mark.unit
+def test_vajra_openai_realtime_parses_transcription_events() -> None:
+    client = _vajra_realtime_client()
+
+    assert client._protocol.parse_message(
+        {"type": "conversation.item.input_audio_transcription.delta", "delta": "hi"}
+    ) == ("delta", "hi")
+    assert client._protocol.parse_message(
+        {
+            "type": "conversation.item.input_audio_transcription.completed",
+            "transcript": "hi there",
+        }
+    ) == ("done", "hi there")
+    assert client._protocol.parse_message({"type": "input_audio_buffer.committed"}) == (
+        "",
+        "",
+    )
+
+
+@pytest.mark.unit
+def test_vajra_openai_realtime_maps_failed_item_to_error() -> None:
+    client = _vajra_realtime_client()
+
+    kind, text = client._protocol.parse_message(
+        {
+            "type": "conversation.item.input_audio_transcription.failed",
+            "error": {"type": "server_error", "message": "boom"},
+        }
+    )
+
+    assert (kind, text) == ("error", "boom")
+
+
+@pytest.mark.unit
+def test_vajra_openai_realtime_maps_session_error() -> None:
+    client = _vajra_realtime_client()
+
+    assert client._protocol.parse_message(
+        {"type": "error", "error": {"message": "bad request"}}
+    ) == ("error", "bad request")
+
+
+def _vllm_realtime_client() -> STTClient:
+    config = STTClientConfig(
+        provider="vllm_realtime",
+        model="mistralai/Voxtral-Mini-4B-Realtime-2602",
+        api_base="http://localhost:8025",
+    )
+    return STTClient(config)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    (
+        "provider",
+        "api_base",
+        "metric_provider",
+        "protocol_name",
+        "expected_ws_url",
+    ),
+    [
+        (
+            "vllm_realtime",
+            "http://localhost:8025",
+            "vllm",
+            "v1_realtime_transcription",
+            "ws://localhost:8025/v1/realtime",
+        ),
+        (
+            "vajra_openai_realtime",
+            "https://localhost:8003",
+            "vajra",
+            "openai_v1_realtime_transcription",
+            "wss://localhost:8003/openai/v1/realtime?intent=transcription",
+        ),
+    ],
+)
+def test_registry_exposes_one_stt_client_with_provider_strategies(
+    provider: str,
+    api_base: str,
+    metric_provider: str,
+    protocol_name: str,
+    expected_ws_url: str,
+) -> None:
+    config = STTClientConfig(
+        provider=provider,
+        model="mistralai/Voxtral-Mini-4B-Realtime-2602",
+        api_base=api_base,
+    )
+
+    client = ClientRegistry.get(ClientType.STT, config=config)
+
+    assert type(client) is STTClient
+    assert client._protocol.provider == metric_provider
+    assert client._protocol.protocol_name == protocol_name
+    assert client._ws_url == expected_ws_url
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("provider", "model", "path", "protocol_name"),
+    [
+        (
+            "deepgram_flux",
+            "flux-general-en",
+            "/v2/listen",
+            "deepgram_v2_flux_listen",
+        ),
+        ("deepgram_nova", "nova-3", "/v1/listen", "deepgram_v1_listen"),
+        (
+            "elevenlabs",
+            "scribe_v2_realtime",
+            "/v1/speech-to-text/realtime",
+            "elevenlabs_scribe_v2_realtime",
+        ),
+        (
+            "mistral",
+            "voxtral-mini-transcribe-realtime-2602",
+            "/v1/audio/transcriptions/realtime",
+            "mistral_realtime_transcription",
+        ),
+        (
+            "cartesia",
+            "ink-2",
+            "/stt/websocket",
+            "cartesia_stt_websocket_manual",
+        ),
+        (
+            "together",
+            "nvidia/nemotron-3.5-asr-streaming-0.6b",
+            "/v1/realtime",
+            "together_openai_v1_realtime_transcription",
+        ),
+    ],
+)
+def test_cloud_stt_providers_share_one_client_lifecycle(
+    provider: str, model: str, path: str, protocol_name: str
+) -> None:
+    client = STTClient(
+        STTClientConfig(
+            provider=provider,
+            model=model,
+            api_base={
+                "elevenlabs": "https://api.elevenlabs.io",
+                "mistral": "https://api.mistral.ai",
+                "cartesia": "https://api.cartesia.ai",
+                "together": "https://api.together.ai",
+            }.get(provider, "https://api.deepgram.com"),
+            api_key="test-key",
+        )
+    )
+
+    parsed = urlparse(client._ws_url)
+    query = parse_qs(parsed.query)
+    assert type(client) is STTClient
+    assert parsed.scheme == "wss"
+    assert parsed.path == path
+    assert query["model_id" if provider == "elevenlabs" else "model"] == [model]
+    assert client._protocol.protocol_name == protocol_name
+
+
+@pytest.mark.unit
+def test_deepgram_stt_adapters_use_binary_pcm_and_normalized_events() -> None:
+    flux_config = STTClientConfig(
+        provider="deepgram_flux",
+        model="flux-general-en",
+        api_base="https://api.deepgram.com",
+        api_key="test-key",
+    )
+    flux = _DeepgramFluxProtocol(flux_config, "test-key")
+    assert flux.headers() == {"Authorization": "Token test-key"}
+    assert flux.encode_chunk(memoryview(b"\x01\x02"), final=False) == b"\x01\x02"
+    assert flux.finish_messages() == [json.dumps({"type": "CloseStream"})]
+    assert flux.parse_message(
+        {"type": "TurnInfo", "event": "Update", "transcript": "hello"}
+    ) == ("snapshot", "hello")
+    assert flux.parse_message(
+        {"type": "TurnInfo", "event": "EndOfTurn", "transcript": "hello there"}
+    ) == ("commit", "hello there")
+    assert flux.parse_message({"type": "Metadata"}) == ("done", "")
+
+    nova_config = STTClientConfig(
+        provider="deepgram_nova",
+        model="nova-3",
+        api_base="https://api.deepgram.com",
+        api_key="test-key",
+    )
+    nova = _DeepgramNovaProtocol(nova_config, "test-key")
+    partial = {
+        "type": "Results",
+        "is_final": False,
+        "channel": {"alternatives": [{"transcript": "hello"}]},
+    }
+    final = {**partial, "is_final": True}
+    assert nova.parse_message(partial) == ("snapshot", "hello")
+    assert nova.parse_message(final) == ("commit", "hello")
+
+
+@pytest.mark.unit
+def test_repeated_committed_turns_are_not_deduplicated() -> None:
+    client = STTClient(
+        STTClientConfig(
+            provider="deepgram_flux",
+            model="flux-general-en",
+            api_base="https://api.deepgram.com",
+            api_key="test-key",
+            ws_realtime_pacing=False,
+        )
+    )
+    websocket = _FakeDeepgramFluxWebSocket(
+        transcripts=["yes", "yes"],
+    )
+    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign, arg-type]
+
+    result = asyncio.run(client._stream(b"\x00\x00"))
+
+    assert result.final_transcript == "yes yes"
+
+
+@pytest.mark.unit
+def test_elevenlabs_stt_adapter_commits_only_the_final_pcm_chunk() -> None:
+    config = STTClientConfig(
+        provider="elevenlabs",
+        model="scribe_v2_realtime",
+        api_base="https://api.elevenlabs.io",
+        api_key="test-key",
+    )
+    protocol = _ElevenLabsSTTProtocol(config, "test-key")
+
+    first = json.loads(protocol.encode_chunk(b"\x01\x02", final=False))
+    last = json.loads(protocol.encode_chunk(b"\x03\x04", final=True))
+
+    assert protocol.headers() == {"xi-api-key": "test-key"}
+    assert base64.b64decode(first["audio_base_64"]) == b"\x01\x02"
+    assert first["commit"] is False
+    assert last["commit"] is True
+    assert protocol.finish_messages() == []
+    assert protocol.parse_message(
+        {"message_type": "partial_transcript", "text": "hello"}
+    ) == ("snapshot", "hello")
+    assert protocol.parse_message(
+        {"message_type": "committed_transcript", "text": "hello there"}
+    ) == ("done", "hello there")
+
+
+class _MistralHandshakeWebSocket:
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+
+    async def recv(self) -> str:
+        return json.dumps({"type": "session.created", "session": {}})
+
+    async def send(self, message: str) -> None:
+        self.sent.append(message)
+
+
+@pytest.mark.unit
+def test_mistral_stt_adapter_uses_realtime_pcm_protocol() -> None:
+    config = STTClientConfig(
+        provider="mistral",
+        model="voxtral-mini-transcribe-realtime-2602",
+        api_base="https://api.mistral.ai",
+        api_key="test-key",
+        target_streaming_delay_ms=240,
+    )
+    protocol = _MistralSTTProtocol(config, "test-key")
+    websocket = _MistralHandshakeWebSocket()
+
+    asyncio.run(protocol.open_session(websocket, config.model))
+
+    session_update = json.loads(websocket.sent[0])
+    assert protocol.headers() == {"Authorization": "Bearer test-key"}
+    assert session_update["session"]["audio_format"] == {
+        "encoding": "pcm_s16le",
+        "sample_rate": 16000,
+    }
+    assert session_update["session"]["target_streaming_delay_ms"] == 240
+    encoded = json.loads(protocol.encode_chunk(b"\x01\x02", final=False))
+    assert base64.b64decode(encoded["audio"]) == b"\x01\x02"
+    assert protocol.finish_messages() == [
+        json.dumps({"type": "input_audio.flush"}),
+        json.dumps({"type": "input_audio.end"}),
+    ]
+    assert protocol.parse_message(
+        {"type": "transcription.text.delta", "text": "hello"}
+    ) == ("delta", "hello")
+    assert protocol.parse_message(
+        {"type": "transcription.done", "text": "hello there"}
+    ) == ("done", "hello there")
+
+
+@pytest.mark.unit
+def test_cartesia_stt_adapter_uses_manual_finalize_protocol() -> None:
+    config = STTClientConfig(
+        provider="cartesia",
+        model="ink-2",
+        api_base="https://api.cartesia.ai",
+        api_key="test-key",
+    )
+    protocol = _CartesiaSTTProtocol(config, "test-key")
+
+    assert protocol.headers() == {
+        "Authorization": "Bearer test-key",
+        "Cartesia-Version": "2026-03-01",
+    }
+    assert protocol.encode_chunk(memoryview(b"\x01\x02"), final=False) == b"\x01\x02"
+    assert protocol.finish_messages() == ["finalize", "close"]
+    assert protocol.parse_message(
+        {"type": "transcript", "is_final": False, "text": "hello"}
+    ) == ("partial_delta", "hello")
+    assert protocol.parse_message(
+        {"type": "transcript", "is_final": True, "text": "hello there"}
+    ) == ("final_delta", "hello there")
+    assert protocol.parse_message({"type": "done"}) == ("done", "")
+
+
+class _TogetherHandshakeWebSocket:
+    def __init__(self) -> None:
+        self.received = False
+
+    async def recv(self) -> str:
+        self.received = True
+        return json.dumps({"type": "session.created", "session": {}})
+
+
+@pytest.mark.unit
+def test_together_stt_adapter_uses_manual_realtime_protocol() -> None:
+    config = STTClientConfig(
+        provider="together",
+        model="nvidia/nemotron-3.5-asr-streaming-0.6b",
+        api_base="https://api.together.ai",
+        api_key="test-key",
+    )
+    protocol = _TogetherSTTProtocol(config, "test-key")
+    websocket = _TogetherHandshakeWebSocket()
+
+    asyncio.run(protocol.open_session(websocket, config.model))
+
+    parsed = urlparse(protocol.build_ws_url(str(config.api_base)))
+    query = parse_qs(parsed.query)
+    encoded = json.loads(protocol.encode_chunk(b"\x01\x02", final=False))
+    assert websocket.received
+    assert parsed.path == "/v1/realtime"
+    assert query == {
+        "intent": ["transcription"],
+        "model": ["nvidia/nemotron-3.5-asr-streaming-0.6b"],
+        "input_audio_format": ["pcm_s16le_16000"],
+        "language": ["en"],
+        "turn_detection": ["none"],
+    }
+    assert protocol.headers() == {
+        "Authorization": "Bearer test-key",
+        "OpenAI-Beta": "realtime=v1",
+    }
+    assert base64.b64decode(encoded["audio"]) == b"\x01\x02"
+    assert protocol.finish_messages() == [
+        json.dumps({"type": "input_audio_buffer.commit"})
+    ]
+    assert protocol.parse_message(
+        {
+            "type": "conversation.item.input_audio_transcription.delta",
+            "delta": "hello",
+        }
+    ) == ("snapshot", "hello")
+    assert protocol.parse_message(
+        {
+            "type": "conversation.item.input_audio_transcription.completed",
+            "transcript": "hello there",
+        }
+    ) == ("done", "hello there")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("provider", "env_name"),
+    [
+        ("deepgram_flux", "DEEPGRAM_API_KEY"),
+        ("deepgram_nova", "DEEPGRAM_API_KEY"),
+        ("elevenlabs", "ELEVENLABS_API_KEY"),
+        ("mistral", "MISTRAL_API_KEY"),
+        ("cartesia", "CARTESIA_API_KEY"),
+        ("together", "TOGETHER_API_KEY"),
+    ],
+)
+def test_cloud_stt_provider_requires_api_key(
+    provider: str, env_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv(env_name, raising=False)
+    with pytest.raises(ValueError, match=env_name):
+        STTClient(
+            STTClientConfig(
+                provider=provider,
+                model=(
+                    "scribe_v2_realtime"
+                    if provider == "elevenlabs"
+                    else {
+                        "mistral": "voxtral-mini-transcribe-realtime-2602",
+                        "cartesia": "ink-2",
+                        "together": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+                    }.get(provider, "flux-general-en")
+                ),
+                api_base="https://provider.example",
+            )
+        )
+
+
+@pytest.mark.unit
+def test_together_stt_rejects_non_16khz_audio() -> None:
+    with pytest.raises(ValueError, match="requires sample_rate=16000"):
+        STTClientConfig(
+            provider="together",
+            model="nvidia/nemotron-3.5-asr-streaming-0.6b",
+            api_base="https://api.together.ai",
+            api_key="test-key",
+            sample_rate=8000,
+        )
+
+
+@pytest.mark.unit
+def test_stt_send_request_finishes_lifecycle_callbacks_on_invalid_audio() -> None:
+    client = _vllm_realtime_client()
+    events: list[str] = []
+
+    result = asyncio.run(
+        client.send_request(
+            Request(id=99, channels={}),
+            session_id=7,
+            on_request_sent=lambda: events.append("sent"),
+            on_request_dispatched=lambda: events.append("dispatched"),
+        )
+    )
+
+    assert result.success is False
+    assert result.error_code == 400
+    assert events == ["dispatched", "sent"]
+
+
+class _FakeVllmWebSocket:
+    def __init__(self) -> None:
+        self._recv_index = 0
+        self._audio_sent = asyncio.Event()
+
+    async def recv(self) -> str:
+        if self._recv_index == 0:
+            self._recv_index += 1
+            return json.dumps({"type": "session.created"})
+
+        await self._audio_sent.wait()
+        if self._recv_index == 1:
+            self._recv_index += 1
+            return json.dumps({"type": "transcription.delta", "delta": "hello"})
+        self._recv_index += 1
+        return json.dumps({"type": "transcription.done", "text": "hello"})
+
+    async def send(self, message: str | bytes) -> None:
+        if isinstance(message, str):
+            payload = json.loads(message)
+            if payload.get("type") == "input_audio_buffer.append":
+                self._audio_sent.set()
+
+
+class _FakeConnection:
+    def __init__(self, websocket: _FakeVllmWebSocket) -> None:
+        self._websocket = websocket
+
+    async def __aenter__(self) -> _FakeVllmWebSocket:
+        return self._websocket
+
+    async def __aexit__(self, *_args) -> None:
+        return None
+
+
+class _FakeCartesiaWebSocket:
+    def __init__(self) -> None:
+        self._session_closed = asyncio.Event()
+        self._events = [
+            {"type": "transcript", "is_final": False, "text": "2"},
+            {"type": "transcript", "is_final": True, "text": "2"},
+            {"type": "transcript", "is_final": False, "text": "021"},
+            {"type": "transcript", "is_final": True, "text": "021"},
+            {"type": "transcript", "is_final": False, "text": " abn"},
+            {"type": "transcript", "is_final": True, "text": " abn"},
+            {"type": "transcript", "is_final": False, "text": "ormally"},
+            {"type": "transcript", "is_final": True, "text": "ormally"},
+            {"type": "done"},
+        ]
+        self.sent: list[str | bytes] = []
+
+    async def recv(self) -> str:
+        await self._session_closed.wait()
+        return json.dumps(self._events.pop(0))
+
+    async def send(self, message: str | bytes) -> None:
+        self.sent.append(message)
+        if message == "close":
+            self._session_closed.set()
+
+
+class _FakeCartesiaConnection:
+    def __init__(self, websocket: _FakeCartesiaWebSocket) -> None:
+        self._websocket = websocket
+
+    async def __aenter__(self) -> _FakeCartesiaWebSocket:
+        return self._websocket
+
+    async def __aexit__(self, *_args) -> None:
+        return None
+
+
+class _FakeDeepgramFluxWebSocket:
+    def __init__(self, transcripts: list[str] | None = None) -> None:
+        self._audio_sent = asyncio.Event()
+        if transcripts is None:
+            self._events = [
+                json.dumps(
+                    {
+                        "type": "TurnInfo",
+                        "event": "Update",
+                        "transcript": "hello",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "TurnInfo",
+                        "event": "EndOfTurn",
+                        "transcript": "hello there",
+                    }
+                ),
+            ]
+        else:
+            self._events = [
+                json.dumps(
+                    {
+                        "type": "TurnInfo",
+                        "event": "EndOfTurn",
+                        "transcript": transcript,
+                    }
+                )
+                for transcript in transcripts
+            ]
+
+    async def recv(self) -> str:
+        await self._audio_sent.wait()
+        if self._events:
+            return self._events.pop(0)
+        raise ConnectionClosedOK(None, None)
+
+    async def send(self, _message: str | bytes) -> None:
+        self._audio_sent.set()
+
+
+@pytest.mark.unit
+def test_cartesia_stream_concatenates_final_deltas_without_inserting_spaces() -> None:
+    client = STTClient(
+        STTClientConfig(
+            provider="cartesia",
+            model="ink-2",
+            api_base="https://api.cartesia.ai",
+            api_key="test-key",
+            ws_realtime_pacing=False,
+        )
+    )
+    websocket = _FakeCartesiaWebSocket()
+    client._connect = lambda: _FakeCartesiaConnection(websocket)  # type: ignore[method-assign]
+
+    result = asyncio.run(client._stream(b"\x00\x00"))
+
+    assert result.final_transcript == "2021 abnormally"
+    assert [snapshot["transcript"] for snapshot in result.transcript_snapshots] == [
+        "2",
+        "2021",
+        "2021 abn",
+        "2021 abnormally",
+    ]
+    assert websocket.sent[-2:] == ["finalize", "close"]
+
+
+@pytest.mark.unit
+def test_deepgram_flux_clean_close_finalizes_the_last_turn() -> None:
+    client = STTClient(
+        STTClientConfig(
+            provider="deepgram_flux",
+            model="flux-general-en",
+            api_base="https://api.deepgram.com",
+            api_key="test-key",
+            ws_realtime_pacing=False,
+        )
+    )
+    websocket = _FakeDeepgramFluxWebSocket()
+    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign, arg-type]
+
+    result = asyncio.run(client._stream(b"\x00\x00"))
+
+    assert result.final_transcript == "hello there"
+    assert result.ttfc is not None
+
+
+@pytest.mark.unit
+def test_vllm_stream_fires_callbacks_after_handshake_and_first_content() -> None:
+    client = _vllm_realtime_client()
+    websocket = _FakeVllmWebSocket()
+    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    events: list[str] = []
+
+    result = asyncio.run(
+        client._stream(
+            b"\x00\x00",
+            on_request_sent=lambda: events.append("sent"),
+            on_request_dispatched=lambda: events.append("dispatched"),
+        )
+    )
+
+    assert result.final_transcript == "hello"
+    assert events == ["dispatched", "sent"]
+
+
+@pytest.mark.unit
+def test_stt_request_emits_normalized_provider_metadata(tmp_path: Path) -> None:
+    client = _vllm_realtime_client()
+    websocket = _FakeVllmWebSocket()
+    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._clip_assets = lambda _path: _ClipAssets(  # type: ignore[method-assign]
+        pcm=b"\x00\x00",
+        wire_messages=[],
+    )
+    audio_file = tmp_path / "request.pcm"
+    audio_file.write_bytes(b"\x00\x00")
+    request = Request(
+        id=101,
+        channels={
+            ChannelModality.AUDIO: AudioChannelRequestContent(
+                input_audio=str(audio_file)
+            )
+        },
+    )
+
+    result = asyncio.run(client.send_request(request, session_id=3))
+
+    assert result.success
+    metrics = result.channels[ChannelModality.AUDIO].metrics
+    assert metrics[AudioMetricKey.PROVIDER.value] == "vllm"
+    assert metrics[AudioMetricKey.PROVIDER_MODEL.value] == (
+        "mistralai/Voxtral-Mini-4B-Realtime-2602"
+    )
+    assert (
+        metrics[AudioMetricKey.PROVIDER_PROTOCOL.value] == "v1_realtime_transcription"
+    )
+    assert metrics[AudioMetricKey.RAW_PCM.value] is True
+    assert metrics[AudioMetricKey.TTFC.value] is not None
+    assert metrics[AudioMetricKey.TTFC.value] >= 0.0
+
+
+@pytest.mark.unit
+def test_decode_stt_json_message_rejects_binary_and_non_object() -> None:
+    with pytest.raises(_STTProtocolError, match="unexpected binary"):
+        _decode_stt_json_message(b"\x00\x01", provider="vllm")
+    with pytest.raises(_STTProtocolError, match="non-JSON"):
+        _decode_stt_json_message("not-json", provider="vllm")
+    with pytest.raises(_STTProtocolError, match="non-object"):
+        _decode_stt_json_message("[1, 2]", provider="vllm")
+    assert _decode_stt_json_message('{"type": "ok"}', provider="vllm") == {"type": "ok"}
+
+
+class _FakeVllmEmptyTranscriptWebSocket:
+    """Completes after audio with an empty final transcript (no TTFC)."""
+
+    def __init__(self) -> None:
+        self._recv_index = 0
+        self._audio_sent = asyncio.Event()
+
+    async def recv(self) -> str:
+        if self._recv_index == 0:
+            self._recv_index += 1
+            return json.dumps({"type": "session.created"})
+        await self._audio_sent.wait()
+        self._recv_index += 1
+        return json.dumps({"type": "transcription.done", "text": ""})
+
+    async def send(self, message: str | bytes) -> None:
+        if isinstance(message, str):
+            payload = json.loads(message)
+            if payload.get("type") == "input_audio_buffer.append":
+                self._audio_sent.set()
+
+
+@pytest.mark.unit
+def test_stt_request_emits_null_ttfc_when_no_content_observed(tmp_path: Path) -> None:
+    client = _vllm_realtime_client()
+    websocket = _FakeVllmEmptyTranscriptWebSocket()
+    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._clip_assets = lambda _path: _ClipAssets(  # type: ignore[method-assign]
+        pcm=b"\x00\x00",
+        wire_messages=[],
+    )
+    audio_file = tmp_path / "empty.pcm"
+    audio_file.write_bytes(b"\x00\x00")
+    request = Request(
+        id=202,
+        channels={
+            ChannelModality.AUDIO: AudioChannelRequestContent(
+                input_audio=str(audio_file)
+            )
+        },
+    )
+
+    result = asyncio.run(client.send_request(request, session_id=1))
+
+    assert result.success
+    metrics = result.channels[ChannelModality.AUDIO].metrics
+    assert metrics[AudioMetricKey.TTFC.value] is None
+    assert metrics["final_transcript"] == ""
+
+
+class _FakeHandshakeGarbageWebSocket:
+    """Answers the session handshake with a non-JSON frame."""
+
+    def __init__(self, first_frame: str | bytes) -> None:
+        self._first_frame = first_frame
+
+    async def recv(self) -> str | bytes:
+        return self._first_frame
+
+    async def send(self, message: str | bytes) -> None:
+        return None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("first_frame", "expected_error"),
+    [
+        # A proxy or wrong api_base answering the upgrade with an error page.
+        ("<html>502 Bad Gateway</html>", "non-JSON"),
+        # Valid JSON that is not an object: `.get` would raise AttributeError.
+        ("[1, 2]", "non-object"),
+        (b"\x00\x01\x02", "unexpected binary"),
+    ],
+)
+def test_stt_handshake_garbage_fails_request_with_protocol_error(
+    tmp_path: Path, first_frame: str | bytes, expected_error: str
+) -> None:
+    """A malformed first frame is a named protocol error, not an opaque 520."""
+    client = _vllm_realtime_client()
+    websocket = _FakeHandshakeGarbageWebSocket(first_frame)
+    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._clip_assets = lambda _path: _ClipAssets(  # type: ignore[method-assign]
+        pcm=b"\x00\x00",
+        wire_messages=[],
+    )
+    audio_file = tmp_path / "clip.pcm"
+    audio_file.write_bytes(b"\x00\x00")
+    request = Request(
+        id=203,
+        channels={
+            ChannelModality.AUDIO: AudioChannelRequestContent(
+                input_audio=str(audio_file)
+            )
+        },
+    )
+
+    result = asyncio.run(client.send_request(request, session_id=1))
+
+    assert result.success is False
+    assert result.error_code == 500
+    assert expected_error in result.error_msg
+    assert "vllm" in result.error_msg
+    assert ChannelModality.AUDIO not in result.channels

@@ -11,8 +11,6 @@ from typing import (
     TypeVar,
 )
 
-from transformers import AutoTokenizer
-
 from veeksha.types import ChannelModality
 
 RawContent = TypeVar("RawContent")
@@ -70,8 +68,30 @@ def build_hf_tokenizer_handle(tokenizer) -> TokenizerHandle[str]:
 def build_hf_tokenizer_handle_from_model(model: str) -> TokenizerHandle[str]:
     """Instantiate a Hugging Face tokenizer from a model name and wrap it."""
 
+    # Import lazily so clients with provider-native tokenization (for example,
+    # streaming TTS word pacing) do not load the Hugging Face/Rust tokenizer
+    # stack merely by importing Veeksha's client package.
+    from transformers import AutoTokenizer
+
     tokenizer = AutoTokenizer.from_pretrained(model, trust_remote_code=True)
     return build_hf_tokenizer_handle(tokenizer)
+
+
+def build_word_split_tokenizer_provider(model_name: str) -> "TokenizerProvider":
+    """Build a TokenizerProvider backed by a simple whitespace word-split tokenizer.
+
+    Used by TTS-style clients whose models do not ship a HuggingFace tokenizer;
+    tokens are approximated as whitespace-delimited words.
+    """
+    handle = TokenizerHandle(
+        count_tokens=lambda text: len(text.split()),
+        decode=lambda ids: " ".join(str(i) for i in ids),
+        encode=lambda text: list(range(len(text.split()))),
+    )
+    return TokenizerProvider(
+        {ChannelModality.TEXT: handle},
+        model_name=model_name,
+    )
 
 
 def gen_prompt_from_corpus(

@@ -183,25 +183,24 @@ class CDFSketch:
         self._save_df(raw_df, path, plot_name)
 
     def get_summary(self) -> Dict[str, Optional[float]]:
-        return (
-            {
-                f"{self.metric_name} (Mean)": self.sketch.avg,
-                **{
-                    f"{self.metric_name} (P{int(p * 100)})": self.sketch.get_quantile_value(
-                        p
-                    )
-                    for p in SUMMARY_PERCENTILES
-                },
-            }
-            if self.sketch.count > 0
-            else {
-                f"{self.metric_name} (Mean)": 0,
-                **{
-                    f"{self.metric_name} (P{int(p * 100)})": 0
-                    for p in SUMMARY_PERCENTILES
-                },
-            }
-        )
+        """Return mean/percentile stats, or nothing when no sample was taken.
+
+        An empty sketch reports no keys rather than zeros: a metric that was
+        never observed (every request failed, or none reached first content)
+        is not a metric that measured 0 ms, and a fabricated 0 reads as a
+        perfect result in summaries and dashboards.
+        """
+        if self.sketch.count == 0:
+            return {}
+        return {
+            f"{self.metric_name} (Mean)": self.sketch.avg,
+            **{
+                f"{self.metric_name} (P{int(p * 100)})": (
+                    self.sketch.get_quantile_value(p)
+                )
+                for p in SUMMARY_PERCENTILES
+            },
+        }
 
     def to_csv_row(self) -> str:
         return ",".join([f"{v:.5f}" for v in self.get_summary().values()])
@@ -210,9 +209,10 @@ class CDFSketch:
         return ",".join([f"{k}" for k in self.get_summary().keys()])
 
     def __str__(self) -> str:
-        summary_str = ", ".join(
-            [f"{k}: {v:.5f}" for k, v in self.get_summary().items()]
-        )
+        summary = self.get_summary()
+        if not summary:
+            return f"{self.metric_name} - no samples"
+        summary_str = ", ".join([f"{k}: {v:.5f}" for k, v in summary.items()])
         # remove the repeated metric name
         summary_str = summary_str.replace(self.metric_name, "")
         summary_str = summary_str.replace("(", "").replace(")", "").strip()

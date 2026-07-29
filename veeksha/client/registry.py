@@ -32,3 +32,27 @@ ClientRegistry.register(
         "OpenAICompletionsClient",
     ),
 )
+
+ClientRegistry.register(
+    ClientType.TTS,
+    _LazyLoader(
+        "veeksha.client.tts",
+        "TTSClient",
+    ),
+)
+
+ClientRegistry.register(
+    ClientType.STREAMING_TTS,
+    _LazyLoader(
+        "veeksha.client.streaming_tts",
+        "StreamingTTSClient",
+    ),
+)
+
+ClientRegistry.register(
+    ClientType.STT,
+    _LazyLoader(
+        "veeksha.client.stt",
+        "STTClient",
+    ),
+)

@@ -4,7 +4,30 @@ from vidhi import BasePolyConfig, field, frozen_dataclass
 
 from veeksha.types import SloType
 
-SUPPORTED_SLO_METRICS = {"ttfc", "tbc", "tpot", "e2e"}
+SUPPORTED_SLO_METRICS = {
+    "ttfc",
+    "interactivity",
+    "tbc",
+    "tpot",
+    "e2e",
+    "generated_audio_duration",
+    "rtf",
+    "first_input_to_first_audio_ms",
+    "first_input_to_first_playable_audio_ms",
+    "trigger_to_first_playable_audio_ms",
+    "request_start_to_first_playable_audio_ms",
+    "audio_before_commit_ratio",
+    "duplex_overlap_observed",
+    "post_commit_audio_delivery_ms",
+    "required_startup_delay_ms",
+    "zero_delay_stall_count",
+    "zero_delay_total_stall_ms",
+    "zero_delay_longest_stall_ms",
+    "streaming_rtf",
+    "user_audio_fluidity_index",
+    "tts_service_fluidity_index",
+    "tts_service_fluidity_eligible",
+}
 
 
 @frozen_dataclass

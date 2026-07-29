@@ -1,0 +1,101 @@
+# Deepgram Flux TTS: paced text-in and raw PCM audio-out over /v2/speak.
+seed: 42
+output_dir: benchmark_output/tts_streaming_flux-haley-en_seed_tts
+
+client:
+  type: streaming_tts
+  provider: deepgram_flux
+  api_base: https://api.deepgram.com
+  model: flux-haley-en
+  api_key_env: DEEPGRAM_API_KEY
+  sample_rate: 24000
+  request_timeout: 120
+  pacing:
+    # Veeksha's streaming-TTS tokenizer is whitespace based, so this is 50 words/s.
+    tokens_per_second: 50
+    tokens_per_delta: 1
+    gap_distribution: fixed
+    initial_delay_s: 0
+    seed: 42
+
+session_generator:
+  type: trace
+  trace_file: ""
+  wrap_mode: false
+  flavor:
+    type: seed_tts_text
+    dataset_name: TwinkStart/Seed-TTS-Eval
+    subset: en
+    split: train
+    text_column: text
+    id_column: filename
+    local_path: ""
+    min_tokens: 20
+    max_tokens: 150
+    min_chars: 20
+    max_chars: 500
+
+traffic_scheduler:
+  type: concurrent
+  target_concurrent_sessions: 1
+  rampup_seconds: 0
+  cancel_session_on_failure: true
+
+evaluators:
+  - type: performance
+    target_channels: [audio]
+    stream_metrics: true
+    stream_metrics_interval: 5
+    audio_channel:
+      interactivity_enabled: true
+      startup_delay_ms_values: [0, 100, 300]
+      startup_buffer_ms_values: [0, 100, 300]
+      min_reportable_stall_ms: 10
+      fluidity_frame_ms: 20
+      fluidity_startup_delay_ms: 0
+      # Report the observed user playback timeline without assuming service blame.
+      fluidity_attribution_mode: conservative
+      persist_raw_timing: true
+    slos:
+      - type: constant
+        name: P90 TTFB (first-input-to-first-audio-byte) under 1 second
+        metric: first_input_to_first_audio_ms
+        percentile: 0.90
+        value: 1000
+      - type: constant
+        name: P90 trigger-to-first-playable-audio under 1 second
+        metric: trigger_to_first_playable_audio_ms
+        percentile: 0.90
+        value: 1000
+      - type: constant
+        name: P90 diagnostic TTFC (trigger-to-first-wire-audio) under 1 second
+        metric: ttfc
+        percentile: 0.90
+        value: 1000
+      - type: constant
+        name: P90 end-to-end RTF under 1
+        metric: rtf
+        percentile: 0.90
+        value: 1
+      - type: constant
+        name: P1 zero-buffer user audio fluidity at least 0.99
+        metric: user_audio_fluidity_index
+        percentile: 0.01
+        value: 0.99
+  - type: audio_quality
+    target_channels: [audio]
+    save_audio_files: true
+    verification:
+      wer:
+        enabled: false
+      utmos:
+        enabled: false
+
+runtime:
+  max_sessions: 100
+  benchmark_timeout: 1800
+  post_timeout_grace_seconds: -1
+  num_dispatcher_threads: 1
+  num_completion_threads: 1
+  num_client_threads: 1
+  pregenerate_sessions: false

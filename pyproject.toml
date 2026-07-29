@@ -24,10 +24,16 @@ dependencies = [
     "ddsketch",
     "wandb",
     "pandas",
-    "numpy",
+    # Capped because librosa pulls in numba, and numba requires numpy<2.5.
+    # Left uncapped, a fresh resolve takes numpy 2.5, drops numba to 0.53.1
+    # (its metadata declares no upper Python bound), and that pins llvmlite
+    # 0.36.0, which refuses to build on anything past 3.9 -- only at build
+    # time, so resolution looks clean right up until the install fails.
+    # Lift once numba supports numpy 2.5.
+    "numpy<2.5",
     "jinja2",
     "datasets",
-    "lm-eval",
+    "lm-eval>=0.4.11,<0.4.12",
     "evaluate",
     "pytablewriter",
     "Pillow",
@@ -40,6 +46,11 @@ dependencies = [
     "nvidia-ml-py",
     "rich",
     "vidhi",
+    "websockets>=14",
+    "jiwer",
+    "regex",
+    "soundfile",
+    "librosa",
 ]
 
 [project.scripts]
@@ -65,6 +76,16 @@ test = [
     "rich",
     "jinja2",
 ]
+audio-verification = [
+    "faster-whisper",
+    "jiwer",
+]
+utmos = [
+    "torch",
+    "scipy",
+    "soundfile",
+    "huggingface_hub",
+]
 
 [tool.setuptools]
 include-package-data = true
@@ -80,6 +101,7 @@ veeksha = [
     "data/corpus.txt",
     "dashboard/templates/*",
     "dashboard/static/*",
+    "sample_configs/*.yml",
 ]
 
 [tool.setuptools_scm]
@@ -94,6 +116,7 @@ known_third_party = "wandb"
 extend_skip = ["veeksha/_version.py"]
 
 [tool.pyright]
+pythonVersion = "3.14"
 include = ["veeksha"]
 exclude = [
     "**/__pycache__",

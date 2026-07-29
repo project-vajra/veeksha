@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import base64
 import time
 from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
 import httpx  # type: ignore
 
 from veeksha.client.openai_base import OpenAIBaseClient
+from veeksha.core.audio_contract import DEFAULT_AUDIO_SAMPLE_RATE, AudioMetricKey
 from veeksha.core.request import Request
 from veeksha.core.request_content import (
     AudioChannelRequestContent,
@@ -16,7 +18,7 @@ from veeksha.core.request_content import (
 from veeksha.core.response import ChannelResponse, RequestResult
 from veeksha.core.tokenizer import TokenizerProvider
 from veeksha.logger import init_logger
-from veeksha.types import ChannelModality
+from veeksha.types import AudioTask, ChannelModality
 
 if TYPE_CHECKING:
     from veeksha.config.client import OpenAIChatCompletionsClientConfig
@@ -277,7 +279,7 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
             channels[ChannelModality.AUDIO] = ChannelResponse(
                 modality=ChannelModality.AUDIO,
                 content=audio_data,
-                metrics={},
+                metrics={"audio_task": AudioTask.LLM_AUDIO},
             )
 
         if video_data is not None:
@@ -338,11 +340,16 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
 
         # multimodal response data
         image_data: Optional[Any] = None
-        audio_data: Optional[Any] = None
         video_data: Optional[Any] = None
+
+        # audio output tracking
+        audio_chunks: List[bytes] = []
+        audio_ttfc: Optional[float] = None
+        audio_chunk_count = 0
 
         delta_prompt_len = 0
         messages = []
+        t_start = time.monotonic()
 
         try:
             messages, delta_prompt_len = self._build_message_content(request)
@@ -382,7 +389,8 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
             }
 
             client = self._get_client()
-            most_recent_token_time = time.monotonic()
+            t_start = time.monotonic()
+            most_recent_token_time = t_start
             async with client.stream(
                 "POST",
                 self.chat_address,
@@ -417,7 +425,15 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
                         )
                         continue
 
-                    if delta.get("content"):
+                    modality_type = data.get("modality")
+
+                    if modality_type == "audio" and delta.get("content"):
+                        chunk_bytes = base64.b64decode(delta["content"])
+                        if audio_ttfc is None:
+                            audio_ttfc = (receive_time - t_start) * 1000
+                        audio_chunks.append(chunk_bytes)
+                        audio_chunk_count += 1
+                    elif delta.get("content"):
                         (
                             generated_text,
                             chunks_received,
@@ -439,9 +455,6 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
 
                     # TODO: image deltas
                     image_data = self._process_image_response(delta, image_data)
-
-                    # TODO: audio deltas
-                    audio_data = self._process_audio_response(delta, audio_data)
 
                     # TODO: video deltas
                     video_data = self._process_video_response(delta, video_data)
@@ -488,9 +501,28 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
             total_prompt_len=num_total_prompt_tokens,
             tokens_received=num_completion_tokens,
             image_data=image_data,
-            audio_data=audio_data,
+            audio_data=None,
             video_data=video_data,
         )
+
+        # Build audio channel from streamed audio chunks
+        if success and audio_chunks:
+            audio_bytes = b"".join(audio_chunks)
+            total_latency_ms = (completed_at - t_start) * 1000
+            channels[ChannelModality.AUDIO] = ChannelResponse(
+                modality=ChannelModality.AUDIO,
+                content=audio_bytes,
+                metrics={
+                    "audio_task": AudioTask.LLM_AUDIO,
+                    AudioMetricKey.TTFC.value: (
+                        round(audio_ttfc, 3) if audio_ttfc is not None else None
+                    ),
+                    AudioMetricKey.END_TO_END_LATENCY.value: round(total_latency_ms, 3),
+                    AudioMetricKey.CHUNK_COUNT.value: audio_chunk_count,
+                    AudioMetricKey.RAW_PCM.value: True,
+                    AudioMetricKey.SAMPLE_RATE.value: DEFAULT_AUDIO_SAMPLE_RATE,
+                },
+            )
 
         return RequestResult(
             request_id=request.id,

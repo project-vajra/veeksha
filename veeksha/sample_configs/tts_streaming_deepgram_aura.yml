@@ -1,0 +1,64 @@
+seed: 42
+output_dir: benchmark_output/tts_deepgram_aura_streaming
+
+client:
+  type: streaming_tts
+  provider: deepgram_aura
+  api_base: https://api.deepgram.com
+  api_key_env: DEEPGRAM_API_KEY
+  model: aura-2-thalia-en
+  sample_rate: 24000
+  pacing:
+    # Legacy key: the current pacing unit is a whitespace-delimited word.
+    tokens_per_second: 50
+    tokens_per_delta: 1
+    gap_distribution: fixed
+
+session_generator:
+  type: trace
+  wrap_mode: false
+  flavor:
+    type: seed_tts_text
+    min_tokens: 20
+    max_tokens: 150
+
+traffic_scheduler:
+  type: concurrent
+  target_concurrent_sessions: 1
+  rampup_seconds: 0
+
+evaluators:
+  - type: performance
+    target_channels: [audio]
+    audio_channel:
+      interactivity_enabled: true
+      fluidity_frame_ms: 20
+      fluidity_startup_delay_ms: 0
+      startup_delay_ms_values: [0, 100, 300]
+      fluidity_attribution_mode: conservative
+      persist_raw_timing: true
+    slos:
+      - type: constant
+        name: P90 trigger-to-first-playable-audio under 1 second
+        metric: trigger_to_first_playable_audio_ms
+        percentile: 0.90
+        value: 1000
+  - type: audio_quality
+    target_channels: [audio]
+    save_audio_files: true
+    verification:
+      wer:
+        enabled: true
+        threshold: 0.05
+        whisper:
+          model: large-v3
+          device: cpu
+          compute_type: int8
+          language: en
+          beam_size: 5
+      utmos:
+        enabled: false
+
+runtime:
+  max_sessions: 100
+  benchmark_timeout: 1800

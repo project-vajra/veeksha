@@ -9,13 +9,18 @@ from dataclasses import dataclass
 from typing import Any, DefaultDict, Dict, Optional
 
 from veeksha.config.evaluator import PerformanceEvaluatorConfig
+from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.core.seeding import SeedManager
 from veeksha.evaluator.base import BaseEvaluator, EvaluationResult
 from veeksha.logger import init_logger
 from veeksha.slo.runner import evaluate_and_save_slos
-from veeksha.types import ChannelModality
+from veeksha.types import ChannelModality, ClientType
 
 logger = init_logger(__name__)
+
+# Clients that stream paced text in and audio out over a websocket and emit
+# the realtime AudioMetricKey contract (audio chunk timestamps + done offsets).
+_STREAMING_TTS_CLIENT_TYPES = (ClientType.STREAMING_TTS,)
 
 
 @dataclass
@@ -47,11 +52,15 @@ class PerformanceEvaluator(BaseEvaluator):
         seed_manager: Optional[SeedManager] = None,
         output_dir: Optional[str] = None,
         benchmark_start_time: float = 0.0,
+        client_type: Optional[ClientType] = None,
     ):
         super().__init__(config, seed_manager)
         self.config: PerformanceEvaluatorConfig = config
         self.output_dir = output_dir
         self.benchmark_start_time = benchmark_start_time
+        self.client_type = client_type
+        self._streaming_tts_first_audio_count = 0
+        self._streaming_tts_completed_count = 0
 
         self._channel_evaluators: Dict[ChannelModality, Any] = {}
 
@@ -95,12 +104,15 @@ class PerformanceEvaluator(BaseEvaluator):
         for channel in self.config.target_channels:
             channel_config = self.config.get_channel_config(channel)
             if channel_config:
+                evaluator_kwargs: Dict[str, Any] = {
+                    "config": self.config,
+                    "channel_config": channel_config,
+                    "benchmark_start_time": self.benchmark_start_time,
+                }
                 self._channel_evaluators[channel] = (
                     ChannelPerformanceEvaluatorRegistry.get(
                         channel,
-                        config=self.config,
-                        channel_config=channel_config,
-                        benchmark_start_time=self.benchmark_start_time,
+                        **evaluator_kwargs,
                     )
                 )
 
@@ -208,6 +220,7 @@ class PerformanceEvaluator(BaseEvaluator):
         with self.lock:
             self.end_time = completed_at
 
+            self._record_streaming_tts_outcome(response)
             # Update session tracking
             self._update_session_metrics_for_request(
                 session_id=session_id,
@@ -232,14 +245,17 @@ class PerformanceEvaluator(BaseEvaluator):
 
             self.num_completed_requests += 1
 
-            # Delegate to channel evaluators
-            for channel, evaluator in self._channel_evaluators.items():
-                evaluator.record_request_completed(
-                    request_id=request_id,
-                    session_id=session_id,
-                    completed_at=completed_at,
-                    response=response,
-                )
+        # Delegate to channel evaluators outside the aggregate lock: channel
+        # evaluators do their own locking, and the audio evaluator's ASR
+        # scoring is CPU-heavy — holding the lock here would serialize all
+        # completion workers behind a single scoring thread.
+        for channel, evaluator in self._channel_evaluators.items():
+            evaluator.record_request_completed(
+                request_id=request_id,
+                session_id=session_id,
+                completed_at=completed_at,
+                response=response,
+            )
 
         if self.config.stream_metrics and self._stream_thread:
             self._stream_has_updates.set()
@@ -355,6 +371,39 @@ class PerformanceEvaluator(BaseEvaluator):
             if session_id in self.session_stats:
                 self._finalize_session(session_id, termination)
 
+    def _record_streaming_tts_outcome(self, response: Any) -> None:
+        """Count streaming start/completion outcomes, including failed requests."""
+        if self.client_type not in _STREAMING_TTS_CLIENT_TYPES:
+            return
+        channel_response = getattr(response, "channels", {}).get(ChannelModality.AUDIO)
+        channel_metrics = (
+            channel_response.metrics if channel_response is not None else {}
+        ) or {}
+        audio_timestamps = channel_metrics.get(
+            AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value
+        )
+        if audio_timestamps or channel_metrics.get(AudioMetricKey.CHUNK_COUNT.value, 0):
+            self._streaming_tts_first_audio_count += 1
+        if (
+            channel_metrics.get(AudioMetricKey.RESPONSE_DONE_OFFSET_MS.value)
+            is not None
+        ):
+            self._streaming_tts_completed_count += 1
+
+    def _get_streaming_tts_summary(self) -> Dict[str, float]:
+        if self.client_type not in _STREAMING_TTS_CLIENT_TYPES:
+            return {}
+        count = self.num_requests
+        return {
+            "streaming_tts_requests_count": float(count),
+            "first_audio_success_rate": (
+                self._streaming_tts_first_audio_count / count if count > 0 else 0.0
+            ),
+            "stream_completion_rate": (
+                self._streaming_tts_completed_count / count if count > 0 else 0.0
+            ),
+        }
+
     def get_aggregated_summary(self) -> Dict[str, float]:
         """Get aggregate summary metrics."""
         return {
@@ -374,14 +423,19 @@ class PerformanceEvaluator(BaseEvaluator):
             "Cancelled Sessions": float(self.num_sessions_cancelled),
             "Incomplete Sessions": float(self.num_sessions_incomplete),
             "Observed Session Dispatch Rate": self._session_dispatch_rate(),
+            **self._get_streaming_tts_summary(),
         }
 
     def _build_summary_stats(self) -> Dict[str, Any]:
-        """Combine aggregate stats with error code frequencies."""
+        """Combine aggregate stats, channel-level metrics, and error code frequencies."""
         summary_stats: Dict[str, Any] = {
             **self.get_aggregated_summary(),
             "error_code_freq": dict(self.error_code_freq),
         }
+        for evaluator in self._channel_evaluators.values():
+            channel_summary = evaluator.get_summary()
+            if channel_summary:
+                summary_stats.update(channel_summary)
         return summary_stats
 
     def finalize(self) -> EvaluationResult:
@@ -395,7 +449,13 @@ class PerformanceEvaluator(BaseEvaluator):
         channel_metrics = {}
 
         for channel, evaluator in self._channel_evaluators.items():
+            finalize_started_at = time.perf_counter()
             channel_result = evaluator.finalize()
+            logger.info(
+                "Evaluator phase '%s_finalize' took %.2fs",
+                channel,
+                time.perf_counter() - finalize_started_at,
+            )
             channel_metrics[str(channel)] = channel_result.metrics
             combined_metrics.update(channel_result.metrics)
 
@@ -411,17 +471,33 @@ class PerformanceEvaluator(BaseEvaluator):
         os.makedirs(output_dir, exist_ok=True)
 
         # Save aggregate summary
+        summary_started_at = time.perf_counter()
         summary = self._build_summary_stats()
         summary_path = os.path.join(output_dir, "summary_stats.json")
         with open(summary_path, "w") as f:
             json.dump(summary, f, indent=2)
+        logger.info(
+            "Evaluator phase 'summary_stats' took %.2fs",
+            time.perf_counter() - summary_started_at,
+        )
 
         # Delegate to channel evaluators
         for channel, evaluator in self._channel_evaluators.items():
+            save_started_at = time.perf_counter()
             evaluator.save(output_dir)
+            logger.info(
+                "Evaluator phase '%s_save' took %.2fs",
+                channel,
+                time.perf_counter() - save_started_at,
+            )
 
         # request-level metrics are persisted now
+        slo_started_at = time.perf_counter()
         evaluate_and_save_slos(slo_configs=self.config.slos, metrics_dir=output_dir)
+        logger.info(
+            "Evaluator phase 'slo_evaluation' took %.2fs",
+            time.perf_counter() - slo_started_at,
+        )
 
     def get_streaming_metrics(self) -> Optional[Dict[str, Any]]:
         """Return current metrics for streaming updates."""

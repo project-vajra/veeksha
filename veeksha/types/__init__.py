@@ -36,6 +36,9 @@ class TraceFlavorType(BaseIntEnum):
     RAG = 3
     REQUEST_LOG = 4
     UNTIMED_CONTENT_MULTI_TURN = 5
+    SHAREGPT = 6
+    SEED_TTS_TEXT = 7
+    AUDIO = 8
 
 
 class ChannelModality(BaseIntEnum):
@@ -43,6 +46,14 @@ class ChannelModality(BaseIntEnum):
     IMAGE = 2
     AUDIO = 3
     VIDEO = 4
+
+
+class AudioTask(BaseIntEnum):
+    """Workload represented by an AUDIO response."""
+
+    TTS = 1
+    STT = 2
+    LLM_AUDIO = 3
 
 
 class SessionGraphType(BaseIntEnum):
@@ -55,6 +66,7 @@ class SessionGraphType(BaseIntEnum):
 class EvaluationType(BaseIntEnum):
     PERFORMANCE = 1
     ACCURACY_LMEVAL = 2
+    AUDIO_QUALITY = 3
 
 
 # ----- Client -----
@@ -62,12 +74,21 @@ class ClientType(BaseIntEnum):
     OPENAI_CHAT_COMPLETIONS = 1
     OPENAI_COMPLETIONS = 2
     OPENAI_ROUTER = 3
+    TTS = 4
+    STREAMING_TTS = 5
+    STT = 6
 
 
 # ----- Server -----
 class ServerType(BaseIntEnum):
     VLLM = 1
     SGLANG = 2
+    VAJRA = 3
+
+
+# ----- Verification -----
+class VerificationType(BaseIntEnum):
+    AUDIO = 1
 
 
 # ----- SLOs -----

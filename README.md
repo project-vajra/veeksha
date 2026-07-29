@@ -11,7 +11,7 @@ microbenchmarks. One tool, any workload.
 **From isolated requests to complex agentic sessions, Veeksha captures the full complexity of modern LLM workloads.**
 
 👉 **[Why Veeksha?](https://project-vajra.github.io/veeksha/getting_started/why_veeksha.html)** — Learn what sets Veeksha apart  
-📚 **[Documentation](https://project-vajra.github.io/veeksha)** — Full guides and API reference
+📚 **[Documentation](https://project-vajra.github.io/veeksha)** — Full guides and API reference  
 
 ## Quick start
 

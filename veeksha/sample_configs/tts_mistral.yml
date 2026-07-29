@@ -1,0 +1,62 @@
+seed: 42
+output_dir: benchmark_output/tts_mistral_streaming_output
+
+client:
+  # Mistral streams audio output over SSE after receiving complete text.
+  type: tts
+  provider: mistral
+  api_base: https://api.mistral.ai
+  api_key_env: MISTRAL_API_KEY
+  model: voxtral-mini-tts-2603
+  # Mistral preset: Paul - Neutral (English US).
+  voice_id: c69964a6-ab8b-4f8a-9465-ec0925096ec8
+  sample_rate: 24000
+
+session_generator:
+  type: trace
+  wrap_mode: false
+  flavor:
+    type: seed_tts_text
+    min_tokens: 20
+    max_tokens: 150
+
+traffic_scheduler:
+  type: concurrent
+  target_concurrent_sessions: 1
+  rampup_seconds: 0
+
+evaluators:
+  - type: performance
+    target_channels: [audio]
+    audio_channel:
+      interactivity_enabled: true
+      fluidity_frame_ms: 20
+      fluidity_startup_delay_ms: 0
+      startup_delay_ms_values: [0, 100, 300]
+      fluidity_attribution_mode: conservative
+      persist_raw_timing: true
+    slos:
+      - type: constant
+        name: P90 trigger-to-first-playable-audio under 1 second
+        metric: trigger_to_first_playable_audio_ms
+        percentile: 0.90
+        value: 1000
+  - type: audio_quality
+    target_channels: [audio]
+    save_audio_files: true
+    verification:
+      wer:
+        enabled: true
+        threshold: 0.05
+        whisper:
+          model: large-v3
+          device: cpu
+          compute_type: int8
+          language: en
+          beam_size: 5
+      utmos:
+        enabled: false
+
+runtime:
+  max_sessions: 100
+  benchmark_timeout: 1800

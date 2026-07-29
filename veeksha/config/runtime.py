@@ -1,3 +1,5 @@
+from typing import Optional
+
 from vidhi import field, frozen_dataclass
 
 
@@ -15,10 +17,21 @@ class RuntimeConfig:
         2, help="Number of threads for dispatching requests to workers."
     )
     num_completion_threads: int = field(
-        2, help="Number of threads for processing completed requests."
+        8,
+        help=(
+            "Number of threads for processing completed requests. Completion "
+            "workers also run per-request ASR scoring concurrently, so "
+            "under-provisioning stretches the post-run drain."
+        ),
     )
-    num_client_threads: int = field(
-        3, help="Number of async worker threads for making concurrent requests."
+    num_client_threads: Optional[int] = field(
+        None,
+        help=(
+            "Number of async worker threads for making concurrent requests. "
+            "None provisions one thread per eight target-concurrent sessions, "
+            "with a minimum of three. Under-provisioning stretches realtime "
+            "send cadence and invalidates high-concurrency latency metrics."
+        ),
     )
     pregenerate_sessions: bool = field(
         False,

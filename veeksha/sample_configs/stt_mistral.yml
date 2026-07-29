@@ -1,0 +1,39 @@
+seed: 42
+output_dir: benchmark_output/stt_mistral
+
+client:
+  type: stt
+  provider: mistral
+  api_base: https://api.mistral.ai
+  api_key_env: MISTRAL_API_KEY
+  model: voxtral-mini-transcribe-realtime-2602
+  sample_rate: 16000
+  ws_chunk_size: 2560
+  ws_realtime_pacing: true
+
+session_generator:
+  type: trace
+  trace_file: traces/asr/aa_public/manifest.jsonl
+  wrap_mode: true
+  flavor:
+    type: audio
+    audio_dir: ""
+
+traffic_scheduler:
+  type: concurrent
+  target_concurrent_sessions: 1
+  rampup_seconds: 0
+
+evaluators:
+  - type: performance
+    target_channels: [audio]
+    slos:
+      - type: constant
+        name: P90 spoken-word-end to first returned text under 1 second
+        metric: interactivity
+        percentile: 0.90
+        value: 1000
+
+runtime:
+  max_sessions: 100
+  benchmark_timeout: 1800

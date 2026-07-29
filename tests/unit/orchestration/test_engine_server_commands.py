@@ -1,85 +1,88 @@
-"""Unit tests for engine-specific server managers with advanced configs."""
+"""Unit tests for current engine-runner command construction."""
 
-import json
 from textwrap import dedent
 
-import pytest  # type: ignore[import]
+import pytest
 import yaml
 from vidhi import create_class_from_dict
 
 from veeksha.config.server import BaseServerConfig, VllmServerConfig
-from veeksha.orchestration.vllm_server import VLLMServerManager
+from veeksha.orchestration.managed_engines import VllmOmniDockerRunner
 
 pytestmark = pytest.mark.unit
 
 
-def test_vllm_launch_command_with_advanced_configuration():
+def test_vllm_server_command_with_advanced_configuration():
     config = VllmServerConfig(
-        model="meta/test-model",
-        host="0.0.0.0",
-        port=9001,
-        api_key="secret-key",
-        tensor_parallel_size=2,
-        dtype="bfloat16",
-        max_model_len=8192,
-        additional_args={
-            "max-num-batched-tokens": 4096,
-            "trust-remote-code": True,
-            "disable-log-requests": False,
-            "some_list": ["alpha", "beta"],
-            "rope_scaling": {"type": "linear", "factor": 2.0},
-        },
+        hf_model="meta/test-model",
+        model="served-model",
+        deploy_config="/tmp/deploy.yaml",
+        container_deploy_config="/etc/vllm/custom.yaml",
+        container_port=9001,
+        bootstrap="",
+        engine_args=[
+            "--max-num-batched-tokens",
+            "4096",
+            "--trust-remote-code",
+        ],
     )
 
-    command = VLLMServerManager(config, output_dir="/tmp")._build_launch_command()
+    command = VllmOmniDockerRunner(config, output_dir="/tmp")._build_server_cmd()
 
-    # Base flags
-    assert command[:3] == ["python", "-m", "vllm.entrypoints.openai.api_server"]
-    assert command[command.index("--model") + 1] == "meta/test-model"
-    assert command[command.index("--host") + 1] == "0.0.0.0"
-    assert command[command.index("--port") + 1] == "9001"
-    assert command[command.index("--api-key") + 1] == "secret-key"
-    assert command[command.index("--tensor-parallel-size") + 1] == "2"
-    assert command[command.index("--dtype") + 1] == "bfloat16"
-    assert command[command.index("--max-model-len") + 1] == "8192"
+    assert command == [
+        "vllm",
+        "serve",
+        "meta/test-model",
+        "--omni",
+        "--port",
+        "9001",
+        "--deploy-config",
+        "/etc/vllm/custom.yaml",
+        "--max-num-batched-tokens",
+        "4096",
+        "--trust-remote-code",
+    ]
 
-    # Additional args
-    assert command[command.index("--max-num-batched-tokens") + 1] == "4096"
-    assert "--trust-remote-code" in command
-    assert "--disable-log-requests" not in command
 
-    list_start = command.index("--some_list")
-    assert command[list_start : list_start + 3] == ["--some_list", "alpha", "beta"]
-
-    rope_index = command.index("--rope-scaling")
-    assert command[rope_index + 1] == json.dumps({"type": "linear", "factor": 2.0})
-
-def test_server_config_additional_args_loaded_from_yaml(tmp_path):
+def test_server_config_loaded_from_yaml_builds_docker_command(tmp_path):
+    deploy_config = tmp_path / "deploy.yaml"
+    deploy_config.write_text("model: fixture\n")
     config_file = tmp_path / "server_config.yaml"
     config_file.write_text(
         dedent(
-            """
+            f"""
             type: vllm
-            model: meta/demo-model
-            port: 8100
-            additional_args:
-              trust-remote-code: true
-              max-num-batched-tokens: 512
-              rope_scaling:
-                type: linear
-                factor: 1.25
+            hf_model: meta/demo-model
+            model: served-model
+            image: vllm-omni:test
+            deploy_config: {deploy_config}
+            docker_gpus: device=0,1
+            bootstrap: ""
+            env:
+              TOKEN: fixture
+            engine_args:
+              - --max-num-batched-tokens
+              - "512"
+              - --trust-remote-code
             """
         ).strip()
     )
 
-    data = yaml.safe_load(config_file.read_text())
-    server_config = create_class_from_dict(BaseServerConfig, data)
+    server_config = create_class_from_dict(
+        BaseServerConfig,
+        yaml.safe_load(config_file.read_text()),
+    )
+    command = VllmOmniDockerRunner(
+        server_config, output_dir=tmp_path
+    )._build_docker_run_cmd()
 
-    command = VLLMServerManager(server_config, output_dir="/tmp")._build_launch_command()
-
-    assert "--trust-remote-code" in command
-    idx = command.index("--max-num-batched-tokens")
-    assert command[idx + 1] == "512"
-
-    rope_idx = command.index("--rope-scaling")
-    assert json.loads(command[rope_idx + 1]) == {"type": "linear", "factor": 1.25}
+    assert command[:3] == ["docker", "run", "-d"]
+    assert command[command.index("--gpus") + 1] == "device=0,1"
+    assert f"{deploy_config}:/etc/vllm-omni/{deploy_config.name}:ro" in command
+    assert "TOKEN=fixture" in command
+    assert "vllm-omni:test" in command
+    assert command[-3:] == [
+        "--max-num-batched-tokens",
+        "512",
+        "--trust-remote-code",
+    ]

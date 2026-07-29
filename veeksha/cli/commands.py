@@ -5,6 +5,8 @@ veeksha capacity-search [options]
 veeksha prefill [options]
 veeksha decode [options]
 veeksha stress [options]
+veeksha score-tts-longform [options]
+veeksha health [options]
 """
 
 from __future__ import annotations
@@ -18,13 +20,15 @@ warnings.filterwarnings(
     "ignore", message=".*global interpreter lock.*", category=RuntimeWarning
 )
 
-from vidhi import parse_cli_sweep
-
 from veeksha.capacity_search import run_capacity_search
 from veeksha.cli.base import VeekshaCommand
 from veeksha.cli.benchmarks import run_cli as run_benchmark
+from veeksha.cli.parsing import parse_cli_sweep
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.capacity_search import CapacitySearchConfig
+from veeksha.config.health_check import HealthCheckConfig
+from veeksha.config.score_tts_longform import ScoreTtsLongformConfig
+from veeksha.health import run_health_check_cli
 from veeksha.microbench.config import (
     DecodeMicrobenchmarkConfig,
     PrefillMicrobenchmarkConfig,
@@ -34,6 +38,7 @@ from veeksha.microbench.decode import run_decode
 from veeksha.microbench.diff import DiffConfig, run_diff
 from veeksha.microbench.prefill import run_prefill
 from veeksha.microbench.stress import run_stress
+from veeksha.verification.longform import run_score_tts_longform_cli
 from veeksha.version import __version__
 
 _RUNNERS = {
@@ -43,6 +48,8 @@ _RUNNERS = {
     DecodeMicrobenchmarkConfig: lambda configs: [run_decode(c) for c in configs],
     StressMicrobenchmarkConfig: lambda configs: [run_stress(c) for c in configs],
     DiffConfig: lambda configs: [run_diff(c) for c in configs],
+    ScoreTtsLongformConfig: run_score_tts_longform_cli,
+    HealthCheckConfig: run_health_check_cli,
 }
 
 _VERSION_FLAGS = {"--version", "-V"}

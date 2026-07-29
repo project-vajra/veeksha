@@ -44,3 +44,24 @@ TraceFlavorGeneratorRegistry.register(
         "UntimedContentMultiTurnTraceFlavorGenerator",
     ),
 )
+TraceFlavorGeneratorRegistry.register(
+    TraceFlavorType.SHAREGPT,
+    _LazyLoader(
+        "veeksha.generator.session.trace.sharegpt",
+        "ShareGPTTraceFlavorGenerator",
+    ),
+)
+TraceFlavorGeneratorRegistry.register(
+    TraceFlavorType.AUDIO,
+    _LazyLoader(
+        "veeksha.generator.session.trace.audio",
+        "AudioTraceFlavorGenerator",
+    ),
+)
+TraceFlavorGeneratorRegistry.register(
+    TraceFlavorType.SEED_TTS_TEXT,
+    _LazyLoader(
+        "veeksha.generator.session.trace.seed_tts_text",
+        "SeedTTSTextTraceFlavorGenerator",
+    ),
+)

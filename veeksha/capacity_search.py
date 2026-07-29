@@ -14,7 +14,6 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional, Tuple, cast
 
 import yaml
-from vidhi import dataclass_to_dict
 
 from veeksha.benchmark import manage_benchmark_run
 from veeksha.config.benchmark import BenchmarkConfig
@@ -24,6 +23,7 @@ from veeksha.config.generator.interval import (
     FixedIntervalGeneratorConfig,
 )
 from veeksha.config.traffic import ConcurrentTrafficConfig, RateTrafficConfig
+from veeksha.config.utils import to_serializable_config_dict
 from veeksha.logger import init_logger
 from veeksha.wandb_integration import (
     dedup_tags,
@@ -37,7 +37,7 @@ logger = init_logger(__name__)
 def _persist_capacity_search_config_yaml(config: CapacitySearchConfig) -> str:
     """Write the resolved capacity search configuration to config.yml."""
     os.makedirs(config.output_dir, exist_ok=True)
-    config_dict = dataclass_to_dict(config)
+    config_dict = to_serializable_config_dict(config)
     config_path = os.path.join(config.output_dir, "config.yml")
     with open(config_path, "w", encoding="utf-8") as config_file:
         yaml.safe_dump(

@@ -103,6 +103,34 @@ Run it:
 Veeksha automatically runs 4 benchmarks with rates 5, 10, 20, and 30.
 
 
+Managed-server groups
+---------------------
+
+When expanded configs include ``server``, Veeksha groups them by the complete
+resolved server config. Workload-only expansions reuse one server endpoint;
+expanding a server field creates another lifecycle.
+
+.. code-block:: yaml
+
+    server:
+      type: vllm
+      hf_model: meta-llama/Llama-3.2-1B-Instruct
+      deploy_config: /path/to/vllm_omni_deploy.yaml
+      port: !expand [8000, 8001]
+
+    traffic_scheduler:
+      type: rate
+      interval_generator:
+        type: poisson
+        arrival_rate: !expand [5, 10]
+
+This resolves to four benchmark configs grouped into two server lifecycles:
+port 8000 serves both arrival rates, followed by port 8001 serving both rates.
+The lifecycle is closed before Veeksha starts the next server group. Server
+logs are stored in ``managed_server_01``, ``managed_server_02``, and so on
+inside the sweep directory.
+
+
 Output structure
 ----------------
 
@@ -131,9 +159,9 @@ Sweep summary
 
 Veeksha automatically generates summary files at the end of each sweep:
 
-**sweep_summary.json** aggregates key metrics across all runs:
+An abridged **sweep_summary.json** aggregates key metrics across all runs:
 
-.. code-block:: json
+.. code-block:: text
 
     {
       "base_output_dir": "benchmark_output/sweep_09:01:2026-16:38:22",
@@ -306,4 +334,3 @@ Common sweep patterns
             value: !expand [128, 256]
 
 Creates 2 × 2 × 2 = **8 runs**.
-

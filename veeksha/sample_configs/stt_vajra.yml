@@ -1,0 +1,58 @@
+seed: 42
+output_dir: benchmark_output/stt_vajra
+
+client:
+  type: stt
+  provider: vajra_openai_realtime
+  api_base: http://localhost:8003
+  # Drives Vajra through the OpenAI-compatible realtime transcription WebSocket.
+  model: mistralai/Voxtral-Mini-4B-Realtime-2602
+  sample_rate: 16000
+  ws_chunk_size: 2048
+  ws_realtime_pacing: true
+  request_timeout: 7200
+
+session_generator:
+  type: trace
+  trace_file: traces/asr/aa_public/manifest.jsonl
+  wrap_mode: true
+  flavor:
+    type: audio
+    audio_dir: ""
+
+traffic_scheduler:
+  type: concurrent
+  target_concurrent_sessions: !expand [1, 2, 4, 8, 16, 32, 64]
+  rampup_seconds: 0
+
+evaluators:
+  - type: performance
+    target_channels: [audio]
+    stream_metrics: true
+    stream_metrics_interval: 10.0
+    slos:
+      # Headline interactivity: spoken word end to the first streamed
+      # transcript snapshot in which that word is visible.
+      - name: P90 spoken-word-end to first returned text under 1 second
+        metric: interactivity
+        percentile: 0.90
+        value: 1000
+        type: constant
+
+runtime:
+  max_sessions: -1
+  benchmark_timeout: 300
+  post_timeout_grace_seconds: 120
+  num_client_threads: 2
+  num_dispatcher_threads: 2
+  num_completion_threads: 2
+
+trace_recorder:
+  enabled: false
+
+wandb:
+  enabled: false
+  project: stt-benchmark
+  run_name: stt_vajra_openai_realtime_voxtral
+  tags: [stt, vajra, voxtral, openai_realtime]
+  log_artifacts: false

@@ -12,15 +12,21 @@ class ServerManagerRegistry(BaseRegistry):
 ServerManagerRegistry.register(
     ServerType.VLLM,
     _LazyLoader(
-        "veeksha.orchestration.vllm_server",
-        "VLLMServerManager",
+        "veeksha.orchestration.managed_engines",
+        "VllmOmniDockerRunner",
     ),
 )
-
+ServerManagerRegistry.register(
+    ServerType.VAJRA,
+    _LazyLoader(
+        "veeksha.orchestration.managed_engines",
+        "VajraSubprocessRunner",
+    ),
+)
 ServerManagerRegistry.register(
     ServerType.SGLANG,
     _LazyLoader(
-        "veeksha.orchestration.sglang_server",
-        "SGLangServerManager",
+        "veeksha.orchestration.managed_engines",
+        "SglangOmniDockerRunner",
     ),
 )
