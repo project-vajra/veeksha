@@ -2,7 +2,7 @@
 
 import threading
 from threading import Thread
-from typing import List
+from typing import List, Optional
 
 from veeksha.core.context import WorkerContext
 from veeksha.logger import init_logger
@@ -56,14 +56,17 @@ class ThreadPoolManager:
             for thread in threads:
                 thread.start()
 
-    def join_pool(self, name: str, timeout: float) -> None:
-        """Wait for all threads in a specific pool to complete."""
+    def join_pool(self, name: str, timeout: Optional[float]) -> None:
+        """Wait for all threads in a specific pool to complete.
+
+        ``timeout=None`` waits until every thread exits.
+        """
         if name in self.thread_pools:
             for thread in self.thread_pools[name]:
                 thread.join(timeout=timeout)
             logger.debug(f"All {len(self.thread_pools[name])} {name} threads joined")
 
-    def join_all(self, timeout: float) -> None:
+    def join_all(self, timeout: Optional[float]) -> None:
         """Wait for all threads in all pools to complete."""
         for name in self.thread_pools.keys():
             self.join_pool(name, timeout=timeout)

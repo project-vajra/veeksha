@@ -180,7 +180,7 @@ def _run_main_loop(
     pre_timeout_request_ids: Set[str] = set()
 
     try:
-        pending_in_flight = _monitor_for_completion(
+        _monitor_for_completion(
             traffic_scheduler,
             evaluator,
             pool_manager,
@@ -193,27 +193,27 @@ def _run_main_loop(
         )
     except KeyboardInterrupt:
         logger.info("Interrupted, stopping")
-        pending_in_flight = set()
 
     # The GIL can flip on mid-run via lazy extension imports; re-check so a
     # serialized run is at least loudly reported.
     _warn_if_gil_enabled("benchmark end")
 
     stop_event.set()
-    pool_manager.join_pool("prefetch", timeout=1.0)
-    pool_manager.join_pool("dispatch", timeout=1.0)
+    pool_manager.join_pool("prefetch", timeout=None)
+    pool_manager.join_pool("dispatch", timeout=None)
 
     if trace_recorder:
         trace_recorder.stop()
 
     logger.info("Stopping client runner...")
     client_runner.stop()
-    if not pending_in_flight:
-        client_runner.wait()
+    client_runner.wait()
 
+    # Client workers are the only output producers. Join them before publishing
+    # completion sentinels so every queued result precedes every sentinel.
     for _ in range(runtime_config.num_completion_threads):
         output_queue.put(None)
-    pool_manager.join_pool("completion", timeout=1.0)
+    pool_manager.join_pool("completion", timeout=None)
 
 
 def _run_benchmark(
