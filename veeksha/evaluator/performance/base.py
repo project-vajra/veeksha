@@ -12,6 +12,7 @@ from veeksha.config.evaluator import PerformanceEvaluatorConfig
 from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.core.seeding import SeedManager
 from veeksha.evaluator.base import BaseEvaluator, EvaluationResult
+from veeksha.evaluator.cdf_sketch import CDFSketch
 from veeksha.logger import init_logger
 from veeksha.slo.runner import evaluate_and_save_slos
 from veeksha.types import ChannelModality, ClientType
@@ -21,6 +22,18 @@ logger = init_logger(__name__)
 # Clients that stream paced text in and audio out over a websocket and emit
 # the realtime AudioMetricKey contract (audio chunk timestamps + done offsets).
 _REALTIME_TTS_CLIENT_TYPES = (ClientType.REALTIME_TTS, ClientType.VAJRA_TTS_STREAM)
+
+# Request-lifecycle drift stages (harness scheduling latency), reported in every
+# run's summary. Keyed by display name -> the pair of RequestResult timestamps.
+_LIFECYCLE_STAGES = {
+    "Harness Ready-to-Dispatch (ms)": ("scheduler_ready_at", "scheduler_dispatched_at"),
+    "Harness Dispatch-to-Pickup (ms)": (
+        "scheduler_dispatched_at",
+        "client_picked_up_at",
+    ),
+    "Harness Pickup-to-Send (ms)": ("client_picked_up_at", "client_sent_at"),
+    "Harness Ready-to-Send (ms)": ("scheduler_ready_at", "client_sent_at"),
+}
 
 
 @dataclass
@@ -88,6 +101,12 @@ class PerformanceEvaluator(BaseEvaluator):
         self.num_sessions_incomplete: int = 0
         self._first_session_start_time: Optional[float] = None
         self._last_session_start_time: Optional[float] = None
+
+        # Request-lifecycle drift sketches (harness scheduling latency).
+        self._lifecycle_sketches: Dict[str, CDFSketch] = {
+            name: CDFSketch(name, should_write_to_wandb=False, unit="ms")
+            for name in _LIFECYCLE_STAGES
+        }
 
         # streaming support
         self._stream_trigger = threading.Event()
@@ -221,6 +240,9 @@ class PerformanceEvaluator(BaseEvaluator):
             self.end_time = completed_at
 
             self._record_realtime_tts_outcome(response)
+            # Harness lifecycle drift is about scheduling/dispatch, independent of
+            # request outcome, so record it before the cancelled/errored returns.
+            self._accumulate_lifecycle_drift(response)
             # Update session tracking
             self._update_session_metrics_for_request(
                 session_id=session_id,
@@ -404,9 +426,42 @@ class PerformanceEvaluator(BaseEvaluator):
             ),
         }
 
+    def _accumulate_lifecycle_drift(self, response: Any) -> None:
+        """Record the request-lifecycle stage durations (ms) for this request.
+
+        Each stage is skipped if either of its timestamps is missing (e.g. a
+        request that errored before it was sent has no ``client_sent_at``).
+        """
+        for name, (start_attr, end_attr) in _LIFECYCLE_STAGES.items():
+            start = getattr(response, start_attr, None)
+            end = getattr(response, end_attr, None)
+            if start is not None and end is not None:
+                self._lifecycle_sketches[name].put((end - start) * 1000.0)
+
+    def _warn_on_lifecycle_drift(self) -> None:
+        """Soft-warn if any lifecycle-drift p99 exceeds the configured threshold."""
+        threshold = getattr(self.config, "lifecycle_drift_warn_threshold_ms", 0.0)
+        if threshold is None or threshold <= 0:
+            return
+        for name, sketch in self._lifecycle_sketches.items():
+            if sketch.sketch.count <= 0:
+                continue
+            p99 = sketch.sketch.get_quantile_value(0.99)
+            if p99 is not None and p99 > threshold:
+                logger.warning(
+                    "Harness lifecycle drift high: %s p99=%.2fms exceeds %.2fms. "
+                    "The benchmark harness is adding scheduling latency before "
+                    "requests reach the server, which can distort measured "
+                    "server-side timings. Consider more client threads / lower "
+                    "concurrency, or run `veeksha preflight` to certify the box.",
+                    name,
+                    p99,
+                    threshold,
+                )
+
     def get_aggregated_summary(self) -> Dict[str, float]:
         """Get aggregate summary metrics."""
-        return {
+        summary: Dict[str, float] = {
             "Number of Requests": self.num_requests,
             "Number of Errored Requests": self.num_errored_requests,
             "Number of Completed Requests": self.num_completed_requests,
@@ -425,6 +480,9 @@ class PerformanceEvaluator(BaseEvaluator):
             "Observed Session Dispatch Rate": self._session_dispatch_rate(),
             **self._get_realtime_tts_summary(),
         }
+        for sketch in self._lifecycle_sketches.values():
+            summary.update(sketch.get_summary())
+        return summary
 
     def _build_summary_stats(self) -> Dict[str, Any]:
         """Combine aggregate stats, channel-level metrics, and error code frequencies."""
@@ -443,6 +501,7 @@ class PerformanceEvaluator(BaseEvaluator):
         if self.config.stream_metrics:
             self._shutdown_metric_streamer()
         self._finalize_remaining_sessions()
+        self._warn_on_lifecycle_drift()
 
         # Collect metrics from all channel evaluators
         combined_metrics = self.get_aggregated_summary()

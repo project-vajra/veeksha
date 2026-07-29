@@ -136,7 +136,16 @@ class TTSClient(BaseLLMClient):
         chunk_count = 0
         audio_chunks: list[bytes] = []
 
+        # preflight timing (recorded only when enabled). Only the request id is
+        # sent to the server; the scorer joins the two record books by request_id.
+        preflight_enabled = getattr(self.config, "record_preflight_timing", False)
+        client_sent_at: float | None = None
+        chunk_recv_times: list[float] = []
+        if preflight_enabled:
+            speech_request.headers["X-Veeksha-Request-Id"] = str(request.id)
+
         t_start = time.monotonic()
+        client_sent_at = t_start
 
         try:
             async with self._get_client().stream(
@@ -156,6 +165,9 @@ class TTSClient(BaseLLMClient):
                     if not chunk:
                         continue
                     receive_time = time.monotonic()
+                    # t_cr_i: client receipt of each audio chunk.
+                    if preflight_enabled:
+                        chunk_recv_times.append(receive_time)
                     if ttfc is None:
                         ttfc = (receive_time - t_start) * 1000
                     if not sent_notified and on_request_sent is not None:
@@ -222,4 +234,6 @@ class TTSClient(BaseLLMClient):
             error_code=error_code,
             error_msg=error_msg,
             client_completed_at=completed_at,
+            client_sent_at=client_sent_at,
+            chunk_recv_times=chunk_recv_times if preflight_enabled else None,
         )

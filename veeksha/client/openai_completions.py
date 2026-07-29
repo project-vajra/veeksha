@@ -118,18 +118,32 @@ class OpenAICompletionsClient(OpenAIBaseClient):
         completion_text = ""
         logprobs: Any = None
 
+        # preflight timing (recorded only when enabled). Only the request id is
+        # sent to the server; the scorer joins the two record books by request_id.
+        # Completions is non-streaming: a single t_cr.
+        preflight_enabled = getattr(self.config, "record_preflight_timing", False)
+        client_sent_at: Optional[float] = None
+        chunk_recv_times: List[float] = []
+
         start_time = time.monotonic()
+        client_sent_at = start_time
+        if preflight_enabled:
+            headers["X-Veeksha-Request-Id"] = str(request.id)
         try:
             client = self._get_client()
             response = await client.post(
                 self.completions_address, json=body, headers=headers, timeout=timeout
             )
+            # t_cr: response fully received (non-streaming).
+            receive_time = time.monotonic()
             response.raise_for_status()
             if on_request_dispatched is not None:
                 on_request_dispatched()
             if on_request_sent is not None:
                 on_request_sent()
             data = response.json()
+            if preflight_enabled:
+                chunk_recv_times.append(receive_time)
             choices = data.get("choices") or []
             if choices:
                 first = choices[0] if isinstance(choices[0], dict) else {}
@@ -203,4 +217,6 @@ class OpenAICompletionsClient(OpenAIBaseClient):
             error_code=error_code,
             error_msg=error_msg,
             client_completed_at=completed_at,
+            client_sent_at=client_sent_at,
+            chunk_recv_times=chunk_recv_times if preflight_enabled else None,
         )

@@ -92,7 +92,7 @@ class SequentialLaunchTrafficScheduler(BaseTrafficScheduler):
 
     def wait_for_ready(
         self, timeout: float = 0.001
-    ) -> Optional[tuple[Request, int, int]]:
+    ) -> Optional[tuple[Request, int, int, float]]:
         with self._condition:
             result = self._try_pop_ready_locked()
             if result is not None:
@@ -107,7 +107,7 @@ class SequentialLaunchTrafficScheduler(BaseTrafficScheduler):
             self._condition.wait(timeout=wait_time)
             return self._try_pop_ready_locked()
 
-    def _try_pop_ready_locked(self) -> Optional[tuple[Request, int, int]]:
+    def _try_pop_ready_locked(self) -> Optional[tuple[Request, int, int, float]]:
         if not self._ready_queue:
             return None
 
@@ -121,10 +121,12 @@ class SequentialLaunchTrafficScheduler(BaseTrafficScheduler):
 
             self._populate_history(request, state, node_id)
 
-            return (request, session_id, session_size)
+            # ready_at (offset from scheduler start) as an absolute monotonic time.
+            scheduler_ready_at = item.ready_at + self._start_monotonic
+            return (request, session_id, session_size, scheduler_ready_at)
         return None
 
-    def pop_ready(self) -> Optional[tuple[Request, int, int]]:
+    def pop_ready(self) -> Optional[tuple[Request, int, int, float]]:
         with self._condition:
             return self._try_pop_ready_locked()
 

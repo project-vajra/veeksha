@@ -25,26 +25,22 @@ class BaseTrafficScheduler:
         raise NotImplementedError
 
     @abstractmethod
-    def pop_ready(self) -> Optional[Tuple[Request, int, int]]:
-        """Pop a ready request from the scheduler.
+    def pop_ready(self) -> Optional[Tuple[Request, int, int, float]]:
+        """Pop a ready request.
 
-        Returns:
-            Tuple of (request, session_id, session_size) if a request is ready,
-            None otherwise.
+        Returns (request, session_id, session_size, scheduler_ready_at), or None.
+        ``scheduler_ready_at`` is the scheduled ready instant in the
+        ``time.monotonic()`` domain.
         """
         raise NotImplementedError
 
     @abstractmethod
     def wait_for_ready(
         self, timeout: float = 0.001
-    ) -> Optional[Tuple[Request, int, int]]:
-        """Wait for a ready request with timeout.
+    ) -> Optional[Tuple[Request, int, int, float]]:
+        """Wait up to ``timeout`` seconds for a ready request.
 
-        Args:
-            timeout: Maximum time to wait in seconds.
-
-        Returns:
-            Tuple of (request, session_id, session_size) if ready, None if timeout.
+        Same return shape as :meth:`pop_ready`; None on timeout.
         """
         raise NotImplementedError
 

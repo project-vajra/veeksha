@@ -176,22 +176,26 @@ class VajraTTSStreamClient(BaseLLMClient):
         self._stream_config = config
         self._protocol = VajraTTSStreamProtocol(config, api_key=self.api_key)
 
-    def _connect(self):
+    def _connect(self, extra_headers: Optional[dict] = None):
         """Return the websocket connect context manager.
 
         A seam so tests can override the transport. ``max_size=None`` lifts the
         inbound-frame cap (PCM frames can be large); ``compression=None``
         keeps binary PCM uncompressed (permessage-deflate burns CPU on
         high-entropy audio). The asyncio transport sets ``TCP_NODELAY`` by
-        default, so no explicit socket option is required.
+        default, so no explicit socket option is required. ``extra_headers``
+        (preflight only) adds the request-id correlation header.
         """
         open_timeout = min(self._stream_config.request_timeout, 30)
+        headers = self._protocol.headers()
+        if extra_headers:
+            headers = {**headers, **extra_headers}
         return connect(
             self._protocol.build_ws_url(str(self.api_base)),
             max_size=None,
             compression=None,
             open_timeout=open_timeout,
-            additional_headers=self._protocol.headers(),
+            additional_headers=headers,
         )
 
     async def send_request(
@@ -272,7 +276,16 @@ class VajraTTSStreamClient(BaseLLMClient):
         error_code: Optional[int] = None
         error_msg: Optional[str] = None
 
+        # preflight timing (recorded only when enabled). Only the request id is
+        # sent to the server; the scorer joins the two record books by request_id.
+        preflight_enabled = getattr(self.config, "record_preflight_timing", False)
+        client_sent_at: Optional[float] = None
+        chunk_recv_times: list[float] = []
+        input_send_times: list[float] = []  # t_cs_i, per paced text segment
+        input_send_deadlines: list[float] = []
+
         t_start = time.monotonic()
+        client_sent_at = t_start
 
         async def send_loop(ws) -> None:
             nonlocal input_complete_offset
@@ -287,7 +300,11 @@ class VajraTTSStreamClient(BaseLLMClient):
                 if sleep_s > 0:
                     await asyncio.sleep(sleep_s)
                 await ws.send(self._protocol.input_text_json(seg.text))
-                text_delta_ts.append([(time.monotonic() - t_start) * 1000, seg.n_chars])
+                sent_at = time.monotonic()
+                if preflight_enabled:
+                    input_send_times.append(sent_at)
+                    input_send_deadlines.append(deadline)
+                text_delta_ts.append([(sent_at - t_start) * 1000, seg.n_chars])
                 # Abort after a fraction of the input deltas: the client stops
                 # feeding text and never sends input.done (hangs up mid-input).
                 if abort_input_after is not None and index + 1 >= abort_input_after:
@@ -301,8 +318,9 @@ class VajraTTSStreamClient(BaseLLMClient):
             received_audio_ms = 0.0
             while True:
                 raw = await ws.recv()
-                # Stamp receipt BEFORE any json decode work.
-                offset_ms = (time.monotonic() - t_start) * 1000
+                # Stamp receipt BEFORE any json decode work (t_cr_i).
+                recv_time = time.monotonic()
+                offset_ms = (recv_time - t_start) * 1000
 
                 # Binary frames are raw int16 PCM audio.
                 if isinstance(raw, (bytes, bytearray, memoryview)):
@@ -310,6 +328,8 @@ class VajraTTSStreamClient(BaseLLMClient):
                     if chunk:
                         audio_chunks.append(chunk)
                         audio_chunk_ts.append([offset_ms, len(chunk)])
+                        if preflight_enabled:
+                            chunk_recv_times.append(recv_time)
                         if ttfc is None:
                             ttfc = offset_ms
                         fire_sent_once()
@@ -366,9 +386,12 @@ class VajraTTSStreamClient(BaseLLMClient):
             await asyncio.sleep(abort_wall_s)
             raise _ClientAbort()
 
+        extra_headers = (
+            {"X-Veeksha-Request-Id": str(request.id)} if preflight_enabled else None
+        )
         try:
             async with asyncio.timeout(self._stream_config.request_timeout):
-                async with self._connect() as ws:
+                async with self._connect(extra_headers) as ws:
                     ws_connect_latency = (time.monotonic() - t_start) * 1000
                     await ws.send(self._protocol.session_config_json())
                     # Analog of the HTTP-200 ack: the scheduler's dispatch pacing
@@ -462,4 +485,8 @@ class VajraTTSStreamClient(BaseLLMClient):
             error_code=error_code,
             error_msg=error_msg,
             client_completed_at=completed_at,
+            client_sent_at=client_sent_at,
+            chunk_recv_times=chunk_recv_times if preflight_enabled else None,
+            input_send_times=input_send_times if preflight_enabled else None,
+            input_send_deadlines=input_send_deadlines if preflight_enabled else None,
         )

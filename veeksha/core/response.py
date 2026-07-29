@@ -4,7 +4,7 @@ These dataclasses bridge the gap between LLM client responses and what evaluator
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from veeksha.types import ChannelModality
 
@@ -70,9 +70,26 @@ class RequestResult:
     client_picked_up_at: Optional[float] = (
         None  # ClientWorker._process_request() on dequeue
     )
+    client_sent_at: Optional[float] = (
+        None  # t_cs: request handed to the transport (set by wired clients)
+    )
     client_completed_at: Optional[float] = (
         None  # LLM client send_request() after response
     )
     result_processed_at: Optional[float] = (
         None  # CompletionWorker._process_result() on entry
     )
+
+    # Preflight timing telemetry (the client's own record book). Populated only
+    # when the client is run with record_preflight_timing=True (the preflight
+    # harness); left as None on normal benchmark runs so the production path pays
+    # no cost. The scorer joins these with the server's record book by
+    # request_id. All monotonic.
+    chunk_recv_times: Optional[List[float]] = (
+        None  # t_cr_i: client receipt of each response chunk
+    )
+    # Streaming-input clients only (realtime_tts / vajra / stt): per-input-segment
+    # send times and the intended pacing deadlines, for input-delivery lag and
+    # pacing-accuracy metrics. None for single-shot requests.
+    input_send_times: Optional[List[float]] = None  # t_cs_i
+    input_send_deadlines: Optional[List[float]] = None  # intended send instants

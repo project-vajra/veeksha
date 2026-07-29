@@ -41,6 +41,7 @@ dependencies = [
     "rich",
     "vidhi",
     "websockets>=14",
+    "aiohttp",
     "jiwer",
     "regex",
     "soundfile",

@@ -110,14 +110,15 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
 
     def wait_for_ready(
         self, timeout: float = 0.001
-    ) -> Optional[Tuple[Request, int, int]]:
+    ) -> Optional[Tuple[Request, int, int, float]]:
         """Wait for a ready request with timeout.
 
         Args:
             timeout: Maximum time to wait in seconds.
 
         Returns:
-            Tuple of (request, session_id, session_size) if ready, None if timeout.
+            Tuple of (request, session_id, session_size, scheduler_ready_at) if
+            ready, None if timeout.
         """
         with self._condition:
             # Activation must track the ramp clock, not just scheduling and
@@ -141,7 +142,7 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
             # check again after waking
             return self._try_pop_ready_locked()
 
-    def _try_pop_ready_locked(self) -> Optional[Tuple[Request, int, int]]:
+    def _try_pop_ready_locked(self) -> Optional[Tuple[Request, int, int, float]]:
         """Try to pop a ready item, must be called with lock held."""
         if not self._ready_queue:
             return None
@@ -155,10 +156,12 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
             session_size = len(state.session.requests)
 
             self._populate_history(request, state, node_id)
-            return (request, session_id, session_size)
+            # ready_at (offset from scheduler start) as an absolute monotonic time.
+            scheduler_ready_at = item.ready_at + self._start_monotonic
+            return (request, session_id, session_size, scheduler_ready_at)
         return None
 
-    def pop_ready(self) -> Optional[Tuple[Request, int, int]]:
+    def pop_ready(self) -> Optional[Tuple[Request, int, int, float]]:
         with self._condition:
             self._try_activate_pending_locked()
             return self._try_pop_ready_locked()
