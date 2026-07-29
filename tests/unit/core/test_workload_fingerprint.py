@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -127,6 +128,29 @@ def test_file_backed_channel_hashes_contents(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_file_backed_channel_detects_rewrite_under_identical_mtime(
+    tmp_path: Path,
+) -> None:
+    """A same-size rewrite must be caught even when mtime does not move.
+
+    ext4/overlayfs hand out a coarse st_mtime_ns, so two quick writes of equal
+    length share a timestamp and collide in the digest memo. APFS resolves them,
+    which is why this only ever failed on Linux. Forcing the timestamp back
+    reproduces it everywhere.
+    """
+    audio = tmp_path / "clip.wav"
+    audio.write_bytes(b"RIFF-fake-audio-1")
+    stamp = audio.stat()
+    first = fingerprint_sessions([_session(1, "t", audio_path=str(audio))])
+
+    audio.write_bytes(b"RIFF-fake-audio-2")  # same length, different bytes
+    os.utime(audio, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+    second = fingerprint_sessions([_session(1, "t", audio_path=str(audio))])
+
+    assert first != second
+
+
+@pytest.mark.unit
 def test_incremental_counts() -> None:
     fp = WorkloadFingerprint()
     fp.add_session(_session(1))
@@ -169,6 +193,20 @@ def test_describe_drift_names_changed_inputs() -> None:
     assert "veeksha git commit" in joined
     assert "transformers version" in joined
     assert "asset a.wav" in joined
+
+
+def test_describe_drift_stays_silent_without_an_actual_record() -> None:
+    """Pre-flight has no run record yet; inventing "-> None" diffs misleads.
+
+    Before this, a preflight mismatch blamed the tokenizer and git commit for
+    what was really an edited config.
+    """
+    expected = {
+        "veeksha": {"git_commit": "aaa", "version": "1.0"},
+        "tokenizer": {"model": "gpt2"},
+    }
+
+    assert describe_drift(expected, {}) == []
 
 
 def test_describe_drift_survives_assets_without_a_path() -> None:

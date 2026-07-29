@@ -37,7 +37,7 @@ from typing import Any, Optional
 from veeksha.core.request import Request
 from veeksha.core.session import Session
 from veeksha.core.session_graph import SessionGraph
-from veeksha.provenance import file_digest
+from veeksha.provenance import file_digest, reset_file_digest_cache
 
 # Channel content fields that name an external asset rather than carrying it
 # inline. These are hashed by file contents when they resolve to a real file,
@@ -168,6 +168,10 @@ class WorkloadFingerprint:
     """
 
     def __init__(self) -> None:
+        # Start a fresh digest generation: within one pass the memo dedups the
+        # same clip across thousands of requests, but carrying it across passes
+        # can serve a stale digest for an asset rewritten in place.
+        reset_file_digest_cache()
         self._hasher = hashlib.blake2b(digest_size=32)
         self._hasher.update(f"veeksha-workload-v{_FINGERPRINT_VERSION}\0".encode())
         self._session_count = 0
@@ -221,6 +225,12 @@ def describe_drift(
     changed" or "transformers was upgraded".
     """
     if not expected:
+        return []
+    if not actual:
+        # Nothing to compare against yet -- the pre-flight check runs before a
+        # run record exists. Diffing against an empty record would report every
+        # pinned input as "-> None" and blame the tokenizer or the git commit
+        # for what is almost always an edited config.
         return []
 
     reasons: list[str] = []

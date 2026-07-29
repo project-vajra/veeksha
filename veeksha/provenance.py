@@ -80,13 +80,31 @@ def distribution_version(name: str) -> Optional[str]:
         return None
 
 
+def reset_file_digest_cache() -> None:
+    """Drop memoised digests so the next read reflects on-disk contents.
+
+    Called when a fingerprint computation starts. See :func:`file_digest` for
+    why the cache cannot be trusted across computations.
+    """
+    _FILE_DIGEST_CACHE.clear()
+
+
 def file_digest(path: str | os.PathLike[str]) -> Optional[str]:
     """Return ``sha256:<hex>`` for a file's contents, or None if unreadable.
 
     Memoised on ``(path, size, mtime_ns)``: a benchmark can reference the same
     clip from thousands of requests, and re-reading each one would dominate
-    workload generation. The size and mtime in the key mean a file rewritten in
-    place is re-read rather than served stale from the cache.
+    workload generation.
+
+    That key does NOT reliably detect an in-place rewrite. Many filesystems
+    (ext4/overlayfs under Docker, notably) hand out a coarse ``st_mtime_ns``,
+    so a same-size edit can land in the same tick as the previous read and be
+    served stale -- whereas APFS timestamps are fine-grained enough to catch
+    it. Relying on that difference makes content detection platform-dependent,
+    so the cache is scoped to a single computation instead:
+    :class:`~veeksha.core.workload_fingerprint.WorkloadFingerprint` resets it on
+    construction, which keeps the dedup within one fingerprint pass and
+    guarantees a rewritten asset is re-read by the next one.
     """
     try:
         resolved = Path(path)
