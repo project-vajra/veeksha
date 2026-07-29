@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, Optional, Tuple, cast
 import yaml
 
 from veeksha.benchmark import manage_benchmark_run
-from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.benchmark import BenchmarkConfig, carry_sidecar_attrs
 from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.config.generator.interval import (
     BaseIntervalGeneratorConfig,
@@ -126,7 +126,10 @@ def patch_traffic_knob(
                 cast(Any, interval_cfg), arrival_rate=float(value)
             )
         new_traffic = replace(traffic, interval_generator=new_interval_cfg)
-        return replace(benchmark_config, traffic_scheduler=new_traffic)
+        return carry_sidecar_attrs(
+            benchmark_config,
+            replace(benchmark_config, traffic_scheduler=new_traffic),
+        )
 
     if isinstance(traffic, ConcurrentTrafficConfig):
         if abs(value - round(value)) > 1e-9:
@@ -140,7 +143,10 @@ def patch_traffic_knob(
             target_concurrent_sessions=target,
             rampup_seconds=target,
         )
-        return replace(benchmark_config, traffic_scheduler=new_traffic)
+        return carry_sidecar_attrs(
+            benchmark_config,
+            replace(benchmark_config, traffic_scheduler=new_traffic),
+        )
 
     raise ValueError(
         f"Unsupported traffic scheduler type: {type(traffic).__name__}. "

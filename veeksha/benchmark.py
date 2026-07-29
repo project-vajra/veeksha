@@ -18,7 +18,7 @@ from veeksha.benchmark_utils import (
     write_run_manifest_start,
 )
 from veeksha.client.registry import ClientRegistry
-from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.benchmark import BenchmarkConfig, carry_sidecar_attrs
 from veeksha.config.endpoint import EndpointConfig
 from veeksha.core.seeding import SeedManager
 from veeksha.core.thread_pool import ThreadPoolManager
@@ -480,12 +480,15 @@ def _run_benchmark(
 def _with_endpoint(
     benchmark_config: BenchmarkConfig, endpoint: EndpointConfig
 ) -> BenchmarkConfig:
-    return replace(
+    rebuilt = replace(
         benchmark_config,
         client=endpoint.apply_to_client_config(benchmark_config.client),
         endpoint=endpoint,
         server=None,
     )
+    # Without this the named-benchmark meta is dropped here and the pre-flight
+    # pin check below silently no-ops for every endpoint-driven run.
+    return carry_sidecar_attrs(benchmark_config, rebuilt)
 
 
 def _run_initialized_benchmark(

@@ -128,3 +128,24 @@ class BenchmarkConfig(BenchmarkCommand, name="run", default=True):
             raise ValueError(
                 "benchmark_revision requires --benchmark to name the definition"
             )
+
+
+# Runtime state attached to a frozen config with ``object.__setattr__`` rather
+# than declared as fields: it is populated by the CLI, never parsed or
+# serialized. ``dataclasses.replace`` only copies real fields, so any rebuild
+# drops these unless they are carried over explicitly.
+_SIDECAR_ATTRS = ("_named_benchmark_meta", "_knob_overrides", "_cli_provided_keys")
+
+
+def carry_sidecar_attrs(source: object, target: object) -> object:
+    """Copy non-field runtime attributes across a ``replace()`` rebuild.
+
+    Losing ``_named_benchmark_meta`` silently disables the workload pin check —
+    the run proceeds against an unverified workload — so every code path that
+    rebuilds a :class:`BenchmarkConfig` must route through this.
+    """
+    for attr in _SIDECAR_ATTRS:
+        value = getattr(source, attr, None)
+        if value is not None:
+            object.__setattr__(target, attr, value)
+    return target

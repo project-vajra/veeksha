@@ -17,7 +17,7 @@ from veeksha.benchmark import (
     run_benchmark_with_endpoint,
 )
 from veeksha.benchmark_resolve import NamedBenchmarkError, resolve_named_benchmark
-from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.benchmark import BenchmarkConfig, carry_sidecar_attrs
 from veeksha.config.utils import to_serializable_config_dict
 from veeksha.logger import init_logger
 from veeksha.orchestration.benchmark_orchestrator import managed_server
@@ -149,7 +149,7 @@ def _prepare_sweep_config(
             group=wandb_cfg.group or sweep_group,
             tags=dedup_tags([*wandb_cfg.tags, "sweep"]),
         )
-    return replace(cfg, output_dir=sweep_dir, wandb=wandb_cfg)
+    return carry_sidecar_attrs(cfg, replace(cfg, output_dir=sweep_dir, wandb=wandb_cfg))
 
 
 def _group_configs_by_server(
