@@ -52,19 +52,14 @@ fi
 if [[ "${current_hash}" != "${deps_hash}" ]] || \
   ! "${VENV314}/bin/python" -c "import pytest, vidhi" >/dev/null 2>&1; then
   echo "Syncing test dependencies into ${VENV314}"
-  # Install from uv.lock rather than re-resolving: a fresh resolve follows
-  # whatever is newest on PyPI, which is how numpy 2.5 (capped out by numba's
-  # `numpy<2.5`) once dragged numba back to 0.53.1 and an llvmlite that cannot
-  # build on 3.14. --locked additionally fails loudly if uv.lock has drifted
-  # from pyproject.toml instead of silently installing a stale set.
   if command -v uv >/dev/null 2>&1; then
-    UV_PROJECT_ENVIRONMENT="${VENV314}" uv sync --locked
+    uv pip install --python "${VENV314}/bin/python" -e . --group test
   else
     # shellcheck source=/dev/null
     source "${VENV314}/bin/activate"
     python -m ensurepip --upgrade >/dev/null 2>&1 || true
     python -m pip install -U pip uv
-    UV_PROJECT_ENVIRONMENT="${VENV314}" uv sync --locked
+    uv pip install -e . --group test
   fi
   printf '%s\n' "${deps_hash}" > "${STAMP_FILE}"
 else
