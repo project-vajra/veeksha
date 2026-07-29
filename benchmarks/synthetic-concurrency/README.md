@@ -6,7 +6,11 @@ Sample **named benchmark** for Veeksha's define / pin / run workflow.
 
 - Synthetic single-request text sessions (`seed`, prompt length, output length)
 - Tokenizer model (`gpt2` by default — needs `transformers` for define/run generation)
-- Everything else in `config/base.yml`
+- Everything else in the `config:` block of `benchmark.yml`
+
+Edit the workload in that block, then re-run `benchmark define` to re-pin.
+`define` resolves any `!include` and writes the config back inlined, so a
+separate base file would stop being read after the first pin.
 
 ## Free variable
 
