@@ -27,8 +27,7 @@ jobs:
             apt-get update && apt-get install -y -qq build-essential curl ca-certificates > /dev/null 2>&1 &&
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal > /dev/null 2>&1 &&
             export PATH=/root/.cargo/bin:\$PATH &&
-            uv venv --python 3.14t .venv &&
+            uv sync --locked --python 3.14t &&
             source .venv/bin/activate &&
-            uv pip install -e . --group dev &&
             make lint
           "
