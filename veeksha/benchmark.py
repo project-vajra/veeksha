@@ -36,6 +36,7 @@ from veeksha.workers.prefetch import SharedSessionCounter
 
 logger = init_logger(__name__)
 
+_MAX_NUM_CLIENT_THREADS_DEFAULT = 8
 
 def _warn_if_gil_enabled(stage: str) -> None:
     """Warn when the GIL is active on a free-threaded build.
@@ -111,6 +112,7 @@ def _run_main_loop(
         num_client_threads = (
             max(3, -(-int(target_sessions) // 8)) if target_sessions else 3
         )
+        num_client_threads = min(_MAX_NUM_CLIENT_THREADS_DEFAULT, num_client_threads)
     client_queues = [Queue() for _ in range(num_client_threads)]
     output_queue = Queue()
     stop_event = threading.Event()
