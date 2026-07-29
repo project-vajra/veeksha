@@ -2,6 +2,7 @@
 
 import pytest
 
+from veeksha.config.preflight import PreflightCheckConfig
 from veeksha.preflight import scorer, validator
 from veeksha.preflight.models import MetricSummary, ScoreReport
 from veeksha.preflight.report import render_report
@@ -92,7 +93,14 @@ def test_missing_metric_fails_safe():
 
 def test_report_renders_verdict_and_gates():
     result = validator.run_validation(_all_good(), **_KW)
-    text = render_report(_all_good(), result)
+    config = PreflightCheckConfig(concurrency=50, num_sessions=500)
+    text = render_report(_all_good(), result, config, config.text)
     assert "VERDICT: PASS" in text
     assert "request delivery" in text
     assert "PASS" in text
+    # The run's settings are always recorded.
+    assert "Configuration:" in text
+    assert "concurrency" in text
+    assert "num_sessions" in text
+    assert "server_ttfc_ms" in text
+    assert "server_tpoc_ms" in text
