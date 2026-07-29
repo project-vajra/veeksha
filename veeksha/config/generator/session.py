@@ -334,13 +334,13 @@ class SeedTTSTextTraceFlavorConfig(BaseTraceFlavorConfig):
     min_tokens: int = field(
         20,
         help="Minimum input word count. Rows with fewer words are skipped. "
-        "Ignored when min_chars/max_chars are set.",
+        "Ignored in char-based and target-duration modes.",
     )
     max_tokens: int = field(
         150,
         help="Maximum input word count. Text is truncated to a sampled word "
-        "count in [min_tokens, max_tokens]. Ignored when min_chars/max_chars "
-        "are set.",
+        "count in [min_tokens, max_tokens]. Ignored in char-based and "
+        "target-duration modes.",
     )
     min_chars: int = field(
         -1,
@@ -352,10 +352,34 @@ class SeedTTSTextTraceFlavorConfig(BaseTraceFlavorConfig):
         help="If >= 0, enables char-based input length control. Text is "
         "truncated to a sampled char count in [min_chars, max_chars].",
     )
+    target_duration_s: float | None = field(
+        None,
+        help="Estimated spoken duration for each generated TTS input. Converts "
+        "duration to a word budget using words_per_second and requires source "
+        "rows long enough to satisfy the configured duration range.",
+    )
+    target_duration_spread_s: float | None = field(
+        None,
+        help="Hard half-width of a clipped-Gaussian duration distribution. "
+        "Requires target_duration_s.",
+    )
+    target_duration_sigma_s: float | None = field(
+        None,
+        help="Standard deviation of the duration distribution. Defaults to half "
+        "the spread and requires target_duration_spread_s.",
+    )
+    words_per_second: float = field(
+        2.5,
+        help="Estimated speaking rate used to convert duration to input words.",
+    )
 
     @property
     def use_chars(self) -> bool:
         return self.min_chars >= 0 and self.max_chars >= 0
+
+    @property
+    def use_target_duration(self) -> bool:
+        return self.target_duration_s is not None
 
     @classmethod
     def get_type(cls):
@@ -385,6 +409,38 @@ class SeedTTSTextTraceFlavorConfig(BaseTraceFlavorConfig):
             if self.min_tokens > self.max_tokens:
                 raise ValueError(
                     f"min_tokens ({self.min_tokens}) must be <= max_tokens ({self.max_tokens})"
+                )
+
+        target_duration_s = self.target_duration_s
+        if target_duration_s is not None:
+            if self.use_chars:
+                raise ValueError(
+                    "target_duration_s is mutually exclusive with "
+                    "min_chars/max_chars"
+                )
+            if target_duration_s <= 0:
+                raise ValueError("target_duration_s must be positive")
+            if self.words_per_second <= 0:
+                raise ValueError("words_per_second must be positive")
+
+        target_duration_spread_s = self.target_duration_spread_s
+        if target_duration_spread_s is not None:
+            if target_duration_s is None:
+                raise ValueError("target_duration_spread_s requires target_duration_s")
+            if not 0 < target_duration_spread_s < target_duration_s:
+                raise ValueError(
+                    "target_duration_spread_s must be in (0, target_duration_s)"
+                )
+
+        if self.target_duration_sigma_s is not None:
+            if target_duration_spread_s is None:
+                raise ValueError(
+                    "target_duration_sigma_s requires target_duration_spread_s"
+                )
+            if not 0 < self.target_duration_sigma_s <= target_duration_spread_s:
+                raise ValueError(
+                    "target_duration_sigma_s must be in "
+                    "(0, target_duration_spread_s]"
                 )
 
 

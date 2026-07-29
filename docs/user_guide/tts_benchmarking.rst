@@ -203,6 +203,37 @@ and source row in request metadata. The original benchmark is maintained by
 <https://github.com/BytedanceSpeech/seed-tts-eval>`_. Pin or locally archive the
 exact dataset revision used in a published comparison.
 
+For long-running capacity and stability soaks, ``seed_tts_text`` can derive a
+word budget from a target spoken duration:
+
+.. code-block:: yaml
+
+    session_generator:
+      type: trace
+      wrap_mode: true
+      flavor:
+        type: seed_tts_text
+        local_path: /path/to/pinned-long-form-text-dataset
+        target_duration_s: 300
+        target_duration_spread_s: 60
+        target_duration_sigma_s: 30
+        words_per_second: 2.5
+
+Each session draws a deterministic clipped-Gaussian duration from the run seed,
+then uses ``round(duration * words_per_second)`` source words. With the example
+above, every draw is between 240 and 360 seconds. The sampled duration is saved
+as ``target_duration_s`` in request metadata.
+
+This mode requires real source text long enough for the largest configured
+draw. Veeksha filters rows against
+``ceil((target_duration_s + target_duration_spread_s) * words_per_second)`` and
+fails configuration when no row qualifies. It does not repeat short text or
+audio: repetition changes linguistic diversity, cache behavior, WER weighting,
+and long-context behavior, so it is not equivalent to a real long-form soak.
+The duration is an input-text estimate, not a guarantee of the provider's
+generated waveform duration; report measured generated-audio duration with any
+soak result.
+
 ``sharegpt`` is also supported when a local ShareGPT-format JSON/JSONL file is
 provided. It extracts assistant turns as TTS text. Veeksha does not ship a
 ShareGPT dataset.
