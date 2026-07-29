@@ -106,9 +106,7 @@ def _run_main_loop(
         # already does this; direct configs get the same protection): an
         # under-provisioned pool serializes per-session sends and shows up
         # as phantom server-side latency at high concurrency.
-        target_sessions = getattr(
-            traffic_scheduler, "target_concurrent_sessions", None
-        ) or getattr(traffic_scheduler, "_target_concurrent", None)
+        target_sessions = getattr(traffic_scheduler, "target_concurrent_sessions", None)
         num_client_threads = (
             max(3, -(-int(target_sessions) // 8)) if target_sessions else 3
         )

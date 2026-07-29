@@ -61,7 +61,7 @@ class AudioRequestMetrics:
     session_id: int
     request_dispatched_at: float
     client_completed_at: float
-    ttfc: float
+    ttfc: float | None
     end_to_end_latency: float
     generated_audio_duration: float
     rtf: float
@@ -82,6 +82,8 @@ class AudioRequestMetrics:
     ws_connect_latency_ms: float | None = None
     suspected_length_cap_truncation: bool = False
     aborted: bool = False
+    success: bool = True
+    error_code: int | None = None
 
 
 class AudioPerformanceEvaluator:
@@ -157,6 +159,7 @@ class AudioPerformanceEvaluator:
         self._last_completion_at: float | None = None
         self._suspected_truncation_count = 0
         self._aborted_count = 0
+        self._failed_count = 0
 
     def register_request(
         self,
@@ -207,8 +210,20 @@ class AudioPerformanceEvaluator:
             logger.debug("Request %d has no AUDIO channel response", request_id)
             return
 
+        # Most audio clients withhold the AUDIO channel on failure, so a failed
+        # request never reaches here. StreamingTTSClient deliberately does not:
+        # it still attaches the channel when a request produced text deltas or
+        # partial audio before failing, so those partials stay auditable. Such a
+        # request keeps its row but must not feed the aggregates -- a 502 "stream
+        # completed without audio" has no meaningful latency to report.
+        success = bool(getattr(response, "success", True))
+        error_code = getattr(response, "error_code", None)
+
         cm = channel_response.metrics or {}
-        ttfc = float(cm.get(AudioMetricKey.TTFC.value, 0.0))
+        raw_ttfc = cm.get(AudioMetricKey.TTFC.value)
+        # Missing/None TTFC means first content was never observed; do not
+        # invent 0 ms (that biases latency percentiles and SLOs).
+        ttfc = float(raw_ttfc) if raw_ttfc is not None else None
         end_to_end_latency = float(cm.get(AudioMetricKey.END_TO_END_LATENCY.value, 0.0))
         chunk_count = int(cm.get(AudioMetricKey.CHUNK_COUNT.value, 0))
         raw_pcm = bool(cm.get(AudioMetricKey.RAW_PCM.value, False))
@@ -360,10 +375,14 @@ class AudioPerformanceEvaluator:
                 ws_connect_latency_ms=ws_connect_latency_ms,
                 suspected_length_cap_truncation=suspected_length_cap_truncation,
                 aborted=aborted,
+                success=success,
+                error_code=error_code,
             )
             self._completed_metrics.append(metrics)
             if aborted:
                 self._aborted_count += 1
+            if not success:
+                self._failed_count += 1
             if suspected_length_cap_truncation:
                 self._suspected_truncation_count += 1
 
@@ -403,10 +422,11 @@ class AudioPerformanceEvaluator:
                 }
             )
 
-            if not aborted:
+            if not aborted and success:
                 self._total_input_chars += input_chars
                 self._total_generated_audio_duration_ms += generated_audio_duration
-                self.summaries[AudioMetricKey.TTFC.value].put(ttfc)
+                if ttfc is not None:
+                    self.summaries[AudioMetricKey.TTFC.value].put(ttfc)
                 self.summaries[AudioMetricKey.END_TO_END_LATENCY.value].put(
                     end_to_end_latency
                 )
@@ -430,7 +450,7 @@ class AudioPerformanceEvaluator:
                     if value is not None:
                         self.asr_latency_summaries[metric_name].put(value)
 
-            if interactivity is not None:
+            if interactivity is not None and success:
                 self._record_interactivity(metrics)
 
     def _ensure_interactivity_sketches(self) -> None:
@@ -634,6 +654,9 @@ class AudioPerformanceEvaluator:
         if self._aborted_count > 0:
             perf_summary["aborted_requests_count"] = self._aborted_count
 
+        if self._failed_count > 0:
+            perf_summary["failed_requests_count"] = self._failed_count
+
         if self._interactive_request_count > 0:
             count = self._interactive_request_count
             perf_summary["interactive_requests_count"] = count
@@ -753,7 +776,9 @@ class AudioPerformanceEvaluator:
                 AudioMetricKey.PROVIDER.value: metrics.provider,
                 AudioMetricKey.PROVIDER_MODEL.value: metrics.provider_model,
                 AudioMetricKey.PROVIDER_PROTOCOL.value: metrics.provider_protocol,
-                AudioMetricKey.TTFC.value: round(metrics.ttfc, 3),
+                AudioMetricKey.TTFC.value: (
+                    round(metrics.ttfc, 3) if metrics.ttfc is not None else None
+                ),
                 AudioMetricKey.END_TO_END_LATENCY.value: round(
                     metrics.end_to_end_latency, 3
                 ),
@@ -767,6 +792,10 @@ class AudioPerformanceEvaluator:
                 AudioMetricKey.INPUT_TOKENS.value: metrics.input_tokens,
                 AudioMetricKey.INPUT_TEXT.value: metrics.input_text,
                 AudioMetricKey.ABORTED.value: int(metrics.aborted),
+                # Failed requests keep a row for forensics but are excluded from
+                # every aggregate; these fields make that exclusion auditable.
+                "success": int(metrics.success),
+                "error_code": metrics.error_code,
             }
             if metrics.text_pacing_unit:
                 row[AudioMetricKey.TEXT_PACING_UNIT.value] = metrics.text_pacing_unit

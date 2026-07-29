@@ -880,9 +880,7 @@ class StreamingTTSClient(BaseLLMClient):
         latency_ms = (completed_at - start) * 1000
         if error_code is None and not aborted and not audio_chunks:
             error_code = 502
-            error_msg = (
-                f"{protocol.provider} completed the TTS stream without audio"
-            )
+            error_msg = f"{protocol.provider} completed the TTS stream without audio"
         success = error_code is None and error_msg is None
         fire_sent_once()
 
@@ -891,7 +889,7 @@ class StreamingTTSClient(BaseLLMClient):
             AudioMetricKey.PROVIDER.value: protocol.provider,
             AudioMetricKey.PROVIDER_MODEL.value: self._streaming_config.model,
             AudioMetricKey.PROVIDER_PROTOCOL.value: protocol.protocol_name,
-            AudioMetricKey.TTFC.value: round(ttfc or 0.0, 3),
+            AudioMetricKey.TTFC.value: (round(ttfc, 3) if ttfc is not None else None),
             AudioMetricKey.END_TO_END_LATENCY.value: round(latency_ms, 3),
             AudioMetricKey.CHUNK_COUNT.value: len(audio_chunks),
             AudioMetricKey.RAW_PCM.value: protocol.raw_pcm,

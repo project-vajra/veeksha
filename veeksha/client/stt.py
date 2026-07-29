@@ -21,7 +21,7 @@ import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol, Sequence
 from urllib.parse import urlencode, urljoin
 
 import numpy as np
@@ -304,7 +304,15 @@ class STTClient(BaseLLMClient):
             with self._clip_cache_lock:
                 self._clip_cache[audio_path] = assets
                 while len(self._clip_cache) > _CLIP_CACHE_MAX_CLIPS:
-                    self._clip_cache.popitem(last=False)
+                    evicted_path, _ = self._clip_cache.popitem(last=False)
+                    # Drop the per-path lock with the cache entry so a long
+                    # benchmark against many distinct clips does not retain a
+                    # lock object per path forever. Skip locks still held so a
+                    # concurrent decoder for that path does not race a newly
+                    # created lock for the same path.
+                    lock = self._clip_locks.get(evicted_path)
+                    if lock is not None and not lock.locked():
+                        self._clip_locks.pop(evicted_path, None)
             return assets
 
     async def _stream(
@@ -406,7 +414,9 @@ class STTClient(BaseLLMClient):
                         kind, text = "done", ""
                     else:
                         kind, text = self._protocol.parse_message(
-                            json.loads(raw_message)
+                            _decode_stt_json_message(
+                                raw_message, provider=self._protocol.provider
+                            )
                         )
                     now = time.monotonic()
                     if kind in (
@@ -617,7 +627,9 @@ class STTClient(BaseLLMClient):
             )
             # Cached messages are aligned to the clip start; a non-zero slice
             # start shifts the chunk grid, so encode per chunk in that case.
-            wire_messages = clip.wire_messages if not start_ms else None
+            wire_messages = (
+                None if start_ms is not None and start_ms > 0 else clip.wire_messages
+            )
         except Exception as e:
             finish_callbacks()
             return RequestResult(
@@ -667,7 +679,12 @@ class STTClient(BaseLLMClient):
                 AudioMetricKey.PROVIDER.value: self._protocol.provider,
                 AudioMetricKey.PROVIDER_MODEL.value: self._model,
                 AudioMetricKey.PROVIDER_PROTOCOL.value: self._protocol.protocol_name,
-                AudioMetricKey.TTFC.value: round(stream_result.ttfc or 0.0, 3),
+                # Omit inventing 0 ms when no content-bearing event was timed.
+                AudioMetricKey.TTFC.value: (
+                    round(stream_result.ttfc, 3)
+                    if stream_result.ttfc is not None
+                    else None
+                ),
                 AudioMetricKey.END_TO_END_LATENCY.value: round(total_latency_ms, 3),
                 "time_to_first_visible_text": (
                     round(stream_result.time_to_first_visible_text, 3)
@@ -723,6 +740,41 @@ class _STTProtocolError(Exception):
     """Fatal provider event received after a WebSocket handshake."""
 
 
+def _decode_stt_json_message(
+    raw_message: str | bytes, *, provider: str
+) -> dict[str, Any]:
+    """Parse a provider text frame as a JSON object.
+
+    STT providers in this client speak JSON control/transcript events, so a
+    binary frame or non-object JSON is a protocol violation. A bare
+    ``json.loads`` already failed the request (``send_request`` catches
+    everything and ``map_ws_transport_error`` has a catch-all), but it
+    surfaced as an opaque 520 carrying a stringified ``JSONDecodeError``.
+    Raising ``_STTProtocolError`` instead classifies these as 500 and names
+    the offending provider. It also rejects binary frames, which
+    ``json.loads`` would otherwise accept whenever they happen to be UTF-8
+    JSON, and rejects non-object JSON before ``parse_message`` calls ``.get``
+    on it.
+    """
+    if isinstance(raw_message, bytes):
+        raise _STTProtocolError(
+            f"{provider} sent unexpected binary WebSocket frame "
+            f"({len(raw_message)} bytes)"
+        )
+    try:
+        message = json.loads(raw_message)
+    except (json.JSONDecodeError, TypeError, ValueError) as error:
+        raise _STTProtocolError(
+            f"{provider} sent non-JSON WebSocket message: {error}"
+        ) from error
+    if not isinstance(message, dict):
+        raise _STTProtocolError(
+            f"{provider} sent non-object JSON WebSocket message: "
+            f"{type(message).__name__}"
+        )
+    return message
+
+
 def _map_stt_error(exc: BaseException, timeout_s: float) -> tuple[int, str]:
     if isinstance(exc, _STTProtocolError):
         return 500, str(exc)
@@ -753,7 +805,10 @@ class _STTProviderProtocol(Protocol):
         self, chunk: bytes | memoryview, *, final: bool
     ) -> str | bytes: ...
 
-    def finish_messages(self) -> list[str | bytes]: ...
+    # Sequence, not list: list is invariant, so a provider returning
+    # list[str] would not satisfy list[str | bytes]. The caller only
+    # iterates the result, so covariance is what we actually want.
+    def finish_messages(self) -> Sequence[str | bytes]: ...
 
     def parse_message(self, msg: dict[str, Any]) -> tuple[str, str]: ...
 
@@ -807,7 +862,7 @@ class _VllmRealtimeProtocol(_OpenAIRealtimeSTTProtocol):
     ws_path = "/v1/realtime"
 
     async def open_session(self, websocket: Any, model: str) -> None:
-        msg = json.loads(await websocket.recv())
+        msg = _decode_stt_json_message(await websocket.recv(), provider=self.provider)
         if msg.get("type") != "session.created":
             raise _STTProtocolError(f"Expected session.created, got: {msg}")
         await websocket.send(json.dumps({"type": "session.update", "model": model}))
@@ -842,7 +897,7 @@ class _VajraOpenAIRealtimeProtocol(_OpenAIRealtimeSTTProtocol):
     ws_path = "/openai/v1/realtime?intent=transcription"
 
     async def open_session(self, websocket: Any, model: str) -> None:
-        msg = json.loads(await websocket.recv())
+        msg = _decode_stt_json_message(await websocket.recv(), provider=self.provider)
         if msg.get("type") != "transcription_session.created":
             raise _STTProtocolError(
                 f"Expected transcription_session.created, got: {msg}"
@@ -916,7 +971,7 @@ class _TogetherSTTProtocol(_OpenAIRealtimeSTTProtocol):
 
     async def open_session(self, websocket: Any, model: str) -> None:
         del model  # Model is selected in the WebSocket query string.
-        msg = json.loads(await websocket.recv())
+        msg = _decode_stt_json_message(await websocket.recv(), provider=self.provider)
         if msg.get("type") != "session.created":
             raise _STTProtocolError(f"Expected session.created, got: {msg}")
 
@@ -1074,7 +1129,7 @@ class _ElevenLabsSTTProtocol:
         return {"xi-api-key": self.api_key}
 
     async def open_session(self, websocket: Any, model: str) -> None:
-        msg = json.loads(await websocket.recv())
+        msg = _decode_stt_json_message(await websocket.recv(), provider=self.provider)
         if msg.get("message_type") != "session_started":
             raise _STTProtocolError(f"Expected session_started, got: {msg}")
 
@@ -1131,7 +1186,7 @@ class _MistralSTTProtocol:
 
     async def open_session(self, websocket: Any, model: str) -> None:
         del model  # Model is selected in the WebSocket query string.
-        msg = json.loads(await websocket.recv())
+        msg = _decode_stt_json_message(await websocket.recv(), provider=self.provider)
         if msg.get("type") != "session.created":
             raise _STTProtocolError(f"Expected session.created, got: {msg}")
         session: dict[str, Any] = {

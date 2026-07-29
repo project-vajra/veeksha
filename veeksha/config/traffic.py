@@ -38,6 +38,14 @@ class ConcurrentTrafficConfig(BaseTrafficConfig):
         help="Number of seconds to ramp up the traffic. i.e. 'Take 10 seconds to ramp up to the target concurrent sessions.'",
     )
 
+    def __post_init__(self) -> None:
+        if self.target_concurrent_sessions < 1:
+            raise ValueError(
+                "ConcurrentTrafficConfig.target_concurrent_sessions must be >= 1"
+            )
+        if self.rampup_seconds < 0:
+            raise ValueError("ConcurrentTrafficConfig.rampup_seconds must be >= 0")
+
     @classmethod
     def get_type(cls) -> TrafficType:
         return TrafficType.CONCURRENT

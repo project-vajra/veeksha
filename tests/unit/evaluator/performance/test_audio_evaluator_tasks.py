@@ -41,6 +41,8 @@ def _record(
     request_id: int,
     content: bytes | str,
     metrics: dict,
+    success: bool = True,
+    error_code: int | None = None,
 ) -> None:
     evaluator.register_request(
         request_id=request_id,
@@ -62,6 +64,8 @@ def _record(
                     metrics=metrics,
                 )
             },
+            success=success,
+            error_code=error_code,
             scheduler_dispatched_at=100.0,
             client_completed_at=101.0,
         ),
@@ -338,3 +342,182 @@ def test_audio_response_without_task_is_rejected() -> None:
                 AudioMetricKey.SAMPLE_RATE.value: 16000,
             },
         )
+
+
+def test_missing_ttfc_is_excluded_from_latency_aggregates() -> None:
+    """Unset TTFC must not become 0 ms in percentile sketches."""
+    evaluator = _evaluator(interactivity_enabled=False)
+
+    _record(
+        evaluator,
+        request_id=1,
+        content=b"\0" * 4800,
+        metrics={
+            "audio_task": AudioTask.TTS,
+            AudioMetricKey.TTFC.value: 100.0,
+            AudioMetricKey.END_TO_END_LATENCY.value: 250.0,
+            AudioMetricKey.CHUNK_COUNT.value: 1,
+            AudioMetricKey.RAW_PCM.value: True,
+            AudioMetricKey.SAMPLE_RATE.value: 24000,
+        },
+    )
+    _record(
+        evaluator,
+        request_id=2,
+        content=b"\0" * 4800,
+        metrics={
+            "audio_task": AudioTask.TTS,
+            AudioMetricKey.TTFC.value: None,
+            AudioMetricKey.END_TO_END_LATENCY.value: 250.0,
+            AudioMetricKey.CHUNK_COUNT.value: 1,
+            AudioMetricKey.RAW_PCM.value: True,
+            AudioMetricKey.SAMPLE_RATE.value: 24000,
+        },
+    )
+    _record(
+        evaluator,
+        request_id=3,
+        content=b"\0" * 4800,
+        metrics={
+            "audio_task": AudioTask.TTS,
+            # TTFC key omitted entirely
+            AudioMetricKey.END_TO_END_LATENCY.value: 250.0,
+            AudioMetricKey.CHUNK_COUNT.value: 1,
+            AudioMetricKey.RAW_PCM.value: True,
+            AudioMetricKey.SAMPLE_RATE.value: 24000,
+        },
+    )
+
+    assert len(evaluator.summaries[AudioMetricKey.TTFC.value]) == 1
+    assert len(evaluator.summaries[AudioMetricKey.END_TO_END_LATENCY.value]) == 3
+
+    rows = {row["request_id"]: row for row in evaluator._export_request_rows()}
+    assert rows[1][AudioMetricKey.TTFC.value] == 100.0
+    assert rows[2][AudioMetricKey.TTFC.value] is None
+    assert rows[3][AudioMetricKey.TTFC.value] is None
+
+
+def test_failed_request_is_excluded_from_every_aggregate() -> None:
+    """A 502 'stream completed without audio' must not skew any percentile.
+
+    StreamingTTSClient still attaches the AUDIO channel when a request emitted
+    text deltas before failing, so the evaluator -- not the client -- has to
+    keep those partials out of the aggregates. Excluding only TTFC would leave
+    the sketches with different denominators per metric.
+    """
+    evaluator = _evaluator(interactivity_enabled=False)
+
+    _record(
+        evaluator,
+        request_id=1,
+        content=b"\0" * 4800,
+        metrics={
+            "audio_task": AudioTask.TTS,
+            AudioMetricKey.TTFC.value: 100.0,
+            AudioMetricKey.END_TO_END_LATENCY.value: 250.0,
+            AudioMetricKey.CHUNK_COUNT.value: 1,
+            AudioMetricKey.RAW_PCM.value: True,
+            AudioMetricKey.SAMPLE_RATE.value: 24000,
+        },
+    )
+    # Failed mid-stream: text deltas were emitted, no audio ever arrived.
+    _record(
+        evaluator,
+        request_id=2,
+        content=b"",
+        metrics={
+            "audio_task": AudioTask.TTS,
+            AudioMetricKey.TTFC.value: None,
+            AudioMetricKey.END_TO_END_LATENCY.value: 30000.0,
+            AudioMetricKey.CHUNK_COUNT.value: 0,
+            AudioMetricKey.RAW_PCM.value: True,
+            AudioMetricKey.SAMPLE_RATE.value: 24000,
+            AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value: [[0.0, 5]],
+        },
+        success=False,
+        error_code=502,
+    )
+
+    for metric in (
+        AudioMetricKey.TTFC.value,
+        AudioMetricKey.END_TO_END_LATENCY.value,
+        AudioMetricKey.CHUNK_COUNT.value,
+        AudioMetricKey.RTF.value,
+        AudioMetricKey.GENERATED_AUDIO_DURATION.value,
+    ):
+        assert len(evaluator.summaries[metric]) == 1, metric
+
+    # The failing request contributed no latency, only the passing one did.
+    # DDSketch tracks sum/count exactly, so the mean is not an approximation.
+    e2e = evaluator.summaries[AudioMetricKey.END_TO_END_LATENCY.value]
+    assert e2e.sketch.avg == 250.0
+
+    rows = {row["request_id"]: row for row in evaluator._export_request_rows()}
+    assert rows[1]["success"] == 1
+    assert rows[1]["error_code"] is None
+    # The failure keeps its row so partials stay auditable.
+    assert rows[2]["success"] == 0
+    assert rows[2]["error_code"] == 502
+    assert rows[2][AudioMetricKey.TTFC.value] is None
+
+    assert evaluator.get_summary()["failed_requests_count"] == 1
+
+
+def test_all_failed_run_reports_no_latency_at_all() -> None:
+    """A run where everything failed must not summarize as 0 ms latency.
+
+    With every request excluded from the aggregates, the sketches are empty --
+    and an empty sketch that reports 0 would make a totally broken run look
+    like a flawless one.
+    """
+    evaluator = _evaluator(interactivity_enabled=False)
+
+    for request_id in (1, 2):
+        _record(
+            evaluator,
+            request_id=request_id,
+            content=b"",
+            metrics={
+                "audio_task": AudioTask.TTS,
+                AudioMetricKey.TTFC.value: None,
+                AudioMetricKey.END_TO_END_LATENCY.value: 30000.0,
+                AudioMetricKey.CHUNK_COUNT.value: 0,
+                AudioMetricKey.RAW_PCM.value: True,
+                AudioMetricKey.SAMPLE_RATE.value: 24000,
+            },
+            success=False,
+            error_code=502,
+        )
+
+    summary = evaluator.get_summary()
+
+    for metric in (
+        AudioMetricKey.TTFC.value,
+        AudioMetricKey.END_TO_END_LATENCY.value,
+        AudioMetricKey.RTF.value,
+    ):
+        assert f"{metric} (Mean)" not in summary
+        assert f"{metric} (P99)" not in summary
+
+    assert summary["failed_requests_count"] == 2
+
+
+def test_successful_run_reports_no_failure_count() -> None:
+    """failed_requests_count is omitted when nothing failed."""
+    evaluator = _evaluator(interactivity_enabled=False)
+
+    _record(
+        evaluator,
+        request_id=1,
+        content=b"\0" * 4800,
+        metrics={
+            "audio_task": AudioTask.TTS,
+            AudioMetricKey.TTFC.value: 100.0,
+            AudioMetricKey.END_TO_END_LATENCY.value: 250.0,
+            AudioMetricKey.CHUNK_COUNT.value: 1,
+            AudioMetricKey.RAW_PCM.value: True,
+            AudioMetricKey.SAMPLE_RATE.value: 24000,
+        },
+    )
+
+    assert "failed_requests_count" not in evaluator.get_summary()

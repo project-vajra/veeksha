@@ -36,6 +36,11 @@ class ConcurrentTrafficScheduler(BaseTrafficScheduler):
         self._request_to_session: Dict[int, Tuple[int, int]] = {}
         self._pending_sessions: Deque[Session] = deque()
 
+    @property
+    def target_concurrent_sessions(self) -> int:
+        """Steady-state concurrent session target (after rampup)."""
+        return self._target_concurrent
+
     def _now(self) -> float:
         return time.monotonic() - self._start_monotonic
 

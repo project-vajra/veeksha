@@ -12,11 +12,12 @@ from veeksha.client.registry import ClientRegistry
 from veeksha.client.stt import (
     _CartesiaSTTProtocol,
     _ClipAssets,
+    _decode_stt_json_message,
     _DeepgramFluxProtocol,
     _DeepgramNovaProtocol,
     _ElevenLabsSTTProtocol,
-    _MistralSTTProtocol,
     _map_stt_error,
+    _MistralSTTProtocol,
     _slice_pcm16_bytes,
     _STTProtocolError,
     _TogetherSTTProtocol,
@@ -758,3 +759,121 @@ def test_stt_request_emits_normalized_provider_metadata(tmp_path: Path) -> None:
         metrics[AudioMetricKey.PROVIDER_PROTOCOL.value] == "v1_realtime_transcription"
     )
     assert metrics[AudioMetricKey.RAW_PCM.value] is True
+    assert metrics[AudioMetricKey.TTFC.value] is not None
+    assert metrics[AudioMetricKey.TTFC.value] >= 0.0
+
+
+@pytest.mark.unit
+def test_decode_stt_json_message_rejects_binary_and_non_object() -> None:
+    with pytest.raises(_STTProtocolError, match="unexpected binary"):
+        _decode_stt_json_message(b"\x00\x01", provider="vllm")
+    with pytest.raises(_STTProtocolError, match="non-JSON"):
+        _decode_stt_json_message("not-json", provider="vllm")
+    with pytest.raises(_STTProtocolError, match="non-object"):
+        _decode_stt_json_message("[1, 2]", provider="vllm")
+    assert _decode_stt_json_message('{"type": "ok"}', provider="vllm") == {"type": "ok"}
+
+
+class _FakeVllmEmptyTranscriptWebSocket:
+    """Completes after audio with an empty final transcript (no TTFC)."""
+
+    def __init__(self) -> None:
+        self._recv_index = 0
+        self._audio_sent = asyncio.Event()
+
+    async def recv(self) -> str:
+        if self._recv_index == 0:
+            self._recv_index += 1
+            return json.dumps({"type": "session.created"})
+        await self._audio_sent.wait()
+        self._recv_index += 1
+        return json.dumps({"type": "transcription.done", "text": ""})
+
+    async def send(self, message: str | bytes) -> None:
+        if isinstance(message, str):
+            payload = json.loads(message)
+            if payload.get("type") == "input_audio_buffer.append":
+                self._audio_sent.set()
+
+
+@pytest.mark.unit
+def test_stt_request_emits_null_ttfc_when_no_content_observed(tmp_path: Path) -> None:
+    client = _vllm_realtime_client()
+    websocket = _FakeVllmEmptyTranscriptWebSocket()
+    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._clip_assets = lambda _path: _ClipAssets(  # type: ignore[method-assign]
+        pcm=b"\x00\x00",
+        wire_messages=[],
+    )
+    audio_file = tmp_path / "empty.pcm"
+    audio_file.write_bytes(b"\x00\x00")
+    request = Request(
+        id=202,
+        channels={
+            ChannelModality.AUDIO: AudioChannelRequestContent(
+                input_audio=str(audio_file)
+            )
+        },
+    )
+
+    result = asyncio.run(client.send_request(request, session_id=1))
+
+    assert result.success
+    metrics = result.channels[ChannelModality.AUDIO].metrics
+    assert metrics[AudioMetricKey.TTFC.value] is None
+    assert metrics["final_transcript"] == ""
+
+
+class _FakeHandshakeGarbageWebSocket:
+    """Answers the session handshake with a non-JSON frame."""
+
+    def __init__(self, first_frame: str | bytes) -> None:
+        self._first_frame = first_frame
+
+    async def recv(self) -> str | bytes:
+        return self._first_frame
+
+    async def send(self, message: str | bytes) -> None:
+        return None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("first_frame", "expected_error"),
+    [
+        # A proxy or wrong api_base answering the upgrade with an error page.
+        ("<html>502 Bad Gateway</html>", "non-JSON"),
+        # Valid JSON that is not an object: `.get` would raise AttributeError.
+        ("[1, 2]", "non-object"),
+        (b"\x00\x01\x02", "unexpected binary"),
+    ],
+)
+def test_stt_handshake_garbage_fails_request_with_protocol_error(
+    tmp_path: Path, first_frame: str | bytes, expected_error: str
+) -> None:
+    """A malformed first frame is a named protocol error, not an opaque 520."""
+    client = _vllm_realtime_client()
+    websocket = _FakeHandshakeGarbageWebSocket(first_frame)
+    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._clip_assets = lambda _path: _ClipAssets(  # type: ignore[method-assign]
+        pcm=b"\x00\x00",
+        wire_messages=[],
+    )
+    audio_file = tmp_path / "clip.pcm"
+    audio_file.write_bytes(b"\x00\x00")
+    request = Request(
+        id=203,
+        channels={
+            ChannelModality.AUDIO: AudioChannelRequestContent(
+                input_audio=str(audio_file)
+            )
+        },
+    )
+
+    result = asyncio.run(client.send_request(request, session_id=1))
+
+    assert result.success is False
+    assert result.error_code == 500
+    assert expected_error in result.error_msg
+    assert "vllm" in result.error_msg
+    assert ChannelModality.AUDIO not in result.channels

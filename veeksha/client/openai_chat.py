@@ -514,7 +514,9 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
                 content=audio_bytes,
                 metrics={
                     "audio_task": AudioTask.LLM_AUDIO,
-                    AudioMetricKey.TTFC.value: round(audio_ttfc or 0.0, 3),
+                    AudioMetricKey.TTFC.value: (
+                        round(audio_ttfc, 3) if audio_ttfc is not None else None
+                    ),
                     AudioMetricKey.END_TO_END_LATENCY.value: round(total_latency_ms, 3),
                     AudioMetricKey.CHUNK_COUNT.value: audio_chunk_count,
                     AudioMetricKey.RAW_PCM.value: True,

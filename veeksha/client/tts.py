@@ -432,7 +432,9 @@ class TTSClient(BaseLLMClient):
                     AudioMetricKey.PROVIDER_PROTOCOL.value: (
                         self._protocol.protocol_name
                     ),
-                    AudioMetricKey.TTFC.value: round(ttfc or 0.0, 3),
+                    AudioMetricKey.TTFC.value: (
+                        round(ttfc, 3) if ttfc is not None else None
+                    ),
                     AudioMetricKey.END_TO_END_LATENCY.value: rounded_latency,
                     AudioMetricKey.CHUNK_COUNT.value: len(audio_chunks),
                     AudioMetricKey.RAW_PCM.value: self._protocol.raw_pcm,
