@@ -145,6 +145,48 @@ SLO results are saved to ``metrics/slo_results.json``:
     }
 
 
+Generated-audio integrity
+-------------------------
+
+Audio performance evaluation validates every generated TTS or LLM-audio
+response at the serialized mono PCM16 boundary. Raw PCM responses use the
+configured sample rate. WAV responses must be uncompressed, mono, 16-bit PCM;
+their sample rate and payload length come from the WAV header. Malformed and
+odd-length payloads fail evaluation even when integrity gating is disabled.
+
+When ``audio_integrity_enabled`` is true, Veeksha records these request-level
+metrics:
+
+- ``pcm_sample_count``
+- ``peak_abs_amplitude``, normalized by the PCM16 range
+- ``rms``, normalized by the PCM16 range
+- ``clipped_sample_fraction``, the fraction exactly on either int16 rail
+- ``audio_suspect``, set when the payload is empty or a threshold is violated
+
+PCM16 cannot represent NaN or infinity. Non-finite values must be rejected
+before serialization rather than reported as a PCM16 output metric.
+
+The default thresholds can be overridden on the audio performance channel:
+
+.. code-block:: yaml
+
+    evaluators:
+      - type: performance
+        target_channels: [audio]
+        audio_channel:
+          audio_integrity_enabled: true
+          audio_integrity_min_peak_abs_amplitude: 0.0001
+          audio_integrity_max_clipped_sample_fraction: 0.001
+          audio_integrity_min_rms: 0.0001
+          audio_integrity_max_rms: 0.5
+
+Only successful, non-aborted generated-audio requests affect the aggregate
+gate. Failed and aborted requests retain their measurements for diagnosis but
+do not make the run suspect. Aggregate output includes ``audio_suspect``,
+``audio_integrity_requests_count``, ``audio_suspect_requests_count``, and
+``audio_suspect_requests_fraction``.
+
+
 Output files
 ------------
 

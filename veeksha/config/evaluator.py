@@ -162,6 +162,26 @@ class AudioChannelPerformanceConfig(BaseChannelPerformanceConfig):
         "truncates silently at the cap, so duration-at-cap is the only "
         "client-visible signal.",
     )
+    audio_integrity_enabled: bool = field(
+        True,
+        help="Measure generated PCM16 signal integrity and report audio_suspect.",
+    )
+    audio_integrity_min_peak_abs_amplitude: float = field(
+        0.0001,
+        help="Minimum normalized absolute peak for non-empty generated audio.",
+    )
+    audio_integrity_max_clipped_sample_fraction: float = field(
+        0.001,
+        help="Maximum fraction of samples allowed exactly on either int16 rail.",
+    )
+    audio_integrity_min_rms: float = field(
+        0.0001,
+        help="Minimum normalized RMS for non-empty generated audio.",
+    )
+    audio_integrity_max_rms: float = field(
+        0.5,
+        help="Maximum normalized RMS for generated audio.",
+    )
 
     @classmethod
     def get_type(cls) -> ChannelModality:
@@ -180,6 +200,20 @@ class AudioChannelPerformanceConfig(BaseChannelPerformanceConfig):
             raise ValueError("min_reportable_stall_ms must be >= 0")
         if self.max_expected_audio_ms is not None and self.max_expected_audio_ms <= 0:
             raise ValueError("max_expected_audio_ms must be > 0 or None")
+        if not 0 <= self.audio_integrity_min_peak_abs_amplitude <= 1:
+            raise ValueError("audio_integrity_min_peak_abs_amplitude must be in [0, 1]")
+        if not 0 <= self.audio_integrity_max_clipped_sample_fraction <= 1:
+            raise ValueError(
+                "audio_integrity_max_clipped_sample_fraction must be in [0, 1]"
+            )
+        if not 0 <= self.audio_integrity_min_rms <= 1:
+            raise ValueError("audio_integrity_min_rms must be in [0, 1]")
+        if not 0 < self.audio_integrity_max_rms <= 1:
+            raise ValueError("audio_integrity_max_rms must be in (0, 1]")
+        if self.audio_integrity_min_rms > self.audio_integrity_max_rms:
+            raise ValueError(
+                "audio_integrity_min_rms must be <= audio_integrity_max_rms"
+            )
         if self.fluidity_frame_ms <= 0:
             raise ValueError("fluidity_frame_ms must be > 0")
         if self.fluidity_startup_delay_ms < 0:

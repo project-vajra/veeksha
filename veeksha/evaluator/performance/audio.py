@@ -13,8 +13,10 @@ from veeksha.config.evaluator import (
 )
 from veeksha.core.audio_contract import (
     DEFAULT_AUDIO_SAMPLE_RATE,
-    WAV_HEADER_BYTES,
+    AudioIntegrityMetrics,
     AudioMetricKey,
+    decode_pcm16_audio,
+    measure_pcm16_audio,
     pcm_bytes_to_duration_ms,
 )
 from veeksha.evaluator.base import EvaluationResult
@@ -41,12 +43,6 @@ logger = init_logger(__name__)
 LENGTH_CAP_CHUNK_MS = 320.0
 
 
-def _pcm_byte_count(total_bytes: int, *, raw_pcm: bool) -> int:
-    if raw_pcm:
-        return total_bytes
-    return max(total_bytes - WAV_HEADER_BYTES, 0)
-
-
 def _policy_tag(value: float) -> str:
     if float(value).is_integer():
         return str(int(value))
@@ -71,6 +67,11 @@ class AudioRequestMetrics:
     audio_task: AudioTask | None = None
     asr: ASRRequestMetrics | None = None
     input_tokens: int = 0
+    pcm_sample_count: int | None = None
+    peak_abs_amplitude: float | None = None
+    clipped_sample_fraction: float | None = None
+    rms: float | None = None
+    audio_suspect: bool = False
     input_text: str = ""
     text_pacing_unit: str = ""
     text_pacing_rate: float | None = None
@@ -160,6 +161,8 @@ class AudioPerformanceEvaluator:
         self._suspected_truncation_count = 0
         self._aborted_count = 0
         self._failed_count = 0
+        self._audio_integrity_request_count = 0
+        self._audio_suspect_count = 0
 
     def register_request(
         self,
@@ -246,22 +249,31 @@ class AudioPerformanceEvaluator:
                 f"audio_task={raw_audio_task!r}; expected one of: {expected}"
             ) from error
 
+        integrity_metrics: AudioIntegrityMetrics | None = None
+        is_integrity_eligible = False
+        audio_suspect = False
         if audio_task is AudioTask.STT:
             if AudioMetricKey.PCM_BYTE_COUNT.value not in cm:
                 raise ValueError(
                     f"STT response for request {request_id} is missing "
                     f"{AudioMetricKey.PCM_BYTE_COUNT.value}"
                 )
-            total_bytes = int(cm[AudioMetricKey.PCM_BYTE_COUNT.value])
+            pcm_byte_count = int(cm[AudioMetricKey.PCM_BYTE_COUNT.value])
         else:
-            audio_content = channel_response.content
-            total_bytes = (
-                len(audio_content)
-                if isinstance(audio_content, (bytes, bytearray, memoryview))
-                else 0
+            decoded_audio = decode_pcm16_audio(
+                channel_response.content,
+                raw_pcm=raw_pcm,
+                sample_rate=sample_rate,
             )
+            sample_rate = decoded_audio.sample_rate
+            pcm_byte_count = int(decoded_audio.samples.nbytes)
+            if self.channel_config.audio_integrity_enabled:
+                integrity_metrics = measure_pcm16_audio(decoded_audio)
+                is_integrity_eligible = success and not aborted
+                audio_suspect = is_integrity_eligible and self._is_audio_suspect(
+                    integrity_metrics
+                )
 
-        pcm_byte_count = _pcm_byte_count(total_bytes, raw_pcm=raw_pcm)
         generated_audio_duration = pcm_bytes_to_duration_ms(pcm_byte_count, sample_rate)
         rtf = (
             end_to_end_latency / generated_audio_duration
@@ -361,6 +373,19 @@ class AudioPerformanceEvaluator:
                 input_chars=input_chars,
                 input_tokens=input_tokens,
                 audio_task=audio_task,
+                pcm_sample_count=(
+                    integrity_metrics.sample_count if integrity_metrics else None
+                ),
+                peak_abs_amplitude=(
+                    integrity_metrics.peak_abs_amplitude if integrity_metrics else None
+                ),
+                clipped_sample_fraction=(
+                    integrity_metrics.clipped_sample_fraction
+                    if integrity_metrics
+                    else None
+                ),
+                rms=integrity_metrics.rms if integrity_metrics else None,
+                audio_suspect=audio_suspect,
                 asr=asr_metrics,
                 input_text=input_text,
                 text_pacing_unit=text_pacing_unit,
@@ -385,6 +410,10 @@ class AudioPerformanceEvaluator:
                 self._failed_count += 1
             if suspected_length_cap_truncation:
                 self._suspected_truncation_count += 1
+            if integrity_metrics is not None and is_integrity_eligible:
+                self._audio_integrity_request_count += 1
+                if audio_suspect:
+                    self._audio_suspect_count += 1
 
             if (
                 self._first_dispatch_at is None
@@ -452,6 +481,18 @@ class AudioPerformanceEvaluator:
 
             if interactivity is not None and success:
                 self._record_interactivity(metrics)
+
+    def _is_audio_suspect(self, metrics: AudioIntegrityMetrics) -> bool:
+        if metrics.sample_count == 0:
+            return True
+        return (
+            metrics.peak_abs_amplitude
+            < self.channel_config.audio_integrity_min_peak_abs_amplitude
+            or metrics.clipped_sample_fraction
+            > self.channel_config.audio_integrity_max_clipped_sample_fraction
+            or metrics.rms < self.channel_config.audio_integrity_min_rms
+            or metrics.rms > self.channel_config.audio_integrity_max_rms
+        )
 
     def _ensure_interactivity_sketches(self) -> None:
         if self._interactivity_sketches_ready:
@@ -651,6 +692,20 @@ class AudioPerformanceEvaluator:
                 self._suspected_truncation_count
             )
 
+        if self.channel_config.audio_integrity_enabled:
+            perf_summary[AudioMetricKey.AUDIO_SUSPECT.value] = (
+                self._audio_suspect_count > 0
+            )
+            perf_summary["audio_integrity_requests_count"] = (
+                self._audio_integrity_request_count
+            )
+            perf_summary["audio_suspect_requests_count"] = self._audio_suspect_count
+            perf_summary["audio_suspect_requests_fraction"] = (
+                self._audio_suspect_count / self._audio_integrity_request_count
+                if self._audio_integrity_request_count > 0
+                else 0.0
+            )
+
         if self._aborted_count > 0:
             perf_summary["aborted_requests_count"] = self._aborted_count
 
@@ -801,6 +856,20 @@ class AudioPerformanceEvaluator:
                 row[AudioMetricKey.TEXT_PACING_UNIT.value] = metrics.text_pacing_unit
             if metrics.text_pacing_rate is not None:
                 row[AudioMetricKey.TEXT_PACING_RATE.value] = metrics.text_pacing_rate
+            if metrics.pcm_sample_count is not None:
+                row.update(
+                    {
+                        AudioMetricKey.PCM_SAMPLE_COUNT.value: metrics.pcm_sample_count,
+                        AudioMetricKey.PEAK_ABS_AMPLITUDE.value: round(
+                            metrics.peak_abs_amplitude or 0.0, 8
+                        ),
+                        AudioMetricKey.CLIPPED_SAMPLE_FRACTION.value: round(
+                            metrics.clipped_sample_fraction or 0.0, 8
+                        ),
+                        AudioMetricKey.RMS.value: round(metrics.rms or 0.0, 8),
+                        AudioMetricKey.AUDIO_SUSPECT.value: int(metrics.audio_suspect),
+                    }
+                )
             if self.channel_config.max_expected_audio_ms is not None:
                 row["suspected_length_cap_truncation"] = int(
                     metrics.suspected_length_cap_truncation
