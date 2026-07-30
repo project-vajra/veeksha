@@ -9,6 +9,7 @@ via attribute access) plus the server's ground-truth records.
 from __future__ import annotations
 
 import math
+import statistics
 from typing import Dict, Iterable, List, Mapping, Optional
 
 from veeksha.preflight.models import MetricSummary, ScoreReport, ServerRequestRecord
@@ -51,13 +52,14 @@ def summarize(name: str, values: Iterable[float]) -> MetricSummary:
     xs = [v for v in values if not math.isnan(v)]
     if not xs:
         nan = float("nan")
-        return MetricSummary(name, 0, nan, nan, nan, nan, nan)
+        return MetricSummary(name, 0, nan, nan, nan, nan, nan, nan)
     return MetricSummary(
         name=name,
         count=len(xs),
         p50=percentile(xs, 50),
         p99=percentile(xs, 99),
         mean=sum(xs) / len(xs),
+        stdev=statistics.pstdev(xs) if len(xs) > 1 else 0.0,
         minimum=min(xs),
         maximum=max(xs),
     )
