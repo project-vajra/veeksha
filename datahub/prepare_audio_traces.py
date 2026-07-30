@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
-"""Build portable ASR traces from public datasets.
+"""Build portable ASR trace pools from public datasets.
+
+Each build produces one source-pure pool at traces/asr/<dataset> (or
+--output-name for derived builds). Compose pools into benchmark sets with
+`trace_hub.py mix`.
 
 Examples:
-  .venv/bin/python scripts/prepare_audio_traces.py --clips-per-dataset 128
+  .venv/bin/python datahub/prepare_audio_traces.py \
+    --datasets aa_voxpopuli --clips-per-dataset 0
 
-  .venv/bin/python scripts/prepare_audio_traces.py \
-    --datasets aa_voxpopuli,aa_earnings22 \
-    --clips-per-dataset 128 \
-    --max-duration 30
+  .venv/bin/python datahub/prepare_audio_traces.py \
+    --datasets aa_earnings22 --clips-per-dataset 128 --max-duration 30
 
-  .venv/bin/python scripts/prepare_audio_traces.py \
-    --clips-per-dataset 128 \
-    --without-word-timestamping
+  .venv/bin/python datahub/prepare_audio_traces.py \
+    --datasets ami_word_timed --clips-per-dataset 0
 
-  .venv/bin/python scripts/prepare_audio_traces.py \
-    --datasets ami_word_timed \
-    --clips-per-dataset 128
+  .venv/bin/python datahub/prepare_audio_traces.py \
+    --datasets aa_voxpopuli --target-duration 300 --clips-per-dataset 0 \
+    --output-name aa_voxpopuli_tiled_5min
 """
 
 from __future__ import annotations
@@ -50,9 +52,7 @@ from huggingface_hub import hf_hub_download
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TRACES_ROOT = REPO_ROOT / "traces"
-AA_TRACE_OUTPUT_DIR = TRACES_ROOT / "asr" / "aa_public"
-AMI_TRACE_OUTPUT_DIR = TRACES_ROOT / "asr" / "ami_word_timed"
-DEFAULT_DATASETS = "aa_voxpopuli,aa_earnings22"
+DEFAULT_DATASETS = "aa_voxpopuli"
 MANIFEST_NAME = "manifest.jsonl"
 BUILD_INFO_NAME = "build_info.json"
 
@@ -189,10 +189,23 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip NeMo word timestamping.",
     )
+    parser.add_argument(
+        "--output-name",
+        default="",
+        help=(
+            "Write the trace to traces/asr/<output-name> instead of the "
+            "default directory. Use for derived datasets (e.g. "
+            "aa_longform_5min built with --target-duration 300) so they "
+            "do not clobber the base build."
+        ),
+    )
     args = parser.parse_args()
     if args.target_duration is None and args.max_duration is None:
         args.max_duration = DEFAULT_MAX_DURATION_S
     return args
+
+
+OUTPUT_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
 def validate_args(args: argparse.Namespace) -> list[str]:
@@ -204,8 +217,10 @@ def validate_args(args: argparse.Namespace) -> list[str]:
         raise SystemExit("--target-duration must be positive when set")
     if args.target_duration is not None and args.without_word_timestamping:
         raise SystemExit("--target-duration requires word timestamping")
+    if args.output_name and not OUTPUT_NAME_RE.fullmatch(args.output_name):
+        raise SystemExit(f"Invalid --output-name {args.output_name!r}")
     dataset_keys = selected_dataset_keys(args.datasets)
-    output_dir_for_dataset_keys(dataset_keys)
+    output_dir_for_dataset_keys(dataset_keys, args.output_name)
     return dataset_keys
 
 
@@ -475,16 +490,23 @@ def selected_dataset_keys(raw_datasets: str) -> list[str]:
     return keys
 
 
-def output_dir_for_dataset_keys(dataset_keys: Sequence[str]) -> Path:
-    key_set = set(dataset_keys)
-    if key_set == {AMI_DATASET_KEY}:
-        return AMI_TRACE_OUTPUT_DIR
-    if key_set.issubset(AA_DATASET_KEYS):
-        return AA_TRACE_OUTPUT_DIR
+def output_dir_for_dataset_keys(
+    dataset_keys: Sequence[str], output_name: str = ""
+) -> Path:
+    if output_name:
+        # Derived/custom builds get their own directory, so they never
+        # clobber the base traces and can be published as sibling datasets.
+        return TRACES_ROOT / "asr" / output_name
+
+    if len(dataset_keys) == 1:
+        # Pools are source-pure: each upstream dataset gets its own
+        # directory, named after it. Mixtures are composed afterwards with
+        # `trace_hub.py mix`, not baked at build time.
+        return TRACES_ROOT / "asr" / dataset_keys[0]
     raise SystemExit(
-        "Run AMI separately from Artificial Analysis datasets: "
-        f"{AMI_DATASET_KEY} writes to {AMI_TRACE_OUTPUT_DIR}, while "
-        f"{', '.join(sorted(AA_DATASET_KEYS))} write to {AA_TRACE_OUTPUT_DIR}."
+        "Building multiple datasets into one directory mixes sources; run "
+        "one build per dataset so pools stay source-pure (compose them with "
+        "`trace_hub.py mix`), or pass --output-name explicitly."
     )
 
 
@@ -1229,7 +1251,7 @@ def main() -> None:
     args = parse_args()
     dataset_keys = validate_args(args)
 
-    output_dir = output_dir_for_dataset_keys(dataset_keys)
+    output_dir = output_dir_for_dataset_keys(dataset_keys, args.output_name)
     audio_root = output_dir / "audio"
     manifest_path = output_dir / MANIFEST_NAME
     output_dir.mkdir(parents=True, exist_ok=True)

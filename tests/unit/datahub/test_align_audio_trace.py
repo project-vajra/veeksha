@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from scripts.prepare_audio_traces import (
+from datahub.prepare_audio_traces import (
     NEMO_MODEL,
     NeMoDockerAligner,
     NemoItem,

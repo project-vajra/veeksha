@@ -51,17 +51,38 @@ Hosted API adapters use the same client and evaluator:
    uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_cartesia.yml
    uvx -p 3.14t veeksha benchmark --config veeksha/sample_configs/stt_together_nemotron_3_80ms.yml
 
-Trace generation
-----------------
+Trace datasets
+--------------
 
-Generate the public ASR trace with:
+The recommended path is fetching the published, versioned traces from the
+Hugging Face Hub instead of rebuilding them — rebuilds are not exactly
+reproducible (upstream revisions drift, fetch failures shift clip
+selection, forced alignment jitters across GPUs):
 
 .. code-block:: console
 
-   .venv/bin/python scripts/prepare_audio_traces.py --clips-per-dataset 128
+   .venv/bin/python datahub/trace_hub.py fetch --datasets stt/aa_bench100 --revision v0.1
 
-This writes ``traces/asr/aa_public/manifest.jsonl`` plus WAV files under
-``traces/asr/aa_public/audio/``.
+This downloads the ``aa_bench100`` benchmark mixture plus the pools it
+references (``aa_voxpopuli``, ``aa_earnings22``) into ``traces/asr/`` — the
+layout the sample configs expect. Point ``trace_file`` at
+``traces/asr/aa_bench100/manifest.jsonl`` (the default in the ``stt_*.yml``
+sample configs) or at a pool's ``manifest.jsonl`` for the full corpus.
+
+Trace generation
+----------------
+
+To rebuild a pool from upstream sources (each build produces one
+source-pure pool at ``traces/asr/<dataset>``):
+
+.. code-block:: console
+
+   .venv/bin/python datahub/prepare_audio_traces.py \
+     --datasets aa_voxpopuli --clips-per-dataset 128
+
+This writes ``traces/asr/aa_voxpopuli/manifest.jsonl`` plus WAV files under
+``traces/asr/aa_voxpopuli/audio/``. Compose pools into benchmark sets with
+``datahub/trace_hub.py mix`` (see ``datahub/README.md``).
 
 ``--max-duration`` controls final clip length and defaults to 30 seconds. For
 timestamped clips, longer source files are split on word boundaries. With
@@ -69,7 +90,7 @@ timestamped clips, longer source files are split on word boundaries. With
 
 .. code-block:: console
 
-   .venv/bin/python scripts/prepare_audio_traces.py \
+   .venv/bin/python datahub/prepare_audio_traces.py \
      --clips-per-dataset 128 \
      --max-duration 30
 
@@ -81,7 +102,7 @@ exclusive.
 
 .. code-block:: console
 
-   .venv/bin/python scripts/prepare_audio_traces.py \
+   .venv/bin/python datahub/prepare_audio_traces.py \
      --clips-per-dataset 128 \
      --target-duration 600
 
@@ -90,7 +111,7 @@ default with NeMo forced alignment in Docker. To skip word timestamping:
 
 .. code-block:: console
 
-   .venv/bin/python scripts/prepare_audio_traces.py \
+   .venv/bin/python datahub/prepare_audio_traces.py \
      --clips-per-dataset 128 \
      --without-word-timestamping
 
@@ -100,11 +121,17 @@ the AMI manual word annotations and Mix-Headset WAVs under
 
 .. code-block:: console
 
-   .venv/bin/python scripts/prepare_audio_traces.py \
+   .venv/bin/python datahub/prepare_audio_traces.py \
      --datasets ami_word_timed
 
 This writes ``traces/asr/ami_word_timed/manifest.jsonl`` plus WAV files under
-``traces/asr/ami_word_timed/audio/``.
+``traces/asr/ami_word_timed/audio/`` — the full corpus, 68,291 clips over
+roughly 97 hours and 12 GB. The published Hub dataset is
+``stt/ami_word_timed_2k``, a seeded 2,000-clip sample of that build spanning
+all 171 meetings; fetch it instead unless you specifically need the whole
+corpus. Derive your own slice with ``datahub/trace_hub.py subset`` rather than
+``--clips-per-dataset``, which truncates in iteration order and would draw
+every clip from the first few meetings.
 
 The trace uses the public Artificial Analysis cleaned datasets, VoxPopuli and
 Earnings22, as a recognizable external point of reference. Earnings22 examples
