@@ -6,6 +6,7 @@ import math
 import os
 from typing import List
 
+from veeksha.config.preflight import PreflightCheckConfig
 from veeksha.preflight.models import ScoreReport
 from veeksha.preflight.validator import ValidationResult
 
@@ -29,9 +30,23 @@ def _table(rows: List[List[str]], headers: List[str]) -> str:
     return "\n".join(out)
 
 
+def _config_rows(config: PreflightCheckConfig, check_config) -> List[List[str]]:
+    """Flatten the load level and workload/mock timings into name/value rows."""
+    rows = [
+        ["concurrency", str(config.concurrency)],
+        ["num_sessions", str(config.num_sessions)],
+    ]
+    for name, value in vars(check_config).items():
+        if not name.startswith("_"):
+            rows.append([name, str(value)])
+    return rows
+
+
 def render_report(
     score_report: ScoreReport,
     validation: ValidationResult,
+    config: PreflightCheckConfig,
+    check_config,
     *,
     title: str = "Preflight measurement-fidelity check",
 ) -> str:
@@ -46,6 +61,9 @@ def render_report(
         f"paired: {score_report.n_paired_requests}  "
         f"unpaired: {score_report.unpaired_fraction:.3%}"
     )
+    lines.append("")
+    lines.append("Configuration:")
+    lines.append(_table(_config_rows(config, check_config), ["setting", "value"]))
     lines.append("")
 
     # --- gates ---
