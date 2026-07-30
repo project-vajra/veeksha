@@ -1,14 +1,15 @@
-"""Deterministic OpenAI-realtime TTS mock (WebSocket) for preflight validation.
+"""Deterministic streaming-TTS mock speaking the OpenAI-realtime WS protocol.
 
-Handshake -> drain the client's text input until ``response.create`` -> emit
-``num_chunks`` base64 PCM ``response.output_audio.delta`` events on absolute
-deadlines (ttfc first-chunk, tpoc inter-chunk) anchored at connection accept
-(t_sr) -> terminal ``response.done``. Emit times (t_ss_i) go in the record book;
-nothing timing-related crosses the wire.
+Drives ``StreamingTTSClient(provider="openai_realtime")``: handshake -> drain
+the client's text input until ``response.create`` -> emit ``num_chunks`` base64
+PCM ``response.output_audio.delta`` events on absolute deadlines (ttfc
+first-chunk, tpoc inter-chunk) anchored at response start -> terminal
+``response.done``. Emit times go in the record book; nothing timing-
+related crosses the wire.
 
 Run standalone::
 
-    python -m veeksha.preflight.servers.mock_realtime_tts_server \
+    python -m veeksha.preflight.servers.mock_streaming_tts_openai_server \
         --host 127.0.0.1 --port 8130 --ttfc-ms 120 --tpoc-ms 10 --num-chunks 48
 """
 
@@ -26,7 +27,7 @@ from veeksha.preflight.servers.base_ws_mock import BaseWSMockServer
 _PCM_CHUNK = base64.b64encode(b"\x00" * 640).decode("ascii")  # ~20ms @16k mono
 
 
-class MockRealtimeTTSServer(BaseWSMockServer):
+class MockStreamingTTSOpenAIServer(BaseWSMockServer):
     def __init__(
         self,
         host: str,
@@ -56,7 +57,7 @@ class MockRealtimeTTSServer(BaseWSMockServer):
         )
 
         # drain client input until it asks for a response, recording per-segment
-        # receipt (t_sr_i) for each text item.
+        # receipt for each text item.
         async for raw in connection:
             recv_time = time.monotonic()
             try:
@@ -79,7 +80,7 @@ class MockRealtimeTTSServer(BaseWSMockServer):
             slack = deadline - time.monotonic()
             if slack > 0:
                 await asyncio.sleep(slack)
-            record.server_send_times.append(time.monotonic())  # t_ss_i
+            record.server_send_times.append(time.monotonic())
             await connection.send(
                 json.dumps({"type": "response.output_audio.delta", "delta": _PCM_CHUNK})
             )
@@ -91,7 +92,9 @@ class MockRealtimeTTSServer(BaseWSMockServer):
 
 
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Preflight mock realtime TTS server")
+    p = argparse.ArgumentParser(
+        description="Preflight mock streaming-TTS server (OpenAI realtime protocol)"
+    )
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, required=True)
     p.add_argument("--ttfc-ms", type=float, default=120.0)
@@ -103,9 +106,10 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[List[str]] = None) -> None:
     args = _parse_args(argv)
     print(
-        f"[mock_realtime_tts_server] listening on {args.host}:{args.port}", flush=True
+        f"[mock_streaming_tts_openai_server] listening on {args.host}:{args.port}",
+        flush=True,
     )
-    server = MockRealtimeTTSServer(
+    server = MockStreamingTTSOpenAIServer(
         host=args.host,
         port=args.port,
         ttfc_ms=args.ttfc_ms,

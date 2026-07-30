@@ -732,7 +732,7 @@ class StreamingTTSClient(BaseLLMClient):
         preflight_enabled = getattr(self.config, "record_preflight_timing", False)
         client_sent_at: float | None = start if preflight_enabled else None
         chunk_recv_times: list[float] = []
-        input_send_times: list[float] = []  # t_cs_i, per paced text segment
+        input_send_times: list[float] = []  # per paced text segment
         input_send_deadlines: list[float] = []  # intended send instant per segment
         extra_headers = (
             {"X-Veeksha-Request-Id": str(request.id)} if preflight_enabled else None
@@ -767,7 +767,7 @@ class StreamingTTSClient(BaseLLMClient):
 
                 await websocket.send(protocol.text_message(segment.text))
                 if preflight_enabled:
-                    # t_cs_i (actual send) vs deadline (intended) -> pacing error.
+                    # Actual send vs intended deadline -> pacing error.
                     input_send_times.append(time.monotonic())
                     input_send_deadlines.append(deadline)
                 text_delta_timestamps.append([offset_ms, segment.n_chars])
@@ -808,7 +808,7 @@ class StreamingTTSClient(BaseLLMClient):
             received_audio_ms = 0.0
             while True:
                 raw = await websocket.recv()
-                # Stamp receipt (t_cr_i) before any parse/decode work.
+                # Stamp receipt before any parse/decode work.
                 recv_time = time.monotonic()
                 wire_offset_ms = (recv_time - start) * 1000
                 event = protocol.parse(raw)

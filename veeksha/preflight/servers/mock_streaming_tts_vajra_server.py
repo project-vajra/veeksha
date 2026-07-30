@@ -1,14 +1,18 @@
-"""Deterministic Vajra TTS-stream mock (WebSocket, binary PCM) for preflight.
+"""Deterministic streaming-TTS mock speaking Vajra's native WS protocol.
 
-Drains the client's ``input.text`` segments (recording per-segment receipt,
-t_sr_i) until ``input.done``, then emits ``num_chunks`` raw int16-PCM binary
-frames on absolute deadlines (ttfc first-frame, tpoc inter-frame) anchored at
-response start. Emit times (t_ss_i) go in the record book; nothing timing-
-related crosses the wire.
+Drives ``StreamingTTSClient(provider="vajra")``: drains the client's
+``input.text`` segments (recording per-segment receipt) until
+``input.done``, then emits ``num_chunks`` raw int16-PCM *binary* frames on
+absolute deadlines (ttfc first-frame, tpoc inter-frame) anchored at response
+start. Emit times go in the record book; nothing timing-related
+crosses the wire.
+
+Binary frames (rather than base64-in-JSON) mean this variant also exercises the
+client's binary receive path.
 
 Run standalone::
 
-    python -m veeksha.preflight.servers.mock_vajra_tts_server \
+    python -m veeksha.preflight.servers.mock_streaming_tts_vajra_server \
         --host 127.0.0.1 --port 8131 --ttfc-ms 120 --tpoc-ms 10 --num-chunks 48
 """
 
@@ -23,7 +27,7 @@ from typing import List, Optional
 from veeksha.preflight.servers.base_ws_mock import BaseWSMockServer
 
 
-class MockVajraTTSServer(BaseWSMockServer):
+class MockStreamingTTSVajraServer(BaseWSMockServer):
     def __init__(
         self,
         host: str,
@@ -69,7 +73,7 @@ class MockVajraTTSServer(BaseWSMockServer):
             slack = deadline - time.monotonic()
             if slack > 0:
                 await asyncio.sleep(slack)
-            record.server_send_times.append(time.monotonic())  # t_ss_i
+            record.server_send_times.append(time.monotonic())
             await connection.send(self._frame)  # binary PCM frame
 
         await connection.send(json.dumps({"type": "audio.done", "error": False}))
@@ -77,7 +81,9 @@ class MockVajraTTSServer(BaseWSMockServer):
 
 
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Preflight mock Vajra TTS stream server")
+    p = argparse.ArgumentParser(
+        description="Preflight mock streaming-TTS server (Vajra native protocol)"
+    )
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, required=True)
     p.add_argument("--ttfc-ms", type=float, default=120.0)
@@ -88,8 +94,11 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[List[str]] = None) -> None:
     args = _parse_args(argv)
-    print(f"[mock_vajra_tts_server] listening on {args.host}:{args.port}", flush=True)
-    server = MockVajraTTSServer(
+    print(
+        f"[mock_streaming_tts_vajra_server] listening on {args.host}:{args.port}",
+        flush=True,
+    )
+    server = MockStreamingTTSVajraServer(
         host=args.host,
         port=args.port,
         ttfc_ms=args.ttfc_ms,

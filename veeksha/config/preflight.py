@@ -6,18 +6,33 @@ against a deterministic mock server and gates the p99 timing drift (request /
 response delivery, server pacing fidelity, dispatch drift) against thresholds.
 
 Workload/timing is grouped by client category -- ``text`` (chat, completions),
-``tts`` (tts, realtime_tts, vajra_tts_stream), and ``stt`` -- because the
-response shape differs (token stream vs audio chunks vs transcript deltas).
+``tts`` (tts, streaming_tts), and ``stt`` -- because the response shape differs
+(token stream vs audio chunks vs transcript deltas). The streaming-TTS check
+runs once per wire protocol the client supports, since each protocol has its own
+framing (base64-in-JSON vs binary) and response-trigger rules.
 
 Traffic is closed-loop concurrency: ``concurrency`` sessions in flight out of
 ``num_sessions`` total, built with ``rampup_seconds=0`` so measurement runs at
 steady state.
 """
 
+from typing import List, Tuple
+
 from vidhi import field, frozen_dataclass
 
 from veeksha.cli.base import VeekshaCommand
 from veeksha.config.traffic import BaseTrafficConfig, ConcurrentTrafficConfig
+
+# Every check preflight can run, in execution order. These double as the report
+# subdirectory names, so they are the identifiers users select by.
+PREFLIGHT_CHECKS: Tuple[str, ...] = (
+    "chat",
+    "completions",
+    "tts",
+    "streaming_tts_openai",
+    "streaming_tts_vajra",
+    "stt",
+)
 
 
 @frozen_dataclass
@@ -39,18 +54,18 @@ class PreflightTextCheckConfig:
 
 @frozen_dataclass
 class PreflightTtsCheckConfig:
-    """Workload + mock timing for the TTS checks (tts, realtime_tts, vajra).
+    """Workload + mock timing for the TTS checks (tts, streaming_tts).
 
     Input is a text prompt (streamed in paced segments for the WebSocket
-    clients); the mock streams an audio-chunk response.
+    client); the mock streams an audio-chunk response.
     """
 
     input_tokens: int = field(100, help="Prompt length in tokens.")
     input_chunk_tokens: int = field(
-        4, help="Tokens per streamed input message (realtime_tts / vajra)."
+        4, help="Tokens per streamed input message (streaming_tts)."
     )
     input_pacing_tps: float = field(
-        50.0, help="Input pacing rate in tokens/sec (realtime_tts / vajra)."
+        50.0, help="Input pacing rate in tokens/sec (streaming_tts)."
     )
     num_response_chunks: int = field(100, help="Audio chunks the mock emits.")
     server_ttfc_ms: float = field(200.0, help="Mock time-to-first-chunk delay (ms).")
@@ -77,23 +92,12 @@ class PreflightCheckConfig(VeekshaCommand, name="preflight"):
     """Certify measurement fidelity of the harness at a target concurrency."""
 
     # --- which client pathways to exercise ---
-    check_text: bool = field(
-        True, aliases=["check-text"], help="Run the OpenAI chat check."
-    )
-    check_completions: bool = field(
-        True, aliases=["check-completions"], help="Run the completions check."
-    )
-    check_tts: bool = field(
-        True, aliases=["check-tts"], help="Run the TTS (HTTP streaming audio) check."
-    )
-    check_realtime_tts: bool = field(
-        True, aliases=["check-realtime-tts"], help="Run the realtime-TTS (WS) check."
-    )
-    check_vajra_tts: bool = field(
-        True, aliases=["check-vajra-tts"], help="Run the Vajra TTS-stream (WS) check."
-    )
-    check_stt: bool = field(
-        True, aliases=["check-stt"], help="Run the STT (WS audio-in) check."
+    checks: List[str] = field(
+        default_factory=list,
+        help=(
+            "Checks to run, space separated; omit to run all of them. Choices: "
+            + " ".join(PREFLIGHT_CHECKS)
+        ),
     )
 
     # --- traffic (closed-loop concurrency; scheduler built with rampup=0) ---
@@ -171,7 +175,24 @@ class PreflightCheckConfig(VeekshaCommand, name="preflight"):
             target_concurrent_sessions=self.concurrency, rampup_seconds=0
         )
 
+    def selected_checks(self) -> Tuple[str, ...]:
+        """Checks to run; an empty selection means every check.
+
+        Always in ``PREFLIGHT_CHECKS`` order, so run order and report layout do
+        not depend on the order they were listed in, and repeats collapse.
+        """
+        if not self.checks:
+            return PREFLIGHT_CHECKS
+        selected = set(self.checks)
+        return tuple(name for name in PREFLIGHT_CHECKS if name in selected)
+
     def __post_init__(self) -> None:
+        unknown = [name for name in self.checks if name not in PREFLIGHT_CHECKS]
+        if unknown:
+            raise ValueError(
+                f"Unknown preflight check(s): {' '.join(unknown)}. "
+                f"Choices: {' '.join(PREFLIGHT_CHECKS)}"
+            )
         if self.concurrency <= 0:
             raise ValueError("concurrency must be positive")
         if self.num_sessions <= 0:

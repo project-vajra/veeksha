@@ -71,7 +71,7 @@ class RequestResult:
         None  # ClientWorker._process_request() on dequeue
     )
     client_sent_at: Optional[float] = (
-        None  # t_cs: request handed to the transport (set by wired clients)
+        None  # request handed to the transport (set by wired clients)
     )
     client_completed_at: Optional[float] = (
         None  # LLM client send_request() after response
@@ -86,10 +86,10 @@ class RequestResult:
     # no cost. The scorer joins these with the server's record book by
     # request_id. All monotonic.
     chunk_recv_times: Optional[List[float]] = (
-        None  # t_cr_i: client receipt of each response chunk
+        None  # client receipt of each response chunk
     )
-    # Streaming-input clients only (realtime_tts / vajra / stt): per-input-segment
+    # Streaming-input clients only (streaming_tts / stt): per-input-segment
     # send times and the intended pacing deadlines, for input-delivery lag and
     # pacing-accuracy metrics. None for single-shot requests.
-    input_send_times: Optional[List[float]] = None  # t_cs_i
+    input_send_times: Optional[List[float]] = None  # actual send instants
     input_send_deadlines: Optional[List[float]] = None  # intended send instants

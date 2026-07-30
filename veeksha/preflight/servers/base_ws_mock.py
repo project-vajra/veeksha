@@ -2,7 +2,7 @@
 
 Like base_mock.py but over WebSockets. A single ``websockets`` server both:
 - upgrades WS connections (one per request) to ``serve_session`` (overridden per
-  protocol), stamping t_sr on accept and reading the request id off the
+  protocol), stamping the accept time and reading the request id off the
   handshake headers; and
 - answers plain HTTP ``GET /health`` and ``GET /preflight/records`` via
   ``process_request`` so the parent can probe readiness and fetch ground truth.
@@ -17,7 +17,7 @@ import asyncio
 import json
 import time
 from http import HTTPStatus
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 from websockets.asyncio.server import serve
 
@@ -55,7 +55,7 @@ class BaseWSMockServer:
         return None  # proceed with the WebSocket handshake
 
     def open_record(self, connection) -> Tuple[int, ServerRequestRecord]:
-        """Stamp receipt (t_sr = connection accept) and start a record."""
+        """Stamp the accept time (the request-receipt stamp), start a record."""
         server_recv_time = time.monotonic()
         request_id = self._request_id(connection.request.headers)
         record = ServerRequestRecord(request_id, server_recv_time, [])

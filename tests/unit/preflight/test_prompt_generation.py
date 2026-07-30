@@ -4,7 +4,7 @@ Regression guard: the preflight tokenizer decodes each token to "<int> " so
 PromptStringGenerator tiles whitespace-separated words. Without the boundary
 space the prompt collapses to a single space-less blob and segment_text yields
 one delta -- which silently disables input-pacing/delivery measurement for the
-streaming-text WS clients (realtime_tts, vajra_tts_stream).
+streaming-text WS client (streaming_tts).
 """
 
 import pytest
