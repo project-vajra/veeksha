@@ -23,6 +23,14 @@ from veeksha.types import ChannelModality
 logger = init_logger(__name__)
 
 
+def _load_dataset_kwargs(flavor_config: SeedTTSTextTraceFlavorConfig) -> dict:
+    """Keyword args shared by every ``datasets.load_dataset`` call."""
+    kwargs: dict = {"split": flavor_config.split}
+    if flavor_config.revision:
+        kwargs["revision"] = flavor_config.revision
+    return kwargs
+
+
 def _load_hf_dataset(flavor_config: SeedTTSTextTraceFlavorConfig) -> Any:
     """Load the Seed TTS text dataset from HF or a local compatible copy."""
     try:
@@ -31,6 +39,8 @@ def _load_hf_dataset(flavor_config: SeedTTSTextTraceFlavorConfig) -> Any:
         raise ImportError(
             "SeedTTSTextTraceFlavorGenerator requires the 'datasets' package."
         ) from exc
+
+    load_kwargs = _load_dataset_kwargs(flavor_config)
 
     if flavor_config.local_path:
         path = Path(flavor_config.local_path)
@@ -54,19 +64,19 @@ def _load_hf_dataset(flavor_config: SeedTTSTextTraceFlavorConfig) -> Any:
                 return datasets.load_dataset(
                     "json",
                     data_files=str(path),
-                    split=flavor_config.split,
+                    **load_kwargs,
                 )
             if suffix == ".csv":
                 return datasets.load_dataset(
                     "csv",
                     data_files=str(path),
-                    split=flavor_config.split,
+                    **load_kwargs,
                 )
             if suffix == ".parquet":
                 return datasets.load_dataset(
                     "parquet",
                     data_files=str(path),
-                    split=flavor_config.split,
+                    **load_kwargs,
                 )
             raise ValueError(
                 f"Unsupported Seed TTS local file extension '{suffix}'. "
@@ -76,12 +86,12 @@ def _load_hf_dataset(flavor_config: SeedTTSTextTraceFlavorConfig) -> Any:
         args = [str(path)]
         if flavor_config.subset:
             args.append(flavor_config.subset)
-        return datasets.load_dataset(*args, split=flavor_config.split)
+        return datasets.load_dataset(*args, **load_kwargs)
 
     args = [flavor_config.dataset_name]
     if flavor_config.subset:
         args.append(flavor_config.subset)
-    return datasets.load_dataset(*args, split=flavor_config.split)
+    return datasets.load_dataset(*args, **load_kwargs)
 
 
 def _select_split(dataset: Any, split: str) -> Any:

@@ -1,12 +1,15 @@
 """Veeksha top-level CLI command group.
 
 veeksha benchmark [options]
+veeksha define [options]
 veeksha capacity-search [options]
-veeksha prefill [options]
-veeksha decode [options]
-veeksha stress [options]
-veeksha score-tts-longform [options]
-veeksha health [options]
+veeksha prefill | decode | stress | diff | score-tts-longform | health [options]
+
+Every command is a vidhi subcommand of :class:`VeekshaCommand`; dispatch is
+whatever ``parse_cli_sweep`` returns. ``benchmark`` is the default, so bare
+flags run one::
+
+    veeksha --endpoint.api_base http://localhost:8000/v1 --endpoint.model m
 """
 
 from __future__ import annotations
@@ -21,10 +24,12 @@ warnings.filterwarnings(
 )
 
 from veeksha.capacity_search import run_capacity_search
+from veeksha.cli import free_variables
 from veeksha.cli.base import VeekshaCommand
 from veeksha.cli.benchmarks import run_cli as run_benchmark
 from veeksha.cli.parsing import parse_cli_sweep
 from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.config.benchmark_define import BenchmarkDefineConfig
 from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.config.health_check import HealthCheckConfig
 from veeksha.config.score_tts_longform import ScoreTtsLongformConfig
@@ -38,11 +43,13 @@ from veeksha.microbench.decode import run_decode
 from veeksha.microbench.diff import DiffConfig, run_diff
 from veeksha.microbench.prefill import run_prefill
 from veeksha.microbench.stress import run_stress
+from veeksha.named_benchmark.define import run_benchmark_define_cli
 from veeksha.verification.longform import run_score_tts_longform_cli
 from veeksha.version import __version__
 
 _RUNNERS = {
     BenchmarkConfig: run_benchmark,
+    BenchmarkDefineConfig: run_benchmark_define_cli,
     CapacitySearchConfig: lambda configs: [run_capacity_search(c) for c in configs],
     PrefillMicrobenchmarkConfig: lambda configs: [run_prefill(c) for c in configs],
     DecodeMicrobenchmarkConfig: lambda configs: [run_decode(c) for c in configs],
@@ -55,16 +62,24 @@ _RUNNERS = {
 _VERSION_FLAGS = {"--version", "-V"}
 
 
-def main() -> None:
-    """Entry point for the veeksha CLI."""
-    if len(sys.argv) == 2 and sys.argv[1] in _VERSION_FLAGS:
-        print(f"veeksha {__version__}")
-        return
-
-    configs = parse_cli_sweep(VeekshaCommand)
+def _dispatch(configs: list) -> None:
     if not configs:
         sys.exit("No configuration resolved from CLI arguments.")
     runner = _RUNNERS.get(type(configs[0]))
     if runner is None:
         sys.exit(f"Unknown command config type: {type(configs[0]).__name__}")
     runner(configs)
+
+
+def main() -> None:
+    """Entry point for the veeksha CLI."""
+    if len(sys.argv) == 2 and sys.argv[1] in _VERSION_FLAGS:
+        print(f"veeksha {__version__}")
+        return
+
+    # A named benchmark's free variables are declared in its definition, so
+    # vidhi cannot know them; peel them off and put them back afterwards.
+    argv, overrides = free_variables.peel(sys.argv[1:])
+    configs = parse_cli_sweep(VeekshaCommand, args=argv)
+    free_variables.attach(configs, overrides)
+    _dispatch(configs)

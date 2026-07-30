@@ -5,9 +5,9 @@ import json
 import os
 import shutil
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Set, Tuple
+from typing import Any, Callable, Dict, Optional, Set, Tuple
 
 import yaml
 from tqdm import tqdm
@@ -19,9 +19,12 @@ from veeksha.evaluator.base import BaseEvaluator
 from veeksha.evaluator.composite import CompositeEvaluator
 from veeksha.evaluator.registry import EvaluatorRegistry
 from veeksha.logger import init_logger
+from veeksha.provenance import capture_environment, file_digest
 from veeksha.types import EvaluationType
 
 logger = init_logger(__name__)
+
+RUN_MANIFEST_NAME = "run_manifest.json"
 
 __all__ = [
     "_persist_config_yaml",
@@ -29,6 +32,10 @@ __all__ = [
     "build_evaluator",
     "maybe_run_warmup",
     "_monitor_for_completion",
+    "write_run_manifest_start",
+    "finalize_run_manifest",
+    "collect_input_provenance",
+    "RUN_MANIFEST_NAME",
 ]
 
 
@@ -56,13 +63,205 @@ def _persist_config_yaml(benchmark_config: BenchmarkConfig) -> str:
     return config_path
 
 
+def collect_input_provenance(
+    benchmark_config: BenchmarkConfig,
+    *,
+    tokenizer_model: Optional[str] = None,
+    knobs: Optional[Dict[str, Any]] = None,
+    config_sha1: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Collect the input-side fields recorded in ``run_manifest.json``.
+
+    Includes seed, config hash, tokenizer identity, dataset revision pins,
+    and digests of file-backed assets referenced by the config (e.g. traces).
+    """
+    assets: list[dict[str, Any]] = []
+    session_gen = benchmark_config.session_generator
+    trace_file = getattr(session_gen, "trace_file", None)
+    if isinstance(trace_file, str) and trace_file:
+        digest = file_digest(trace_file)
+        assets.append({"path": trace_file, "digest": digest})
+
+    flavor = getattr(session_gen, "flavor", None)
+    dataset_revisions: Dict[str, Any] = {}
+    if flavor is not None:
+        dataset_name = getattr(flavor, "dataset_name", None) or None
+        revision = getattr(flavor, "revision", None) or None
+        local_path = getattr(flavor, "local_path", None) or None
+        if dataset_name or local_path:
+            dataset_revisions = {
+                "dataset_name": dataset_name,
+                "revision": revision,
+                "local_path": local_path,
+                "split": getattr(flavor, "split", None),
+                "subset": getattr(flavor, "subset", None),
+            }
+        if isinstance(local_path, str) and local_path and os.path.isfile(local_path):
+            assets.append({"path": local_path, "digest": file_digest(local_path)})
+
+    return {
+        "seed": benchmark_config.seed,
+        "config_sha1": config_sha1,
+        "tokenizer": {"model": tokenizer_model},
+        "dataset": dataset_revisions or None,
+        "assets": assets,
+        "knobs": knobs or {},
+    }
+
+
+def write_run_manifest_start(
+    benchmark_config: BenchmarkConfig,
+    *,
+    config_sha1: Optional[str] = None,
+    tokenizer_model: Optional[str] = None,
+    knobs: Optional[Dict[str, Any]] = None,
+    benchmark_meta: Optional[Dict[str, Any]] = None,
+    unpinned: bool = False,
+) -> str:
+    """Write the start-of-run half of ``run_manifest.json``.
+
+    A crashed run still identifies which benchmark, knobs, and environment
+    produced it. Fingerprint and outputs are filled in at finalize.
+
+    Safe to call more than once: later calls merge into the existing file so
+    fields filled earlier (e.g. ``config_sha1`` at dir init, tokenizer after
+    the client is built) are preserved rather than clobbered.
+    """
+    path = os.path.join(benchmark_config.output_dir, RUN_MANIFEST_NAME)
+    existing: Dict[str, Any] = {}
+    if os.path.isfile(path):
+        try:
+            with open(path, encoding="utf-8") as handle:
+                existing = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            existing = {}
+
+    environment = capture_environment()
+    prior_inputs = existing.get("inputs") or {}
+    resolved_config_sha1 = config_sha1 or prior_inputs.get("config_sha1")
+    prior_tokenizer = (prior_inputs.get("tokenizer") or {}).get("model")
+    resolved_tokenizer = (
+        tokenizer_model if tokenizer_model is not None else prior_tokenizer
+    )
+    resolved_knobs = knobs if knobs is not None else (existing.get("knobs") or {})
+
+    inputs = collect_input_provenance(
+        benchmark_config,
+        tokenizer_model=resolved_tokenizer,
+        knobs=resolved_knobs,
+        config_sha1=resolved_config_sha1,
+    )
+    # packages also live under environment; mirror tokenizer stack into inputs
+    # so fingerprint drift messages can compare them as workload inputs.
+    inputs["veeksha"] = environment.get("veeksha")
+    inputs["packages"] = environment.get("packages")
+
+    target: Dict[str, Any] = {}
+    if benchmark_config.endpoint is not None:
+        target["endpoint"] = to_serializable_config_dict(benchmark_config.endpoint)
+    if benchmark_config.server is not None:
+        target["server"] = to_serializable_config_dict(benchmark_config.server)
+    client = benchmark_config.client
+    target["model"] = getattr(client, "model", None)
+    target["api_base"] = getattr(client, "api_base", None)
+
+    manifest: Dict[str, Any] = {
+        "schema_version": 1,
+        "started_at": existing.get("started_at")
+        or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "benchmark": (
+            benchmark_meta if benchmark_meta is not None else existing.get("benchmark")
+        ),
+        "knobs": resolved_knobs,
+        "inputs": inputs,
+        "environment": environment,
+        "target": target,
+        "unpinned": unpinned if unpinned else bool(existing.get("unpinned")),
+        "workload_fingerprint": existing.get("workload_fingerprint"),
+        "outputs": existing.get("outputs"),
+    }
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(manifest, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    logger.debug("Wrote start-of-run manifest to %s", path)
+    return path
+
+
+def finalize_run_manifest(
+    output_dir: str,
+    *,
+    workload_summary: Optional[Dict[str, Any]] = None,
+    outputs: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """Fill fingerprint and outputs into an existing run manifest."""
+    path = os.path.join(output_dir, RUN_MANIFEST_NAME)
+    if not os.path.isfile(path):
+        logger.debug("No run manifest at %s to finalize", path)
+        return None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            manifest = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Could not read run manifest %s: %s", path, exc)
+        return None
+
+    if workload_summary:
+        manifest["workload_fingerprint"] = workload_summary.get("workload_fingerprint")
+        manifest["fingerprint_version"] = workload_summary.get("fingerprint_version")
+        manifest["sessions"] = workload_summary.get("sessions")
+        manifest["requests"] = workload_summary.get("requests")
+    if outputs is not None:
+        manifest["outputs"] = outputs
+    manifest["finalized_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(manifest, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    logger.debug("Finalized run manifest at %s", path)
+    return path
+
+
+def _read_json_if_exists(path: str) -> Optional[Any]:
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def collect_output_digests(output_dir: str) -> Dict[str, Any]:
+    """Digest request-level artifacts and load summary metric files."""
+    metrics_dir = os.path.join(output_dir, "metrics")
+    artifacts = {
+        "request_level_metrics": os.path.join(
+            metrics_dir, "request_level_metrics.jsonl"
+        ),
+        "summary_stats": os.path.join(metrics_dir, "summary_stats.json"),
+        "slo_results": os.path.join(metrics_dir, "slo_results.json"),
+        "dispatch_trace": os.path.join(output_dir, "traces", "dispatch_trace.jsonl"),
+    }
+    digests = {
+        name: file_digest(path)
+        for name, path in artifacts.items()
+        if os.path.exists(path)
+    }
+    return {
+        "artifact_digests": digests,
+        "summary_stats": _read_json_if_exists(artifacts["summary_stats"]),
+        "slo_results": _read_json_if_exists(artifacts["slo_results"]),
+    }
+
+
 def _init_output_dir(benchmark_config: BenchmarkConfig) -> str:
     """Resolve and prepare the final benchmark output directory.
 
     The function persists the config, computes its hash, and
     moves the config into a dated/hash-named subdirectory. The benchmark
     configuration's ``output_dir`` field is updated in-place to point to the
-    resolved directory.
+    resolved directory. A start-of-run ``run_manifest.json`` is written so a
+    crashed run is still identifiable.
 
     Args:
         benchmark_config: Benchmark configuration to mutate.
@@ -92,6 +291,8 @@ def _init_output_dir(benchmark_config: BenchmarkConfig) -> str:
     shutil.move(config_path, os.path.join(resolved_output_dir, "config.yml"))
     object.__setattr__(benchmark_config, "output_dir", resolved_output_dir)
     logger.info("Benchmark outputs will be stored in %s", resolved_output_dir)
+
+    write_run_manifest_start(benchmark_config, config_sha1=config_hash)
 
     return resolved_output_dir
 

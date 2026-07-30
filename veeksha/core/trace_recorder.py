@@ -5,6 +5,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from veeksha.config.trace_recorder import TraceRecorderConfig
+from veeksha.core.workload_fingerprint import serialize_channel_content
 from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
@@ -149,12 +150,9 @@ class TraceRecorder:
             logger.error(f"Failed to write batch of {len(buffer)} traces: {e}")
 
     def _serialize_channel_content(self, content: Any) -> Dict[str, Any]:
-        """Serialize channel content to a dictionary."""
-        if hasattr(content, "__dataclass_fields__"):
-            from dataclasses import asdict
+        """Serialize channel content to a dictionary.
 
-            return asdict(content)
-        try:
-            return vars(content)
-        except TypeError:
-            return {"raw_str": str(content)}
+        Delegates to the shared serializer so this trace and the workload
+        fingerprint cannot drift apart on what a channel contains.
+        """
+        return serialize_channel_content(content)

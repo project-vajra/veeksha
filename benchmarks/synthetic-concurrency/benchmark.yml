@@ -1,0 +1,75 @@
+name: synthetic-concurrency
+version: 1
+purpose: 'Minimal named benchmark for the free-variable / pin workflow.
+
+  Workload is synthetic single-request text sessions. Concurrency is the only
+
+  free variable: it must leave the workload fingerprint unchanged.
+
+  '
+knobs:
+  concurrency:
+    target: traffic_scheduler.target_concurrent_sessions
+    type: int
+    default: 1
+    choices:
+    - 1
+    - 2
+    - 4
+    - 8
+    help: Steady-state concurrent sessions (load only; does not change requests).
+config:
+  seed: 42
+  traffic_scheduler:
+    type: concurrent
+    target_concurrent_sessions: 1
+    rampup_seconds: 0
+    cancel_session_on_failure: false
+  session_generator:
+    type: synthetic
+    session_graph:
+      type: single_request
+    channels:
+    - type: text
+      body_length_generator:
+        type: fixed
+        value: 16
+    output_spec:
+      text:
+        output_length_generator:
+          type: fixed
+          value: 8
+  client:
+    type: openai_chat_completions
+    model: gpt2
+    request_timeout: 60
+    api_base: http://127.0.0.1:9/v1
+    api_key: none
+    max_tokens_param: max_tokens
+  runtime:
+    max_sessions: 8
+    pregenerate_sessions: true
+    benchmark_timeout: 120
+  trace_recorder:
+    enabled: true
+    include_content: true
+  evaluators:
+  - type: performance
+    target_channels:
+    - text
+    stream_metrics: false
+pins:
+  workload_fingerprint: blake2b:a79911b4180c267bd58233821da864211340c106967d4ebab35d66e6dd528f85
+  assets: []
+  tokenizer:
+    model: gpt2
+    transformers: 5.14.1
+    tokenizers: 0.22.2
+  veeksha:
+    version: 0.4.5.post76
+    git_commit: a25b8ec8f8c8e6afb1109ac3a388388ecc1d2521
+    git_dirty: false
+  knob_defaults:
+    concurrency: 1
+  sessions_sampled: 8
+  fingerprint_version: 1
