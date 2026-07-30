@@ -40,6 +40,15 @@ class BaseClientConfig(BasePolyConfig):
         "{}",
         help="Additional sampling params to send with each request to the LLM API.",
     )
+    record_preflight_timing: bool = field(
+        False,
+        help=(
+            "Preflight only. When set, the client stamps its send time on each "
+            "request (X-Veeksha-* headers) and records per-chunk send/receive "
+            "timestamps onto the RequestResult so the preflight scorer can "
+            "measure request/response delivery drift. No effect on normal runs."
+        ),
+    )
 
     def __post_init__(self):
         self.additional_sampling_params_dict = {}

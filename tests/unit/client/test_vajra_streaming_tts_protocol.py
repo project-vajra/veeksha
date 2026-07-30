@@ -256,7 +256,7 @@ def _run_request(
     monkeypatch: pytest.MonkeyPatch,
     events: list[str],
 ) -> RequestResult:
-    monkeypatch.setattr(client, "_connect", lambda: _FakeConnection(websocket))
+    monkeypatch.setattr(client, "_connect", lambda *_args, **_kwargs: _FakeConnection(websocket))
     return asyncio.run(
         client.send_request(
             _request(),

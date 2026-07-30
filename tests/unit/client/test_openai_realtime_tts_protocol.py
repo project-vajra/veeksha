@@ -103,7 +103,7 @@ def _client(mode: str) -> tuple[StreamingTTSClient, _FakeWebSocket]:
     )
     client = StreamingTTSClient(config)
     websocket = _FakeWebSocket()
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda *_args, **_kwargs: _FakeConnection(websocket)  # type: ignore[method-assign]
     return client, websocket
 
 
