@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from veeksha.benchmark_define import BenchmarkDefineError, define_benchmark
-from veeksha.benchmark_resolve import (
+from veeksha.named_benchmark.define import BenchmarkDefineError, define_benchmark
+from veeksha.named_benchmark.resolve import (
     NamedBenchmarkError,
     check_workload_pin,
     resolve_named_benchmark,
@@ -92,7 +92,7 @@ def _install_fixed_generator(
         return _FixedSessionGenerator(n=4, text=text)
 
     monkeypatch.setattr(
-        "veeksha.benchmark_define.SessionGeneratorRegistry.get",
+        "veeksha.named_benchmark.define.SessionGeneratorRegistry.get",
         fake_get,
     )
 
@@ -118,7 +118,7 @@ def test_define_resolve_preflight_pin_match(
     assert result["pins"]["sessions_sampled"] == 4
 
     # Re-resolve like a run would, with a free-variable override.
-    from veeksha.cli.benchmark_run_cli import parse_benchmark_run_configs
+    from veeksha.cli.free_variables import parse_benchmark_run_configs
 
     configs = parse_benchmark_run_configs(
         [
@@ -201,7 +201,7 @@ def test_define_rejects_free_var_that_moves_real_fingerprint(
         return _FixedSessionGenerator(n=2, text=text)
 
     monkeypatch.setattr(
-        "veeksha.benchmark_define.SessionGeneratorRegistry.get", fake_get
+        "veeksha.named_benchmark.define.SessionGeneratorRegistry.get", fake_get
     )
 
     class _Tok:

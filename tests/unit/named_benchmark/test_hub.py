@@ -1,6 +1,6 @@
 """Tests for named-benchmark fetch/publish against the Hugging Face Hub.
 
-``benchmark_hub`` imports ``huggingface_hub`` lazily inside each function, so
+The hub module imports ``huggingface_hub`` lazily inside each function, so
 these patch the attributes on the real module rather than on ``hub`` itself.
 """
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from veeksha import benchmark_hub as hub
+from veeksha.named_benchmark import hub
 
 
 class _FakeHfApi:

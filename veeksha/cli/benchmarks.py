@@ -16,10 +16,10 @@ from veeksha.benchmark import (
     manage_benchmark_run,
     run_benchmark_with_endpoint,
 )
-from veeksha.benchmark_resolve import NamedBenchmarkError, resolve_named_benchmark
 from veeksha.config.benchmark import BenchmarkConfig, carry_sidecar_attrs
 from veeksha.config.utils import to_serializable_config_dict
 from veeksha.logger import init_logger
+from veeksha.named_benchmark.resolve import NamedBenchmarkError, resolve_named_benchmark
 from veeksha.orchestration.benchmark_orchestrator import managed_server
 from veeksha.sweep_summary import write_sweep_summary
 from veeksha.wandb_integration import dedup_tags, maybe_log_sweep_summary
@@ -57,7 +57,7 @@ class BenchmarkCliRunner:
     def from_cli(cls) -> "BenchmarkCliRunner":
         import sys
 
-        from veeksha.cli.benchmark_run_cli import parse_benchmark_run_configs
+        from veeksha.cli.free_variables import parse_benchmark_run_configs
 
         return cls(parse_benchmark_run_configs(sys.argv[1:]))
 
@@ -183,6 +183,6 @@ def run_cli(configs: list[BenchmarkConfig]) -> None:
 def main() -> None:
     import sys
 
-    from veeksha.cli.benchmark_run_cli import parse_benchmark_run_configs
+    from veeksha.cli.free_variables import parse_benchmark_run_configs
 
     run_cli(parse_benchmark_run_configs(sys.argv[1:]))

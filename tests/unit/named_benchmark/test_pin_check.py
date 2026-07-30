@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from veeksha.benchmark_resolve import NamedBenchmarkError, check_workload_pin
+from veeksha.named_benchmark.resolve import NamedBenchmarkError, check_workload_pin
 
 
 @pytest.mark.unit

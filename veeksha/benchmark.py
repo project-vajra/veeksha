@@ -7,7 +7,6 @@ from dataclasses import replace
 from queue import Queue
 from typing import Optional, Set
 
-from veeksha.benchmark_resolve import NamedBenchmarkError, check_workload_pin
 from veeksha.benchmark_utils import (
     _init_output_dir,
     _monitor_for_completion,
@@ -28,6 +27,7 @@ from veeksha.evaluator.base import EvaluationResult
 from veeksha.generator.session.registry import SessionGeneratorRegistry
 from veeksha.health import HealthChecker, maybe_build_tts_zombie_probe
 from veeksha.logger import init_logger
+from veeksha.named_benchmark.resolve import NamedBenchmarkError, check_workload_pin
 from veeksha.orchestration.benchmark_orchestrator import managed_server
 from veeksha.traffic.registry import TrafficSchedulerRegistry
 from veeksha.wandb_integration import (

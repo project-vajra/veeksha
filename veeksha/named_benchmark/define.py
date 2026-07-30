@@ -21,25 +21,25 @@ from typing import Any, Optional
 import yaml
 from vidhi.utils import create_class_from_dict
 
-from veeksha.benchmark_hub import (
-    default_repo,
-    definition_dir,
-    load_definition,
-    publish_benchmark,
-)
-from veeksha.benchmark_knobs import (
-    KnobDeclarationError,
-    KnobSpec,
-    apply_knobs,
-    parse_knob_specs,
-    resolve_knob_values,
-)
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.benchmark_define import BenchmarkDefineConfig
 from veeksha.core.seeding import SeedManager
 from veeksha.core.workload_fingerprint import WorkloadFingerprint
 from veeksha.generator.session.registry import SessionGeneratorRegistry
 from veeksha.logger import init_logger
+from veeksha.named_benchmark.hub import (
+    default_repo,
+    definition_dir,
+    load_definition,
+    publish_benchmark,
+)
+from veeksha.named_benchmark.knobs import (
+    KnobDeclarationError,
+    KnobSpec,
+    apply_knobs,
+    parse_knob_specs,
+    resolve_knob_values,
+)
 from veeksha.provenance import capture_environment, file_digest
 
 logger = init_logger(__name__)

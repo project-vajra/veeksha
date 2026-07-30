@@ -1,12 +1,12 @@
-"""CLI config for ``veeksha benchmark define``."""
+"""CLI config for ``veeksha define``."""
 
 from vidhi import field, frozen_dataclass
 
-from veeksha.cli.benchmark_command import BenchmarkCommand
+from veeksha.cli.base import VeekshaCommand
 
 
 @frozen_dataclass
-class BenchmarkDefineConfig(BenchmarkCommand, name="define"):
+class BenchmarkDefineConfig(VeekshaCommand, name="define"):
     """Validate a named-benchmark definition, pin its workload, optionally publish.
 
     Freezes the full config at definition time, computes one workload
@@ -15,7 +15,7 @@ class BenchmarkDefineConfig(BenchmarkCommand, name="define"):
     (``knobs``) leaves that fingerprint unchanged. With ``--publish``,
     uploads the self-contained tree to the Hub.
 
-    Invoked as ``veeksha benchmark define``.
+    Invoked as ``veeksha define``.
     """
 
     definition: str = field(

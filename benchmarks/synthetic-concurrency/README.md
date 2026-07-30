@@ -8,7 +8,7 @@ Sample **named benchmark** for Veeksha's define / pin / run workflow.
 - Tokenizer model (`gpt2` by default — needs `transformers` for define/run generation)
 - Everything else in the `config:` block of `benchmark.yml`
 
-Edit the workload in that block, then re-run `benchmark define` to re-pin.
+Edit the workload in that block, then re-run `veeksha define` to re-pin.
 `define` resolves any `!include` and writes the config back inlined, so a
 separate base file would stop being read after the first pin.
 
@@ -31,16 +31,16 @@ uv pip install -e . --python .venv-define/bin/python
 
 # pin (generation-only; no server)
 # Session count comes from config.runtime.max_sessions in the definition.
-.venv-define/bin/python -m veeksha benchmark define \
+.venv-define/bin/python -m veeksha define \
   --definition benchmarks/synthetic-concurrency
 ```
 
-`benchmark define` is the only command allowed on a non–free-threaded interpreter.
+`veeksha define` is the only command allowed on a non–free-threaded interpreter.
 
 ### Run — free-threaded veeksha (`.venv314`)
 
 ```bash
-.venv314/bin/python -m veeksha benchmark run \
+.venv314/bin/python -m veeksha benchmark \
   --benchmark benchmarks/synthetic-concurrency \
   --concurrency 4 \
   --endpoint.engine_type vllm \

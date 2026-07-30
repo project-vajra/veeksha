@@ -90,7 +90,7 @@ A definition is a directory containing ``benchmark.yml``:
         max_sessions: 8
         pregenerate_sessions: true
 
-    # Written by `benchmark define` -- do not hand-edit.
+    # Written by `veeksha define` -- do not hand-edit.
     pins:
       workload_fingerprint: blake2b:a79911b4…
       tokenizer: {model: gpt2, transformers: 5.14.1, tokenizers: 0.22.2}
@@ -109,7 +109,7 @@ Pinning a definition
 
 .. code-block:: bash
 
-    veeksha benchmark define --definition benchmarks/synthetic-concurrency
+    veeksha define --definition benchmarks/synthetic-concurrency
 
 The number of sessions hashed comes from ``config.runtime.max_sessions``. No
 server is contacted — this is generation only.
@@ -127,7 +127,7 @@ Useful options:
 
 .. note::
 
-   ``benchmark define`` is the one command permitted on a normal (GIL-enabled)
+   ``veeksha define`` is the one command permitted on a normal (GIL-enabled)
    interpreter, because free-threaded wheels are not always available for the
    tokenizer stack. Every other command requires free-threaded Python.
 
@@ -137,7 +137,7 @@ Running a named benchmark
 
 .. code-block:: bash
 
-    veeksha benchmark run \
+    veeksha benchmark \
         --benchmark benchmarks/synthetic-concurrency \
         --concurrency 4 \
         --endpoint.engine_type vllm \
@@ -200,7 +200,7 @@ When the pin does not match
     Likely causes: no input diffs recorded
 
 The run exits non-zero and no requests are sent. Either restore the definition,
-or re-run ``benchmark define`` if the change was intended — re-pinning is how
+or re-run ``veeksha define`` if the change was intended — re-pinning is how
 you deliberately publish a new workload.
 
 The check runs at two stages:
@@ -226,11 +226,11 @@ is fetched independently, so one benchmark never pulls the whole repository:
 .. code-block:: bash
 
     # publish
-    veeksha benchmark define --definition benchmarks/my-benchmark \
+    veeksha define --definition benchmarks/my-benchmark \
         --publish true --repo my-org/veeksha-benchmarks --tag v1
 
     # consume
-    veeksha benchmark run --benchmark my-benchmark --benchmark_revision v1 …
+    veeksha benchmark --benchmark my-benchmark --benchmark_revision v1 …
 
 The default repo comes from ``VEEKSHA_BENCHMARKS_REPO``.
 

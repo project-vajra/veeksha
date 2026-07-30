@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 import yaml
 
-from veeksha.benchmark_define import BenchmarkDefineError, define_benchmark
-from veeksha.benchmark_resolve import expected_fingerprint
+from veeksha.named_benchmark.define import BenchmarkDefineError, define_benchmark
+from veeksha.named_benchmark.resolve import expected_fingerprint
 from veeksha.config.benchmark_define import BenchmarkDefineConfig
 from veeksha.core.workload_fingerprint import WorkloadFingerprint
 
@@ -74,7 +74,7 @@ def _install_fingerprint_stub(
         )
         return _FakeFingerprint(digest, sessions=max_sessions)
 
-    monkeypatch.setattr("veeksha.benchmark_define._generate_fingerprint", fake_generate)
+    monkeypatch.setattr("veeksha.named_benchmark.define._generate_fingerprint", fake_generate)
 
     class _Tok:
         model_name = "stub-model"

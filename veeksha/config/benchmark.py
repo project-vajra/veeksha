@@ -2,7 +2,7 @@ from typing import Optional
 
 from vidhi import field, frozen_dataclass
 
-from veeksha.cli.benchmark_command import BenchmarkCommand
+from veeksha.cli.base import VeekshaCommand
 from veeksha.config.client import (
     BaseClientConfig,
     OpenAIChatCompletionsClientConfig,
@@ -27,11 +27,12 @@ from veeksha.config.wandb import WandbConfig  # noqa: F401
 
 
 @frozen_dataclass
-class BenchmarkConfig(BenchmarkCommand, name="run", default=True):
+class BenchmarkConfig(VeekshaCommand, name="benchmark", default=True):
     """Run a benchmark against an LLM inference server.
 
-    Invoked as ``veeksha benchmark run`` (or ``veeksha benchmark`` — run is the
-    default subcommand).
+    Invoked as ``veeksha benchmark`` (the default command, so bare flags work
+    too). Pass ``--benchmark <definition>`` to run a named benchmark; see
+    ``veeksha define`` for pinning one.
     """
 
     output_dir: str = field(
@@ -115,7 +116,7 @@ class BenchmarkConfig(BenchmarkCommand, name="run", default=True):
         """
         import sys
 
-        from veeksha.cli.benchmark_run_cli import parse_benchmark_run_configs
+        from veeksha.cli.free_variables import parse_benchmark_run_configs
 
         return parse_benchmark_run_configs(sys.argv[1:])
 

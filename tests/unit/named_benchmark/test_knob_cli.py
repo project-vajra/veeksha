@@ -7,13 +7,13 @@ from pathlib import Path
 import pytest
 import yaml
 
-from veeksha.benchmark_knobs import (
+from veeksha.named_benchmark.knobs import (
     KnobDeclarationError,
     find_cli_option,
     parse_knob_specs,
     peel_knob_cli_args,
 )
-from veeksha.cli.benchmark_run_cli import parse_benchmark_run_configs
+from veeksha.cli.free_variables import parse_benchmark_run_configs
 
 
 def _specs():

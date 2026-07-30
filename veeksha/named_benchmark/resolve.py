@@ -9,16 +9,16 @@ from typing import Any, Optional
 
 from vidhi.utils import create_class_from_dict
 
-from veeksha.benchmark_hub import fetch_benchmark, load_definition
-from veeksha.benchmark_knobs import (
+from veeksha.config.benchmark import BenchmarkConfig
+from veeksha.logger import init_logger
+from veeksha.named_benchmark.hub import fetch_benchmark, load_definition
+from veeksha.named_benchmark.knobs import (
     KnobDeclarationError,
     KnobSpec,
     apply_knobs,
     parse_knob_specs,
     resolve_knob_values,
 )
-from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.logger import init_logger
 
 logger = init_logger(__name__)
 

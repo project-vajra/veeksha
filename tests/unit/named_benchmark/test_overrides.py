@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from veeksha.benchmark_knobs import parse_knob_specs
-from veeksha.benchmark_resolve import NamedBenchmarkError, reject_frozen_overrides
+from veeksha.named_benchmark.knobs import parse_knob_specs
+from veeksha.named_benchmark.resolve import NamedBenchmarkError, reject_frozen_overrides
 
 
 def _specs():

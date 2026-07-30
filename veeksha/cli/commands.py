@@ -1,12 +1,13 @@
 """Veeksha top-level CLI command group.
 
-veeksha benchmark run [options]
-veeksha benchmark define [options]
+veeksha benchmark [options]
+veeksha define [options]
 veeksha capacity-search [options]
 veeksha prefill | decode | stress | diff | score-tts-longform | health [options]
 
-Ad-hoc one-shot runs (no named definition) use top-level flags and dispatch to
-``benchmark run``::
+Every command is a vidhi subcommand of :class:`VeekshaCommand`; dispatch is
+whatever ``parse_cli_sweep`` returns. ``benchmark`` is the default, so bare
+flags run one::
 
     veeksha --endpoint.api_base http://localhost:8000/v1 --endpoint.model m
 """
@@ -22,14 +23,9 @@ warnings.filterwarnings(
     "ignore", message=".*global interpreter lock.*", category=RuntimeWarning
 )
 
-# Import so BenchmarkCommand registers run/define subcommands.
-import veeksha.config.benchmark  # noqa: F401
-import veeksha.config.benchmark_define  # noqa: F401
-from veeksha.benchmark_define import run_benchmark_define_cli
 from veeksha.capacity_search import run_capacity_search
+from veeksha.cli import free_variables
 from veeksha.cli.base import VeekshaCommand
-from veeksha.cli.benchmark_command import BenchmarkCommand
-from veeksha.cli.benchmark_run_cli import parse_benchmark_run_configs
 from veeksha.cli.benchmarks import run_cli as run_benchmark
 from veeksha.cli.parsing import parse_cli_sweep
 from veeksha.config.benchmark import BenchmarkConfig
@@ -47,6 +43,7 @@ from veeksha.microbench.decode import run_decode
 from veeksha.microbench.diff import DiffConfig, run_diff
 from veeksha.microbench.prefill import run_prefill
 from veeksha.microbench.stress import run_stress
+from veeksha.named_benchmark.define import run_benchmark_define_cli
 from veeksha.verification.longform import run_score_tts_longform_cli
 from veeksha.version import __version__
 
@@ -64,18 +61,6 @@ _RUNNERS = {
 
 _VERSION_FLAGS = {"--version", "-V"}
 
-_TOP_LEVEL_OTHER = frozenset(
-    {
-        "capacity-search",
-        "prefill",
-        "decode",
-        "stress",
-        "diff",
-        "score-tts-longform",
-        "health",
-    }
-)
-
 
 def _dispatch(configs: list) -> None:
     if not configs:
@@ -86,54 +71,15 @@ def _dispatch(configs: list) -> None:
     runner(configs)
 
 
-def _dispatch_benchmark_group(args: list[str]) -> None:
-    """Handle ``veeksha benchmark [run|define] ...``."""
-    if not args or args[0] in ("-h", "--help"):
-        # Group help (lists run + define).
-        _dispatch(parse_cli_sweep(BenchmarkCommand, args=args or ["-h"]))
-        return
-
-    if args[0] == "define":
-        _dispatch(parse_cli_sweep(BenchmarkDefineConfig, args=args[1:]))
-        return
-
-    if args[0] == "run":
-        _dispatch(parse_benchmark_run_configs(args[1:]))
-        return
-
-    # Flags after ``benchmark`` with no subcommand → run (default).
-    if args[0].startswith("-"):
-        _dispatch(parse_benchmark_run_configs(args))
-        return
-
-    available = "run, define"
-    sys.exit(f"Error: Unknown benchmark command '{args[0]}'. Available: {available}")
-
-
 def main() -> None:
     """Entry point for the veeksha CLI."""
     if len(sys.argv) == 2 and sys.argv[1] in _VERSION_FLAGS:
         print(f"veeksha {__version__}")
         return
 
-    argv = sys.argv[1:]
-
-    # Nested group: veeksha benchmark run|define ...
-    if argv[:1] == ["benchmark"]:
-        _dispatch_benchmark_group(argv[1:])
-        return
-
-    # Ad-hoc one-shot: veeksha --endpoint.api_base ... → benchmark run
-    if not argv or argv[0].startswith("-"):
-        _dispatch(parse_benchmark_run_configs(argv))
-        return
-
-    # Other top-level commands.
-    if argv[0] in _TOP_LEVEL_OTHER or argv[0] in VeekshaCommand._subcommands:
-        _dispatch(parse_cli_sweep(VeekshaCommand, args=argv))
-        return
-
-    available = ", ".join(
-        sorted({"benchmark", *_TOP_LEVEL_OTHER, *VeekshaCommand._subcommands.keys()})
-    )
-    sys.exit(f"Error: Unknown command '{argv[0]}'. Available: {available}")
+    # A named benchmark's free variables are declared in its definition, so
+    # vidhi cannot know them; peel them off and put them back afterwards.
+    argv, overrides = free_variables.peel(sys.argv[1:])
+    configs = parse_cli_sweep(VeekshaCommand, args=argv)
+    free_variables.attach(configs, overrides)
+    _dispatch(configs)

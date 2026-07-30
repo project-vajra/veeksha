@@ -6,7 +6,7 @@ import argparse
 
 import pytest
 
-from veeksha.benchmark_knobs import (
+from veeksha.named_benchmark.knobs import (
     KnobDeclarationError,
     add_knob_arguments,
     apply_knobs,
