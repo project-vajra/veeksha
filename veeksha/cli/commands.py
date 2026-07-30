@@ -27,6 +27,7 @@ from veeksha.cli.parsing import parse_cli_sweep
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.config.health_check import HealthCheckConfig
+from veeksha.config.preflight import PreflightCheckConfig
 from veeksha.config.score_tts_longform import ScoreTtsLongformConfig
 from veeksha.health import run_health_check_cli
 from veeksha.microbench.config import (
@@ -38,6 +39,7 @@ from veeksha.microbench.decode import run_decode
 from veeksha.microbench.diff import DiffConfig, run_diff
 from veeksha.microbench.prefill import run_prefill
 from veeksha.microbench.stress import run_stress
+from veeksha.preflight.runner import run_preflight_cli
 from veeksha.verification.longform import run_score_tts_longform_cli
 from veeksha.version import __version__
 
@@ -50,6 +52,7 @@ _RUNNERS = {
     DiffConfig: lambda configs: [run_diff(c) for c in configs],
     ScoreTtsLongformConfig: run_score_tts_longform_cli,
     HealthCheckConfig: run_health_check_cli,
+    PreflightCheckConfig: run_preflight_cli,
 }
 
 _VERSION_FLAGS = {"--version", "-V"}
