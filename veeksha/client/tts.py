@@ -359,6 +359,15 @@ class TTSClient(BaseLLMClient):
                 on_request_sent()
                 sent_fired = True
 
+        # preflight timing (recorded only when enabled). Only the request id is
+        # sent to the server; the scorer joins the two record books by request_id.
+        preflight_enabled = getattr(self.config, "record_preflight_timing", False)
+        client_sent_at: float | None = None
+        chunk_recv_times: list[float] = []
+        if preflight_enabled:
+            provider_request.headers["X-Veeksha-Request-Id"] = str(request.id)
+            client_sent_at = start
+
         try:
             async with self._get_client().stream(
                 "POST",
@@ -374,7 +383,11 @@ class TTSClient(BaseLLMClient):
                 async for chunk in self._protocol.iter_audio_chunks(
                     response, self._http_config.chunk_size
                 ):
-                    offset_ms = (time.monotonic() - start) * 1000
+                    receive_time = time.monotonic()
+                    # Client receipt of each audio chunk.
+                    if preflight_enabled:
+                        chunk_recv_times.append(receive_time)
+                    offset_ms = (receive_time - start) * 1000
                     if ttfc is None:
                         ttfc = offset_ms
                     audio_chunks.append(chunk)
@@ -466,4 +479,6 @@ class TTSClient(BaseLLMClient):
             error_code=error_code,
             error_msg=error_msg,
             client_completed_at=completed_at,
+            client_sent_at=client_sent_at,
+            chunk_recv_times=chunk_recv_times if preflight_enabled else None,
         )

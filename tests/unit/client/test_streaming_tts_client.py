@@ -177,7 +177,7 @@ def test_streaming_providers_share_text_audio_lifecycle(provider: str) -> None:
         client = StreamingTTSClient(config)
 
     websocket = _FakeWebSocket(provider)
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda *_args, **_kwargs: _FakeConnection(websocket)  # type: ignore[method-assign]
     result = asyncio.run(client.send_request(_request(), session_id=1))
 
     assert result.success
@@ -353,7 +353,7 @@ def test_cartesia_client_uses_a_fresh_context_for_each_request() -> None:
     client = StreamingTTSClient(config)
     websockets: list[_FakeWebSocket] = []
 
-    def connect_factory() -> _FakeConnection:
+    def connect_factory(*_args, **_kwargs) -> _FakeConnection:
         websocket = _FakeWebSocket("cartesia")
         websockets.append(websocket)
         return _FakeConnection(websocket)
@@ -381,7 +381,7 @@ def test_deepgram_aura_adapter_streams_audio_before_flush_completion() -> None:
     )
     client = StreamingTTSClient(config)
     websocket = _FakeWebSocket("deepgram_aura")
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda *_args, **_kwargs: _FakeConnection(websocket)  # type: ignore[method-assign]
 
     result = asyncio.run(client.send_request(_request(), session_id=1))
 
@@ -417,7 +417,7 @@ def test_streaming_tts_rejects_terminal_response_without_audio() -> None:
     )
     client = StreamingTTSClient(config)
     websocket = _SilentElevenLabsWebSocket()
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda *_args, **_kwargs: _FakeConnection(websocket)  # type: ignore[method-assign]
 
     result = asyncio.run(client.send_request(_request(), session_id=1))
 

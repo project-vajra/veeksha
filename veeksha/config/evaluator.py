@@ -274,6 +274,16 @@ class PerformanceEvaluatorConfig(BaseEvaluatorConfig):
     video_channel: Optional[VideoChannelPerformanceConfig] = field(
         None, help="Video channel performance configuration"
     )
+    lifecycle_drift_warn_threshold_ms: float = field(
+        50.0,
+        help=(
+            "Soft-warn threshold. If the p99 of any request-lifecycle drift "
+            "(scheduler-ready -> dispatched -> picked-up -> sent) exceeds this, a "
+            "warning is logged at the end of the run: the harness itself is "
+            "adding scheduling latency that can distort measured server timings. "
+            "Set <= 0 to disable the warning."
+        ),
+    )
 
     @classmethod
     def get_type(cls) -> EvaluationType:

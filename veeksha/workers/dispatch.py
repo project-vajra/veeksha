@@ -73,8 +73,9 @@ class DispatchWorker:
             if result is None:
                 continue
 
-            request, session_id, session_size = result
-            scheduler_ready_at = time.monotonic()
+            request, session_id, session_size, scheduler_ready_at = result
+            # scheduler_ready_at: scheduled ready time; dispatched_at: actual
+            # dequeue time.
             dispatched_at = time.monotonic()
 
             self.evaluator.register_request(
@@ -121,8 +122,7 @@ class DispatchWorker:
             if result is None:
                 break
 
-            request, session_id, session_size = result
-            scheduler_ready_at = time.monotonic()
+            request, session_id, session_size, scheduler_ready_at = result
             dispatched_at = time.monotonic()
 
             self.evaluator.register_request(
