@@ -51,7 +51,7 @@ def _gate_and_render(
     return result.is_pass
 
 
-def _run_config(config: PreflightCheckConfig) -> bool:
+def _run_config(config: PreflightCheckConfig, output_dir: str) -> bool:
     """Run every enabled check for one config; return True iff all passed.
 
     Each check gets its own ``<output_dir>/<slug>/`` subdirectory (report +
@@ -83,7 +83,7 @@ def _run_config(config: PreflightCheckConfig) -> bool:
     for slug in config.selected_checks():
         runner, group_cfg, name = checks[slug]
         logger.info("Running preflight %s check", name)
-        check_output_dir = os.path.join(config.output_dir, slug)
+        check_output_dir = os.path.join(output_dir, slug)
         report = runner(group_cfg, output_dir=check_output_dir, **common)
         all_passed &= _gate_and_render(
             config,
@@ -98,8 +98,14 @@ def _run_config(config: PreflightCheckConfig) -> bool:
 
 def run_preflight_cli(configs: List[PreflightCheckConfig]) -> None:
     overall_passed = True
-    for config in configs:
-        overall_passed = _run_config(config) and overall_passed
+    # A sweep's configs share one output_dir; number them so their reports don't
+    # overwrite each other.
+    is_sweep = len(configs) > 1
+    for index, config in enumerate(configs):
+        output_dir = config.output_dir
+        if is_sweep:
+            output_dir = os.path.join(output_dir, f"run_{index:03d}")
+        overall_passed = _run_config(config, output_dir) and overall_passed
 
     if not overall_passed:
         # Non-zero exit so CI/scripts can gate a benchmark on a clean preflight.
