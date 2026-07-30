@@ -23,8 +23,14 @@ import asyncio
 import time
 from typing import List, Optional
 
-from veeksha.preflight.servers.base_mock import BaseMockServer
-from veeksha.preflight.servers.base_server import HttpRequest, start_streaming_response
+from aiohttp import web
+
+from veeksha.preflight.servers.base_mock import (
+    BaseMockServer,
+    finish,
+    pace_chunks,
+    start_binary,
+)
 
 
 class MockTTSServer(BaseMockServer):
@@ -43,23 +49,15 @@ class MockTTSServer(BaseMockServer):
         self.num_chunks = num_chunks
         self._chunk = b"\x00" * chunk_bytes
 
-    async def handle_post(self, req: HttpRequest, writer: asyncio.StreamWriter) -> None:
-        _, record = self.open_record(req)
-        await start_streaming_response(writer, "application/octet-stream")
+    async def handle_post(self, request: web.Request) -> web.StreamResponse:
+        _, record = self.open_record(request)
+        await request.read()
+        response = await start_binary(request, "application/octet-stream")
 
-        first_deadline = record.server_recv_time + self.ttfc_ms / 1000.0
-        for i in range(self.num_chunks):
-            deadline = first_deadline + i * self.tpoc_ms / 1000.0
-            slack = deadline - time.monotonic()
-            if slack > 0:
-                await asyncio.sleep(slack)
-
-            record.server_send_times.append(time.monotonic())  # t_ss_i
-            writer.write(self._chunk)
-            try:
-                await writer.drain()
-            except (ConnectionError, OSError):
-                return
+        payloads = (self._chunk for _ in range(self.num_chunks))
+        if await pace_chunks(response, record, payloads, self.ttfc_ms, self.tpoc_ms):
+            await finish(response)
+        return response
 
 
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
