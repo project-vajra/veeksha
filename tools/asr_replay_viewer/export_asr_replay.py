@@ -21,8 +21,9 @@ from veeksha.evaluator.performance.asr_interactivity import (  # noqa: E402
 )
 
 DEFAULT_TRACE_MANIFESTS = (
-    REPO_ROOT / "traces" / "asr" / "aa_public" / "manifest.jsonl",
-    REPO_ROOT / "traces" / "asr" / "ami_word_timed" / "manifest.jsonl",
+    REPO_ROOT / "traces" / "asr" / "aa_voxpopuli" / "manifest.jsonl",
+    REPO_ROOT / "traces" / "asr" / "aa_earnings22" / "manifest.jsonl",
+    REPO_ROOT / "traces" / "asr" / "ami_word_timed_2k" / "manifest.jsonl",
 )
 METRICS_DIR_NAME = "metrics"
 REQUEST_METRICS_NAME = "request_level_metrics.jsonl"
