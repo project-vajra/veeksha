@@ -11,7 +11,9 @@ def _report(**metric_p99):
     """Build a ScoreReport where each given metric has the specified p99."""
     metrics = {}
     for name, p99 in metric_p99.items():
-        metrics[name] = MetricSummary(name, 100, p99 / 2, p99, p99 / 2, 0.0, p99)
+        metrics[name] = MetricSummary(
+            name, 100, p99 / 2, p99, p99 / 2, p99 / 4, 0.0, p99
+        )
     return ScoreReport(
         metrics=metrics, n_requests=100, n_paired_requests=100, unpaired_fraction=0.0
     )
@@ -48,7 +50,14 @@ def test_all_within_threshold_passes():
 def test_harness_delivery_breach_fails():
     rep = _all_good()
     rep.metrics[scorer.M_RESPONSE_DELIVERY] = MetricSummary(
-        scorer.M_RESPONSE_DELIVERY, 100, 3.0, 42.0, 5.0, 0.0, 42.0  # p99 42ms >> 5
+        scorer.M_RESPONSE_DELIVERY,
+        100,
+        3.0,
+        42.0,
+        5.0,
+        10.0,
+        0.0,
+        42.0,  # p99 42ms >> 5
     )
     result = validator.run_validation(rep, **_KW)
     assert result.verdict == validator.VERDICT_FAIL
@@ -59,10 +68,10 @@ def test_server_pacing_breach_is_server_at_capacity():
     # Both a server-pacing gate AND a harness gate fail -> SERVER_AT_CAPACITY wins.
     rep = _all_good()
     rep.metrics[scorer.M_SERVER_TPOC_ABS_ERR] = MetricSummary(
-        scorer.M_SERVER_TPOC_ABS_ERR, 100, 4.0, 30.0, 6.0, 0.0, 30.0
+        scorer.M_SERVER_TPOC_ABS_ERR, 100, 4.0, 30.0, 6.0, 7.0, 0.0, 30.0
     )
     rep.metrics[scorer.M_REQUEST_DELIVERY] = MetricSummary(
-        scorer.M_REQUEST_DELIVERY, 100, 3.0, 40.0, 5.0, 0.0, 40.0
+        scorer.M_REQUEST_DELIVERY, 100, 3.0, 40.0, 5.0, 9.0, 0.0, 40.0
     )
     result = validator.run_validation(rep, **_KW)
     assert result.verdict == validator.VERDICT_SERVER_AT_CAPACITY

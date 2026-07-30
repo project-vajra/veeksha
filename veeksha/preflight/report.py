@@ -74,11 +74,14 @@ def render_report(
                 str(m.count),
                 _fmt(m.p50),
                 _fmt(m.p99),
+                _fmt(m.stdev),
                 _fmt(m.mean),
                 _fmt(m.maximum),
             ]
         )
-    lines.append(_table(metric_rows, ["metric", "count", "p50", "p99", "mean", "max"]))
+    lines.append(
+        _table(metric_rows, ["metric", "count", "p50", "p99", "jitter", "mean", "max"])
+    )
     lines.append("")
     return "\n".join(lines)
 
