@@ -15,6 +15,7 @@ High-fidelity benchmarking for LLM inference systems.
 - `veeksha/config/` - Configuration dataclasses (vidhi-based: `frozen_dataclass`, `field()`, `BasePolyConfig`)
 - `veeksha/microbench/` - Microbenchmark runners (prefill, decode, stress)
 - `veeksha/cli/config_docs_generator.py` - Sphinx docs generator for config classes
+- `datahub/` - Dataset build/publish tooling + HF dataset cards (decoupled from the veeksha package; see the `voice-traces` skill)
 - `tests/unit/` - Unit tests
 - `tests/e2e/` - End-to-end tests
 

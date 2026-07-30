@@ -28,9 +28,9 @@ client:
 
 session_generator:
   type: trace
-  # ShareGPT conversations JSON. Not shipped with the repo -- point this at a
-  # local copy of the dataset.
-  trace_file: /path/to/sharegpt_data.json
+  # ShareGPT conversations JSON. Fetch the published pool with:
+  #   python datahub/trace_hub.py fetch --datasets tts/sharegpt --revision v0.1
+  trace_file: traces/tts/sharegpt/sharegpt_data.json
   wrap_mode: false
   flavor:
     type: sharegpt

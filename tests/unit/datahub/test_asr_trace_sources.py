@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from scripts import prepare_audio_traces
-from scripts.prepare_audio_traces import TraceSourceOptions, build_trace_source
+from datahub import prepare_audio_traces
+from datahub.prepare_audio_traces import TraceSourceOptions, build_trace_source
 
 
 @pytest.mark.unit

@@ -15,7 +15,7 @@ client:
 
 session_generator:
   type: trace
-  trace_file: traces/asr/aa_public/manifest.jsonl
+  trace_file: traces/asr/aa_bench100/manifest.jsonl
   wrap_mode: true
   flavor:
     type: audio
