@@ -481,7 +481,14 @@ class PerformanceEvaluator(BaseEvaluator):
             **self._get_streaming_tts_summary(),
         }
         for sketch in self._lifecycle_sketches.values():
-            summary.update(sketch.get_summary())
+            # Drop None percentiles: this summary is float-valued.
+            summary.update(
+                {
+                    key: value
+                    for key, value in sketch.get_summary().items()
+                    if value is not None
+                }
+            )
         return summary
 
     def _build_summary_stats(self) -> Dict[str, Any]:

@@ -15,19 +15,20 @@ from typing import Dict, Iterable, List, Mapping, Optional
 from veeksha.preflight.models import MetricSummary, ScoreReport, ServerRequestRecord
 
 # Metric names -- referenced by the validator's gates so they stay in sync.
-M_REQUEST_DELIVERY = "request_delivery_ms"  # t_sr - t_cs
-M_RESPONSE_DELIVERY = "response_delivery_ms"  # t_cr_i - t_ss_i
-M_SERVER_TTFC_ABS_ERR = "server_ttfc_abs_error_ms"  # |(t_ss_0 - t_sr) - ttfc|
+# Each comment gives the quantity measured, in record-book field names.
+M_REQUEST_DELIVERY = "request_delivery_ms"  # server_recv_time - client_sent_at
+M_RESPONSE_DELIVERY = "response_delivery_ms"  # chunk_recv - server_send, per chunk
+M_SERVER_TTFC_ABS_ERR = "server_ttfc_abs_error_ms"  # |first send gap - ttfc|
 M_SERVER_TPOC_ABS_ERR = "server_tpoc_abs_error_ms"  # |gap - tpoc|
-M_CLIENT_TTFC = "client_observed_ttfc_ms"  # t_cr_0 - t_cs (informational)
-M_CLIENT_TPOC = "client_observed_tpoc_ms"  # t_cr_{i+1} - t_cr_i (informational)
+M_CLIENT_TTFC = "client_observed_ttfc_ms"  # first chunk_recv - sent (informational)
+M_CLIENT_TPOC = "client_observed_tpoc_ms"  # chunk_recv gap (informational)
 M_LIFECYCLE_READY_TO_DISPATCH = "lifecycle_ready_to_dispatch_ms"
 M_LIFECYCLE_DISPATCH_TO_PICKUP = "lifecycle_dispatch_to_pickup_ms"
 M_LIFECYCLE_PICKUP_TO_SEND = "lifecycle_pickup_to_send_ms"
-M_LIFECYCLE_READY_TO_SEND = "lifecycle_ready_to_send_ms"  # end-to-end (t_cs - ready)
-# Streaming-input clients only (realtime_tts / vajra / stt):
-M_INPUT_DELIVERY = "input_delivery_ms"  # t_sr_i - t_cs_i (per input segment)
-M_INPUT_PACING_ABS_ERR = "input_pacing_abs_error_ms"  # |t_cs_i - deadline_i|
+M_LIFECYCLE_READY_TO_SEND = "lifecycle_ready_to_send_ms"  # client_sent_at - ready
+# Streaming-input clients only (streaming_tts / stt):
+M_INPUT_DELIVERY = "input_delivery_ms"  # input_recv - input_send, per segment
+M_INPUT_PACING_ABS_ERR = "input_pacing_abs_error_ms"  # |input_send - deadline|
 
 _MS = 1000.0
 
@@ -91,16 +92,12 @@ def score(
     for r in results:
         n_requests += 1
         request_id = getattr(r, "request_id", None)
-        client_send_time = getattr(r, "client_sent_at", None)  # t_cs
+        client_send_time = getattr(r, "client_sent_at", None)
         ready_time = getattr(r, "scheduler_ready_at", None)
         dispatched_time = getattr(r, "scheduler_dispatched_at", None)
         pickup_time = getattr(r, "client_picked_up_at", None)
-        client_recv_times: Optional[List[float]] = getattr(
-            r, "chunk_recv_times", None
-        )  # t_cr_i
-        input_send_times: Optional[List[float]] = getattr(
-            r, "input_send_times", None
-        )  # t_cs_i
+        client_recv_times: Optional[List[float]] = getattr(r, "chunk_recv_times", None)
+        input_send_times: Optional[List[float]] = getattr(r, "input_send_times", None)
         input_send_deadlines: Optional[List[float]] = getattr(
             r, "input_send_deadlines", None
         )
@@ -135,7 +132,7 @@ def score(
                 (client_send_time - ready_time) * _MS,
             )
 
-        # --- response delivery: client receipt (t_cr_i) vs server send (t_ss_i) ---
+        # --- response delivery: chunk_recv_times vs server_send_times ---
         # Joined from the two record books by index within this request (relies
         # on 1:1 chunk ordering, which the paced localhost mocks hold).
         if (
@@ -152,7 +149,7 @@ def score(
                     (client_recv_time - server_send_time) * _MS,
                 )
 
-        # --- streaming-input pacing accuracy (client-only): t_cs_i vs deadline ---
+        # --- input pacing accuracy (client-only): input_send_times vs deadline ---
         if input_send_times and input_send_deadlines:
             for send_time, deadline in zip(input_send_times, input_send_deadlines):
                 _append(
@@ -177,7 +174,7 @@ def score(
             continue
         n_paired += 1
 
-        server_recv_time = server_record.server_recv_time  # t_sr
+        server_recv_time = server_record.server_recv_time
         if client_send_time is not None:
             _append(
                 buckets,
@@ -185,7 +182,7 @@ def score(
                 (server_recv_time - client_send_time) * _MS,
             )
 
-        # streaming-input delivery: server receipt (t_sr_i) vs client send (t_cs_i)
+        # input delivery: input_recv_times vs input_send_times, per segment
         if input_send_times and server_record.input_recv_times:
             for send_time, server_input_recv in zip(
                 input_send_times, server_record.input_recv_times
@@ -194,10 +191,10 @@ def score(
                     buckets, M_INPUT_DELIVERY, (server_input_recv - send_time) * _MS
                 )
 
-        server_send_times = server_record.server_send_times  # t_ss_i
+        server_send_times = server_record.server_send_times
         if server_send_times:
-            # Anchor ttfc at when the server began responding (== t_sr for
-            # single-shot HTTP; after the input phase for streaming-input WS).
+            # Anchor ttfc at when the server began responding (== request
+            # accept for single-shot HTTP; after the input phase for WS).
             response_start = server_record.response_start_time
             if response_start is None:
                 response_start = server_recv_time

@@ -28,11 +28,10 @@ from veeksha.config.client import (
     BaseClientConfig,
     OpenAIChatCompletionsClientConfig,
     OpenAICompletionsClientConfig,
-    RealtimeTTSClientConfig,
+    StreamingTTSClientConfig,
     STTClientConfig,
     TextPacingConfig,
     TTSClientConfig,
-    VajraTTSStreamClientConfig,
 )
 from veeksha.config.evaluator import PerformanceEvaluatorConfig
 from veeksha.config.generator.channel import (
@@ -61,10 +60,10 @@ from veeksha.preflight.spawn import (
     MockServerHandle,
     spawn_mock_chat_server,
     spawn_mock_completions_server,
-    spawn_mock_realtime_tts_server,
+    spawn_mock_streaming_tts_openai_server,
+    spawn_mock_streaming_tts_vajra_server,
     spawn_mock_stt_server,
     spawn_mock_tts_server,
-    spawn_mock_vajra_tts_server,
 )
 from veeksha.traffic.registry import TrafficSchedulerRegistry
 from veeksha.types import ChannelModality
@@ -336,7 +335,7 @@ def run_completions_preflight(
 
 
 # ---------------------------------------------------------------------------
-# tts group: tts (HTTP) + realtime_tts + vajra (WS)
+# tts group: tts (HTTP) + streaming_tts (WS, one check per wire protocol)
 # ---------------------------------------------------------------------------
 
 
@@ -359,6 +358,8 @@ def run_tts_preflight(
             api_base=server.api_base,
             api_key="preflight",
             model="preflight-mock",
+            # Raw byte stream, no provider framing, so chunks join 1:1.
+            provider="openai",
             voice_id="preflight",
             raw_pcm=True,
             chunk_size=_TTS_CHUNK_BYTES,
@@ -376,24 +377,33 @@ def run_tts_preflight(
         )
 
 
-def run_realtime_tts_preflight(
+def _run_streaming_tts_preflight(
     cfg: PreflightTtsCheckConfig,
     *,
+    provider: str,
+    spawn_server,
+    label: str,
     traffic_scheduler: BaseTrafficConfig,
     num_sessions: int,
     output_dir: str,
 ) -> ScoreReport:
-    """Realtime-TTS (WebSocket) path."""
-    with spawn_mock_realtime_tts_server(
+    """Drive ``StreamingTTSClient`` for one provider against its matching mock.
+
+    One client, one wire protocol per call: the mock speaks exactly what the
+    named provider's protocol adapter expects, so a drift here is the harness's
+    (or the client's), never a protocol mismatch.
+    """
+    with spawn_server(
         ttfc_ms=cfg.server_ttfc_ms,
         tpoc_ms=cfg.server_tpoc_ms,
         num_chunks=cfg.num_response_chunks,
     ) as server:
-        _log("realtime_tts", num_sessions, server)
-        client_config = RealtimeTTSClientConfig(
+        _log(label, num_sessions, server)
+        client_config = StreamingTTSClientConfig(
             api_base=server.api_base,
             api_key="preflight",
             model="preflight-mock",
+            provider=provider,
             voice_id="preflight",
             pacing=_stream_pacing(cfg.input_pacing_tps, cfg.input_chunk_tokens),
             record_preflight_timing=True,
@@ -410,38 +420,42 @@ def run_realtime_tts_preflight(
         )
 
 
-def run_vajra_tts_preflight(
+def run_streaming_tts_openai_preflight(
     cfg: PreflightTtsCheckConfig,
     *,
     traffic_scheduler: BaseTrafficConfig,
     num_sessions: int,
     output_dir: str,
 ) -> ScoreReport:
-    """Vajra TTS-stream (WebSocket binary PCM) path."""
-    with spawn_mock_vajra_tts_server(
-        ttfc_ms=cfg.server_ttfc_ms,
-        tpoc_ms=cfg.server_tpoc_ms,
-        num_chunks=cfg.num_response_chunks,
-    ) as server:
-        _log("vajra_tts_stream", num_sessions, server)
-        client_config = VajraTTSStreamClientConfig(
-            api_base=server.api_base,
-            api_key="preflight",
-            model="preflight-mock",
-            voice_id="preflight",
-            pacing=_stream_pacing(cfg.input_pacing_tps, cfg.input_chunk_tokens),
-            record_preflight_timing=True,
-        )
-        return _score_run(
-            client_config,
-            _text_session_config(cfg.input_tokens),
-            server,
-            ttfc_ms=cfg.server_ttfc_ms,
-            tpoc_ms=cfg.server_tpoc_ms,
-            traffic_scheduler=traffic_scheduler,
-            num_sessions=num_sessions,
-            output_dir=output_dir,
-        )
+    """Streaming-TTS (WebSocket) path over the OpenAI-realtime protocol."""
+    return _run_streaming_tts_preflight(
+        cfg,
+        provider="openai_realtime",
+        spawn_server=spawn_mock_streaming_tts_openai_server,
+        label="streaming_tts (openai_realtime)",
+        traffic_scheduler=traffic_scheduler,
+        num_sessions=num_sessions,
+        output_dir=output_dir,
+    )
+
+
+def run_streaming_tts_vajra_preflight(
+    cfg: PreflightTtsCheckConfig,
+    *,
+    traffic_scheduler: BaseTrafficConfig,
+    num_sessions: int,
+    output_dir: str,
+) -> ScoreReport:
+    """Streaming-TTS (WebSocket) path over Vajra's native binary-PCM protocol."""
+    return _run_streaming_tts_preflight(
+        cfg,
+        provider="vajra",
+        spawn_server=spawn_mock_streaming_tts_vajra_server,
+        label="streaming_tts (vajra)",
+        traffic_scheduler=traffic_scheduler,
+        num_sessions=num_sessions,
+        output_dir=output_dir,
+    )
 
 
 # ---------------------------------------------------------------------------

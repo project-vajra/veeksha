@@ -194,7 +194,7 @@ def spawn_mock_tts_server(
     )
 
 
-def spawn_mock_realtime_tts_server(
+def spawn_mock_streaming_tts_openai_server(
     ttfc_ms: float,
     tpoc_ms: float,
     num_chunks: int,
@@ -202,9 +202,9 @@ def spawn_mock_realtime_tts_server(
     port: Optional[int] = None,
     ready_timeout: float = 10.0,
 ) -> MockServerHandle:
-    """Start the OpenAI-realtime TTS mock server (WebSocket)."""
+    """Start the streaming-TTS mock speaking the OpenAI-realtime WS protocol."""
     return spawn_mock_server(
-        "veeksha.preflight.servers.mock_realtime_tts_server",
+        "veeksha.preflight.servers.mock_streaming_tts_openai_server",
         {"ttfc-ms": ttfc_ms, "tpoc-ms": tpoc_ms, "num-chunks": num_chunks},
         host=host,
         port=port,
@@ -212,7 +212,7 @@ def spawn_mock_realtime_tts_server(
     )
 
 
-def spawn_mock_vajra_tts_server(
+def spawn_mock_streaming_tts_vajra_server(
     ttfc_ms: float,
     tpoc_ms: float,
     num_chunks: int,
@@ -220,9 +220,13 @@ def spawn_mock_vajra_tts_server(
     port: Optional[int] = None,
     ready_timeout: float = 10.0,
 ) -> MockServerHandle:
-    """Start the Vajra TTS-stream mock server (WebSocket, binary PCM)."""
+    """Start the streaming-TTS mock speaking Vajra's native WS protocol.
+
+    Binary PCM frames rather than base64-in-JSON, so this variant also covers
+    the client's binary receive path.
+    """
     return spawn_mock_server(
-        "veeksha.preflight.servers.mock_vajra_tts_server",
+        "veeksha.preflight.servers.mock_streaming_tts_vajra_server",
         {"ttfc-ms": ttfc_ms, "tpoc-ms": tpoc_ms, "num-chunks": num_chunks},
         host=host,
         port=port,

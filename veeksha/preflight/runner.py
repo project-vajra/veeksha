@@ -16,11 +16,11 @@ from veeksha.logger import init_logger
 from veeksha.preflight import validator
 from veeksha.preflight.drivers import (
     run_completions_preflight,
-    run_realtime_tts_preflight,
+    run_streaming_tts_openai_preflight,
+    run_streaming_tts_vajra_preflight,
     run_stt_preflight,
     run_text_preflight,
     run_tts_preflight,
-    run_vajra_tts_preflight,
 )
 from veeksha.preflight.models import ScoreReport
 from veeksha.preflight.report import render_report, write_report
@@ -63,36 +63,25 @@ def _run_config(config: PreflightCheckConfig) -> bool:
         num_sessions=config.num_sessions,
     )
 
-    # (enabled, runner, group config, dir slug, display name)
-    checks = [
-        (config.check_text, run_text_preflight, config.text, "chat", "text (chat)"),
-        (
-            config.check_completions,
-            run_completions_preflight,
-            config.text,
-            "completions",
-            "completions",
-        ),
-        (config.check_tts, run_tts_preflight, config.tts, "tts", "tts"),
-        (
-            config.check_realtime_tts,
-            run_realtime_tts_preflight,
+    # check name -> (runner, group config, display name)
+    checks = {
+        "chat": (run_text_preflight, config.text, "text (chat)"),
+        "completions": (run_completions_preflight, config.text, "completions"),
+        "tts": (run_tts_preflight, config.tts, "tts"),
+        "streaming_tts_openai": (
+            run_streaming_tts_openai_preflight,
             config.tts,
-            "realtime_tts",
-            "realtime_tts",
+            "streaming_tts (openai_realtime)",
         ),
-        (
-            config.check_vajra_tts,
-            run_vajra_tts_preflight,
+        "streaming_tts_vajra": (
+            run_streaming_tts_vajra_preflight,
             config.tts,
-            "vajra_tts_stream",
-            "vajra_tts_stream",
+            "streaming_tts (vajra)",
         ),
-        (config.check_stt, run_stt_preflight, config.stt, "stt", "stt"),
-    ]
-    for enabled, runner, group_cfg, slug, name in checks:
-        if not enabled:
-            continue
+        "stt": (run_stt_preflight, config.stt, "stt"),
+    }
+    for slug in config.selected_checks():
+        runner, group_cfg, name = checks[slug]
         logger.info("Running preflight %s check", name)
         check_output_dir = os.path.join(config.output_dir, slug)
         report = runner(group_cfg, output_dir=check_output_dir, **common)

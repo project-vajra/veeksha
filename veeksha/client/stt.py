@@ -294,8 +294,6 @@ class STTClient(BaseLLMClient):
         """
         headers = self._protocol.headers()
         if extra_headers:
-            # Preflight correlation id; merged in rather than replacing so the
-            # provider's own auth headers survive.
             headers = {**headers, **extra_headers}
         return connect(
             self._ws_url,
@@ -406,7 +404,7 @@ class STTClient(BaseLLMClient):
                 parts.append(provisional_transcript)
             return _clean_transcript(" ".join(parts))
 
-        # t_cs: request handed to the transport (always recorded, so the harness
+        # Request handed to the transport (always recorded, so the harness
         # lifecycle dispatch-drift metrics cover STT on normal runs too).
         client_sent_at = time.monotonic()
 
@@ -414,7 +412,7 @@ class STTClient(BaseLLMClient):
         # sent to the server; the scorer joins the two record books by request_id.
         preflight_enabled = getattr(self.config, "record_preflight_timing", False)
         chunk_recv_times: list[float] = []
-        input_send_times: list[float] = []  # t_cs_i, per paced audio chunk
+        input_send_times: list[float] = []  # per paced audio chunk
         input_send_deadlines: list[float] = []
         extra_headers = (
             {"X-Veeksha-Request-Id": str(request_id)}
@@ -452,7 +450,7 @@ class STTClient(BaseLLMClient):
                         )
                     await ws.send(message)
                     if preflight_enabled and audio_started_at is not None:
-                        # t_cs_i vs the audio-clock deadline this chunk paces to.
+                        # Actual send vs the audio-clock deadline it paces to.
                         input_send_times.append(time.monotonic())
                         input_send_deadlines.append(
                             audio_started_at
@@ -487,7 +485,7 @@ class STTClient(BaseLLMClient):
                                 raw_message, provider=self._protocol.provider
                             )
                         )
-                    now = time.monotonic()  # t_cr_i
+                    now = time.monotonic()  # response-chunk receipt
                     if kind in (
                         "delta",
                         "snapshot",

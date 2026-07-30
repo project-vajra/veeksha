@@ -17,7 +17,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import time
 from typing import List, Optional
 
 from aiohttp import web

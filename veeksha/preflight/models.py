@@ -21,10 +21,10 @@ class ServerRequestRecord:
     """
 
     request_id: int
-    server_recv_time: float  # t_sr (connection / request accept)
-    server_send_times: List[float] = field(default_factory=list)  # t_ss_i
-    # t_sr_i: per-input-segment receipt times. Only populated by streaming-input
-    # mocks (realtime_tts / vajra / stt); empty for single-shot HTTP requests.
+    server_recv_time: float  # connection / request accept
+    server_send_times: List[float] = field(default_factory=list)  # per response chunk
+    # Per-input-segment receipt times. Only populated by streaming-input mocks
+    # (streaming_tts / stt); empty for single-shot HTTP requests.
     input_recv_times: List[float] = field(default_factory=list)
     # When the server began emitting the response. The ttfc pacing metric is
     # anchored here, so it isn't polluted by a streaming-input phase. HTTP mocks
