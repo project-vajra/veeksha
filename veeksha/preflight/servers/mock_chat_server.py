@@ -20,8 +20,14 @@ import json
 import time
 from typing import List, Optional
 
-from veeksha.preflight.servers.base_mock import BaseMockServer
-from veeksha.preflight.servers.base_server import HttpRequest, start_sse_response
+from aiohttp import web
+
+from veeksha.preflight.servers.base_mock import (
+    BaseMockServer,
+    finish,
+    pace_chunks,
+    start_sse,
+)
 
 
 class MockChatServer(BaseMockServer):
@@ -40,32 +46,18 @@ class MockChatServer(BaseMockServer):
         self.num_chunks = num_chunks
         self.chunk_text = chunk_text
 
-    async def handle_post(self, req: HttpRequest, writer: asyncio.StreamWriter) -> None:
-        _, record = self.open_record(req)
-        await start_sse_response(writer)
+    async def handle_post(self, request: web.Request) -> web.StreamResponse:
+        _, record = self.open_record(request)
+        await request.read()
+        response = await start_sse(request)
 
-        first_deadline = record.server_recv_time + self.ttfc_ms / 1000.0
-        for i in range(self.num_chunks):
-            deadline = first_deadline + i * self.tpoc_ms / 1000.0
-            slack = deadline - time.monotonic()
-            if slack > 0:
-                await asyncio.sleep(slack)
-
-            # t_ss_i: stamp immediately before emitting this chunk, into the
-            # server's own record book (nothing timing-related on the wire).
-            record.server_send_times.append(time.monotonic())
-            data = {"choices": [{"delta": {"content": self.chunk_text}}]}
-            writer.write(f"data: {json.dumps(data)}\n\n".encode())
-            try:
-                await writer.drain()
-            except (ConnectionError, OSError):
-                return  # client hung up; stop emitting
-
-        writer.write(b"data: [DONE]\n\n")
-        try:
-            await writer.drain()
-        except (ConnectionError, OSError):
-            pass
+        frame = json.dumps(
+            {"choices": [{"delta": {"content": self.chunk_text}}]}
+        ).encode()
+        payloads = (b"data: " + frame + b"\n\n" for _ in range(self.num_chunks))
+        if await pace_chunks(response, record, payloads, self.ttfc_ms, self.tpoc_ms):
+            await finish(response, b"data: [DONE]\n\n")
+        return response
 
 
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
