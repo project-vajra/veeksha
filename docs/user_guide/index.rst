@@ -8,6 +8,7 @@ integrating with external tools.
    :maxdepth: 2
 
    configuration
+   named_benchmarks
    output_files
    trace_flavors
    asr_benchmarking
