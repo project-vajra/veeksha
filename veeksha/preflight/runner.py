@@ -29,7 +29,11 @@ logger = init_logger(__name__)
 
 
 def _gate_and_render(
-    config: PreflightCheckConfig, report: ScoreReport, title: str, output_dir: str
+    config: PreflightCheckConfig,
+    report: ScoreReport,
+    title: str,
+    output_dir: str,
+    check_config,
 ) -> bool:
     """Validate one check's report, print + write it, return True iff PASS."""
     result = validator.run_validation(
@@ -40,7 +44,7 @@ def _gate_and_render(
         input_pacing_threshold_ms=config.input_pacing_threshold_ms,
         max_unpaired_fraction=config.max_unpaired_fraction,
     )
-    text = render_report(report, result, title=title)
+    text = render_report(report, result, config, check_config, title=title)
     path = write_report(text, output_dir)
     print(text)
     print(f"Report written to {path}")
@@ -97,6 +101,7 @@ def _run_config(config: PreflightCheckConfig) -> bool:
             report,
             f"Preflight measurement fidelity: {name}",
             check_output_dir,
+            check_config=group_cfg,
         )
 
     return all_passed
