@@ -1,3 +1,4 @@
+from veeksha.generator.channel.audio import AudioChannelGenerator
 from veeksha.generator.channel.text import TextChannelGenerator
 from veeksha.types import ChannelModality
 from veeksha.types.base_registry import BaseRegistry
@@ -10,3 +11,4 @@ class ChannelGeneratorRegistry(BaseRegistry):
 
 
 ChannelGeneratorRegistry.register(ChannelModality.TEXT, TextChannelGenerator)
+ChannelGeneratorRegistry.register(ChannelModality.AUDIO, AudioChannelGenerator)
