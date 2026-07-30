@@ -338,6 +338,12 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
         chunks_received = 0
         generated_text = ""
 
+        # preflight timing (recorded only when enabled). Only the request id is
+        # sent to the server; the scorer joins the two record books by request_id.
+        preflight_enabled = getattr(self.config, "record_preflight_timing", False)
+        client_sent_at: Optional[float] = None
+        chunk_recv_times: List[float] = []
+
         # multimodal response data
         image_data: Optional[Any] = None
         video_data: Optional[Any] = None
@@ -391,6 +397,10 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
             client = self._get_client()
             t_start = time.monotonic()
             most_recent_token_time = t_start
+            # Request handed to the transport (always recorded).
+            client_sent_at = t_start
+            if preflight_enabled:
+                headers["X-Veeksha-Request-Id"] = str(request.id)
             async with client.stream(
                 "POST",
                 self.chat_address,
@@ -406,6 +416,9 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
                 sent_notified = False
                 async for data in self._process_stream(response):
                     receive_time = time.monotonic()
+                    # Client receipt of each response chunk.
+                    if preflight_enabled:
+                        chunk_recv_times.append(receive_time)
                     if "error" in data:
                         err = data.get("error") or {}
                         error_msg = err.get("message", "Unknown error")
@@ -533,4 +546,6 @@ class OpenAIChatCompletionsClient(OpenAIBaseClient):
             error_code=error_code,
             error_msg=error_msg,
             client_completed_at=completed_at,
+            client_sent_at=client_sent_at,
+            chunk_recv_times=chunk_recv_times if preflight_enabled else None,
         )

@@ -323,7 +323,7 @@ def test_repeated_committed_turns_are_not_deduplicated() -> None:
     websocket = _FakeDeepgramFluxWebSocket(
         transcripts=["yes", "yes"],
     )
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign, arg-type]
+    client._connect = lambda *_args, **_kwargs: _FakeConnection(websocket)  # type: ignore[method-assign, arg-type]
 
     result = asyncio.run(client._stream(b"\x00\x00"))
 
@@ -674,7 +674,7 @@ def test_cartesia_stream_concatenates_final_deltas_without_inserting_spaces() ->
         )
     )
     websocket = _FakeCartesiaWebSocket()
-    client._connect = lambda: _FakeCartesiaConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda *_args, **_kwargs: _FakeCartesiaConnection(websocket)  # type: ignore[method-assign]
 
     result = asyncio.run(client._stream(b"\x00\x00"))
 
@@ -700,7 +700,7 @@ def test_deepgram_flux_clean_close_finalizes_the_last_turn() -> None:
         )
     )
     websocket = _FakeDeepgramFluxWebSocket()
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign, arg-type]
+    client._connect = lambda *_args, **_kwargs: _FakeConnection(websocket)  # type: ignore[method-assign, arg-type]
 
     result = asyncio.run(client._stream(b"\x00\x00"))
 
@@ -712,7 +712,7 @@ def test_deepgram_flux_clean_close_finalizes_the_last_turn() -> None:
 def test_vllm_stream_fires_callbacks_after_handshake_and_first_content() -> None:
     client = _vllm_realtime_client()
     websocket = _FakeVllmWebSocket()
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda *_args, **_kwargs: _FakeConnection(websocket)  # type: ignore[method-assign]
     events: list[str] = []
 
     result = asyncio.run(
@@ -731,7 +731,7 @@ def test_vllm_stream_fires_callbacks_after_handshake_and_first_content() -> None
 def test_stt_request_emits_normalized_provider_metadata(tmp_path: Path) -> None:
     client = _vllm_realtime_client()
     websocket = _FakeVllmWebSocket()
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda *_args, **_kwargs: _FakeConnection(websocket)  # type: ignore[method-assign]
     client._clip_assets = lambda _path: _ClipAssets(  # type: ignore[method-assign]
         pcm=b"\x00\x00",
         wire_messages=[],
@@ -800,7 +800,7 @@ class _FakeVllmEmptyTranscriptWebSocket:
 def test_stt_request_emits_null_ttfc_when_no_content_observed(tmp_path: Path) -> None:
     client = _vllm_realtime_client()
     websocket = _FakeVllmEmptyTranscriptWebSocket()
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda *_args, **_kwargs: _FakeConnection(websocket)  # type: ignore[method-assign]
     client._clip_assets = lambda _path: _ClipAssets(  # type: ignore[method-assign]
         pcm=b"\x00\x00",
         wire_messages=[],
@@ -854,7 +854,7 @@ def test_stt_handshake_garbage_fails_request_with_protocol_error(
     """A malformed first frame is a named protocol error, not an opaque 520."""
     client = _vllm_realtime_client()
     websocket = _FakeHandshakeGarbageWebSocket(first_frame)
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda *_args, **_kwargs: _FakeConnection(websocket)  # type: ignore[method-assign]
     client._clip_assets = lambda _path: _ClipAssets(  # type: ignore[method-assign]
         pcm=b"\x00\x00",
         wire_messages=[],

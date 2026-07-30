@@ -623,14 +623,22 @@ class StreamingTTSClient(BaseLLMClient):
         self._streaming_config = config
         self._protocol = protocol_class(config, self.api_key)
 
-    def _connect(self) -> Any:
+    def _connect(self, extra_headers: dict[str, str] | None = None) -> Any:
+        """Open the provider WebSocket.
+
+        ``extra_headers`` is merged over the protocol's own headers, so provider
+        auth survives. Empty or None adds nothing.
+        """
         open_timeout = min(self._streaming_config.request_timeout, 30)
+        headers = self._protocol.headers()
+        if extra_headers:
+            headers = {**headers, **extra_headers}
         return connect(
             self._protocol.build_ws_url(str(self.api_base)),
             max_size=None,
             compression=None,
             open_timeout=open_timeout,
-            additional_headers=self._protocol.headers(),
+            additional_headers=headers,
         )
 
     async def measure_websocket_rtt_ms(self, samples: int = 5) -> list[float]:
@@ -719,6 +727,17 @@ class StreamingTTSClient(BaseLLMClient):
         stream_completed = asyncio.Event()
         start = time.monotonic()
 
+        # preflight timing (recorded only when enabled). Only the request id is
+        # sent to the server; the scorer joins the two record books by request_id.
+        preflight_enabled = getattr(self.config, "record_preflight_timing", False)
+        client_sent_at: float | None = start if preflight_enabled else None
+        chunk_recv_times: list[float] = []
+        input_send_times: list[float] = []  # t_cs_i, per paced text segment
+        input_send_deadlines: list[float] = []  # intended send instant per segment
+        extra_headers = (
+            {"X-Veeksha-Request-Id": str(request.id)} if preflight_enabled else None
+        )
+
         def fire_sent_once() -> None:
             nonlocal sent_fired
             if not sent_fired and on_request_sent is not None:
@@ -747,6 +766,10 @@ class StreamingTTSClient(BaseLLMClient):
                     response_triggered = True
 
                 await websocket.send(protocol.text_message(segment.text))
+                if preflight_enabled:
+                    # t_cs_i (actual send) vs deadline (intended) -> pacing error.
+                    input_send_times.append(time.monotonic())
+                    input_send_deadlines.append(deadline)
                 text_delta_timestamps.append([offset_ms, segment.n_chars])
                 sent_words += segment.n_tokens
 
@@ -785,7 +808,9 @@ class StreamingTTSClient(BaseLLMClient):
             received_audio_ms = 0.0
             while True:
                 raw = await websocket.recv()
-                wire_offset_ms = (time.monotonic() - start) * 1000
+                # Stamp receipt (t_cr_i) before any parse/decode work.
+                recv_time = time.monotonic()
+                wire_offset_ms = (recv_time - start) * 1000
                 event = protocol.parse(raw)
                 if event.error:
                     raise StreamingTTSError(event.error)
@@ -809,6 +834,8 @@ class StreamingTTSClient(BaseLLMClient):
                     audio_chunk_timestamps.append(
                         [playable_offset_ms, len(event.audio)]
                     )
+                    if preflight_enabled:
+                        chunk_recv_times.append(recv_time)
                     if ttfc is None:
                         if response_trigger_offset is None:
                             raise StreamingTTSError(
@@ -841,7 +868,7 @@ class StreamingTTSClient(BaseLLMClient):
         error_msg: str | None = None
         try:
             async with asyncio.timeout(self._streaming_config.request_timeout):
-                async with self._connect() as websocket:
+                async with self._connect(extra_headers=extra_headers) as websocket:
                     ws_connect_latency = (time.monotonic() - start) * 1000
                     for message in protocol.initial_messages():
                         await websocket.send(message)
@@ -938,4 +965,8 @@ class StreamingTTSClient(BaseLLMClient):
             error_code=error_code,
             error_msg=error_msg,
             client_completed_at=completed_at,
+            client_sent_at=client_sent_at,
+            chunk_recv_times=chunk_recv_times if preflight_enabled else None,
+            input_send_times=input_send_times if preflight_enabled else None,
+            input_send_deadlines=input_send_deadlines if preflight_enabled else None,
         )
