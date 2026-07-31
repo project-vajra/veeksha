@@ -322,9 +322,7 @@ class TTSClient(BaseLLMClient):
     def _get_client(self) -> aiohttp.ClientSession:
         """Return a thread-local aiohttp session bound to the caller's event loop."""
         if not hasattr(self._client_storage, "client"):
-            self._client_storage.client = new_session(
-                self._http_config.request_timeout
-            )
+            self._client_storage.client = new_session(self._http_config.request_timeout)
         return self._client_storage.client
 
     async def aclose(self) -> None:

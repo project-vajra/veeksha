@@ -220,7 +220,7 @@ class ClientRunnerManager:
 
     def stop(self) -> None:
         """
-            Close every input queue, waking all workers immediately.
+        Close every input queue, waking all workers immediately.
         """
         for queue in self.input_queues:
             queue.shutdown(immediate=True)
