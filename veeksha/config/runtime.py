@@ -14,7 +14,7 @@ class RuntimeConfig:
         help="Grace period for in-flight requests after timeout. -1 waits for all, 0 exits immediately.",
     )
     num_dispatcher_threads: int = field(
-        4, help="Number of threads for dispatching requests to workers."
+        2, help="Number of threads for dispatching requests to workers."
     )
     num_completion_threads: int = field(
         8,
@@ -25,7 +25,7 @@ class RuntimeConfig:
         ),
     )
     num_client_threads: Optional[int] = field(
-        8,
+        None,
         help=(
             "Number of async worker threads for making concurrent requests. "
             "None provisions one thread per eight target-concurrent sessions, "
