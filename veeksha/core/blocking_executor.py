@@ -46,14 +46,15 @@ def compute_blocking_thread_count(
     )
     budget = total_cores - reserved
 
-    # Only two call sites offload onto this executor, and both belong to a
-    # client worker: the permanently parked ``input_queue.get`` (one slot per
-    # worker, held for the whole run) and ``STTClient._clip_assets`` (bounded,
-    # returns on its own).  So ``num_client_threads`` slots are permanently
-    # unavailable, and a second ``num_client_threads`` guarantees every worker
-    # a free slot for a clip decode no matter what its peers are doing --
-    # ``2 * num_client_threads`` is the deterministic no-deadlock floor.  It
-    # wins over the CPU budget.
+    # Every call site belongs to a client worker.  One parks forever: the
+    # ``input_queue.get`` (one slot per worker, held for the whole run).  The
+    # rest are bounded and return on their own without waiting on anything else
+    # in the pool -- ``STTClient._clip_assets`` and the streaming-TTS
+    # ``join_audio`` bulk decode (one per request, after its stream ends).  So
+    # ``num_client_threads`` slots are permanently unavailable, and a second
+    # ``num_client_threads`` guarantees every worker a free slot for bounded
+    # work no matter what its peers are doing -- ``2 * num_client_threads`` is
+    # the deterministic no-deadlock floor.
     #
     # Ordering waits are not counted: ``DispatchTracker.wait_for_turn`` is a
     # coroutine suspension and consumes no slot.

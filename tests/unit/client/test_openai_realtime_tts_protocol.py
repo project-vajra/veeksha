@@ -21,7 +21,7 @@ if (
     transformers_stub.AutoTokenizer = object  # type: ignore[attr-defined]
     sys.modules["transformers"] = transformers_stub
 
-from veeksha.client.streaming_tts import StreamingTTSClient
+from veeksha.client.streaming_tts import StreamingTTSClient, _b64_decoded_size
 from veeksha.config.client import StreamingTTSClientConfig, TextPacingConfig
 from veeksha.core.audio_contract import AudioMetricKey
 from veeksha.core.request import Request
@@ -30,9 +30,14 @@ from veeksha.types import ChannelModality
 
 
 class _FakeWebSocket:
-    def __init__(self) -> None:
+    def __init__(self, deltas: list[str] | None = None) -> None:
         self.sent: list[dict[str, Any]] = []
         self._events: asyncio.Queue[str] = asyncio.Queue()
+        self._deltas = (
+            deltas
+            if deltas is not None
+            else [base64.b64encode(bytes(960)).decode("ascii")]
+        )
 
     async def send(self, raw: str) -> None:
         event = json.loads(raw)
@@ -53,16 +58,16 @@ class _FakeWebSocket:
                 )
             )
         elif event["type"] == "response.create":
-            audio = base64.b64encode(bytes(960)).decode("ascii")
-            for response_event in (
-                {"type": "response.created"},
-                {"type": "response.output_audio.delta", "delta": audio},
+            response_events: list[dict[str, Any]] = [{"type": "response.created"}]
+            response_events += [
+                {"type": "response.output_audio.delta", "delta": delta}
+                for delta in self._deltas
+            ]
+            response_events += [
                 {"type": "response.output_audio.done"},
-                {
-                    "type": "response.done",
-                    "response": {"status": "completed"},
-                },
-            ):
+                {"type": "response.done", "response": {"status": "completed"}},
+            ]
+            for response_event in response_events:
                 await self._events.put(json.dumps(response_event))
 
     async def recv(self) -> str:
@@ -89,7 +94,9 @@ def _request() -> Request:
     )
 
 
-def _client(mode: str) -> tuple[StreamingTTSClient, _FakeWebSocket]:
+def _client(
+    mode: str, deltas: list[str] | None = None
+) -> tuple[StreamingTTSClient, _FakeWebSocket]:
     config = StreamingTTSClientConfig(
         provider="openai_realtime",
         api_base="http://example.test",
@@ -102,7 +109,7 @@ def _client(mode: str) -> tuple[StreamingTTSClient, _FakeWebSocket]:
         ),
     )
     client = StreamingTTSClient(config)
-    websocket = _FakeWebSocket()
+    websocket = _FakeWebSocket(deltas)
     client._connect = lambda *_args, **_kwargs: _FakeConnection(websocket)  # type: ignore[method-assign]
     return client, websocket
 
@@ -151,6 +158,53 @@ def test_complete_text_triggers_response_after_last_input_delta() -> None:
         metrics[AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value]
         >= metrics[AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value]
     )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("n_bytes", [0, 1, 2, 3, 4, 5, 639, 640, 641, 960, 1999])
+def test_b64_decoded_size_matches_a_real_decode(n_bytes: int) -> None:
+    """The recv loop reports chunk sizes from this without decoding."""
+    encoded = base64.b64encode(bytes(n_bytes)).decode("ascii")
+    assert _b64_decoded_size(encoded) == len(base64.b64decode(encoded))
+
+
+@pytest.mark.unit
+def test_deferred_decode_yields_the_same_bytes_as_an_inline_decode() -> None:
+    chunks = [bytes(960), bytes(480)]
+    deltas = [base64.b64encode(chunk).decode("ascii") for chunk in chunks]
+    client, _ = _client("complete_text", deltas)
+
+    result = asyncio.run(client.send_request(_request(), session_id=1))
+
+    channel = result.channels[ChannelModality.AUDIO]
+    assert result.success
+    assert channel.content == b"".join(chunks)
+    assert channel.metrics[AudioMetricKey.CHUNK_COUNT.value] == 2
+    sizes = [
+        size
+        for _offset, size in channel.metrics[
+            AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value
+        ]
+    ]
+    assert sizes == [960, 480]
+
+
+@pytest.mark.unit
+def test_malformed_base64_fails_the_request_but_keeps_earlier_audio() -> None:
+    """Decoding now happens after the stream, so a bad chunk fails late.
+
+    The observable outcome is unchanged from the inline decode: the request
+    fails with 500 and the audio received before the bad chunk survives.
+    """
+    good = base64.b64encode(bytes(960)).decode("ascii")
+    client, _ = _client("complete_text", [good, "!!!!"])
+
+    result = asyncio.run(client.send_request(_request(), session_id=1))
+
+    assert not result.success
+    assert result.error_code == 500
+    assert "Invalid base64 audio" in (result.error_msg or "")
+    assert result.channels[ChannelModality.AUDIO].content == bytes(960)
 
 
 @pytest.mark.unit
