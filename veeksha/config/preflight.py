@@ -12,8 +12,8 @@ runs once per wire protocol the client supports, since each protocol has its own
 framing (base64-in-JSON vs binary) and response-trigger rules.
 
 Traffic is closed-loop concurrency: ``concurrency`` sessions in flight out of
-``num_sessions`` total, built with ``rampup_seconds=0`` so measurement runs at
-steady state.
+``runtime.max_sessions`` total, built with ``rampup_seconds=0`` so measurement
+runs at steady state.
 """
 
 from typing import List, Tuple
@@ -21,6 +21,7 @@ from typing import List, Tuple
 from vidhi import field, frozen_dataclass
 
 from veeksha.cli.base import VeekshaCommand
+from veeksha.config.runtime import RuntimeConfig
 from veeksha.config.traffic import BaseTrafficConfig, ConcurrentTrafficConfig
 
 # Every check preflight can run, in execution order. These double as the report
@@ -105,10 +106,14 @@ class PreflightCheckConfig(VeekshaCommand, name="preflight"):
         50,
         help="Target number of concurrent sessions to sustain (the load level).",
     )
-    num_sessions: int = field(
-        500,
-        aliases=["num-sessions"],
-        help="Total sessions to drive across the run (the sample size).",
+    runtime: RuntimeConfig = field(
+        default_factory=lambda: RuntimeConfig(max_sessions=500),
+        help=(
+            "Harness runtime knobs for the run. ``max_sessions`` is the total "
+            "sessions to drive (the sample size); the thread-pool sizes "
+            "(``num_client_threads``, ``num_dispatcher_threads``, "
+            "``num_completion_threads``) are also available for tuning."
+        ),
     )
 
     # --- per-category workload + mock timing ---
@@ -195,8 +200,8 @@ class PreflightCheckConfig(VeekshaCommand, name="preflight"):
             )
         if self.concurrency <= 0:
             raise ValueError("concurrency must be positive")
-        if self.num_sessions <= 0:
-            raise ValueError("num_sessions must be positive")
+        if self.runtime.max_sessions <= 0:
+            raise ValueError("runtime.max_sessions must be positive")
         if not 0.0 <= self.max_unpaired_fraction <= 1.0:
             raise ValueError("max_unpaired_fraction must be in [0, 1]")
         for name in (

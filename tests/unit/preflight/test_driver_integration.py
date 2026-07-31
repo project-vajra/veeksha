@@ -12,6 +12,7 @@ from veeksha.config.preflight import (
     PreflightTextCheckConfig,
     PreflightTtsCheckConfig,
 )
+from veeksha.config.runtime import RuntimeConfig
 from veeksha.config.traffic import ConcurrentTrafficConfig
 from veeksha.preflight import scorer, validator
 from veeksha.preflight.drivers import (
@@ -88,7 +89,7 @@ def test_text_driver_runs_real_loop_and_scores(tmp_path):
     report = run_text_preflight(
         _text_cfg(),
         traffic_scheduler=_traffic(8),
-        num_sessions=40,
+        runtime=RuntimeConfig(max_sessions=40),
         output_dir=str(tmp_path / "text"),
     )
     _assert_measured(report, streaming_input=False)
@@ -114,7 +115,7 @@ def test_completions_driver_runs_real_loop_and_scores(tmp_path):
     report = run_completions_preflight(
         _text_cfg(),
         traffic_scheduler=_traffic(8),
-        num_sessions=40,
+        runtime=RuntimeConfig(max_sessions=40),
         output_dir=str(tmp_path / "completions"),
     )
     _assert_measured(report, streaming_input=False)
@@ -127,7 +128,7 @@ def test_tts_driver_runs_real_loop_and_scores(tmp_path):
     report = run_tts_preflight(
         _tts_cfg(),
         traffic_scheduler=_traffic(8),
-        num_sessions=40,
+        runtime=RuntimeConfig(max_sessions=40),
         output_dir=str(tmp_path / "tts"),
     )
     # HTTP tts sends the whole text in one POST -> no streaming-input metrics.
@@ -140,7 +141,7 @@ def test_streaming_tts_openai_driver_runs_real_loop_and_scores(tmp_path):
     report = run_streaming_tts_openai_preflight(
         _tts_cfg(),
         traffic_scheduler=_traffic(6),
-        num_sessions=24,
+        runtime=RuntimeConfig(max_sessions=24),
         output_dir=str(tmp_path / "streaming_tts_openai"),
     )
     _assert_measured(report, streaming_input=True)
@@ -153,7 +154,7 @@ def test_streaming_tts_vajra_driver_runs_real_loop_and_scores(tmp_path):
     report = run_streaming_tts_vajra_preflight(
         _tts_cfg(),
         traffic_scheduler=_traffic(6),
-        num_sessions=24,
+        runtime=RuntimeConfig(max_sessions=24),
         output_dir=str(tmp_path / "streaming_tts_vajra"),
     )
     _assert_measured(report, streaming_input=True)
@@ -165,7 +166,7 @@ def test_stt_driver_runs_real_loop_and_scores(tmp_path):
     report = run_stt_preflight(
         _stt_cfg(),
         traffic_scheduler=_traffic(4),
-        num_sessions=16,
+        runtime=RuntimeConfig(max_sessions=16),
         output_dir=str(tmp_path / "stt"),
     )
     _assert_measured(report, streaming_input=True)
