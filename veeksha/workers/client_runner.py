@@ -100,10 +100,7 @@ class ClientWorker:
             self.traffic_scheduler.dispatch_tracker if self.traffic_scheduler else None
         )
         if tracker is not None:
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(
-                None, tracker.wait_for_turn, request.dispatch_ticket
-            )
+            await tracker.wait_for_turn(request.dispatch_ticket)
 
         client_picked_up_at: float = time.monotonic()
 
