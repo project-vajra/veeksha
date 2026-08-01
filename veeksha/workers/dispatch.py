@@ -2,7 +2,7 @@
 
 import random
 import time
-from queue import Queue
+from queue import Queue, ShutDown
 from typing import TYPE_CHECKING, List, Optional
 
 from veeksha.core.context import WorkerContext
@@ -73,8 +73,9 @@ class DispatchWorker:
             if result is None:
                 continue
 
-            request, session_id, session_size = result
-            scheduler_ready_at = time.monotonic()
+            request, session_id, session_size, scheduler_ready_at = result
+            # scheduler_ready_at: scheduled ready time; dispatched_at: actual
+            # dequeue time.
             dispatched_at = time.monotonic()
 
             self.evaluator.register_request(
@@ -94,22 +95,29 @@ class DispatchWorker:
                 )
 
             queue = self._select_queue()
-            queue.put(
-                (request, session_id, session_size, scheduler_ready_at, dispatched_at)
-            )
+            try:
+                queue.put(
+                    (
+                        request,
+                        session_id,
+                        session_size,
+                        scheduler_ready_at,
+                        dispatched_at,
+                    )
+                )
+            except ShutDown:
+                # Client queues were closed by ClientRunnerManager.stop();
+                # there is nothing left to dispatch to, so skip the drain.
+                logger.debug(
+                    "Dispatch worker %s: client queues closed, exiting",
+                    self.worker_context.worker_id,
+                )
+                return
 
         # Drain remaining ready requests
         self._drain()
 
         logger.debug("Dispatch worker %s exiting", self.worker_context.worker_id)
-
-    def _get_session_id(self, request) -> int:
-        """Get session ID for a request."""
-        return self.traffic_scheduler.get_session_id(request.id)
-
-    def _get_session_size(self, request) -> int:
-        """Get total number of requests in the session."""
-        return self.traffic_scheduler.get_session_size(request.id)
 
     def _drain(self) -> None:
         """Drain any remaining ready requests."""
@@ -121,8 +129,7 @@ class DispatchWorker:
             if result is None:
                 break
 
-            request, session_id, session_size = result
-            scheduler_ready_at = time.monotonic()
+            request, session_id, session_size, scheduler_ready_at = result
             dispatched_at = time.monotonic()
 
             self.evaluator.register_request(
@@ -142,6 +149,19 @@ class DispatchWorker:
                 )
 
             queue = self._select_queue()
-            queue.put(
-                (request, session_id, session_size, scheduler_ready_at, dispatched_at)
-            )
+            try:
+                queue.put(
+                    (
+                        request,
+                        session_id,
+                        session_size,
+                        scheduler_ready_at,
+                        dispatched_at,
+                    )
+                )
+            except ShutDown:
+                logger.debug(
+                    "Dispatch worker %s: client queues closed mid-drain",
+                    self.worker_context.worker_id,
+                )
+                break

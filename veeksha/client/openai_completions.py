@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
-import httpx
+import aiohttp
 
 from veeksha.client.openai_base import OpenAIBaseClient
 from veeksha.core.request import Request
@@ -21,7 +22,7 @@ logger = init_logger(__name__)
 
 
 class OpenAICompletionsClient(OpenAIBaseClient):
-    """Async client for OpenAI `/completions` API using httpx.
+    """Async client for OpenAI `/completions` API using aiohttp.
 
     This client always uses the completions endpoint (non-streaming). It is
     intended for servers that only expose completions, or workloads that require
@@ -68,8 +69,6 @@ class OpenAICompletionsClient(OpenAIBaseClient):
         on_request_dispatched: Optional[Callable[[], None]] = None,
     ) -> RequestResult:
         """Execute the HTTP request against `/completions` and parse the response."""
-        timeout = self.config.request_timeout
-
         prompt_text = ""
         if ChannelModality.TEXT in request.channels:
             text_content = request.channels[ChannelModality.TEXT]
@@ -118,35 +117,50 @@ class OpenAICompletionsClient(OpenAIBaseClient):
         completion_text = ""
         logprobs: Any = None
 
+        # preflight timing (recorded only when enabled). Only the request id is
+        # sent to the server; the scorer joins the two record books by request_id.
+        # Completions is non-streaming: a single receipt stamp.
+        preflight_enabled = getattr(self.config, "record_preflight_timing", False)
+        client_sent_at: Optional[float] = None
+        chunk_recv_times: List[float] = []
+
         start_time = time.monotonic()
+        client_sent_at = start_time
+        if preflight_enabled:
+            headers["X-Veeksha-Request-Id"] = str(request.id)
         try:
             client = self._get_client()
-            response = await client.post(
-                self.completions_address, json=body, headers=headers, timeout=timeout
-            )
-            response.raise_for_status()
-            if on_request_dispatched is not None:
-                on_request_dispatched()
-            if on_request_sent is not None:
-                on_request_sent()
-            data = response.json()
+            async with client.post(
+                self.completions_address, json=body, headers=headers
+            ) as response:
+                response.raise_for_status()
+                if on_request_dispatched is not None:
+                    on_request_dispatched()
+                if on_request_sent is not None:
+                    on_request_sent()
+                # aiohttp returns on headers, so t_cr (response fully received)
+                # is only true once the body has been read.
+                data = await response.json(content_type=None)
+                receive_time = time.monotonic()
+            if preflight_enabled:
+                chunk_recv_times.append(receive_time)
             choices = data.get("choices") or []
             if choices:
                 first = choices[0] if isinstance(choices[0], dict) else {}
                 generated_text = first.get("text", "") or ""
                 logprobs = first.get("logprobs")
-        except httpx.HTTPStatusError as e:
-            error_code = e.response.status_code if e.response else 500
+        except aiohttp.ClientResponseError as e:
+            error_code = e.status or 500
             error_msg = error_msg or str(e)
             logger.warning("HTTP Error: status=%s msg=%s", error_code, error_msg)
-        except httpx.ConnectError as e:
-            error_code = 503
-            error_msg = error_msg or str(e)
-            logger.warning("Connection Error: (%s) %s", error_code, error_msg)
-        except httpx.TimeoutException:
+        except asyncio.TimeoutError:
             error_code = 408
             error_msg = error_msg or "Request timed out"
             logger.warning("Timeout Error: (%s) %s", error_code, error_msg)
+        except aiohttp.ClientConnectorError as e:
+            error_code = 503
+            error_msg = error_msg or str(e)
+            logger.warning("Connection Error: (%s) %s", error_code, error_msg)
         except Exception as e:
             error_code = error_code or 520
             error_msg = error_msg or str(e)
@@ -203,4 +217,6 @@ class OpenAICompletionsClient(OpenAIBaseClient):
             error_code=error_code,
             error_msg=error_msg,
             client_completed_at=completed_at,
+            client_sent_at=client_sent_at,
+            chunk_recv_times=chunk_recv_times if preflight_enabled else None,
         )

@@ -9,7 +9,7 @@ import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 from urllib.parse import quote, urlencode, urljoin
 from uuid import uuid4
 
@@ -27,6 +27,7 @@ from veeksha.client.utils import (
     to_websocket_url,
 )
 from veeksha.core.audio_contract import AudioMetricKey, pcm_bytes_to_duration_ms
+from veeksha.core.blocking_executor import get_blocking_executor
 from veeksha.core.request import Request
 from veeksha.core.request_content import TextChannelRequestContent
 from veeksha.core.response import ChannelResponse, RequestResult
@@ -42,15 +43,81 @@ __all__ = ["StreamingTTSClient"]
 
 @dataclass(frozen=True)
 class StreamingProtocolEvent:
-    """Transport-independent event produced by a provider strategy."""
+    """Transport-independent event produced by a provider strategy.
 
-    audio: bytes = b""
+    ``audio`` carries the provider's own wire representation -- raw PCM bytes
+    for binary-frame protocols, the undecoded base64 string for protocols that
+    wrap audio in a JSON envelope. Turning a request's payloads into PCM is
+    :meth:`join_audio`, which the client runs once per request after the stream
+    completes, so no decode happens on the event loop that is simultaneously
+    pacing text sends.
+
+    Subclasses supply the representation; this class only states the contract.
+    """
+
+    audio: bytes | str = b""
     ready: bool = False
     response_started: bool = False
     audio_done: bool = False
     terminal: bool = False
     sample_rate: int | None = None
     error: str | None = None
+
+    @property
+    def audio_nbytes(self) -> int:
+        """Decoded byte count of ``audio``, without decoding it."""
+        raise NotImplementedError
+
+    @staticmethod
+    def join_audio(payloads: list[Any]) -> tuple[bytes, str | None]:
+        """Concatenate one request's ``audio`` payloads into PCM.
+
+        Returns ``(content, error)``. Runs off the event loop, so it must not
+        touch anything request-scoped beyond ``payloads``.
+        """
+        raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class RawAudioEvent(StreamingProtocolEvent):
+    """Event from a protocol whose audio arrives as binary PCM frames."""
+
+    audio: bytes = b""
+
+    @property
+    def audio_nbytes(self) -> int:
+        return len(self.audio)
+
+    @staticmethod
+    def join_audio(payloads: list[bytes]) -> tuple[bytes, str | None]:
+        return b"".join(payloads), None
+
+
+@dataclass(frozen=True)
+class Base64AudioEvent(StreamingProtocolEvent):
+    """Event from a protocol whose audio arrives base64-encoded in JSON."""
+
+    audio: str = ""
+
+    @property
+    def audio_nbytes(self) -> int:
+        return _b64_decoded_size(self.audio)
+
+    @staticmethod
+    def join_audio(payloads: list[str]) -> tuple[bytes, str | None]:
+        """Decode in order and concatenate.
+
+        On a malformed payload the audio decoded so far is still returned
+        alongside the error, matching the inline decode this replaced: a bad
+        chunk fails the request but does not discard the chunks before it.
+        """
+        decoded: list[bytes] = []
+        for payload in payloads:
+            try:
+                decoded.append(base64.b64decode(payload, validate=True))
+            except (ValueError, TypeError) as exc:
+                return b"".join(decoded), f"Invalid base64 audio: {exc}"
+        return b"".join(decoded), None
 
 
 class StreamingTTSError(Exception):
@@ -74,6 +141,7 @@ class StreamingProviderProtocol(Protocol):
     has_ready_event: bool
     explicit_response_trigger: bool
     raw_pcm: bool
+    event_class: ClassVar[type[StreamingProtocolEvent]]
 
     def __init__(
         self, config: StreamingTTSClientConfig, api_key: str | None
@@ -102,6 +170,26 @@ class _ImplicitResponseProtocol:
 
     def response_trigger_message(self) -> None:
         return None
+
+
+def _b64_decoded_size(encoded: str) -> int:
+    """Exact decoded length of padded standard base64, without decoding it.
+
+    ``audio_chunk_timestamps`` reports a per-chunk byte count that the evaluator
+    consumes, so this has to agree with the eventual decode exactly rather than
+    approximately. A malformed payload gives a meaningless answer here, but it
+    also fails in :meth:`Base64AudioEvent.join_audio`, which surfaces the error.
+    """
+    length = len(encoded)
+    if length == 0:
+        return 0
+    if encoded.endswith("=="):
+        padding = 2
+    elif encoded.endswith("="):
+        padding = 1
+    else:
+        padding = 0
+    return (length // 4) * 3 - padding
 
 
 def _decode_json_object(raw: str | bytes) -> dict[str, Any] | None:
@@ -162,6 +250,7 @@ class OpenAIRealtimeProtocol:
     has_ready_event = True
     explicit_response_trigger = True
     raw_pcm = True
+    event_class: ClassVar[type[StreamingProtocolEvent]] = Base64AudioEvent
 
     def __init__(self, config: StreamingTTSClientConfig, api_key: str | None) -> None:
         self.config = config
@@ -217,7 +306,7 @@ class OpenAIRealtimeProtocol:
     def parse(self, raw: str | bytes) -> StreamingProtocolEvent:
         event = _decode_json_object(raw)
         if event is None:
-            return StreamingProtocolEvent()
+            return self.event_class()
         event_type = event.get("type")
         if event_type == "session.updated":
             session = event.get("session")
@@ -226,30 +315,24 @@ class OpenAIRealtimeProtocol:
                 if isinstance(session, dict)
                 else None
             )
-            return StreamingProtocolEvent(ready=True, sample_rate=sample_rate)
+            return self.event_class(ready=True, sample_rate=sample_rate)
         if event_type == "response.created":
-            return StreamingProtocolEvent(response_started=True)
+            return self.event_class(response_started=True)
         if event_type == "response.output_audio.delta":
             encoded_audio = event.get("delta")
             if not isinstance(encoded_audio, str) or not encoded_audio:
-                return StreamingProtocolEvent()
-            try:
-                audio = base64.b64decode(encoded_audio, validate=True)
-            except (ValueError, TypeError) as exc:
-                return StreamingProtocolEvent(
-                    error=f"Invalid OpenAI Realtime audio: {exc}"
-                )
-            return StreamingProtocolEvent(audio=audio)
+                return self.event_class()
+            return self.event_class(audio=encoded_audio)
         if event_type == "response.output_audio.done":
-            return StreamingProtocolEvent(audio_done=True)
+            return self.event_class(audio_done=True)
         if event_type == "response.done":
             response = event.get("response")
             if not isinstance(response, dict) or response.get("status") != "completed":
-                return StreamingProtocolEvent(error=_realtime_error_message(event))
-            return StreamingProtocolEvent(terminal=True)
+                return self.event_class(error=_realtime_error_message(event))
+            return self.event_class(terminal=True)
         if event_type == "error":
-            return StreamingProtocolEvent(error=_realtime_error_message(event))
-        return StreamingProtocolEvent()
+            return self.event_class(error=_realtime_error_message(event))
+        return self.event_class()
 
 
 class VajraStreamingProtocol(_ImplicitResponseProtocol):
@@ -258,6 +341,7 @@ class VajraStreamingProtocol(_ImplicitResponseProtocol):
     default_api_key_env = "OPENAI_API_KEY"
     requires_api_key = False
     has_ready_event = True
+    event_class: ClassVar[type[StreamingProtocolEvent]] = RawAudioEvent
 
     def __init__(self, config: StreamingTTSClientConfig, api_key: str | None) -> None:
         self.config = config
@@ -301,32 +385,32 @@ class VajraStreamingProtocol(_ImplicitResponseProtocol):
 
     def parse(self, raw: str | bytes) -> StreamingProtocolEvent:
         if isinstance(raw, bytes):
-            return StreamingProtocolEvent(audio=raw)
+            return self.event_class(audio=raw)
         event = _decode_json_object(raw)
         if event is None:
-            return StreamingProtocolEvent()
+            return self.event_class()
         event_type = event.get("type")
         if event_type == "audio.start":
             sample_rate = event.get("sample_rate")
-            return StreamingProtocolEvent(
+            return self.event_class(
                 ready=True,
                 response_started=True,
                 sample_rate=sample_rate if isinstance(sample_rate, int) else None,
             )
         if event_type == "audio.done":
             if event.get("error"):
-                return StreamingProtocolEvent(
+                return self.event_class(
                     error="Vajra TTS stream reported audio.done with error=true"
                 )
-            return StreamingProtocolEvent(audio_done=True)
+            return self.event_class(audio_done=True)
         if event_type == "session.done":
-            return StreamingProtocolEvent(terminal=True)
+            return self.event_class(terminal=True)
         if event_type == "error":
             message = event.get("message")
-            return StreamingProtocolEvent(
+            return self.event_class(
                 error=message if isinstance(message, str) else json.dumps(event)
             )
-        return StreamingProtocolEvent()
+        return self.event_class()
 
 
 class ElevenLabsStreamingProtocol(_ImplicitResponseProtocol):
@@ -335,6 +419,7 @@ class ElevenLabsStreamingProtocol(_ImplicitResponseProtocol):
     default_api_key_env = "ELEVENLABS_API_KEY"
     requires_api_key = True
     has_ready_event = False
+    event_class: ClassVar[type[StreamingProtocolEvent]] = Base64AudioEvent
 
     def __init__(self, config: StreamingTTSClientConfig, api_key: str | None) -> None:
         self.config = config
@@ -379,28 +464,24 @@ class ElevenLabsStreamingProtocol(_ImplicitResponseProtocol):
 
     def parse(self, raw: str | bytes) -> StreamingProtocolEvent:
         if isinstance(raw, bytes):
-            return StreamingProtocolEvent(error="Unexpected binary ElevenLabs frame")
+            return self.event_class(error="Unexpected binary ElevenLabs frame")
         event = _decode_json_object(raw)
         if event is None:
-            return StreamingProtocolEvent()
+            return self.event_class()
         error = event.get("error")
         if error:
             if isinstance(error, dict):
                 message = error.get("message") or json.dumps(error)
             else:
                 message = str(error)
-            return StreamingProtocolEvent(error=message)
-        audio = b""
+            return self.event_class(error=message)
         encoded_audio = event.get("audio")
-        if isinstance(encoded_audio, str) and encoded_audio:
-            try:
-                audio = base64.b64decode(encoded_audio, validate=True)
-            except (ValueError, TypeError) as exc:
-                return StreamingProtocolEvent(error=f"Invalid ElevenLabs audio: {exc}")
+        if not isinstance(encoded_audio, str):
+            encoded_audio = ""
         terminal = bool(event.get("isFinal"))
-        return StreamingProtocolEvent(
-            audio=audio,
-            response_started=bool(audio),
+        return self.event_class(
+            audio=encoded_audio,
+            response_started=bool(encoded_audio),
             audio_done=terminal,
             terminal=terminal,
         )
@@ -414,6 +495,7 @@ class CartesiaStreamingProtocol(_ImplicitResponseProtocol):
     default_api_key_env = "CARTESIA_API_KEY"
     requires_api_key = True
     has_ready_event = False
+    event_class: ClassVar[type[StreamingProtocolEvent]] = Base64AudioEvent
 
     def __init__(self, config: StreamingTTSClientConfig, api_key: str | None) -> None:
         self.config = config
@@ -459,10 +541,10 @@ class CartesiaStreamingProtocol(_ImplicitResponseProtocol):
 
     def parse(self, raw: str | bytes) -> StreamingProtocolEvent:
         if isinstance(raw, bytes):
-            return StreamingProtocolEvent(error="Unexpected binary Cartesia frame")
+            return self.event_class(error="Unexpected binary Cartesia frame")
         event = _decode_json_object(raw)
         if event is None:
-            return StreamingProtocolEvent()
+            return self.event_class()
         event_type = event.get("type")
         if event_type == "error":
             message = (
@@ -471,25 +553,22 @@ class CartesiaStreamingProtocol(_ImplicitResponseProtocol):
                 or event.get("error_code")
                 or json.dumps(event)
             )
-            return StreamingProtocolEvent(error=str(message))
+            return self.event_class(error=str(message))
         if event_type == "chunk":
             encoded_audio = event.get("data")
             if not isinstance(encoded_audio, str) or not encoded_audio:
-                return StreamingProtocolEvent(error="Cartesia chunk omitted audio data")
-            try:
-                audio = base64.b64decode(encoded_audio, validate=True)
-            except (ValueError, TypeError) as exc:
-                return StreamingProtocolEvent(error=f"Invalid Cartesia audio: {exc}")
-            return StreamingProtocolEvent(audio=audio, response_started=True)
+                return self.event_class(error="Cartesia chunk omitted audio data")
+            return self.event_class(audio=encoded_audio, response_started=True)
         if event_type == "done" or event.get("done") is True:
-            return StreamingProtocolEvent(audio_done=True, terminal=True)
-        return StreamingProtocolEvent()
+            return self.event_class(audio_done=True, terminal=True)
+        return self.event_class()
 
 
 class _DeepgramStreamingProtocol(_ImplicitResponseProtocol):
     provider = "deepgram"
     default_api_key_env = "DEEPGRAM_API_KEY"
     requires_api_key = True
+    event_class: ClassVar[type[StreamingProtocolEvent]] = RawAudioEvent
     endpoint = ""
     ready_event: str | None = None
     response_started_event: str | None = None
@@ -526,17 +605,17 @@ class _DeepgramStreamingProtocol(_ImplicitResponseProtocol):
 
     def parse(self, raw: str | bytes) -> StreamingProtocolEvent:
         if isinstance(raw, bytes):
-            return StreamingProtocolEvent(audio=raw)
+            return self.event_class(audio=raw)
         event = _decode_json_object(raw)
         if event is None:
-            return StreamingProtocolEvent()
+            return self.event_class()
         event_type = event.get("type")
         if event_type == "Error":
-            return StreamingProtocolEvent(
+            return self.event_class(
                 error=str(event.get("description") or event.get("code") or event)
             )
         terminal = event_type == self.terminal_event
-        return StreamingProtocolEvent(
+        return self.event_class(
             ready=event_type == self.ready_event,
             response_started=event_type == self.response_started_event,
             audio_done=terminal,
@@ -623,14 +702,22 @@ class StreamingTTSClient(BaseLLMClient):
         self._streaming_config = config
         self._protocol = protocol_class(config, self.api_key)
 
-    def _connect(self) -> Any:
+    def _connect(self, extra_headers: dict[str, str] | None = None) -> Any:
+        """Open the provider WebSocket.
+
+        ``extra_headers`` is merged over the protocol's own headers, so provider
+        auth survives. Empty or None adds nothing.
+        """
         open_timeout = min(self._streaming_config.request_timeout, 30)
+        headers = self._protocol.headers()
+        if extra_headers:
+            headers = {**headers, **extra_headers}
         return connect(
             self._protocol.build_ws_url(str(self.api_base)),
             max_size=None,
             compression=None,
             open_timeout=open_timeout,
-            additional_headers=self._protocol.headers(),
+            additional_headers=headers,
         )
 
     async def measure_websocket_rtt_ms(self, samples: int = 5) -> list[float]:
@@ -702,7 +789,10 @@ class StreamingTTSClient(BaseLLMClient):
             elif abort_config.trigger == "wall_clock_s":
                 abort_wall_s = abort_config.value
 
-        audio_chunks: list[bytes] = []
+        # Each protocol appends in its own wire representation -- raw PCM bytes
+        # or undecoded base64 -- and its event class resolves them in one pass
+        # once the stream completes.
+        audio_payloads: list[bytes | str] = []
         audio_chunk_timestamps: list[list[float | int]] = []
         text_delta_timestamps: list[list[float | int]] = []
         ttfc: float | None = None
@@ -718,6 +808,17 @@ class StreamingTTSClient(BaseLLMClient):
         aborted = False
         stream_completed = asyncio.Event()
         start = time.monotonic()
+
+        # preflight timing (recorded only when enabled). Only the request id is
+        # sent to the server; the scorer joins the two record books by request_id.
+        preflight_enabled = getattr(self.config, "record_preflight_timing", False)
+        client_sent_at: float | None = start if preflight_enabled else None
+        chunk_recv_times: list[float] = []
+        input_send_times: list[float] = []  # per paced text segment
+        input_send_deadlines: list[float] = []  # intended send instant per segment
+        extra_headers = (
+            {"X-Veeksha-Request-Id": str(request.id)} if preflight_enabled else None
+        )
 
         def fire_sent_once() -> None:
             nonlocal sent_fired
@@ -747,6 +848,10 @@ class StreamingTTSClient(BaseLLMClient):
                     response_triggered = True
 
                 await websocket.send(protocol.text_message(segment.text))
+                if preflight_enabled:
+                    # Actual send vs intended deadline -> pacing error.
+                    input_send_times.append(time.monotonic())
+                    input_send_deadlines.append(deadline)
                 text_delta_timestamps.append([offset_ms, segment.n_chars])
                 sent_words += segment.n_tokens
 
@@ -785,7 +890,9 @@ class StreamingTTSClient(BaseLLMClient):
             received_audio_ms = 0.0
             while True:
                 raw = await websocket.recv()
-                wire_offset_ms = (time.monotonic() - start) * 1000
+                # Stamp receipt before any parse/decode work.
+                recv_time = time.monotonic()
+                wire_offset_ms = (recv_time - start) * 1000
                 event = protocol.parse(raw)
                 if event.error:
                     raise StreamingTTSError(event.error)
@@ -805,10 +912,12 @@ class StreamingTTSClient(BaseLLMClient):
                     sample_rate = event.sample_rate
                 if event.audio:
                     playable_offset_ms = (time.monotonic() - start) * 1000
-                    audio_chunks.append(event.audio)
+                    audio_payloads.append(event.audio)
                     audio_chunk_timestamps.append(
-                        [playable_offset_ms, len(event.audio)]
+                        [playable_offset_ms, event.audio_nbytes]
                     )
+                    if preflight_enabled:
+                        chunk_recv_times.append(recv_time)
                     if ttfc is None:
                         if response_trigger_offset is None:
                             raise StreamingTTSError(
@@ -820,7 +929,7 @@ class StreamingTTSClient(BaseLLMClient):
                     fire_sent_once()
                     if abort_audio_ms is not None:
                         received_audio_ms += pcm_bytes_to_duration_ms(
-                            len(event.audio), sample_rate
+                            event.audio_nbytes, sample_rate
                         )
                         if received_audio_ms >= abort_audio_ms:
                             raise _ClientAbort()
@@ -841,7 +950,7 @@ class StreamingTTSClient(BaseLLMClient):
         error_msg: str | None = None
         try:
             async with asyncio.timeout(self._streaming_config.request_timeout):
-                async with self._connect() as websocket:
+                async with self._connect(extra_headers=extra_headers) as websocket:
                     ws_connect_latency = (time.monotonic() - start) * 1000
                     for message in protocol.initial_messages():
                         await websocket.send(message)
@@ -876,9 +985,22 @@ class StreamingTTSClient(BaseLLMClient):
                     error_msg,
                 )
 
+        # Stamped before the bulk decode below, so end-to-end latency measures
+        # the provider's stream rather than this client's post-processing.
         completed_at = time.monotonic()
         latency_ms = (completed_at - start) * 1000
-        if error_code is None and not aborted and not audio_chunks:
+
+        audio_content = b""
+        if audio_payloads:
+            loop = asyncio.get_running_loop()
+            audio_content, decode_error = await loop.run_in_executor(
+                get_blocking_executor(), protocol.event_class.join_audio, audio_payloads
+            )
+            if decode_error is not None and error_code is None:
+                error_code = 500
+                error_msg = f"{protocol.provider}: {decode_error}"
+
+        if error_code is None and not aborted and not audio_payloads:
             error_code = 502
             error_msg = f"{protocol.provider} completed the TTS stream without audio"
         success = error_code is None and error_msg is None
@@ -891,7 +1013,7 @@ class StreamingTTSClient(BaseLLMClient):
             AudioMetricKey.PROVIDER_PROTOCOL.value: protocol.protocol_name,
             AudioMetricKey.TTFC.value: (round(ttfc, 3) if ttfc is not None else None),
             AudioMetricKey.END_TO_END_LATENCY.value: round(latency_ms, 3),
-            AudioMetricKey.CHUNK_COUNT.value: len(audio_chunks),
+            AudioMetricKey.CHUNK_COUNT.value: len(audio_payloads),
             AudioMetricKey.RAW_PCM.value: protocol.raw_pcm,
             AudioMetricKey.SAMPLE_RATE.value: sample_rate,
             AudioMetricKey.INPUT_CHARS.value: len(input_text),
@@ -922,10 +1044,10 @@ class StreamingTTSClient(BaseLLMClient):
         }
 
         channels: dict[ChannelModality, ChannelResponse] = {}
-        if success or audio_chunks or text_delta_timestamps or aborted:
+        if success or audio_payloads or text_delta_timestamps or aborted:
             channels[ChannelModality.AUDIO] = ChannelResponse(
                 modality=ChannelModality.AUDIO,
-                content=b"".join(audio_chunks),
+                content=audio_content,
                 metrics=metrics,
             )
 
@@ -938,4 +1060,8 @@ class StreamingTTSClient(BaseLLMClient):
             error_code=error_code,
             error_msg=error_msg,
             client_completed_at=completed_at,
+            client_sent_at=client_sent_at,
+            chunk_recv_times=chunk_recv_times if preflight_enabled else None,
+            input_send_times=input_send_times if preflight_enabled else None,
+            input_send_deadlines=input_send_deadlines if preflight_enabled else None,
         )

@@ -35,6 +35,7 @@ from veeksha.client.utils import (
     to_websocket_url,
 )
 from veeksha.core.audio_contract import AudioMetricKey
+from veeksha.core.blocking_executor import get_blocking_executor
 from veeksha.core.request import Request
 from veeksha.core.request_content import AudioChannelRequestContent
 from veeksha.core.response import ChannelResponse, RequestResult
@@ -64,6 +65,34 @@ def _clean_transcript(text: str) -> str:
     """Strip Voxtral streaming control tokens and collapse whitespace."""
     text = _STREAMING_TOKEN_RE.sub("", text)
     return re.sub(r"\s+", " ", text).strip()
+
+
+def _warm_audio_stack(target_sr: int) -> None:
+    """Decode a scratch clip so the first request does not pay for it.
+
+    The first ``librosa.load`` call is expensive: it imports
+    ``librosa.core.audio`` and its dependencies. That would otherwise land
+    under the per-clip lock and stall every request in flight at benchmark
+    start.
+    """
+    try:
+        import io
+
+        import librosa
+        import soundfile as sf
+
+        buf = io.BytesIO()
+        sf.write(
+            buf,
+            np.zeros(256, dtype="float32"),
+            target_sr,
+            format="WAV",
+            subtype="PCM_16",
+        )
+        buf.seek(0)
+        librosa.load(buf, sr=target_sr, mono=True)
+    except Exception:  # noqa: BLE001 - warming is best effort
+        pass
 
 
 def _audio_to_pcm16_bytes(audio_path: str, target_sr: int) -> bytes:
@@ -177,6 +206,11 @@ class STTStreamResult:
     transcript_snapshots: list[TranscriptSnapshotRow]
     chunk_count: int
     pcm_byte_count: int
+    # preflight timing (client record book, populated only when enabled)
+    client_sent_at: Optional[float] = None
+    chunk_recv_times: Optional[list[float]] = None
+    input_send_times: Optional[list[float]] = None
+    input_send_deadlines: Optional[list[float]] = None
 
 
 class TranscriptSnapshotRecorder:
@@ -247,18 +281,28 @@ class STTClient(BaseLLMClient):
         self._clip_cache_lock = threading.Lock()
         self._clip_locks: dict[str, threading.Lock] = {}
 
+        _warm_audio_stack(self._sample_rate)
+
     # ------------------------------------------------------------------
     # Shared helpers
     # ------------------------------------------------------------------
 
-    def _connect(self) -> Any:
+    def _connect(self, extra_headers: dict[str, str] | None = None) -> Any:
+        """Open the provider WebSocket.
+
+        ``extra_headers`` is merged over the protocol's own headers, so provider
+        auth survives. Empty or None adds nothing.
+        """
+        headers = self._protocol.headers()
+        if extra_headers:
+            headers = {**headers, **extra_headers}
         return connect(
             self._ws_url,
             max_size=None,
             ping_interval=self._ws_ping_interval_s,
             ping_timeout=self._ws_ping_timeout_s,
             compression=self._ws_compression,
-            additional_headers=self._protocol.headers(),
+            additional_headers=headers,
         )
 
     async def _maybe_pace_until(self, target_at: float) -> None:
@@ -321,6 +365,7 @@ class STTClient(BaseLLMClient):
         wire_messages: Optional[list[str | bytes]] = None,
         on_request_sent: Optional[Callable[[], None]] = None,
         on_request_dispatched: Optional[Callable[[], None]] = None,
+        request_id: Optional[int] = None,
     ) -> STTStreamResult:
         """Stream pre-decoded PCM16 to the provider and collect the transcript.
 
@@ -360,7 +405,23 @@ class STTClient(BaseLLMClient):
                 parts.append(provisional_transcript)
             return _clean_transcript(" ".join(parts))
 
-        async with self._connect() as ws:
+        # Request handed to the transport (always recorded, so the harness
+        # lifecycle dispatch-drift metrics cover STT on normal runs too).
+        client_sent_at = time.monotonic()
+
+        # preflight timing (recorded only when enabled). Only the request id is
+        # sent to the server; the scorer joins the two record books by request_id.
+        preflight_enabled = getattr(self.config, "record_preflight_timing", False)
+        chunk_recv_times: list[float] = []
+        input_send_times: list[float] = []  # per paced audio chunk
+        input_send_deadlines: list[float] = []
+        extra_headers = (
+            {"X-Veeksha-Request-Id": str(request_id)}
+            if preflight_enabled and request_id is not None
+            else None
+        )
+
+        async with self._connect(extra_headers=extra_headers) as ws:
             await self._protocol.open_session(ws, self._model)
             if on_request_dispatched is not None:
                 on_request_dispatched()
@@ -389,6 +450,13 @@ class STTClient(BaseLLMClient):
                             pcm_bytes[byte_offset:chunk_end], final=final_chunk
                         )
                     await ws.send(message)
+                    if preflight_enabled and audio_started_at is not None:
+                        # Actual send vs the audio-clock deadline it paces to.
+                        input_send_times.append(time.monotonic())
+                        input_send_deadlines.append(
+                            audio_started_at
+                            + byte_offset / BYTES_PER_SAMPLE / self._sample_rate
+                        )
                 if audio_started_at is not None:
                     await self._maybe_pace_until(
                         audio_started_at
@@ -418,7 +486,7 @@ class STTClient(BaseLLMClient):
                                 raw_message, provider=self._protocol.provider
                             )
                         )
-                    now = time.monotonic()
+                    now = time.monotonic()  # response-chunk receipt
                     if kind in (
                         "delta",
                         "snapshot",
@@ -426,6 +494,8 @@ class STTClient(BaseLLMClient):
                         "final_delta",
                         "commit",
                     ):
+                        if preflight_enabled:
+                            chunk_recv_times.append(now)
                         # TTFC counts only provider events whose own payload
                         # carries transcript text after cleaning; empty
                         # progress/keepalive events and pure control-token
@@ -528,6 +598,10 @@ class STTClient(BaseLLMClient):
             transcript_snapshots=snapshots.snapshots,
             chunk_count=chunk_count,
             pcm_byte_count=len(pcm_bytes),
+            client_sent_at=client_sent_at,
+            chunk_recv_times=chunk_recv_times if preflight_enabled else None,
+            input_send_times=input_send_times if preflight_enabled else None,
+            input_send_deadlines=input_send_deadlines if preflight_enabled else None,
         )
 
     # ------------------------------------------------------------------
@@ -617,7 +691,9 @@ class STTClient(BaseLLMClient):
         # on this worker's loop).
         try:
             loop = asyncio.get_running_loop()
-            clip = await loop.run_in_executor(None, self._clip_assets, audio_path)
+            clip = await loop.run_in_executor(
+                get_blocking_executor(), self._clip_assets, audio_path
+            )
             start_ms = _metadata_ms(request.metadata, "input_audio_start_ms")
             pcm_bytes = _slice_pcm16_bytes(
                 memoryview(clip.pcm),
@@ -651,6 +727,7 @@ class STTClient(BaseLLMClient):
                     wire_messages,
                     on_request_sent=fire_sent_once,
                     on_request_dispatched=fire_dispatched_once,
+                    request_id=request.id,
                 )
         except Exception as exc:
             error_code, error_msg = _map_stt_error(exc, self._request_timeout)
@@ -733,6 +810,20 @@ class STTClient(BaseLLMClient):
             error_code=error_code,
             error_msg=error_msg,
             client_completed_at=completed_at,
+            client_sent_at=(
+                stream_result.client_sent_at if stream_result is not None else None
+            ),
+            chunk_recv_times=(
+                stream_result.chunk_recv_times if stream_result is not None else None
+            ),
+            input_send_times=(
+                stream_result.input_send_times if stream_result is not None else None
+            ),
+            input_send_deadlines=(
+                stream_result.input_send_deadlines
+                if stream_result is not None
+                else None
+            ),
         )
 
 

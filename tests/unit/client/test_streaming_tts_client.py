@@ -24,8 +24,10 @@ from veeksha.client.streaming_tts import (
     DeepgramAuraStreamingProtocol,
     DeepgramFluxStreamingProtocol,
     ElevenLabsStreamingProtocol,
+    RawAudioEvent,
     StreamingTTSClient,
     StreamingTTSError,
+    VajraStreamingProtocol,
     _map_error,
 )
 from veeksha.client.utils import TextDeltaPacer, flatten_ws_exception, segment_text
@@ -177,7 +179,7 @@ def test_streaming_providers_share_text_audio_lifecycle(provider: str) -> None:
         client = StreamingTTSClient(config)
 
     websocket = _FakeWebSocket(provider)
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda *_args, **_kwargs: _FakeConnection(websocket)  # type: ignore[method-assign]
     result = asyncio.run(client.send_request(_request(), session_id=1))
 
     assert result.success
@@ -320,7 +322,9 @@ def test_streaming_protocol_urls_use_raw_pcm_and_provider_auth() -> None:
 
     audio = base64.b64encode(b"pcm").decode("ascii")
     chunk = cartesia.parse(json.dumps({"type": "chunk", "data": audio}))
-    assert chunk.audio == b"pcm"
+    # Audio is carried encoded and decoded in bulk once the stream ends.
+    assert chunk.audio == audio
+    assert chunk.audio_nbytes == 3
     assert chunk.response_started
     malformed_chunk = cartesia.parse(json.dumps({"type": "chunk"}))
     assert malformed_chunk.error == "Cartesia chunk omitted audio data"
@@ -339,6 +343,26 @@ def test_streaming_protocol_urls_use_raw_pcm_and_provider_auth() -> None:
 
 
 @pytest.mark.unit
+def test_raw_pcm_protocols_carry_and_join_audio_as_bytes() -> None:
+    config = StreamingTTSClientConfig(
+        provider="vajra",
+        api_base="http://example.test",
+        model="tts-1",
+        pacing=_pacing(),
+    )
+    frames = [b"\x00\x01" * 8, b"\x02\x03" * 4]
+    vajra = VajraStreamingProtocol(config, None)
+
+    events = [vajra.parse(frame) for frame in frames]
+    assert [event.audio for event in events] == frames
+    assert [event.audio_nbytes for event in events] == [len(f) for f in frames]
+
+    content, error = RawAudioEvent.join_audio([event.audio for event in events])
+    assert content == b"".join(frames)
+    assert error is None
+
+
+@pytest.mark.unit
 def test_cartesia_client_uses_a_fresh_context_for_each_request() -> None:
     config = StreamingTTSClientConfig(
         provider="cartesia",
@@ -353,7 +377,7 @@ def test_cartesia_client_uses_a_fresh_context_for_each_request() -> None:
     client = StreamingTTSClient(config)
     websockets: list[_FakeWebSocket] = []
 
-    def connect_factory() -> _FakeConnection:
+    def connect_factory(*_args, **_kwargs) -> _FakeConnection:
         websocket = _FakeWebSocket("cartesia")
         websockets.append(websocket)
         return _FakeConnection(websocket)
@@ -381,7 +405,7 @@ def test_deepgram_aura_adapter_streams_audio_before_flush_completion() -> None:
     )
     client = StreamingTTSClient(config)
     websocket = _FakeWebSocket("deepgram_aura")
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda *_args, **_kwargs: _FakeConnection(websocket)  # type: ignore[method-assign]
 
     result = asyncio.run(client.send_request(_request(), session_id=1))
 
@@ -417,7 +441,7 @@ def test_streaming_tts_rejects_terminal_response_without_audio() -> None:
     )
     client = StreamingTTSClient(config)
     websocket = _SilentElevenLabsWebSocket()
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda *_args, **_kwargs: _FakeConnection(websocket)  # type: ignore[method-assign]
 
     result = asyncio.run(client.send_request(_request(), session_id=1))
 

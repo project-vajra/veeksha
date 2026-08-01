@@ -48,8 +48,29 @@ class ImageChannelGeneratorConfig(BaseChannelGeneratorConfig):
 
 @frozen_dataclass
 class AudioChannelGeneratorConfig(BaseChannelGeneratorConfig):
+    """Synthetic audio input: a deterministic generated waveform clip.
+
+    Writes a WAV (cached per parameter set) and hands its path to the client as
+    audio input. Content is synthetic (a tone or silence) -- useful for STT
+    smoke-testing and preflight without a real audio dataset.
+    """
+
+    duration_seconds: float = field(
+        3.0, help="Length of the generated audio clip in seconds."
+    )
+    sample_rate: int = field(16000, help="Audio sample rate in Hz.")
+    waveform: str = field("sine", help="Waveform to synthesize: 'sine' or 'silence'.")
+    frequency_hz: float = field(
+        440.0, help="Tone frequency in Hz (used when waveform='sine')."
+    )
+
     def __post_init__(self):
-        raise NotImplementedError("AudioChannelConfig is not implemented")
+        if self.duration_seconds <= 0:
+            raise ValueError("duration_seconds must be positive")
+        if self.sample_rate <= 0:
+            raise ValueError("sample_rate must be positive")
+        if self.waveform not in ("sine", "silence"):
+            raise ValueError("waveform must be 'sine' or 'silence'")
 
     @classmethod
     def get_type(cls):
