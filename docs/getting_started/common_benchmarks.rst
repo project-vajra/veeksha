@@ -473,3 +473,55 @@ See also
 - :doc:`/user_guide/trace_flavors` for trace flavor details and input formats
 - :doc:`/user_guide/microbenchmarks` for full prefill, decode, and stress details
 - :doc:`/user_guide/capacity_search` for full capacity-search behavior
+
+Accuracy (WER) — the QUALITY mode
+---------------------------------
+
+``mode: quality`` turns a benchmark into an accuracy measurement: exactly one
+scored pass over a trace corpus, no wrapping, every session scored once. The
+config is rejected at load time — before any server is touched — if it could
+silently produce a number that is not the corpus WER (wrapped trace, or a
+``max_sessions`` that scores a prefix or re-scores clips).
+
+.. code-block:: yaml
+
+   mode: quality
+   session_generator:
+     type: trace
+     trace_file: traces/asr/aa_full/manifest_voxpopuli.jsonl
+     wrap_mode: false          # required: wrapping re-scores clips
+     flavor:
+       type: audio
+       audio_dir: ""
+   traffic_scheduler:
+     type: concurrent
+     target_concurrent_sessions: 156   # pick a load your provider is stable at
+     rampup_seconds: 0
+   runtime:
+     max_sessions: 628         # must equal the corpus size (distinct session_ids)
+     benchmark_timeout: 1800
+   client:
+     type: stt                 # swap the client block to target another provider
+     provider: vajra_openai_realtime
+     api_base: http://127.0.0.1:9000
+     model: voxtral-mini-realtime
+     ws_realtime_pacing: true
+     request_timeout: 300      # must exceed your LONGEST clip in seconds
+   evaluators:
+   - type: performance
+     target_channels: [audio]
+     stream_metrics: false
+
+The summary reports corpus, duration-weighted, and per-dataset WER
+(``asr_dataset_<name>_final_*``) when the manifest carries a ``dataset``
+column, so a mixed corpus never hides one dataset behind another.
+
+Provider-independence and two footguns:
+
+* Only the ``client`` block is provider-specific — the mode's guarantees are
+  enforced regardless of provider.
+* ``request_timeout`` must exceed the longest clip: a timed-out session
+  contributes an empty transcript and the run still exits 0.
+* Streaming providers can transcribe differently when audio arrives faster
+  than real time; keep pacing on (or your provider's equivalent) unless
+  burst-delivery accuracy is itself the thing being measured.
