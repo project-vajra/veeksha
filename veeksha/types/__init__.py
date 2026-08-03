@@ -1,4 +1,29 @@
+from enum import Enum
+
 from veeksha.types.base_int_enum import BaseIntEnum
+
+
+# ----- Benchmark mode -----
+class BenchmarkMode(str, Enum):
+    """What a benchmark run is measuring, which changes its valid shape.
+
+    PERFORMANCE measures latency and throughput: the trace wraps so the offered
+    load can be held for a fixed wall-clock window, sessions are re-run, and a
+    warmup wave is discarded so steady state is what gets reported.
+
+    QUALITY measures transcription accuracy. Wrapping would score the same clip
+    several times and weight it by however often it happened to be resampled,
+    so the run is exactly one pass over the corpus with no warmup. Concurrency
+    is still real — accuracy under load is the thing worth knowing — but it is
+    chosen for stability, not to probe a knee.
+    """
+
+    # String-valued: vidhi renders direct enum fields as CLI choices and
+    # matches YAML values by string, so int values break `-h` for the whole
+    # command. The BaseIntEnums above survive only as polymorphic type
+    # discriminators, which never reach that path.
+    PERFORMANCE = "performance"
+    QUALITY = "quality"
 
 
 # ----- Traffic -----
