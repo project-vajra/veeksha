@@ -185,6 +185,24 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing corpus that was built with different arguments.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help=(
+            "Destination for the built corpus. Defaults to the dataset-keyed "
+            "directory, which is SHARED by every build of those datasets: "
+            "rebuilding with different --clips-per-dataset or --max-duration "
+            "silently replaces the previous corpus, and nothing in the "
+            "directory records which flags produced it. Pass an explicit "
+            "directory whenever the settings differ from the last build."
+        ),
+    )
+    parser.add_argument(
         "--without-word-timestamping",
         action="store_true",
         help="Skip NeMo word timestamping.",
@@ -473,6 +491,46 @@ def selected_dataset_keys(raw_datasets: str) -> list[str]:
             f"Unknown dataset key(s): {unknown}. Supported: {', '.join(DATASETS)}"
         )
     return keys
+
+
+
+def _refuse_silent_corpus_overwrite(
+    output_dir: Path, args: argparse.Namespace
+) -> None:
+    """Stop a rebuild from replacing a different corpus in place.
+
+    Every AA build defaults to one dataset-keyed directory, so a rebuild with
+    different --clips-per-dataset or --max-duration overwrites whatever was
+    there. That already happened once: two checkouts both hold a corpus named
+    aa_public, one 100 clips averaging 18s and the other 3 clips averaging
+    638s. The same config file run against each yields incomparable numbers
+    and nothing in the directory says why.
+
+    Refuse when the destination already holds a corpus built from different
+    arguments. --force is the deliberate override.
+    """
+    manifest = output_dir / MANIFEST_NAME
+    if not manifest.exists() or args.force:
+        return
+    info_path = output_dir / BUILD_INFO_NAME
+    previous_argv = None
+    if info_path.exists():
+        try:
+            previous_argv = json.loads(info_path.read_text()).get("argv")
+        except (json.JSONDecodeError, OSError):
+            previous_argv = None
+    if previous_argv == sys.argv[1:]:
+        return
+    described = (
+        f"built with argv {previous_argv}"
+        if previous_argv is not None
+        else f"has no {BUILD_INFO_NAME}, so its build arguments are unknown"
+    )
+    raise SystemExit(
+        f"{output_dir} already holds a corpus that {described}, and this run "
+        f"would replace it with argv {sys.argv[1:]}.\n"
+        "Pass --output-dir to build alongside it, or --force to overwrite."
+    )
 
 
 def output_dir_for_dataset_keys(dataset_keys: Sequence[str]) -> Path:
@@ -1229,11 +1287,17 @@ def main() -> None:
     args = parse_args()
     dataset_keys = validate_args(args)
 
-    output_dir = output_dir_for_dataset_keys(dataset_keys)
+    output_dir = (
+        Path(args.output_dir).expanduser()
+        if args.output_dir
+        else output_dir_for_dataset_keys(dataset_keys)
+    )
     audio_root = output_dir / "audio"
     manifest_path = output_dir / MANIFEST_NAME
     output_dir.mkdir(parents=True, exist_ok=True)
     audio_root.mkdir(parents=True, exist_ok=True)
+
+    _refuse_silent_corpus_overwrite(output_dir, args)
 
     clip_limit = None if args.clips_per_dataset == 0 else args.clips_per_dataset
     target_duration_s = args.target_duration
