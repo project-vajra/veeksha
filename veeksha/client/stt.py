@@ -166,6 +166,9 @@ class STTStreamResult:
       when no such delta arrives before completion.
     - ``time_to_final_transcript``: from end-of-audio to the completion
       message.
+    - ``ws_connect_latency_ms``: WebSocket connect plus provider session-open
+      handshake.  This is reported separately and excluded from all transcript
+      latency clocks above.
     """
 
     ttfc: Optional[float]
@@ -177,6 +180,8 @@ class STTStreamResult:
     transcript_snapshots: list[TranscriptSnapshotRow]
     chunk_count: int
     pcm_byte_count: int
+    ws_connect_latency_ms: float
+    streaming_rtf: float
 
 
 class TranscriptSnapshotRecorder:
@@ -230,6 +235,7 @@ class STTClient(BaseLLMClient):
             protocol_class.default_api_key_env,
             required=protocol_class.requires_api_key,
         )
+        self._config = config
         self._protocol = protocol_class(config, api_key)
         self._model = config.model
         self._sample_rate = config.sample_rate
@@ -239,7 +245,6 @@ class STTClient(BaseLLMClient):
         self._ws_ping_interval_s = config.ws_ping_interval_s
         self._ws_ping_timeout_s = config.ws_ping_timeout_s
         self._ws_compression = "deflate" if config.ws_permessage_deflate else None
-        self._ws_url = self._protocol.build_ws_url(str(self.api_base or ""))
 
         # Per-clip decode + wire-message cache, shared across the worker
         # threads that all hold this one client instance.
@@ -251,9 +256,9 @@ class STTClient(BaseLLMClient):
     # Shared helpers
     # ------------------------------------------------------------------
 
-    def _connect(self) -> Any:
+    def _connect(self, language: str | None) -> Any:
         return connect(
-            self._ws_url,
+            self._protocol.build_ws_url(str(self.api_base or ""), language=language),
             max_size=None,
             ping_interval=self._ws_ping_interval_s,
             ping_timeout=self._ws_ping_timeout_s,
@@ -268,6 +273,31 @@ class STTClient(BaseLLMClient):
         delay_s = target_at - time.monotonic()
         if delay_s > 0:
             await asyncio.sleep(delay_s)
+
+    def _request_language(self, metadata: dict[str, Any]) -> str | None:
+        """Resolve a language hint without mutating shared client state."""
+
+        mode = self._config.language_mode
+        if mode == "auto":
+            return None
+        if mode == "fixed":
+            return self._config.language
+
+        key = self._config.language_metadata_key
+        value = metadata.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"STT request metadata must contain a non-empty {key!r} string "
+                "when language_mode=request_metadata"
+            )
+        language = value.strip()
+        declared = set(self._config.supported_languages)
+        if declared and language not in declared:
+            raise ValueError(
+                f"STT target {self._config.model!r} does not declare support for "
+                f"request language {language!r}"
+            )
+        return language
 
     def _clip_lock(self, audio_path: str) -> threading.Lock:
         """Return the per-clip lock guarding decode/encode for one path."""
@@ -319,6 +349,7 @@ class STTClient(BaseLLMClient):
         self,
         pcm_bytes: bytes | memoryview,
         wire_messages: Optional[list[str | bytes]] = None,
+        language: str | None = None,
         on_request_sent: Optional[Callable[[], None]] = None,
         on_request_dispatched: Optional[Callable[[], None]] = None,
     ) -> STTStreamResult:
@@ -347,6 +378,7 @@ class STTClient(BaseLLMClient):
         provisional_transcript = ""
         provisional_is_delta = False
         snapshots = TranscriptSnapshotRecorder()
+        stream_completed_at: Optional[float] = None
 
         def assembled_transcript() -> str:
             parts = list(committed_chunks)
@@ -360,8 +392,10 @@ class STTClient(BaseLLMClient):
                 parts.append(provisional_transcript)
             return _clean_transcript(" ".join(parts))
 
-        async with self._connect() as ws:
+        connect_started_at = time.monotonic()
+        async with self._connect(language) as ws:
             await self._protocol.open_session(ws, self._model)
+            ws_connect_latency_ms = (time.monotonic() - connect_started_at) * 1000
             if on_request_dispatched is not None:
                 on_request_dispatched()
 
@@ -475,6 +509,7 @@ class STTClient(BaseLLMClient):
                             time_to_first_partial = (now - audio_end_at) * 1000
                             partial_transcript = current_transcript
                     elif kind == "done":
+                        stream_completed_at = now
                         final_transcript = _clean_transcript(
                             text or assembled_transcript()
                         )
@@ -518,6 +553,15 @@ class STTClient(BaseLLMClient):
         if not final_transcript:
             final_transcript = assembled_transcript()
 
+        assert audio_started_at is not None, "STT stream completed without input audio"
+        assert (
+            stream_completed_at is not None
+        ), "STT stream completed without terminal event"
+        audio_duration_ms = _pcm_duration_ms(len(pcm_bytes), self._sample_rate)
+        streaming_rtf = (
+            (stream_completed_at - audio_started_at) * 1000 / audio_duration_ms
+        )
+
         return STTStreamResult(
             ttfc=ttfc,
             time_to_first_visible_text=time_to_first_visible_text,
@@ -528,6 +572,8 @@ class STTClient(BaseLLMClient):
             transcript_snapshots=snapshots.snapshots,
             chunk_count=chunk_count,
             pcm_byte_count=len(pcm_bytes),
+            ws_connect_latency_ms=ws_connect_latency_ms,
+            streaming_rtf=streaming_rtf,
         )
 
     # ------------------------------------------------------------------
@@ -606,6 +652,20 @@ class STTClient(BaseLLMClient):
             audio_path,
         )
 
+        try:
+            request_language = self._request_language(request.metadata)
+        except ValueError as error:
+            finish_callbacks()
+            return RequestResult(
+                request_id=request.id,
+                session_id=session_id,
+                session_total_requests=session_total_requests,
+                success=False,
+                error_code=400,
+                error_msg=str(error),
+                client_completed_at=time.monotonic(),
+            )
+
         error_msg: Optional[str] = None
         error_code: Optional[int] = None
         stream_result: Optional[STTStreamResult] = None
@@ -649,6 +709,7 @@ class STTClient(BaseLLMClient):
                 stream_result = await self._stream(
                     pcm_bytes,
                     wire_messages,
+                    language=request_language,
                     on_request_sent=fire_sent_once,
                     on_request_dispatched=fire_dispatched_once,
                 )
@@ -708,10 +769,20 @@ class STTClient(BaseLLMClient):
                     stream_result.final_transcript.split()
                 ),
                 AudioMetricKey.SAMPLE_RATE.value: self._sample_rate,
+                AudioMetricKey.WS_CONNECT_LATENCY_MS.value: round(
+                    stream_result.ws_connect_latency_ms, 3
+                ),
+                AudioMetricKey.STREAMING_RTF.value: round(
+                    stream_result.streaming_rtf, 5
+                ),
+                AudioMetricKey.AUDIO_ENCODING.value: "pcm_s16le",
+                AudioMetricKey.AUDIO_CHANNELS.value: 1,
                 "input_audio_duration_ms": round(input_audio_duration_ms, 3),
                 "partial_transcript": stream_result.partial_transcript,
                 "final_transcript": stream_result.final_transcript,
                 "transcript_snapshots": stream_result.transcript_snapshots,
+                "language_routing_mode": self._config.language_mode,
+                "provider_language_value": request_language,
             }
 
             # Ground truth and dataset metadata are guaranteed by the trace generator.
@@ -795,7 +866,7 @@ class _STTProviderProtocol(Protocol):
 
     def __init__(self, config: STTClientConfig, api_key: str | None) -> None: ...
 
-    def build_ws_url(self, api_base: str) -> str: ...
+    def build_ws_url(self, api_base: str, *, language: str | None) -> str: ...
 
     def headers(self) -> dict[str, str]: ...
 
@@ -833,7 +904,8 @@ class _OpenAIRealtimeSTTProtocol:
         self.config = config
         self.api_key = api_key
 
-    def build_ws_url(self, api_base: str) -> str:
+    def build_ws_url(self, api_base: str, *, language: str | None = None) -> str:
+        del language
         return _stt_ws_url(api_base, self.ws_path)
 
     def headers(self) -> dict[str, str]:
@@ -950,17 +1022,19 @@ class _TogetherSTTProtocol(_OpenAIRealtimeSTTProtocol):
     default_api_key_env = "TOGETHER_API_KEY"
     requires_api_key = True
 
-    def build_ws_url(self, api_base: str) -> str:
+    def build_ws_url(self, api_base: str, *, language: str | None = None) -> str:
+        query = {
+            "intent": "transcription",
+            "model": self.config.model,
+            "input_audio_format": "pcm_s16le_16000",
+            "turn_detection": "none",
+        }
+        if language is not None:
+            query["language"] = language
         return _stt_ws_url(
             api_base,
             "v1/realtime",
-            {
-                "intent": "transcription",
-                "model": self.config.model,
-                "input_audio_format": "pcm_s16le_16000",
-                "language": self.config.language,
-                "turn_detection": "none",
-            },
+            query,
         )
 
     def headers(self) -> dict[str, str]:
@@ -1034,21 +1108,23 @@ class _DeepgramNovaProtocol(_DeepgramSTTProtocol):
     protocol_name = "deepgram_v1_listen"
     endpoint = "v1/listen"
 
-    def build_ws_url(self, api_base: str) -> str:
+    def build_ws_url(self, api_base: str, *, language: str | None = None) -> str:
+        query = {
+            "model": self.config.model,
+            "encoding": "linear16",
+            "sample_rate": self.config.sample_rate,
+            "channels": 1,
+            "interim_results": "true",
+            "punctuate": "true",
+            "smart_format": "false",
+            "mip_opt_out": str(self.config.mip_opt_out).lower(),
+        }
+        if language is not None:
+            query["language"] = language
         return _stt_ws_url(
             api_base,
             self.endpoint,
-            {
-                "model": self.config.model,
-                "encoding": "linear16",
-                "sample_rate": self.config.sample_rate,
-                "channels": 1,
-                "language": self.config.language,
-                "interim_results": "true",
-                "punctuate": "true",
-                "smart_format": "false",
-                "mip_opt_out": str(self.config.mip_opt_out).lower(),
-            },
+            query,
         )
 
     def parse_message(self, msg: dict[str, Any]) -> tuple[str, str]:
@@ -1077,16 +1153,19 @@ class _DeepgramFluxProtocol(_DeepgramSTTProtocol):
     endpoint = "v2/listen"
     clean_close_is_terminal = True
 
-    def build_ws_url(self, api_base: str) -> str:
+    def build_ws_url(self, api_base: str, *, language: str | None = None) -> str:
+        query = {
+            "model": self.config.model,
+            "encoding": "linear16",
+            "sample_rate": self.config.sample_rate,
+            "mip_opt_out": str(self.config.mip_opt_out).lower(),
+        }
+        if language is not None:
+            query["language_hint"] = language
         return _stt_ws_url(
             api_base,
             self.endpoint,
-            {
-                "model": self.config.model,
-                "encoding": "linear16",
-                "sample_rate": self.config.sample_rate,
-                "mip_opt_out": str(self.config.mip_opt_out).lower(),
-            },
+            query,
         )
 
     def parse_message(self, msg: dict[str, Any]) -> tuple[str, str]:
@@ -1112,17 +1191,19 @@ class _ElevenLabsSTTProtocol:
         self.config = config
         self.api_key = api_key or ""
 
-    def build_ws_url(self, api_base: str) -> str:
+    def build_ws_url(self, api_base: str, *, language: str | None = None) -> str:
+        query = {
+            "model_id": self.config.model,
+            "audio_format": f"pcm_{self.config.sample_rate}",
+            "commit_strategy": "manual",
+            "include_timestamps": "false",
+        }
+        if language is not None:
+            query["language_code"] = language
         return _stt_ws_url(
             api_base,
             "v1/speech-to-text/realtime",
-            {
-                "model_id": self.config.model,
-                "audio_format": f"pcm_{self.config.sample_rate}",
-                "language_code": self.config.language,
-                "commit_strategy": "manual",
-                "include_timestamps": "false",
-            },
+            query,
         )
 
     def headers(self) -> dict[str, str]:
@@ -1174,7 +1255,8 @@ class _MistralSTTProtocol:
         self.config = config
         self.api_key = api_key or ""
 
-    def build_ws_url(self, api_base: str) -> str:
+    def build_ws_url(self, api_base: str, *, language: str | None = None) -> str:
+        del language
         return _stt_ws_url(
             api_base,
             "v1/audio/transcriptions/realtime",
@@ -1241,16 +1323,18 @@ class _CartesiaSTTProtocol:
         self.config = config
         self.api_key = api_key or ""
 
-    def build_ws_url(self, api_base: str) -> str:
+    def build_ws_url(self, api_base: str, *, language: str | None = None) -> str:
+        query = {
+            "model": self.config.model,
+            "encoding": "pcm_s16le",
+            "sample_rate": self.config.sample_rate,
+        }
+        if language is not None:
+            query["language"] = language
         return _stt_ws_url(
             api_base,
             "stt/websocket",
-            {
-                "model": self.config.model,
-                "encoding": "pcm_s16le",
-                "sample_rate": self.config.sample_rate,
-                "language": self.config.language,
-            },
+            query,
         )
 
     def headers(self) -> dict[str, str]:

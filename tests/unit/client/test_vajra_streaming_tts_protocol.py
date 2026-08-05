@@ -256,7 +256,11 @@ def _run_request(
     monkeypatch: pytest.MonkeyPatch,
     events: list[str],
 ) -> RequestResult:
-    monkeypatch.setattr(client, "_connect", lambda: _FakeConnection(websocket))
+    monkeypatch.setattr(
+        client,
+        "_connect",
+        lambda protocol=None: _FakeConnection(websocket),
+    )
     return asyncio.run(
         client.send_request(
             _request(),
@@ -403,11 +407,12 @@ def test_abort_input_fraction_stops_before_input_done(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = _client(
+        input_output_mode="duplex",
         abort=TTSAbortConfig(
             fraction=1.0,
             trigger="input_fraction",
             value=0.5,
-        )
+        ),
     )
     websocket = _FakeVajraWebSocket()
     events: list[str] = []

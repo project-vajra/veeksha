@@ -97,13 +97,15 @@ def _client(mode: str) -> tuple[StreamingTTSClient, _FakeWebSocket]:
         input_output_mode=mode,
         duplex_start_after_tokens=1,
         pacing=TextPacingConfig(
-            tokens_per_second=1000.0,
+            tokens_per_second=100.0,
             tokens_per_delta=1,
         ),
     )
     client = StreamingTTSClient(config)
     websocket = _FakeWebSocket()
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda protocol=None: _FakeConnection(  # type: ignore[method-assign]
+        websocket
+    )
     return client, websocket
 
 
@@ -142,10 +144,9 @@ def test_complete_text_triggers_response_after_last_input_delta() -> None:
     assert event_types == [
         "session.update",
         "conversation.item.create",
-        "conversation.item.create",
-        "conversation.item.create",
         "response.create",
     ]
+    assert websocket.sent[1]["item"]["content"][0]["text"] == "one two three"
     metrics = result.channels[ChannelModality.AUDIO].metrics
     assert (
         metrics[AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value]

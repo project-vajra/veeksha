@@ -29,6 +29,8 @@ class AudioMetricKey(StrEnum):
     CHUNK_COUNT = "chunk_count"
     RAW_PCM = "raw_pcm"
     SAMPLE_RATE = "sample_rate"
+    AUDIO_ENCODING = "audio_encoding"
+    AUDIO_CHANNELS = "audio_channels"
     PCM_BYTE_COUNT = "pcm_byte_count"
     INPUT_CHARS = "input_chars"
     INPUT_TOKENS = "input_tokens"

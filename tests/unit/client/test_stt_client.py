@@ -90,6 +90,44 @@ def test_stt_client_config_rejects_nonpositive_ws_ping(field_name: str) -> None:
 
 
 @pytest.mark.unit
+def test_stt_client_config_rejects_unknown_language_mode() -> None:
+    with pytest.raises(ValueError, match="language_mode must be one of"):
+        STTClientConfig(
+            provider="vajra_openai_realtime",
+            model="fixture-model",
+            api_base="http://localhost:8003",
+            language_mode="guess",
+        )
+
+
+@pytest.mark.unit
+def test_request_metadata_language_is_resolved_per_request() -> None:
+    config = STTClientConfig(
+        provider="deepgram_nova",
+        model="nova-3",
+        api_base="https://api.deepgram.com",
+        api_key="test-key",
+        language_mode="request_metadata",
+        supported_languages=["bn", "ta"],
+    )
+    client = STTClient(config)
+
+    assert client._request_language({"language": "bn"}) == "bn"
+    assert client._request_language({"language": "ta"}) == "ta"
+    with pytest.raises(ValueError, match="does not declare support"):
+        client._request_language({"language": "hi"})
+
+    bengali_url = urlparse(
+        client._protocol.build_ws_url(str(config.api_base), language="bn")
+    )
+    tamil_url = urlparse(
+        client._protocol.build_ws_url(str(config.api_base), language="ta")
+    )
+    assert parse_qs(bengali_url.query)["language"] == ["bn"]
+    assert parse_qs(tamil_url.query)["language"] == ["ta"]
+
+
+@pytest.mark.unit
 def test_stt_errors_use_shared_websocket_mapping() -> None:
     assert _map_stt_error(_STTProtocolError("provider failed"), 3.0) == (
         500,
@@ -206,7 +244,10 @@ def test_registry_exposes_one_stt_client_with_provider_strategies(
     assert type(client) is STTClient
     assert client._protocol.provider == metric_provider
     assert client._protocol.protocol_name == protocol_name
-    assert client._ws_url == expected_ws_url
+    assert (
+        client._protocol.build_ws_url(str(config.api_base), language=config.language)
+        == expected_ws_url
+    )
 
 
 @pytest.mark.unit
@@ -249,21 +290,22 @@ def test_registry_exposes_one_stt_client_with_provider_strategies(
 def test_cloud_stt_providers_share_one_client_lifecycle(
     provider: str, model: str, path: str, protocol_name: str
 ) -> None:
-    client = STTClient(
-        STTClientConfig(
-            provider=provider,
-            model=model,
-            api_base={
-                "elevenlabs": "https://api.elevenlabs.io",
-                "mistral": "https://api.mistral.ai",
-                "cartesia": "https://api.cartesia.ai",
-                "together": "https://api.together.ai",
-            }.get(provider, "https://api.deepgram.com"),
-            api_key="test-key",
-        )
+    config = STTClientConfig(
+        provider=provider,
+        model=model,
+        api_base={
+            "elevenlabs": "https://api.elevenlabs.io",
+            "mistral": "https://api.mistral.ai",
+            "cartesia": "https://api.cartesia.ai",
+            "together": "https://api.together.ai",
+        }.get(provider, "https://api.deepgram.com"),
+        api_key="test-key",
     )
+    client = STTClient(config)
 
-    parsed = urlparse(client._ws_url)
+    parsed = urlparse(
+        client._protocol.build_ws_url(str(config.api_base), language=config.language)
+    )
     query = parse_qs(parsed.query)
     assert type(client) is STTClient
     assert parsed.scheme == "wss"
@@ -323,7 +365,7 @@ def test_repeated_committed_turns_are_not_deduplicated() -> None:
     websocket = _FakeDeepgramFluxWebSocket(
         transcripts=["yes", "yes"],
     )
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign, arg-type]
+    client._connect = lambda _language=None: _FakeConnection(websocket)  # type: ignore[method-assign, arg-type]
 
     result = asyncio.run(client._stream(b"\x00\x00"))
 
@@ -449,7 +491,9 @@ def test_together_stt_adapter_uses_manual_realtime_protocol() -> None:
 
     asyncio.run(protocol.open_session(websocket, config.model))
 
-    parsed = urlparse(protocol.build_ws_url(str(config.api_base)))
+    parsed = urlparse(
+        protocol.build_ws_url(str(config.api_base), language=config.language)
+    )
     query = parse_qs(parsed.query)
     encoded = json.loads(protocol.encode_chunk(b"\x01\x02", final=False))
     assert websocket.received
@@ -674,7 +718,7 @@ def test_cartesia_stream_concatenates_final_deltas_without_inserting_spaces() ->
         )
     )
     websocket = _FakeCartesiaWebSocket()
-    client._connect = lambda: _FakeCartesiaConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda _language=None: _FakeCartesiaConnection(websocket)  # type: ignore[method-assign]
 
     result = asyncio.run(client._stream(b"\x00\x00"))
 
@@ -700,7 +744,7 @@ def test_deepgram_flux_clean_close_finalizes_the_last_turn() -> None:
         )
     )
     websocket = _FakeDeepgramFluxWebSocket()
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign, arg-type]
+    client._connect = lambda _language=None: _FakeConnection(websocket)  # type: ignore[method-assign, arg-type]
 
     result = asyncio.run(client._stream(b"\x00\x00"))
 
@@ -712,7 +756,7 @@ def test_deepgram_flux_clean_close_finalizes_the_last_turn() -> None:
 def test_vllm_stream_fires_callbacks_after_handshake_and_first_content() -> None:
     client = _vllm_realtime_client()
     websocket = _FakeVllmWebSocket()
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda _language=None: _FakeConnection(websocket)  # type: ignore[method-assign]
     events: list[str] = []
 
     result = asyncio.run(
@@ -731,7 +775,7 @@ def test_vllm_stream_fires_callbacks_after_handshake_and_first_content() -> None
 def test_stt_request_emits_normalized_provider_metadata(tmp_path: Path) -> None:
     client = _vllm_realtime_client()
     websocket = _FakeVllmWebSocket()
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda _language=None: _FakeConnection(websocket)  # type: ignore[method-assign]
     client._clip_assets = lambda _path: _ClipAssets(  # type: ignore[method-assign]
         pcm=b"\x00\x00",
         wire_messages=[],
@@ -800,7 +844,7 @@ class _FakeVllmEmptyTranscriptWebSocket:
 def test_stt_request_emits_null_ttfc_when_no_content_observed(tmp_path: Path) -> None:
     client = _vllm_realtime_client()
     websocket = _FakeVllmEmptyTranscriptWebSocket()
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda _language=None: _FakeConnection(websocket)  # type: ignore[method-assign]
     client._clip_assets = lambda _path: _ClipAssets(  # type: ignore[method-assign]
         pcm=b"\x00\x00",
         wire_messages=[],
@@ -854,7 +898,7 @@ def test_stt_handshake_garbage_fails_request_with_protocol_error(
     """A malformed first frame is a named protocol error, not an opaque 520."""
     client = _vllm_realtime_client()
     websocket = _FakeHandshakeGarbageWebSocket(first_frame)
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda _language=None: _FakeConnection(websocket)  # type: ignore[method-assign]
     client._clip_assets = lambda _path: _ClipAssets(  # type: ignore[method-assign]
         pcm=b"\x00\x00",
         wire_messages=[],

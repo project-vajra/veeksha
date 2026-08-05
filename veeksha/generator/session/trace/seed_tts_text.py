@@ -81,7 +81,10 @@ def _load_hf_dataset(flavor_config: SeedTTSTextTraceFlavorConfig) -> Any:
     args = [flavor_config.dataset_name]
     if flavor_config.subset:
         args.append(flavor_config.subset)
-    return datasets.load_dataset(*args, split=flavor_config.split)
+    kwargs = {"split": flavor_config.split}
+    if flavor_config.revision:
+        kwargs["revision"] = flavor_config.revision
+    return datasets.load_dataset(*args, **kwargs)
 
 
 def _select_split(dataset: Any, split: str) -> Any:
@@ -113,6 +116,20 @@ def _truncate_to_words(text: str, target_words: int) -> str:
     if len(words) <= target_words:
         return text
     return " ".join(words[:target_words])
+
+
+def _scalar_metadata_value(value: Any, *, column: str) -> Any:
+    """Return a JSON-friendly scalar or fail before request generation."""
+
+    if isinstance(value, np.generic):
+        value = value.item()
+    missing = pd.isna(value)
+    if not isinstance(missing, (bool, np.bool_)):
+        raise TypeError(
+            f"Seed TTS metadata column {column!r} must contain scalar values; "
+            f"got {type(value).__name__}"
+        )
+    return None if bool(missing) else value
 
 
 class SeedTTSTextTraceFlavorGenerator(TraceFlavorGeneratorBase):
@@ -152,7 +169,7 @@ class SeedTTSTextTraceFlavorGenerator(TraceFlavorGeneratorBase):
 
     @property
     def required_columns(self) -> List[str]:
-        return [self.flavor_config.text_column]
+        return [self.flavor_config.text_column, *self.flavor_config.metadata_columns]
 
     def _prepare_trace_df(self, raw_df: pd.DataFrame) -> pd.DataFrame:
         text_col = self.flavor_config.text_column
@@ -162,6 +179,22 @@ class SeedTTSTextTraceFlavorGenerator(TraceFlavorGeneratorBase):
             raise ValueError(
                 f"Seed TTS dataset missing text column '{text_col}'. "
                 f"Available columns: {list(raw_df.columns)}"
+            )
+        missing_metadata = sorted(
+            set(self.flavor_config.metadata_columns) - set(raw_df.columns)
+        )
+        if missing_metadata:
+            raise ValueError(
+                "Seed TTS dataset missing metadata column(s) "
+                f"{missing_metadata}. Available columns: {list(raw_df.columns)}"
+            )
+        expected_rows = self.flavor_config.expected_rows
+        selected_rows = len(raw_df)
+        if expected_rows is not None and selected_rows != expected_rows:
+            raise ValueError(
+                "Seed TTS dataset selected "
+                f"{selected_rows} source rows; expected exactly {expected_rows}. "
+                "Check the pinned dataset revision, config, and split."
             )
 
         has_id_col = bool(id_col) and id_col in raw_df.columns
@@ -187,37 +220,41 @@ class SeedTTSTextTraceFlavorGenerator(TraceFlavorGeneratorBase):
                 skipped_empty += 1
                 continue
 
-            text = str(value).strip()
-            if not text:
+            raw_text = str(value)
+            if not raw_text.strip():
                 skipped_empty += 1
                 continue
+            text = raw_text if self.flavor_config.preserve_text else raw_text.strip()
 
             char_count = len(text)
             word_count = _word_count(text)
             current_length = char_count if self.flavor_config.use_chars else word_count
-            if current_length < min_length:
+            if not self.flavor_config.preserve_text and current_length < min_length:
                 skipped_short += 1
                 continue
 
             source_id = row[id_col] if has_id_col else source_index
-            rows.append(
-                {
-                    "session_id": len(rows),
-                    "text": text,
-                    "source_id": str(source_id),
-                    "source_index": (
-                        int(source_index)
-                        if isinstance(source_index, int)
-                        else str(source_index)
-                    ),
-                    "word_count": word_count,
-                    "char_count": char_count,
-                }
-            )
+            prepared_row = {
+                "session_id": len(rows),
+                "text": text,
+                "source_id": str(source_id),
+                "source_index": (
+                    int(source_index)
+                    if isinstance(source_index, int)
+                    else str(source_index)
+                ),
+                "word_count": word_count,
+                "char_count": char_count,
+            }
+            for column in self.flavor_config.metadata_columns:
+                prepared_row[column] = _scalar_metadata_value(
+                    row[column], column=column
+                )
+            rows.append(prepared_row)
 
         if skipped_empty:
             logger.info("Skipped %d empty Seed TTS text rows", skipped_empty)
-        if skipped_short:
+        if skipped_short and not self.flavor_config.preserve_text:
             logger.info(
                 "Skipped %d Seed TTS text rows shorter than %d %s",
                 skipped_short,
@@ -225,10 +262,25 @@ class SeedTTSTextTraceFlavorGenerator(TraceFlavorGeneratorBase):
                 unit,
             )
 
-        if not rows:
+        prepared_rows = len(rows)
+        if expected_rows is not None and prepared_rows != expected_rows:
             raise ValueError(
-                f"Seed TTS dataset contains no rows in column '{text_col}' with "
-                f"at least {min_length} {unit}."
+                "Seed TTS dataset prepared "
+                f"{prepared_rows} prompts from {selected_rows} source rows; "
+                f"expected exactly {expected_rows}. "
+                f"Skipped empty prompts: {skipped_empty}; "
+                f"skipped short prompts: {skipped_short}."
+            )
+
+        if not rows:
+            requirement = (
+                "after removing empty prompts"
+                if self.flavor_config.preserve_text
+                else f"with at least {min_length} {unit}"
+            )
+            raise ValueError(
+                f"Seed TTS dataset contains no rows in column {text_col!r} "
+                f"{requirement}."
             )
 
         return pd.DataFrame(rows)
@@ -238,7 +290,9 @@ class SeedTTSTextTraceFlavorGenerator(TraceFlavorGeneratorBase):
         row = group.iloc[0]
         text = str(row["text"])
 
-        if self.flavor_config.use_chars:
+        if self.flavor_config.preserve_text:
+            pass
+        elif self.flavor_config.use_chars:
             target_chars = self._length_rng.randint(
                 self.flavor_config.min_chars,
                 self.flavor_config.max_chars,
@@ -267,6 +321,7 @@ class SeedTTSTextTraceFlavorGenerator(TraceFlavorGeneratorBase):
                 "dataset": self.flavor_config.dataset_name,
                 "dataset_subset": self.flavor_config.subset,
                 "dataset_split": self.flavor_config.split,
+                "dataset_revision": self.flavor_config.revision or None,
                 "dataset_source": self.flavor_config.local_path or "huggingface",
                 "source_id": row["source_id"],
                 "source_index": row["source_index"],
@@ -274,6 +329,8 @@ class SeedTTSTextTraceFlavorGenerator(TraceFlavorGeneratorBase):
                 "input_chars": len(text),
             }
         )
+        for column in self.flavor_config.metadata_columns:
+            request.metadata[column] = row[column]
 
         graph = self._build_linear_session_graph(1, [0.0])
         return Session(id=session_id, session_graph=graph, requests={0: request})

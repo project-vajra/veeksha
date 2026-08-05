@@ -162,6 +162,18 @@ class AudioChannelPerformanceConfig(BaseChannelPerformanceConfig):
         "truncates silently at the cap, so duration-at-cap is the only "
         "client-visible signal.",
     )
+    asr_text_normalizer: str = field(
+        "english",
+        help=(
+            "Transcript normalization contract for ASR WER/CER: 'english' "
+            "matches the Open ASR Leaderboard; 'unicode' preserves letters and "
+            "combining marks for multilingual scripts."
+        ),
+    )
+    asr_compute_cer: bool = field(
+        False,
+        help="Also compute character error rate for ASR transcripts.",
+    )
 
     @classmethod
     def get_type(cls) -> ChannelModality:
@@ -191,6 +203,10 @@ class AudioChannelPerformanceConfig(BaseChannelPerformanceConfig):
             raise ValueError(
                 "fluidity_attribution_mode must be one of "
                 "('conservative', 'source_oversupplied')"
+            )
+        if self.asr_text_normalizer not in ("english", "unicode"):
+            raise ValueError(
+                "asr_text_normalizer must be one of ('english', 'unicode')"
             )
 
 

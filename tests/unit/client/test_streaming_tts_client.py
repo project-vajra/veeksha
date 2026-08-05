@@ -119,12 +119,13 @@ class _SilentElevenLabsWebSocket(_FakeWebSocket):
             await self.events.put(json.dumps({"isFinal": True}))
 
 
-def _request() -> Request:
+def _request(*, metadata: dict[str, Any] | None = None) -> Request:
     return Request(
         id=11,
         channels={
             ChannelModality.TEXT: TextChannelRequestContent(input_text="one two three")
         },
+        metadata=metadata or {},
     )
 
 
@@ -144,7 +145,7 @@ def test_text_pacing_uses_whitespace_words_at_a_continuous_rate() -> None:
 
 @pytest.mark.unit
 @pytest.mark.parametrize("provider", ["elevenlabs", "deepgram", "cartesia"])
-def test_streaming_providers_share_text_audio_lifecycle(provider: str) -> None:
+def test_streaming_providers_accept_complete_text_in_one_append(provider: str) -> None:
     if provider == "elevenlabs":
         config = StreamingTTSClientConfig(
             provider="elevenlabs",
@@ -177,15 +178,17 @@ def test_streaming_providers_share_text_audio_lifecycle(provider: str) -> None:
         client = StreamingTTSClient(config)
 
     websocket = _FakeWebSocket(provider)
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda protocol=None: _FakeConnection(  # type: ignore[method-assign]
+        websocket
+    )
     result = asyncio.run(client.send_request(_request(), session_id=1))
 
     assert result.success
     metrics = result.channels[ChannelModality.AUDIO].metrics
     assert metrics[AudioMetricKey.PROVIDER.value] == provider
     assert metrics[AudioMetricKey.PROVIDER_MODEL.value] == config.model
-    assert len(metrics[AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value]) == 3
-    assert metrics[AudioMetricKey.CHUNK_COUNT.value] == 3
+    assert len(metrics[AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value]) == 1
+    assert metrics[AudioMetricKey.CHUNK_COUNT.value] == 1
     assert metrics[AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value] == pytest.approx(
         metrics[AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value][0][0], abs=0.001
     )
@@ -194,12 +197,74 @@ def test_streaming_providers_share_text_audio_lifecycle(provider: str) -> None:
         - metrics[AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value],
         abs=1.0,
     )
-    assert metrics[AudioMetricKey.TEXT_PACING_UNIT.value] == "whitespace_word"
-    assert metrics[AudioMetricKey.TEXT_PACING_RATE.value] == 1000
-    assert (
-        metrics[AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value][0][0]
-        < metrics[AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value]
+    assert metrics[AudioMetricKey.TEXT_PACING_UNIT.value] == "complete_text"
+    assert metrics[AudioMetricKey.TEXT_PACING_RATE.value] is None
+
+
+@pytest.mark.unit
+def test_request_language_is_bound_to_the_request_scoped_protocol() -> None:
+    config = StreamingTTSClientConfig(
+        provider="elevenlabs",
+        api_base="https://api.elevenlabs.io",
+        api_key="test-key",
+        model="eleven_flash_v2_5",
+        voice_id="test-voice",
+        language_mode="request_metadata",
+        supported_languages=["hi", "ta"],
     )
+    client = StreamingTTSClient(config)
+    websocket = _FakeWebSocket("elevenlabs")
+    request_protocols: list[ElevenLabsStreamingProtocol] = []
+
+    def connect_factory(protocol=None) -> _FakeConnection:
+        assert isinstance(protocol, ElevenLabsStreamingProtocol)
+        request_protocols.append(protocol)
+        return _FakeConnection(websocket)
+
+    client._connect = connect_factory  # type: ignore[method-assign]
+    result = asyncio.run(
+        client.send_request(
+            _request(metadata={"language": "hi"}),
+            session_id=1,
+        )
+    )
+
+    assert result.success
+    assert len(request_protocols) == 1
+    assert request_protocols[0].config.language == "hi"
+    assert "language_code=hi" in request_protocols[0].build_ws_url(str(config.api_base))
+    metrics = result.channels[ChannelModality.AUDIO].metrics
+    assert metrics["language_routing_mode"] == "request_metadata"
+    assert metrics["provider_language_value"] == "hi"
+
+
+@pytest.mark.unit
+def test_request_language_rejects_missing_or_unsupported_metadata() -> None:
+    config = StreamingTTSClientConfig(
+        provider="cartesia",
+        api_base="https://api.cartesia.ai",
+        api_key="test-key",
+        model="sonic-3.5",
+        voice_id="test-voice",
+        language_mode="request_metadata",
+        supported_languages=["hi"],
+    )
+    client = StreamingTTSClient(config)
+
+    missing = asyncio.run(client.send_request(_request(), session_id=1))
+    unsupported = asyncio.run(
+        client.send_request(
+            _request(metadata={"language": "ta"}),
+            session_id=2,
+        )
+    )
+
+    assert not missing.success
+    assert missing.error_code == 400
+    assert "metadata must contain" in (missing.error_msg or "")
+    assert not unsupported.success
+    assert unsupported.error_code == 400
+    assert "does not declare support" in (unsupported.error_msg or "")
 
 
 @pytest.mark.unit
@@ -324,9 +389,7 @@ def test_streaming_protocol_urls_use_raw_pcm_and_provider_auth() -> None:
     assert chunk.response_started
     malformed_chunk = cartesia.parse(json.dumps({"type": "chunk"}))
     assert malformed_chunk.error == "Cartesia chunk omitted audio data"
-    error = cartesia.parse(
-        json.dumps({"type": "error", "error_code": "bad_context"})
-    )
+    error = cartesia.parse(json.dumps({"type": "error", "error_code": "bad_context"}))
     assert error.error == "bad_context"
     done = cartesia.parse(json.dumps({"type": "done", "done": True}))
     assert done.audio_done
@@ -353,7 +416,7 @@ def test_cartesia_client_uses_a_fresh_context_for_each_request() -> None:
     client = StreamingTTSClient(config)
     websockets: list[_FakeWebSocket] = []
 
-    def connect_factory() -> _FakeConnection:
+    def connect_factory(protocol=None) -> _FakeConnection:
         websocket = _FakeWebSocket("cartesia")
         websockets.append(websocket)
         return _FakeConnection(websocket)
@@ -381,7 +444,9 @@ def test_deepgram_aura_adapter_streams_audio_before_flush_completion() -> None:
     )
     client = StreamingTTSClient(config)
     websocket = _FakeWebSocket("deepgram_aura")
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda protocol=None: _FakeConnection(  # type: ignore[method-assign]
+        websocket
+    )
 
     result = asyncio.run(client.send_request(_request(), session_id=1))
 
@@ -391,15 +456,12 @@ def test_deepgram_aura_adapter_streams_audio_before_flush_completion() -> None:
     first_audio_ms = metrics[AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value][0][0]
     commit_ms = metrics[AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value]
     trigger_ms = metrics[AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value]
-    assert trigger_ms < commit_ms
-    assert first_audio_ms < commit_ms
+    assert trigger_ms <= commit_ms
     assert metrics[AudioMetricKey.TTFC.value] == pytest.approx(
         first_audio_ms - trigger_ms,
         abs=1.0,
     )
     assert [json.loads(raw)["type"] for raw in websocket.sent] == [
-        "Speak",
-        "Speak",
         "Speak",
         "Flush",
     ]
@@ -417,7 +479,9 @@ def test_streaming_tts_rejects_terminal_response_without_audio() -> None:
     )
     client = StreamingTTSClient(config)
     websocket = _SilentElevenLabsWebSocket()
-    client._connect = lambda: _FakeConnection(websocket)  # type: ignore[method-assign]
+    client._connect = lambda protocol=None: _FakeConnection(  # type: ignore[method-assign]
+        websocket
+    )
 
     result = asyncio.run(client.send_request(_request(), session_id=1))
 

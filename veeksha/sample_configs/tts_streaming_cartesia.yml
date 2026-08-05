@@ -7,6 +7,7 @@ client:
   api_base: https://api.cartesia.ai
   api_key_env: CARTESIA_API_KEY
   model: sonic-3.5
+  input_output_mode: duplex
   # Cartesia public voice: Skylar - Friendly Guide (English).
   voice_id: db6b0ed5-d5d3-463d-ae85-518a07d3c2b4
   language: en

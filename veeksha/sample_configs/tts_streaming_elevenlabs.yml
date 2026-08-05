@@ -6,6 +6,7 @@ client:
   provider: elevenlabs
   api_base: https://api.elevenlabs.io
   model: !expand [eleven_flash_v2_5, eleven_turbo_v2_5, eleven_multilingual_v2]
+  input_output_mode: duplex
   voice_id: YOUR_VOICE_ID
   api_key_env: ELEVENLABS_API_KEY
   sample_rate: 24000
