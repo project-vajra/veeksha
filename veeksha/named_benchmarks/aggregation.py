@@ -9,6 +9,7 @@ summaries from child runs are never averaged.
 
 from __future__ import annotations
 
+import copy
 import json
 import math
 import re
@@ -38,6 +39,125 @@ class CompletedDatasetRun:
     dataset_id: str
     run_dir: str | Path
     metrics: Any
+    load_point_id: str | None = None
+    load: Mapping[str, Any] | None = None
+    execution_validation: Mapping[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class _NormalizedLoadPoint:
+    id: str
+    load: Mapping[str, Any]
+
+
+def build_named_benchmark_sweep_results(
+    benchmark_spec: Any,
+    child_runs: Sequence[CompletedDatasetRun | Mapping[str, Any] | Any],
+    *,
+    load_points: Sequence[Any],
+    expected_target_ids: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Aggregate each explicit load point independently.
+
+    This is a thin orchestration wrapper around
+    :func:`build_named_benchmark_results`. Existing dataset reducers remain the
+    only metric implementation, and observations from different load points are
+    never pooled.
+    """
+
+    benchmark_id = str(
+        _required_value(benchmark_spec, ("id", "benchmark_id"), "benchmark id")
+    )
+    normalized_loads = tuple(_normalize_load_point(point) for point in load_points)
+    _reject_duplicate_load_points(normalized_loads)
+    expected_loads = {point.id: point for point in normalized_loads}
+
+    children_by_target_load: dict[tuple[str, str], list[Any]] = {}
+    target_ids = {str(target_id) for target_id in expected_target_ids}
+    for child in child_runs:
+        target_id = str(_required_value(child, ("target_id",), "child target_id"))
+        load_point_id = _value(child, "load_point_id", default=None)
+        if not isinstance(load_point_id, str) or not load_point_id:
+            raise ValueError(
+                "Explicit named benchmark sweeps require load_point_id on every "
+                f"completed child; missing for target={target_id!r}."
+            )
+        if load_point_id not in expected_loads:
+            raise ValueError(
+                f"Completed child references unknown load point {load_point_id!r}."
+            )
+        child_load = _value(child, "load", default=None)
+        if not isinstance(child_load, Mapping) or dict(child_load) != dict(
+            expected_loads[load_point_id].load
+        ):
+            raise ValueError(
+                f"Completed child load metadata does not match {load_point_id!r}."
+            )
+        target_ids.add(target_id)
+        children_by_target_load.setdefault((target_id, load_point_id), []).append(child)
+
+    targets: list[dict[str, Any]] = []
+    all_diagnostics: list[dict[str, Any]] = []
+    for target_id in sorted(target_ids):
+        point_results: list[dict[str, Any]] = []
+        target_diagnostics: list[dict[str, Any]] = []
+        for load_point in normalized_loads:
+            point_children = children_by_target_load.get(
+                (target_id, load_point.id),
+                [],
+            )
+            point_summary = build_named_benchmark_results(
+                benchmark_spec,
+                point_children,
+                expected_target_ids=[target_id],
+            )
+            point_target = next(
+                target
+                for target in point_summary["targets"]
+                if target["target_id"] == target_id
+            )
+            point_result = _decorate_load_result(
+                point_target,
+                load_point=load_point,
+                child_runs=point_children,
+            )
+            point_results.append(point_result)
+            target_diagnostics.extend(point_result["missing_metric_diagnostics"])
+
+        target_diagnostics = _sorted_diagnostics(target_diagnostics)
+        all_diagnostics.extend(target_diagnostics)
+        target_result: dict[str, Any] = {
+            "target_id": target_id,
+            "load_points": point_results,
+            "missing_metric_diagnostics": target_diagnostics,
+        }
+        if len(point_results) == 1:
+            target_result.update(
+                {
+                    key: copy.deepcopy(point_results[0][key])
+                    for key in (
+                        "sample_count",
+                        "dataset_count",
+                        "expected_dataset_count",
+                        "datasets",
+                        "benchmark_metrics",
+                    )
+                }
+            )
+        targets.append(target_result)
+
+    return _json_safe(
+        {
+            "schema_version": 2,
+            "benchmark_id": benchmark_id,
+            "load_points": [
+                {"load_point_id": point.id, "load": dict(point.load)}
+                for point in normalized_loads
+            ],
+            "targets": targets,
+            "missing_metric_diagnostics": _sorted_diagnostics(all_diagnostics),
+        }
+    )
 
 
 def build_named_benchmark_results(
@@ -151,6 +271,112 @@ def build_named_benchmark_results(
         "missing_metric_diagnostics": _sorted_diagnostics(all_diagnostics),
     }
     return _json_safe(result)
+
+
+def _normalize_load_point(value: Any) -> _NormalizedLoadPoint:
+    load_point_id = str(
+        _required_value(value, ("id", "load_point_id"), "load point id")
+    )
+    if not load_point_id:
+        raise ValueError("load point id must be non-empty")
+
+    to_mapping = getattr(value, "to_mapping", None)
+    if callable(to_mapping):
+        load = to_mapping()
+    else:
+        load = _value(value, "load", default=_MISSING)
+    if not isinstance(load, Mapping) or not load:
+        raise ValueError(
+            f"Load point {load_point_id!r} must provide a non-empty load mapping."
+        )
+    return _NormalizedLoadPoint(id=load_point_id, load=dict(load))
+
+
+def _reject_duplicate_load_points(load_points: Sequence[_NormalizedLoadPoint]) -> None:
+    seen: set[str] = set()
+    for load_point in load_points:
+        if load_point.id in seen:
+            raise ValueError(f"Duplicate named benchmark load point {load_point.id!r}.")
+        seen.add(load_point.id)
+    if not load_points:
+        raise ValueError("Named benchmark sweep must contain at least one load point.")
+
+
+def _decorate_load_result(
+    target_result: Mapping[str, Any],
+    *,
+    load_point: _NormalizedLoadPoint,
+    child_runs: Sequence[Any],
+) -> dict[str, Any]:
+    result = copy.deepcopy(dict(target_result))
+    result.pop("target_id", None)
+    result["load_point_id"] = load_point.id
+    result["load"] = dict(load_point.load)
+
+    result["missing_metric_diagnostics"] = _diagnostics_with_load(
+        result.get("missing_metric_diagnostics", []),
+        load_point=load_point,
+    )
+    for dataset in result.get("datasets", []):
+        dataset["missing_metric_diagnostics"] = _diagnostics_with_load(
+            dataset.get("missing_metric_diagnostics", []),
+            load_point=load_point,
+        )
+
+    validation_by_dataset = {
+        str(_required_value(child, ("dataset_id",), "child dataset_id")): _value(
+            child,
+            "execution_validation",
+            default=None,
+        )
+        for child in child_runs
+    }
+    validations: list[dict[str, Any]] = []
+    for dataset in result.get("datasets", []):
+        dataset_id = str(dataset["dataset_id"])
+        validation = validation_by_dataset.get(dataset_id)
+        if isinstance(validation, Mapping):
+            dataset["execution_validation"] = _json_safe(validation)
+            validations.append(
+                {
+                    "dataset_id": dataset_id,
+                    **dict(_json_safe(validation)),
+                }
+            )
+
+    expected_count = int(result.get("expected_dataset_count", 0))
+    dataset_count = int(result.get("dataset_count", 0))
+    all_children_valid = (
+        len(validations) == dataset_count
+        and dataset_count > 0
+        and all(validation.get("valid") is True for validation in validations)
+    )
+    result["load_validation"] = {
+        "valid_for_comparison": (
+            dataset_count == expected_count and all_children_valid
+        ),
+        "completed_dataset_count": dataset_count,
+        "expected_dataset_count": expected_count,
+        "datasets": sorted(validations, key=lambda item: item["dataset_id"]),
+    }
+    return result
+
+
+def _diagnostics_with_load(
+    diagnostics: Sequence[Mapping[str, Any]],
+    *,
+    load_point: _NormalizedLoadPoint,
+) -> list[dict[str, Any]]:
+    return _sorted_diagnostics(
+        [
+            {
+                **dict(diagnostic),
+                "load_point_id": load_point.id,
+                "load": dict(load_point.load),
+            }
+            for diagnostic in diagnostics
+        ]
+    )
 
 
 def write_named_benchmark_results(
@@ -865,6 +1091,7 @@ def _sorted_diagnostics(
         safe,
         key=lambda item: (
             str(item.get("target_id", "")),
+            str(item.get("load_point_id", "")),
             str(item.get("dataset_id", "")),
             str(item.get("metric_id", "")),
             str(item.get("reason", "")),
@@ -889,7 +1116,7 @@ def _json_safe(value: Any) -> Any:
         return str(value)
     if isinstance(value, (date, datetime)):
         return value.isoformat()
-    if is_dataclass(value):
+    if is_dataclass(value) and not isinstance(value, type):
         return _json_safe(asdict(value))
     if isinstance(value, Mapping):
         return {
@@ -912,5 +1139,6 @@ def _json_safe(value: Any) -> Any:
 __all__ = [
     "CompletedDatasetRun",
     "build_named_benchmark_results",
+    "build_named_benchmark_sweep_results",
     "write_named_benchmark_results",
 ]

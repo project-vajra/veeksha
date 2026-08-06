@@ -108,6 +108,85 @@ def test_valid_manifest_preserves_dataset_and_metric_contract() -> None:
     assert benchmark.metrics[0].requires_all_requests_successful is True
 
 
+def test_concurrency_sweep_is_typed_and_serialized_inside_execution() -> None:
+    manifest = _valid_manifest()
+    manifest["execution"]["traffic_scheduler"].pop("target_concurrent_sessions")
+    manifest["execution"]["load"] = {
+        "type": "concurrency_sweep",
+        "values": [1, 2, 8],
+    }
+
+    benchmark = Benchmark.from_mapping(manifest)
+
+    assert benchmark.execution.load is not None
+    assert benchmark.execution.load.values == (1, 2, 8)
+    assert [point.id for point in benchmark.execution.load.points] == [
+        "concurrency-0001",
+        "concurrency-0002",
+        "concurrency-0008",
+    ]
+    assert benchmark.execution.config["traffic_scheduler"] == {"type": "concurrent"}
+    assert benchmark.to_mapping()["execution"]["load"] == {
+        "type": "concurrency_sweep",
+        "values": [1, 2, 8],
+    }
+    assert benchmark.execution.get("traffic_scheduler") == {"type": "concurrent"}
+    assert benchmark.execution["load"] == {
+        "type": "concurrency_sweep",
+        "values": [1, 2, 8],
+    }
+    assert Benchmark.from_mapping(benchmark.to_mapping()) == benchmark
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        ([], "must not be empty"),
+        ([0, 1], "positive integer"),
+        ([True, 2], "positive integer"),
+        ([1, 1], "unique values"),
+        ([2, 1], "strictly increasing"),
+    ],
+)
+def test_concurrency_sweep_rejects_invalid_values(
+    values: list[object], message: str
+) -> None:
+    manifest = _valid_manifest()
+    manifest["execution"]["traffic_scheduler"].pop("target_concurrent_sessions")
+    manifest["execution"]["load"] = {
+        "type": "concurrency_sweep",
+        "values": values,
+    }
+
+    with pytest.raises(BenchmarkSchemaError, match=message):
+        Benchmark.from_mapping(manifest)
+
+
+def test_concurrency_sweep_requires_unambiguous_concurrent_scheduler() -> None:
+    manifest = _valid_manifest()
+    manifest["execution"]["load"] = {
+        "type": "concurrency_sweep",
+        "values": [1, 2],
+    }
+
+    with pytest.raises(BenchmarkSchemaError, match="conflicts with"):
+        Benchmark.from_mapping(manifest)
+
+    manifest["execution"]["traffic_scheduler"] = {"type": "rate"}
+    with pytest.raises(
+        BenchmarkSchemaError,
+        match="traffic_scheduler.type=concurrent",
+    ):
+        Benchmark.from_mapping(manifest)
+
+    manifest["execution"].pop("traffic_scheduler")
+    with pytest.raises(
+        BenchmarkSchemaError,
+        match="explicit concurrent traffic_scheduler",
+    ):
+        Benchmark.from_mapping(manifest)
+
+
 def test_requires_all_requests_successful_must_be_boolean() -> None:
     manifest = _valid_manifest()
     manifest["metrics"][0]["requires_all_requests_successful"] = "true"

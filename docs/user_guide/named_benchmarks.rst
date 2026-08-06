@@ -97,6 +97,54 @@ configs, ``benchmark_summary.json``, ``dataset_results.jsonl``, failure rows,
 and the ordinary Veeksha output tree for every dataset and target.  Partial
 results are preserved if one child fails.
 
+Fixed concurrency sweeps
+------------------------
+
+A named benchmark can declare concurrency as a first-class workload dimension::
+
+    execution:
+      load:
+        type: concurrency_sweep
+        values: [1, 2, 4, 8, 16, 32]
+      traffic_scheduler:
+        type: concurrent
+        rampup_seconds: 10
+      runtime:
+        max_sessions: 100
+        benchmark_timeout: 600
+
+``values`` must be positive, unique, and strictly increasing.  Do not also set
+``traffic_scheduler.target_concurrent_sessions``; the compiler injects one
+concrete value into each ordinary ``BenchmarkConfig``.  Concurrency belongs to
+the named workload rather than the target file, so every provider receives the
+same load grid.  ``runtime.max_sessions`` (25 by default) and every finite
+dataset selection must contain at least the largest requested concurrency; an
+unreachable sweep is rejected before execution.
+
+For *T* targets, *C* concurrency values, and *D* datasets, the runner creates
+*T × C × D* ordinary runs.  Existing clients, managed servers, schedulers,
+evaluators, and request artifacts are reused unchanged.  Explicit sweep runs
+are stored under paths such as::
+
+    targets/<target>/loads/concurrency-0008/datasets/<dataset>
+
+``benchmark_summary.json`` groups dataset and benchmark metrics independently
+under each load point.  Request observations, WER/CER counts, and latency
+percentiles are never pooled across concurrency values.  Each row in
+``dataset_results.jsonl`` includes its stable ``load_point_id`` and concrete
+load settings.  A benchmark without ``execution.load`` retains the original
+single-run paths and result shape.
+
+After execution, the runner verifies two facts from request-level lifecycle
+timestamps: the child completed its expected number of sessions, and the
+configured concurrency was actually observed for a positive-duration interval
+after ramp-up.  A timeout, short trace, or insufficient ramp therefore cannot
+be published as if it measured the configured load.  Invalid child artifacts
+are preserved, but the child is recorded in ``run_failures.jsonl`` instead of
+being aggregated.  Valid sweep summaries include maximum observed concurrency,
+steady-state duration, and the fraction of steady-state time at or above the
+target under ``load_validation``.
+
 Indic starter benchmarks
 ------------------------
 

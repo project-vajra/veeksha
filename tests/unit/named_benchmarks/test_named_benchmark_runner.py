@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -15,8 +16,10 @@ from veeksha.config.evaluator import (
 )
 from veeksha.config.named_benchmark import NamedBenchmarkConfig
 from veeksha.named_benchmarks.runner import (
+    _measure_achieved_concurrency,
     _validate_huggingface_asr_trace,
     _validate_interaction_contract,
+    _validate_load_capacity,
     run_named_benchmark,
 )
 from veeksha.named_benchmarks.schema import Benchmark, DatasetCase
@@ -344,6 +347,446 @@ traffic_scheduler:
         compiled["session_generator"]["type"] == "trace"
         for compiled in compiled_by_dataset.values()
     )
+
+
+@pytest.mark.unit
+def test_dry_run_compiles_target_by_load_by_dataset_matrix(tmp_path: Path) -> None:
+    target_config = tmp_path / "target.yml"
+    target_config.write_text(
+        """\
+client:
+  type: streaming_tts
+  provider: vajra
+  api_base: http://localhost:8000
+  model: !expand [fixture-model-a, fixture-model-b]
+  sample_rate: 24000
+traffic_scheduler:
+  type: concurrent
+  target_concurrent_sessions: 99
+""",
+        encoding="utf-8",
+    )
+    benchmark_manifest = tmp_path / "benchmark.yml"
+    benchmark_manifest.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 1,
+                "id": "tts.indic.load-fixture.v1",
+                "name": "Load fixture",
+                "description": "Compiles a fixed concurrency sweep.",
+                "modality": "tts",
+                "input_mode": "static",
+                "output_mode": "streaming",
+                "interaction": {
+                    "transport": "websocket",
+                    "output_audio_encoding": "pcm_s16le",
+                    "output_sample_rate_hz": 24000,
+                    "output_channels": 1,
+                    "playable_frame_ms": 20,
+                },
+                "client_overrides": {
+                    "sample_rate": 24000,
+                    "strict_audio_contract": True,
+                },
+                "datasets": [
+                    {
+                        "id": dataset_id,
+                        "name": dataset_id,
+                        "source": {
+                            "kind": "fixture",
+                            "uri": f"fixture://{dataset_id}",
+                            "revision": "0123456789abcdef",
+                            "split": "test",
+                        },
+                        "session_generator": {
+                            "type": "trace",
+                            "trace_file": (
+                                f"${{DATASET_ROOT}}/{dataset_id}/manifest.jsonl"
+                            ),
+                            "wrap_mode": False,
+                            "flavor": {
+                                "type": "seed_tts_text",
+                                "dataset_name": "fixture/prompts",
+                                "split": "test",
+                                "preserve_text": True,
+                            },
+                        },
+                    }
+                    for dataset_id in ("dataset_a", "dataset_b")
+                ],
+                "execution": {
+                    "load": {
+                        "type": "concurrency_sweep",
+                        "values": [1, 4],
+                    },
+                    "traffic_scheduler": {
+                        "type": "concurrent",
+                        "rampup_seconds": 7,
+                    },
+                    "evaluators": [
+                        {
+                            "type": "performance",
+                            "target_channels": ["audio"],
+                            "audio_channel": {
+                                "interactivity_enabled": True,
+                                "fluidity_frame_ms": 20,
+                            },
+                            "slos": [],
+                        }
+                    ],
+                    "runtime": {"max_sessions": 5, "benchmark_timeout": 30},
+                },
+                "metrics": [
+                    {
+                        "id": "ttfa_ms",
+                        "role": "primary",
+                        "unit": "ms",
+                        "dataset_aggregation": {
+                            "method": "distribution",
+                            "source": "trigger_to_first_playable_audio_ms",
+                            "quantiles": [0.5, 0.9],
+                        },
+                        "benchmark_aggregation": {
+                            "method": "pooled_distribution",
+                            "source": "trigger_to_first_playable_audio_ms",
+                            "quantiles": [0.5, 0.9],
+                        },
+                    }
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    config = NamedBenchmarkConfig(
+        benchmark=str(benchmark_manifest),
+        target_config=str(target_config),
+        output_dir=str(tmp_path / "results"),
+        dataset_root=str(tmp_path / "datasets"),
+        dry_run=True,
+    )
+
+    parent_dir = run_named_benchmark(config)
+
+    manifest = _read_json(parent_dir / "benchmark_manifest.json")
+    assert len(manifest["targets"]) == 2
+    assert manifest["load_points"] == [
+        {
+            "load_point_id": "concurrency-0001",
+            "load": {
+                "type": "concurrency",
+                "target_concurrent_sessions": 1,
+            },
+        },
+        {
+            "load_point_id": "concurrency-0004",
+            "load": {
+                "type": "concurrency",
+                "target_concurrent_sessions": 4,
+            },
+        },
+    ]
+    assert len(manifest["children"]) == 8
+    target_models = {
+        target["target_id"]: target["binding"]["client"]["model"]
+        for target in manifest["targets"]
+    }
+    compiled_by_key = {}
+    for child in manifest["children"]:
+        assert (
+            f"loads/{child['load_point_id']}/{child['dataset_id']}.yml"
+            in child["compiled_config"]
+        )
+        path = parent_dir / child["compiled_config"]
+        compiled_by_key[
+            (child["target_id"], child["load_point_id"], child["dataset_id"])
+        ] = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    assert len(compiled_by_key) == 8
+    assert set(target_models.values()) == {"fixture-model-a", "fixture-model-b"}
+    for (target_id, load_id, dataset_id), compiled in compiled_by_key.items():
+        concurrency = {
+            "concurrency-0001": 1,
+            "concurrency-0004": 4,
+        }[load_id]
+        assert compiled["client"]["model"] == target_models[target_id]
+        assert compiled["traffic_scheduler"] == {
+            "type": "concurrent",
+            "target_concurrent_sessions": concurrency,
+            "rampup_seconds": 7,
+            "cancel_session_on_failure": True,
+        }
+        assert f"loads/{load_id}/datasets/{dataset_id}" in compiled["output_dir"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("observed_sessions", [2, 1])
+def test_non_dry_sweep_executes_and_writes_load_scoped_results(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    observed_sessions: int,
+) -> None:
+    target_config = tmp_path / "target.yml"
+    target_config.write_text(
+        """\
+client:
+  type: streaming_tts
+  provider: vajra
+  api_base: http://localhost:8000
+  model: fixture-model
+  sample_rate: 24000
+traffic_scheduler:
+  type: concurrent
+  target_concurrent_sessions: 1
+  rampup_seconds: 0
+""",
+        encoding="utf-8",
+    )
+    benchmark_manifest = tmp_path / "benchmark.yml"
+    benchmark_manifest.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 1,
+                "id": "tts.load-execution-fixture.v1",
+                "name": "Load execution fixture",
+                "description": "Exercises non-dry sweep result wiring.",
+                "modality": "tts",
+                "input_mode": "static",
+                "output_mode": "streaming",
+                "interaction": {
+                    "transport": "websocket",
+                    "output_audio_encoding": "pcm_s16le",
+                    "output_sample_rate_hz": 24000,
+                    "output_channels": 1,
+                    "playable_frame_ms": 20,
+                },
+                "client_overrides": {
+                    "sample_rate": 24000,
+                    "strict_audio_contract": True,
+                },
+                "datasets": [
+                    {
+                        "id": "dataset_a",
+                        "name": "dataset_a",
+                        "source": {
+                            "kind": "fixture",
+                            "uri": "fixture://dataset_a",
+                            "revision": "0123456789abcdef",
+                            "split": "test",
+                            "expected_rows": 2,
+                        },
+                        "session_generator": {
+                            "type": "trace",
+                            "trace_file": "${DATASET_ROOT}/dataset_a/manifest.jsonl",
+                            "wrap_mode": False,
+                            "flavor": {
+                                "type": "seed_tts_text",
+                                "dataset_name": "fixture/prompts",
+                                "split": "test",
+                                "preserve_text": True,
+                            },
+                        },
+                    }
+                ],
+                "execution": {
+                    "load": {
+                        "type": "concurrency_sweep",
+                        "values": [1, 2],
+                    },
+                    "traffic_scheduler": {
+                        "type": "concurrent",
+                        "rampup_seconds": 0,
+                    },
+                    "evaluators": [
+                        {
+                            "type": "performance",
+                            "target_channels": ["audio"],
+                            "audio_channel": {
+                                "interactivity_enabled": True,
+                                "fluidity_frame_ms": 20,
+                            },
+                            "slos": [],
+                        }
+                    ],
+                    "runtime": {"max_sessions": 2, "benchmark_timeout": 30},
+                },
+                "metrics": [
+                    {
+                        "id": "ttfa_ms",
+                        "role": "primary",
+                        "unit": "ms",
+                        "dataset_aggregation": {
+                            "method": "distribution",
+                            "source": "trigger_to_first_playable_audio_ms",
+                            "quantiles": [0.5, 0.9],
+                        },
+                        "benchmark_aggregation": {
+                            "method": "pooled_distribution",
+                            "source": "trigger_to_first_playable_audio_ms",
+                            "quantiles": [0.5, 0.9],
+                        },
+                    }
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_benchmark(config: BenchmarkConfig) -> SimpleNamespace:
+        concurrency = config.traffic_scheduler.target_concurrent_sessions
+        intervals = (
+            [(0.0, 1.0), (1.0, 2.0)] if concurrency == 1 else [(0.0, 1.0), (0.0, 1.0)]
+        )[:observed_sessions]
+        metrics_dir = Path(config.output_dir) / "metrics"
+        metrics_dir.mkdir(parents=True)
+        with (metrics_dir / "request_level_metrics.jsonl").open(
+            "w", encoding="utf-8"
+        ) as file:
+            for session_id, (start, end) in enumerate(intervals):
+                file.write(
+                    json.dumps(
+                        {
+                            "session_id": session_id,
+                            "scheduler_dispatched_at": start,
+                            "client_completed_at": end,
+                            "trigger_to_first_playable_audio_ms": (
+                                concurrency * 100 + session_id
+                            ),
+                        }
+                    )
+                    + "\n"
+                )
+        return SimpleNamespace(
+            metrics={
+                "Number of Requests": observed_sessions,
+                "Number of Completed Requests": observed_sessions,
+                "Number of Errored Requests": 0,
+                "Number of Cancelled Requests": 0,
+            }
+        )
+
+    monkeypatch.setattr(
+        "veeksha.named_benchmarks.runner.manage_benchmark_run",
+        fake_benchmark,
+    )
+    config = NamedBenchmarkConfig(
+        benchmark=str(benchmark_manifest),
+        target_config=str(target_config),
+        output_dir=str(tmp_path / "results"),
+        dataset_root=str(tmp_path / "datasets"),
+    )
+
+    if observed_sessions == 1:
+        with pytest.raises(RuntimeError, match="2 failed child run"):
+            run_named_benchmark(config)
+        benchmark_root = Path(config.output_dir) / "tts.load-execution-fixture.v1"
+        parent_dir = next(benchmark_root.iterdir())
+        failures = [
+            json.loads(line)
+            for line in (parent_dir / "run_failures.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        assert len(failures) == 2
+        assert all(
+            "dataset_session_count_mismatch"
+            in failure["execution_validation"]["issues"]
+            for failure in failures
+        )
+        assert _read_json(parent_dir / "run_status.json")["status"] == "failed"
+        return
+
+    parent_dir = run_named_benchmark(config)
+
+    summary = _read_json(parent_dir / "benchmark_summary.json")
+    point_results = summary["targets"][0]["load_points"]
+    assert [point["load_point_id"] for point in point_results] == [
+        "concurrency-0001",
+        "concurrency-0002",
+    ]
+    assert all(
+        point["load_validation"]["valid_for_comparison"] is True
+        for point in point_results
+    )
+    assert [
+        point["benchmark_metrics"]["ttfa_ms"]["quantiles"]["p90"]
+        for point in point_results
+    ] == pytest.approx([100.9, 200.9])
+    rows = [
+        json.loads(line)
+        for line in (parent_dir / "dataset_results.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert [row["load_point_id"] for row in rows] == [
+        "concurrency-0001",
+        "concurrency-0002",
+    ]
+    assert all(row["execution_validation"]["valid"] is True for row in rows)
+    assert _read_json(parent_dir / "run_status.json")["status"] == "complete"
+
+
+@pytest.mark.unit
+def test_concurrency_sweep_rejects_dataset_cap_below_load() -> None:
+    manifest = _asr_language_benchmark().to_mapping()
+    manifest["execution"] = {
+        "load": {"type": "concurrency_sweep", "values": [1, 4]},
+        "traffic_scheduler": {"type": "concurrent"},
+    }
+    manifest["datasets"][0]["source"]["expected_rows"] = 3
+    benchmark = Benchmark.from_mapping(manifest)
+    with pytest.raises(ValueError, match="expected_rows is 3"):
+        _validate_load_capacity(benchmark)
+
+
+@pytest.mark.unit
+def test_concurrency_sweep_uses_effective_runtime_default_for_capacity() -> None:
+    manifest = _asr_language_benchmark().to_mapping()
+    manifest["execution"] = {
+        "load": {"type": "concurrency_sweep", "values": [1, 32]},
+        "traffic_scheduler": {"type": "concurrent"},
+    }
+    manifest["datasets"][0]["source"]["expected_rows"] = 100
+    manifest["datasets"][0]["session_generator"]["wrap_mode"] = True
+    benchmark = Benchmark.from_mapping(manifest)
+    with pytest.raises(
+        ValueError,
+        match=r"execution\.runtime\.max_sessions is 25",
+    ):
+        _validate_load_capacity(benchmark)
+
+    manifest["execution"]["runtime"] = {"max_sessions": 0}
+    benchmark = Benchmark.from_mapping(manifest)
+    with pytest.raises(
+        ValueError,
+        match=r"execution\.runtime\.max_sessions is 0",
+    ):
+        _validate_load_capacity(benchmark)
+
+
+@pytest.mark.unit
+def test_achieved_concurrency_requires_positive_steady_state_coverage() -> None:
+    intervals = [(0.0, 5.0), (0.0, 5.0), (2.0, 7.0)]
+
+    achieved = _measure_achieved_concurrency(
+        intervals,
+        target=2,
+        rampup_seconds=1.0,
+    )
+    missed = _measure_achieved_concurrency(
+        intervals,
+        target=4,
+        rampup_seconds=1.0,
+    )
+
+    assert achieved["max_observed_concurrency"] == 3
+    assert achieved["max_observed_steady_state_concurrency"] == 3
+    assert achieved["steady_state_duration_seconds"] == 6.0
+    assert achieved["seconds_at_or_above_target"] == 4.0
+    assert achieved["steady_state_target_coverage"] == pytest.approx(2 / 3)
+    assert achieved["target_achieved"] is True
+    assert missed["target_achieved"] is False
 
 
 @pytest.mark.unit

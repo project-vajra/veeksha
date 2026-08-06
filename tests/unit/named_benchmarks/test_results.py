@@ -9,7 +9,9 @@ from veeksha.named_benchmarks import Benchmark
 from veeksha.named_benchmarks.aggregation import (
     CompletedDatasetRun,
     build_named_benchmark_results,
+    build_named_benchmark_sweep_results,
 )
+from veeksha.named_benchmarks.schema import ConcurrencyLoadPoint
 
 
 def _benchmark() -> Benchmark:
@@ -87,8 +89,10 @@ def _child(
     latencies: list[float],
     errors: int,
     reference_words: int,
+    load_point_id: str | None = None,
+    concurrency: int | None = None,
 ) -> CompletedDatasetRun:
-    run_dir = tmp_path / dataset_id
+    run_dir = tmp_path / (load_point_id or "legacy") / dataset_id
     metrics_dir = run_dir / "metrics"
     metrics_dir.mkdir(parents=True)
     with (metrics_dir / "request_level_metrics.jsonl").open(
@@ -108,6 +112,15 @@ def _child(
             "asr_final_errors": errors,
             "asr_final_reference_words": reference_words,
         },
+        load_point_id=load_point_id,
+        load=(
+            None
+            if concurrency is None
+            else {
+                "type": "concurrency",
+                "target_concurrent_sessions": concurrency,
+            }
+        ),
     )
 
 
@@ -341,3 +354,155 @@ def test_expected_target_is_retained_when_all_child_runs_fail() -> None:
         for diagnostic in target["missing_metric_diagnostics"]
         if diagnostic["reason"] == "missing_dataset_run"
     } == {"dataset_a", "dataset_b"}
+
+
+def test_sweep_aggregates_each_concurrency_without_cross_load_pooling(
+    tmp_path: Path,
+) -> None:
+    load_1 = ConcurrencyLoadPoint(
+        id="concurrency-0001",
+        target_concurrent_sessions=1,
+    )
+    load_8 = ConcurrencyLoadPoint(
+        id="concurrency-0008",
+        target_concurrent_sessions=8,
+    )
+    children = [
+        _child(
+            tmp_path,
+            dataset_id="dataset_a",
+            latencies=[10, 10],
+            errors=0,
+            reference_words=10,
+            load_point_id=load_1.id,
+            concurrency=1,
+        ),
+        _child(
+            tmp_path,
+            dataset_id="dataset_b",
+            latencies=[20, 20],
+            errors=1,
+            reference_words=90,
+            load_point_id=load_1.id,
+            concurrency=1,
+        ),
+        _child(
+            tmp_path,
+            dataset_id="dataset_a",
+            latencies=[100, 100],
+            errors=5,
+            reference_words=10,
+            load_point_id=load_8.id,
+            concurrency=8,
+        ),
+        _child(
+            tmp_path,
+            dataset_id="dataset_b",
+            latencies=[200, 200],
+            errors=45,
+            reference_words=90,
+            load_point_id=load_8.id,
+            concurrency=8,
+        ),
+    ]
+
+    result = build_named_benchmark_sweep_results(
+        _benchmark(),
+        children,
+        load_points=[load_1, load_8],
+        expected_target_ids=["provider-model"],
+    )
+
+    assert result["schema_version"] == 2
+    target = result["targets"][0]
+    assert "benchmark_metrics" not in target
+    points = {point["load_point_id"]: point for point in target["load_points"]}
+    assert list(points) == ["concurrency-0001", "concurrency-0008"]
+    assert (
+        points["concurrency-0001"]["benchmark_metrics"]["first_visible_transcript_ms"][
+            "quantiles"
+        ]["p90"]
+        == 20
+    )
+    assert (
+        points["concurrency-0008"]["benchmark_metrics"]["first_visible_transcript_ms"][
+            "quantiles"
+        ]["p90"]
+        == 200
+    )
+    assert (
+        points["concurrency-0001"]["benchmark_metrics"]["final_corpus_wer"]["value"]
+        == 1
+    )
+    assert (
+        points["concurrency-0008"]["benchmark_metrics"]["final_corpus_wer"]["value"]
+        == 50
+    )
+
+
+def test_sweep_retains_empty_expected_load_point_with_its_own_diagnostics(
+    tmp_path: Path,
+) -> None:
+    load_1 = ConcurrencyLoadPoint(
+        id="concurrency-0001",
+        target_concurrent_sessions=1,
+    )
+    load_8 = ConcurrencyLoadPoint(
+        id="concurrency-0008",
+        target_concurrent_sessions=8,
+    )
+    child = _child(
+        tmp_path,
+        dataset_id="dataset_a",
+        latencies=[10],
+        errors=0,
+        reference_words=10,
+        load_point_id=load_1.id,
+        concurrency=1,
+    )
+
+    result = build_named_benchmark_sweep_results(
+        _benchmark(),
+        [child],
+        load_points=[load_1, load_8],
+        expected_target_ids=["provider-model"],
+    )
+
+    points = {
+        point["load_point_id"]: point for point in result["targets"][0]["load_points"]
+    }
+    assert points["concurrency-0001"]["dataset_count"] == 1
+    assert points["concurrency-0008"]["dataset_count"] == 0
+    assert {
+        diagnostic.get("dataset_id")
+        for diagnostic in points["concurrency-0008"]["missing_metric_diagnostics"]
+        if diagnostic["reason"] == "missing_dataset_run"
+    } == {"dataset_a", "dataset_b"}
+    assert all(
+        diagnostic["load_point_id"] == "concurrency-0008"
+        for diagnostic in points["concurrency-0008"]["missing_metric_diagnostics"]
+    )
+
+
+def test_sweep_rejects_child_with_mismatched_load_metadata(tmp_path: Path) -> None:
+    load_point = ConcurrencyLoadPoint(
+        id="concurrency-0008",
+        target_concurrent_sessions=8,
+    )
+    child = _child(
+        tmp_path,
+        dataset_id="dataset_a",
+        latencies=[10],
+        errors=0,
+        reference_words=10,
+        load_point_id=load_point.id,
+        concurrency=4,
+    )
+
+    with pytest.raises(ValueError, match="load metadata does not match"):
+        build_named_benchmark_sweep_results(
+            _benchmark(),
+            [child],
+            load_points=[load_point],
+            expected_target_ids=["provider-model"],
+        )

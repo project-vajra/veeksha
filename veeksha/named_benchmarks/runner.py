@@ -5,10 +5,11 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -20,12 +21,20 @@ from veeksha.benchmark import manage_benchmark_run, run_benchmark_with_endpoint
 from veeksha.cli.parsing import parse_cli_sweep
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.named_benchmark import NamedBenchmarkConfig
+from veeksha.config.runtime import RuntimeConfig
 from veeksha.config.utils import redact_config_secrets, to_serializable_config_dict
 from veeksha.logger import init_logger
-from veeksha.named_benchmarks import Benchmark, DatasetCase, Modality, load_benchmark
+from veeksha.named_benchmarks import (
+    Benchmark,
+    ConcurrencyLoadPoint,
+    DatasetCase,
+    Modality,
+    load_benchmark,
+)
 from veeksha.named_benchmarks.aggregation import (
     CompletedDatasetRun,
     build_named_benchmark_results,
+    build_named_benchmark_sweep_results,
 )
 from veeksha.orchestration.benchmark_orchestrator import managed_server
 
@@ -45,6 +54,8 @@ class CompiledDatasetRun:
     dataset_id: str
     config: BenchmarkConfig
     config_path: Path
+    load_point: ConcurrencyLoadPoint | None = None
+    expected_session_count: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,11 +66,79 @@ class NamedBenchmarkPlan:
     children: tuple[CompiledDatasetRun, ...]
 
 
+def _benchmark_load_points(
+    benchmark: Benchmark,
+) -> tuple[ConcurrencyLoadPoint | None, ...]:
+    load = benchmark.execution.load
+    return (None,) if load is None else load.points
+
+
+def _compiled_config_path(
+    *,
+    compiled_dir: Path,
+    target_id: str,
+    dataset_id: str,
+    load_point: ConcurrencyLoadPoint | None,
+) -> Path:
+    if load_point is None:
+        return compiled_dir / target_id / f"{dataset_id}.yml"
+    return compiled_dir / target_id / "loads" / load_point.id / f"{dataset_id}.yml"
+
+
+def _child_output_dir(
+    *,
+    parent_dir: Path,
+    target_id: str,
+    dataset_id: str,
+    load_point: ConcurrencyLoadPoint | None,
+) -> Path:
+    target_dir = parent_dir / "targets" / target_id
+    if load_point is None:
+        return target_dir / "datasets" / dataset_id
+    return target_dir / "loads" / load_point.id / "datasets" / dataset_id
+
+
+def _validate_load_capacity(
+    benchmark: Benchmark,
+) -> None:
+    load = benchmark.execution.load
+    if load is None:
+        return
+    required_sessions = max(load.values)
+    runtime = benchmark.execution.config.get("runtime", {})
+    runtime_limit = (
+        runtime.get("max_sessions", RuntimeConfig().max_sessions)
+        if isinstance(runtime, Mapping)
+        else RuntimeConfig().max_sessions
+    )
+
+    for dataset in benchmark.datasets:
+        capacity_limits: list[tuple[str, int]] = []
+        if type(runtime_limit) is int and runtime_limit >= 0:
+            capacity_limits.append(("execution.runtime.max_sessions", runtime_limit))
+        if (
+            dataset.session_generator.get("wrap_mode", False) is not True
+            and dataset.source.expected_rows is not None
+        ):
+            capacity_limits.append(
+                ("dataset.source.expected_rows", dataset.source.expected_rows)
+            )
+
+        for source, available_sessions in capacity_limits:
+            if available_sessions < required_sessions:
+                raise ValueError(
+                    f"benchmark={benchmark.id}, dataset={dataset.id}: maximum "
+                    f"concurrency {required_sessions} cannot be reached because "
+                    f"{source} is {available_sessions}"
+                )
+
+
 def compile_named_benchmark(config: NamedBenchmarkConfig) -> NamedBenchmarkPlan:
     """Resolve a catalog entry and target sweep into dataset-level runs."""
 
     runner_state = _runner_state(Path(config.target_config))
     benchmark = load_benchmark(config.benchmark)
+    _validate_load_capacity(benchmark)
     _validate_materialized_dataset_provenance(
         benchmark,
         dataset_root=config.dataset_root,
@@ -76,6 +155,7 @@ def compile_named_benchmark(config: NamedBenchmarkConfig) -> NamedBenchmarkPlan:
     parent_dir = _create_parent_dir(config, benchmark, target_bindings)
     compiled_dir = parent_dir / "compiled"
 
+    load_points = _benchmark_load_points(benchmark)
     children: list[CompiledDatasetRun] = []
     target_records: list[dict[str, Any]] = []
     for target_id, target, binding in zip(
@@ -87,28 +167,40 @@ def compile_named_benchmark(config: NamedBenchmarkConfig) -> NamedBenchmarkPlan:
                 "binding": binding,
             }
         )
-        for dataset in benchmark.datasets:
-            child_config = _compile_child_config(
-                benchmark=benchmark,
-                dataset=dataset,
-                target=target,
-                parent_dir=parent_dir,
-                target_id=target_id,
-                dataset_root=config.dataset_root,
-            )
-            config_path = compiled_dir / target_id / f"{dataset.id}.yml"
-            _write_yaml(
-                config_path,
-                redact_config_secrets(to_serializable_config_dict(child_config)),
-            )
-            children.append(
-                CompiledDatasetRun(
+        for load_point in load_points:
+            for dataset in benchmark.datasets:
+                child_config = _compile_child_config(
+                    benchmark=benchmark,
+                    dataset=dataset,
+                    target=target,
+                    parent_dir=parent_dir,
+                    target_id=target_id,
+                    dataset_root=config.dataset_root,
+                    load_point=load_point,
+                )
+                config_path = _compiled_config_path(
+                    compiled_dir=compiled_dir,
                     target_id=target_id,
                     dataset_id=dataset.id,
-                    config=child_config,
-                    config_path=config_path,
+                    load_point=load_point,
                 )
-            )
+                _write_yaml(
+                    config_path,
+                    redact_config_secrets(to_serializable_config_dict(child_config)),
+                )
+                children.append(
+                    CompiledDatasetRun(
+                        target_id=target_id,
+                        dataset_id=dataset.id,
+                        config=child_config,
+                        config_path=config_path,
+                        load_point=load_point,
+                        expected_session_count=_expected_session_count(
+                            dataset,
+                            child_config,
+                        ),
+                    )
+                )
 
     plan = NamedBenchmarkPlan(
         benchmark=benchmark,
@@ -143,7 +235,7 @@ def run_named_benchmark(config: NamedBenchmarkConfig) -> Path:
         return plan.parent_dir
 
     completed: list[CompletedDatasetRun] = []
-    failures: list[dict[str, str]] = []
+    failures: list[dict[str, Any]] = []
     children_by_target: dict[str, list[CompiledDatasetRun]] = {}
     for child in plan.children:
         children_by_target.setdefault(child.target_id, []).append(child)
@@ -161,37 +253,29 @@ def run_named_benchmark(config: NamedBenchmarkConfig) -> Path:
             with managed_server(server, output_dir=str(server_dir)) as server_info:
                 endpoint = server_info["endpoint"]
                 for child in target_children:
-                    _run_child(
-                        child,
-                        completed,
-                        failures,
-                        endpoint=endpoint,
-                    )
+                    _run_child(child, completed, failures, endpoint=endpoint)
         except Exception as exc:
             logger.exception("Managed target %s failed", target_id)
             already_recorded = {
-                (failure["target_id"], failure["dataset_id"]) for failure in failures
+                (
+                    failure["target_id"],
+                    failure.get("load_point_id"),
+                    failure["dataset_id"],
+                )
+                for failure in failures
             }
             already_completed = {
-                (child.target_id, child.dataset_id) for child in completed
+                (child.target_id, child.load_point_id, child.dataset_id)
+                for child in completed
             }
             for child in target_children:
-                key = (child.target_id, child.dataset_id)
+                key = _compiled_child_key(child)
                 if key not in already_recorded and key not in already_completed:
-                    failures.append(
-                        {
-                            "target_id": child.target_id,
-                            "dataset_id": child.dataset_id,
-                            "error_type": type(exc).__name__,
-                            "error": str(exc),
-                        }
-                    )
+                    failures.append(_child_failure(child, exc))
 
     _write_results(plan, completed, failures)
     if failures:
-        failed_pairs = ", ".join(
-            f"{item['target_id']}/{item['dataset_id']}" for item in failures
-        )
+        failed_pairs = ", ".join(_failure_label(item) for item in failures)
         raise RuntimeError(
             f"Named benchmark {plan.benchmark.id} completed with "
             f"{len(failures)} failed child run(s): {failed_pairs}. "
@@ -214,27 +298,56 @@ def _compile_child_config(
     parent_dir: Path,
     target_id: str,
     dataset_root: str,
+    load_point: ConcurrencyLoadPoint | None,
 ) -> BenchmarkConfig:
     target_dict = to_serializable_config_dict(target)
     client = copy.deepcopy(target_dict["client"])
     client = _deep_merge(client, benchmark.client_overrides)
     client = _deep_merge(client, dataset.client_overrides)
 
-    child_data = copy.deepcopy(benchmark.execution)
+    child_data = copy.deepcopy(benchmark.execution.config)
     child_data["client"] = client
     child_data["session_generator"] = copy.deepcopy(dataset.session_generator)
     child_data["output_dir"] = str(
-        parent_dir / "targets" / target_id / "datasets" / dataset.id
+        _child_output_dir(
+            parent_dir=parent_dir,
+            target_id=target_id,
+            dataset_id=dataset.id,
+            load_point=load_point,
+        )
     )
     if target_dict.get("server") is not None:
         child_data["server"] = copy.deepcopy(target_dict["server"])
     if target_dict.get("endpoint") is not None:
         child_data["endpoint"] = copy.deepcopy(target_dict["endpoint"])
 
+    if load_point is not None:
+        traffic = child_data["traffic_scheduler"]
+        traffic["target_concurrent_sessions"] = load_point.target_concurrent_sessions
+
     child_data = _expand_dataset_root(child_data, dataset_root)
     child = create_class_from_dict(BenchmarkConfig, child_data)
     _validate_interaction_contract(benchmark, child, dataset.id)
     return child
+
+
+def _expected_session_count(
+    dataset: DatasetCase,
+    child_config: BenchmarkConfig,
+) -> int | None:
+    """Return the exact number of sessions a complete child should evaluate."""
+
+    runtime_limit = child_config.runtime.max_sessions
+    source_count = dataset.source.expected_rows
+    wrap_mode = dataset.session_generator.get("wrap_mode", False) is True
+
+    if runtime_limit >= 0:
+        if source_count is not None and not wrap_mode:
+            return min(runtime_limit, source_count)
+        return runtime_limit
+    if not wrap_mode:
+        return source_count
+    return None
 
 
 def _validate_interaction_contract(
@@ -452,10 +565,244 @@ def _performance_audio_channel(child_data: Mapping[str, Any]) -> Mapping[str, An
     return {}
 
 
+def _load_point_payload(
+    load_point: ConcurrencyLoadPoint | None,
+) -> dict[str, Any] | None:
+    return None if load_point is None else load_point.to_mapping()
+
+
+def _compiled_child_key(
+    child: CompiledDatasetRun,
+) -> tuple[str, str | None, str]:
+    return (
+        child.target_id,
+        None if child.load_point is None else child.load_point.id,
+        child.dataset_id,
+    )
+
+
+def _child_failure(
+    child: CompiledDatasetRun,
+    exc: Exception,
+) -> dict[str, Any]:
+    failure: dict[str, Any] = {
+        "target_id": child.target_id,
+        "dataset_id": child.dataset_id,
+        "error_type": type(exc).__name__,
+        "error": str(exc),
+    }
+    if child.load_point is not None:
+        failure["load_point_id"] = child.load_point.id
+        failure["load"] = child.load_point.to_mapping()
+    return failure
+
+
+def _failure_label(failure: Mapping[str, Any]) -> str:
+    load_point_id = failure.get("load_point_id")
+    parts = [str(failure["target_id"])]
+    if load_point_id is not None:
+        parts.append(str(load_point_id))
+    parts.append(str(failure["dataset_id"]))
+    return "/".join(parts)
+
+
+def _read_request_metric_rows(run_dir: str | Path) -> list[Mapping[str, Any]]:
+    path = Path(run_dir) / "metrics" / "request_level_metrics.jsonl"
+    if not path.is_file():
+        return []
+    rows: list[Mapping[str, Any]] = []
+    with path.open("r", encoding="utf-8") as file:
+        for line_number, line in enumerate(file, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Invalid JSON in {path} at line {line_number}: {exc.msg}"
+                ) from exc
+            if not isinstance(row, Mapping):
+                raise TypeError(
+                    f"Expected a JSON object in {path} at line {line_number}."
+                )
+            rows.append(row)
+    return rows
+
+
+def _finite_timestamp(value: object) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if not isinstance(value, (int, float, str)):
+        return None
+    try:
+        timestamp = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return timestamp if math.isfinite(timestamp) else None
+
+
+def _session_intervals(
+    rows: Sequence[Mapping[str, Any]],
+) -> tuple[int | None, list[tuple[float, float]]]:
+    session_ids: set[str] = set()
+    starts_by_session: dict[str, list[float]] = {}
+    ends_by_session: dict[str, list[float]] = {}
+    missing_session_id = False
+
+    for row in rows:
+        raw_session_id = row.get("session_id")
+        if raw_session_id is None:
+            missing_session_id = True
+            continue
+        session_id = str(raw_session_id)
+        session_ids.add(session_id)
+        start = _finite_timestamp(row.get("scheduler_dispatched_at"))
+        end = _finite_timestamp(row.get("client_completed_at"))
+        if start is not None:
+            starts_by_session.setdefault(session_id, []).append(start)
+        if end is not None:
+            ends_by_session.setdefault(session_id, []).append(end)
+
+    intervals: list[tuple[float, float]] = []
+    for session_id in sorted(session_ids):
+        starts = starts_by_session.get(session_id, [])
+        ends = ends_by_session.get(session_id, [])
+        if not starts or not ends:
+            continue
+        start = min(starts)
+        end = max(ends)
+        if end > start:
+            intervals.append((start, end))
+
+    observed_count = None if missing_session_id else len(session_ids)
+    return observed_count, intervals
+
+
+def _measure_achieved_concurrency(
+    intervals: Sequence[tuple[float, float]],
+    *,
+    target: int,
+    rampup_seconds: float,
+) -> dict[str, Any]:
+    if not intervals:
+        return {
+            "target_concurrent_sessions": target,
+            "rampup_seconds": rampup_seconds,
+            "max_observed_concurrency": 0,
+            "max_observed_steady_state_concurrency": 0,
+            "steady_state_duration_seconds": 0.0,
+            "seconds_at_or_above_target": 0.0,
+            "steady_state_target_coverage": 0.0,
+            "target_achieved": False,
+        }
+
+    events: dict[float, int] = {}
+    for start, end in intervals:
+        events[start] = events.get(start, 0) + 1
+        events[end] = events.get(end, 0) - 1
+
+    times = sorted(events)
+    benchmark_start = min(start for start, _ in intervals)
+    benchmark_end = max(end for _, end in intervals)
+    steady_start = benchmark_start + rampup_seconds
+    current = 0
+    max_observed = 0
+    max_steady = 0
+    seconds_at_target = 0.0
+
+    for index, timestamp in enumerate(times):
+        current += events[timestamp]
+        max_observed = max(max_observed, current)
+        if index + 1 == len(times):
+            continue
+        interval_end = times[index + 1]
+        if interval_end <= timestamp:
+            continue
+        overlap_start = max(timestamp, steady_start)
+        if interval_end <= overlap_start:
+            continue
+        max_steady = max(max_steady, current)
+        if current >= target:
+            seconds_at_target += interval_end - overlap_start
+
+    steady_duration = max(0.0, benchmark_end - steady_start)
+    target_coverage = (
+        seconds_at_target / steady_duration if steady_duration > 0 else 0.0
+    )
+    return {
+        "target_concurrent_sessions": target,
+        "rampup_seconds": rampup_seconds,
+        "max_observed_concurrency": max_observed,
+        "max_observed_steady_state_concurrency": max_steady,
+        "steady_state_duration_seconds": steady_duration,
+        "seconds_at_or_above_target": seconds_at_target,
+        "steady_state_target_coverage": target_coverage,
+        "target_achieved": seconds_at_target > 0.0,
+    }
+
+
+def _validate_completed_child(child: CompiledDatasetRun) -> dict[str, Any]:
+    rows = _read_request_metric_rows(child.config.output_dir)
+    observed_session_count, intervals = _session_intervals(rows)
+    issues: list[str] = []
+
+    if not rows:
+        issues.append("request_metrics_missing_or_empty")
+    if observed_session_count is None:
+        issues.append("session_id_missing_from_request_metrics")
+
+    expected = child.expected_session_count
+    dataset_complete: bool | None = None
+    if expected is not None:
+        dataset_complete = observed_session_count == expected
+        if not dataset_complete:
+            issues.append("dataset_session_count_mismatch")
+
+    load_validation: dict[str, Any] | None = None
+    if child.load_point is not None:
+        traffic = child.config.traffic_scheduler
+        load_validation = _measure_achieved_concurrency(
+            intervals,
+            target=child.load_point.target_concurrent_sessions,
+            rampup_seconds=float(traffic.rampup_seconds),  # type: ignore[attr-defined]
+        )
+        if not load_validation["target_achieved"]:
+            issues.append("configured_concurrency_not_achieved_in_steady_state")
+
+    return {
+        "valid": not issues,
+        "issues": issues,
+        "expected_session_count": expected,
+        "observed_session_count": observed_session_count,
+        "dataset_complete": dataset_complete,
+        "load_validation": load_validation,
+    }
+
+
+def _child_contract_failure(
+    child: CompiledDatasetRun,
+    validation: Mapping[str, Any],
+) -> dict[str, Any]:
+    failure: dict[str, Any] = {
+        "target_id": child.target_id,
+        "dataset_id": child.dataset_id,
+        "error_type": "BenchmarkContractError",
+        "error": "Post-run benchmark contract failed: "
+        + ", ".join(str(issue) for issue in validation.get("issues", [])),
+        "run_dir": str(child.config.output_dir),
+        "execution_validation": dict(validation),
+    }
+    if child.load_point is not None:
+        failure["load_point_id"] = child.load_point.id
+        failure["load"] = child.load_point.to_mapping()
+    return failure
+
+
 def _run_child(
     child: CompiledDatasetRun,
     completed: list[CompletedDatasetRun],
-    failures: list[dict[str, str]],
+    failures: list[dict[str, Any]],
     *,
     endpoint: Any | None = None,
 ) -> None:
@@ -464,53 +811,91 @@ def _run_child(
             result = manage_benchmark_run(child.config)
         else:
             result = run_benchmark_with_endpoint(child.config, endpoint)
+        execution_validation = _validate_completed_child(child)
+        if not execution_validation["valid"]:
+            failure = _child_contract_failure(child, execution_validation)
+            logger.error(
+                "Named benchmark child produced an invalid measurement: %s (%s)",
+                _failure_label(failure),
+                failure["error"],
+            )
+            failures.append(failure)
+            return
         completed.append(
             CompletedDatasetRun(
                 target_id=child.target_id,
                 dataset_id=child.dataset_id,
                 run_dir=child.config.output_dir,
                 metrics=result.metrics,
+                load_point_id=(
+                    None if child.load_point is None else child.load_point.id
+                ),
+                load=_load_point_payload(child.load_point),
+                execution_validation=execution_validation,
             )
         )
     except Exception as exc:
         logger.exception(
-            "Named benchmark child failed: %s/%s",
-            child.target_id,
-            child.dataset_id,
+            "Named benchmark child failed: %s",
+            _failure_label(
+                {
+                    "target_id": child.target_id,
+                    "load_point_id": (
+                        None if child.load_point is None else child.load_point.id
+                    ),
+                    "dataset_id": child.dataset_id,
+                }
+            ),
         )
-        failures.append(
-            {
-                "target_id": child.target_id,
-                "dataset_id": child.dataset_id,
-                "error_type": type(exc).__name__,
-                "error": str(exc),
-            }
-        )
+        failures.append(_child_failure(child, exc))
 
 
 def _write_results(
     plan: NamedBenchmarkPlan,
     completed: Sequence[CompletedDatasetRun],
-    failures: Sequence[Mapping[str, str]],
+    failures: Sequence[Mapping[str, Any]],
 ) -> None:
-    summary = build_named_benchmark_results(
-        plan.benchmark,
-        completed,
-        expected_target_ids=[record["target_id"] for record in plan.targets],
-    )
+    expected_target_ids = [record["target_id"] for record in plan.targets]
+    load = plan.benchmark.execution.load
+    if load is None:
+        summary = build_named_benchmark_results(
+            plan.benchmark,
+            completed,
+            expected_target_ids=expected_target_ids,
+        )
+    else:
+        summary = build_named_benchmark_sweep_results(
+            plan.benchmark,
+            completed,
+            load_points=load.points,
+            expected_target_ids=expected_target_ids,
+        )
     summary["run_failures"] = list(failures)
     _write_json(plan.parent_dir / "benchmark_summary.json", summary)
 
     rows: list[dict[str, Any]] = []
     for target in summary["targets"]:
-        for dataset in target["datasets"]:
-            rows.append(
-                {
-                    "benchmark_id": plan.benchmark.id,
-                    "target_id": target["target_id"],
-                    **dataset,
-                }
-            )
+        if load is None:
+            for dataset in target["datasets"]:
+                rows.append(
+                    {
+                        "benchmark_id": plan.benchmark.id,
+                        "target_id": target["target_id"],
+                        **dataset,
+                    }
+                )
+            continue
+        for load_result in target["load_points"]:
+            for dataset in load_result["datasets"]:
+                rows.append(
+                    {
+                        "benchmark_id": plan.benchmark.id,
+                        "target_id": target["target_id"],
+                        "load_point_id": load_result["load_point_id"],
+                        "load": load_result["load"],
+                        **dataset,
+                    }
+                )
     _write_jsonl(plan.parent_dir / "dataset_results.jsonl", rows)
     _write_jsonl(plan.parent_dir / "run_failures.jsonl", failures)
     _write_json(
@@ -588,7 +973,7 @@ def _create_parent_dir(
     target_bindings: Sequence[Mapping[str, Any]],
 ) -> Path:
     identity = {
-        "benchmark": asdict(benchmark),
+        "benchmark": benchmark.to_mapping(),
         "targets": target_bindings,
     }
     digest = hashlib.sha256(
@@ -611,7 +996,7 @@ def _write_plan_manifest(
     *,
     runner_state: Mapping[str, Any],
 ) -> None:
-    payload = {
+    payload: dict[str, Any] = {
         "schema_version": 1,
         "created_at": datetime.now(timezone.utc).isoformat(),
         # Retain the original field for consumers of the initial schema while
@@ -625,17 +1010,27 @@ def _write_plan_manifest(
             str(Path(config.dataset_root).resolve()) if config.dataset_root else None
         ),
         "dry_run": config.dry_run,
-        "benchmark": asdict(plan.benchmark),
+        "benchmark": plan.benchmark.to_mapping(),
         "targets": list(plan.targets),
-        "children": [
-            {
-                "target_id": child.target_id,
-                "dataset_id": child.dataset_id,
-                "compiled_config": str(child.config_path.relative_to(plan.parent_dir)),
-            }
-            for child in plan.children
-        ],
+        "children": [],
     }
+    load = plan.benchmark.execution.load
+    if load is not None:
+        payload["load_points"] = [
+            {"load_point_id": point.id, "load": point.to_mapping()}
+            for point in load.points
+        ]
+    for child in plan.children:
+        child_record: dict[str, Any] = {
+            "target_id": child.target_id,
+            "dataset_id": child.dataset_id,
+            "compiled_config": str(child.config_path.relative_to(plan.parent_dir)),
+            "expected_session_count": child.expected_session_count,
+        }
+        if child.load_point is not None:
+            child_record["load_point_id"] = child.load_point.id
+            child_record["load"] = child.load_point.to_mapping()
+        payload["children"].append(child_record)
     _write_json(plan.parent_dir / "benchmark_manifest.json", payload)
 
 

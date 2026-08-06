@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import Any, TypeVar
 
 SCHEMA_VERSION = 1
+
+_EnumT = TypeVar("_EnumT", bound=StrEnum)
 
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 _FORBIDDEN_EXECUTION_FIELDS = frozenset(
@@ -60,6 +62,116 @@ class AggregationMethod(StrEnum):
     POOLED_DISTRIBUTION = "pooled_distribution"
     RATIO_OF_SUMS = "ratio_of_sums"
     NONE = "none"
+
+
+class LoadType(StrEnum):
+    """Supported high-level load dimensions for a named benchmark."""
+
+    CONCURRENCY_SWEEP = "concurrency_sweep"
+
+
+@dataclass(frozen=True, slots=True)
+class ConcurrencyLoadPoint:
+    """One concrete concurrency value compiled into an ordinary run."""
+
+    id: str
+    target_concurrent_sessions: int
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {
+            "type": "concurrency",
+            "target_concurrent_sessions": self.target_concurrent_sessions,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ConcurrencySweep:
+    """A fixed, canonical sweep over concurrent live sessions."""
+
+    type: LoadType
+    values: tuple[int, ...]
+
+    @classmethod
+    def from_mapping(cls, value: object, *, context: str) -> ConcurrencySweep:
+        data = _mapping(value, context=context)
+        _reject_unknown(data, {"type", "values"}, context=context)
+        load_type = _enum_value(
+            LoadType,
+            data.get("type"),
+            context=f"{context}.type",
+        )
+        values = _positive_sorted_unique_ints(
+            data.get("values"),
+            context=f"{context}.values",
+        )
+        return cls(type=load_type, values=values)
+
+    @property
+    def points(self) -> tuple[ConcurrencyLoadPoint, ...]:
+        return tuple(
+            ConcurrencyLoadPoint(
+                id=f"concurrency-{value:04d}",
+                target_concurrent_sessions=value,
+            )
+            for value in self.values
+        )
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {"type": self.type.value, "values": list(self.values)}
+
+
+@dataclass(frozen=True, slots=True)
+class BenchmarkExecution(Mapping[str, Any]):
+    """Lower-level benchmark config plus an optional named load dimension."""
+
+    config: dict[str, Any]
+    load: ConcurrencySweep | None = None
+
+    @classmethod
+    def from_mapping(cls, value: object, *, context: str) -> BenchmarkExecution:
+        data = _json_mapping(value, context=context, require_non_empty=True)
+        load_value = data.pop("load", None)
+        load = (
+            None
+            if load_value is None
+            else ConcurrencySweep.from_mapping(
+                load_value,
+                context=f"{context}.load",
+            )
+        )
+
+        forbidden = _find_forbidden_execution_fields(data)
+        if forbidden:
+            formatted = ", ".join(sorted(forbidden))
+            raise BenchmarkSchemaError(
+                "benchmark.execution contains fields owned elsewhere in the named "
+                f"benchmark contract: {formatted}. Bind target/output fields at run "
+                "time and define session_generator per dataset."
+            )
+        if load is not None:
+            _validate_load_traffic_contract(data, context=context)
+        return cls(config=data, load=load)
+
+    def to_mapping(self) -> dict[str, Any]:
+        result = {
+            key: _json_value(value, context=key) for key, value in self.config.items()
+        }
+        if self.load is not None:
+            result["load"] = self.load.to_mapping()
+        return result
+
+    def __getitem__(self, key: str) -> Any:
+        if key == "load" and self.load is not None:
+            return self.load.to_mapping()
+        return self.config[key]
+
+    def __iter__(self) -> Iterator[str]:
+        yield from self.config
+        if self.load is not None:
+            yield "load"
+
+    def __len__(self) -> int:
+        return len(self.config) + (1 if self.load is not None else 0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -327,7 +439,7 @@ class Benchmark:
     interaction: dict[str, Any]
     client_overrides: dict[str, Any]
     datasets: tuple[DatasetCase, ...]
-    execution: dict[str, Any]
+    execution: BenchmarkExecution
     metrics: tuple[Metric, ...]
 
     @classmethod
@@ -378,19 +490,10 @@ class Benchmark:
             client_overrides, context="benchmark.client_overrides"
         )
 
-        execution = _json_mapping(
+        execution = BenchmarkExecution.from_mapping(
             data.get("execution"),
             context="benchmark.execution",
-            require_non_empty=True,
         )
-        forbidden = _find_forbidden_execution_fields(execution)
-        if forbidden:
-            formatted = ", ".join(sorted(forbidden))
-            raise BenchmarkSchemaError(
-                "benchmark.execution contains fields owned elsewhere in the named "
-                f"benchmark contract: {formatted}. Bind target/output fields at run "
-                "time and define session_generator per dataset."
-            )
 
         datasets_value = data.get("datasets")
         datasets_sequence = _sequence(datasets_value, context="benchmark.datasets")
@@ -441,6 +544,69 @@ class Benchmark:
             metrics=metrics,
         )
 
+    def to_mapping(self) -> dict[str, Any]:
+        """Return the canonical manifest shape used for hashing and provenance."""
+
+        return {
+            "schema_version": self.schema_version,
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "modality": self.modality.value,
+            "input_mode": self.input_mode.value,
+            "output_mode": self.output_mode.value,
+            "interaction": _json_value(self.interaction, context="interaction"),
+            "client_overrides": _json_value(
+                self.client_overrides,
+                context="client_overrides",
+            ),
+            "datasets": [
+                {
+                    "id": dataset.id,
+                    "name": dataset.name,
+                    "description": dataset.description,
+                    "source": {
+                        "kind": dataset.source.kind,
+                        "uri": dataset.source.uri,
+                        "revision": dataset.source.revision,
+                        "split": dataset.source.split,
+                        "config": dataset.source.config,
+                        "license": dataset.source.license,
+                        "checksum": dataset.source.checksum,
+                        "expected_rows": dataset.source.expected_rows,
+                    },
+                    "session_generator": _json_value(
+                        dataset.session_generator,
+                        context=f"datasets.{dataset.id}.session_generator",
+                    ),
+                    "client_overrides": _json_value(
+                        dataset.client_overrides,
+                        context=f"datasets.{dataset.id}.client_overrides",
+                    ),
+                }
+                for dataset in self.datasets
+            ],
+            "execution": self.execution.to_mapping(),
+            "metrics": [
+                {
+                    "id": metric.id,
+                    "role": metric.role.value,
+                    "unit": metric.unit,
+                    "description": metric.description,
+                    "requires_all_requests_successful": (
+                        metric.requires_all_requests_successful
+                    ),
+                    "dataset_aggregation": _aggregation_to_mapping(
+                        metric.dataset_aggregation
+                    ),
+                    "benchmark_aggregation": _aggregation_to_mapping(
+                        metric.benchmark_aggregation
+                    ),
+                }
+                for metric in self.metrics
+            ],
+        }
+
 
 def _mapping(value: object, *, context: str) -> Mapping[str, object]:
     if not isinstance(value, Mapping):
@@ -487,6 +653,26 @@ def _optional_positive_int(value: object, *, context: str) -> int | None:
     return value
 
 
+def _positive_sorted_unique_ints(
+    value: object,
+    *,
+    context: str,
+) -> tuple[int, ...]:
+    values = _sequence(value, context=context)
+    if not values:
+        raise BenchmarkSchemaError(f"{context} must not be empty")
+    parsed: list[int] = []
+    for index, item in enumerate(values):
+        if type(item) is not int or item <= 0:
+            raise BenchmarkSchemaError(f"{context}[{index}] must be a positive integer")
+        parsed.append(item)
+    if len(set(parsed)) != len(parsed):
+        raise BenchmarkSchemaError(f"{context} must contain unique values")
+    if parsed != sorted(parsed):
+        raise BenchmarkSchemaError(f"{context} must be strictly increasing")
+    return tuple(parsed)
+
+
 def _boolean(value: object, *, context: str) -> bool:
     if type(value) is not bool:
         raise BenchmarkSchemaError(f"{context} must be a boolean")
@@ -502,7 +688,7 @@ def _stable_id(value: object, *, context: str) -> str:
     return stable_id
 
 
-def _enum_value(enum_type: type[StrEnum], value: object, *, context: str):
+def _enum_value(enum_type: type[_EnumT], value: object, *, context: str) -> _EnumT:
     if not isinstance(value, str):
         raise BenchmarkSchemaError(f"{context} must be a string")
     try:
@@ -580,6 +766,38 @@ def _find_forbidden_execution_fields(
         for index, item in enumerate(value):
             found.update(_find_forbidden_execution_fields(item, f"{path}[{index}]"))
     return found
+
+
+def _validate_load_traffic_contract(
+    execution: Mapping[str, Any],
+    *,
+    context: str,
+) -> None:
+    traffic = execution.get("traffic_scheduler")
+    if not isinstance(traffic, Mapping):
+        raise BenchmarkSchemaError(
+            f"{context}.load requires an explicit concurrent traffic_scheduler"
+        )
+    if traffic.get("type") != "concurrent":
+        raise BenchmarkSchemaError(
+            f"{context}.load requires traffic_scheduler.type=concurrent"
+        )
+    if "target_concurrent_sessions" in traffic:
+        raise BenchmarkSchemaError(
+            f"{context}.traffic_scheduler.target_concurrent_sessions conflicts "
+            f"with {context}.load.values; declare concurrency only in load.values"
+        )
+
+
+def _aggregation_to_mapping(aggregation: Aggregation) -> dict[str, Any]:
+    return {
+        "method": aggregation.method.value,
+        "source": aggregation.source,
+        "numerator": aggregation.numerator,
+        "denominator": aggregation.denominator,
+        "quantiles": list(aggregation.quantiles),
+        "scale": aggregation.scale,
+    }
 
 
 def _validate_client_overrides(overrides: Mapping[str, Any], *, context: str) -> None:
