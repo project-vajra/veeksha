@@ -319,6 +319,10 @@ class SeedTTSTextTraceFlavorConfig(BaseTraceFlavorConfig):
     )
     subset: str = field("en", help="Dataset subset/config name. Defaults to English.")
     split: str = field("train", help="Dataset split to load.")
+    revision: str = field(
+        "",
+        help="Optional immutable Hugging Face dataset revision (normally a commit SHA).",
+    )
     text_column: str = field(
         "text", help="Column containing the target TTS synthesis text."
     )
@@ -330,6 +334,28 @@ class SeedTTSTextTraceFlavorConfig(BaseTraceFlavorConfig):
         "",
         help="Optional local dataset path. Supports saved HF datasets and common "
         "data files such as JSON/JSONL, CSV, and Parquet.",
+    )
+    preserve_text: bool = field(
+        False,
+        help=(
+            "Use every non-empty prompt exactly as stored, without length filtering "
+            "or random truncation. Required for canonical quality datasets."
+        ),
+    )
+    expected_rows: int | None = field(
+        None,
+        help=(
+            "Optional exact row count for a pinned canonical dataset selection. "
+            "When set, both the selected source rows and the prepared prompt rows "
+            "must match this count."
+        ),
+    )
+    metadata_columns: list[str] = field(
+        default_factory=list,
+        help=(
+            "Dataset columns copied into request and result metadata, for example "
+            "language and category."
+        ),
     )
     min_tokens: int = field(
         20,
@@ -368,6 +394,12 @@ class SeedTTSTextTraceFlavorConfig(BaseTraceFlavorConfig):
             raise ValueError(
                 "SeedTTSTextTraceFlavorConfig requires dataset_name or local_path."
             )
+        if self.expected_rows is not None and self.expected_rows <= 0:
+            raise ValueError("expected_rows must be positive when set.")
+        if len(set(self.metadata_columns)) != len(self.metadata_columns):
+            raise ValueError("metadata_columns must not contain duplicates.")
+        if any(not column.strip() for column in self.metadata_columns):
+            raise ValueError("metadata_columns must contain non-empty column names.")
         one_char_bound_set = (self.min_chars >= 0) != (self.max_chars >= 0)
         if one_char_bound_set:
             raise ValueError(
@@ -399,6 +431,14 @@ class TraceSessionGeneratorConfig(BaseSessionGeneratorConfig):
     wrap_mode: bool = field(
         True, help="Whether to wrap/loop over the trace indefinitely"
     )
+    warmup_sessions: int = field(
+        0,
+        help=(
+            "Number of leading trace sessions replayed before the measured run. "
+            "They warm provider/model state and are not scored; transport reuse "
+            "still depends on the client adapter's connection lifecycle."
+        ),
+    )
     flavor: BaseTraceFlavorConfig = field(
         default_factory=TimedSyntheticSessionTraceFlavorConfig,
         help="Trace flavor configuration.",
@@ -407,3 +447,7 @@ class TraceSessionGeneratorConfig(BaseSessionGeneratorConfig):
     @classmethod
     def get_type(cls):
         return SessionGeneratorType.TRACE
+
+    def __post_init__(self):
+        if self.warmup_sessions < 0:
+            raise ValueError("warmup_sessions must be >= 0")

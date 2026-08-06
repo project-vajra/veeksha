@@ -1,6 +1,7 @@
 """Veeksha top-level CLI command group.
 
 veeksha benchmark [options]
+veeksha named-benchmark [options]
 veeksha capacity-search [options]
 veeksha prefill [options]
 veeksha decode [options]
@@ -27,6 +28,7 @@ from veeksha.cli.parsing import parse_cli_sweep
 from veeksha.config.benchmark import BenchmarkConfig
 from veeksha.config.capacity_search import CapacitySearchConfig
 from veeksha.config.health_check import HealthCheckConfig
+from veeksha.config.named_benchmark import NamedBenchmarkConfig
 from veeksha.config.score_tts_longform import ScoreTtsLongformConfig
 from veeksha.health import run_health_check_cli
 from veeksha.microbench.config import (
@@ -38,11 +40,13 @@ from veeksha.microbench.decode import run_decode
 from veeksha.microbench.diff import DiffConfig, run_diff
 from veeksha.microbench.prefill import run_prefill
 from veeksha.microbench.stress import run_stress
+from veeksha.named_benchmarks.runner import run_cli as run_named_benchmark
 from veeksha.verification.longform import run_score_tts_longform_cli
 from veeksha.version import __version__
 
 _RUNNERS = {
     BenchmarkConfig: run_benchmark,
+    NamedBenchmarkConfig: run_named_benchmark,
     CapacitySearchConfig: lambda configs: [run_capacity_search(c) for c in configs],
     PrefillMicrobenchmarkConfig: lambda configs: [run_prefill(c) for c in configs],
     DecodeMicrobenchmarkConfig: lambda configs: [run_decode(c) for c in configs],

@@ -40,6 +40,29 @@ logger = init_logger(__name__)
 # the truncation heuristic compares against (cap - one chunk).
 LENGTH_CAP_CHUNK_MS = 320.0
 
+_TRACE_METADATA_FIELDS = (
+    "dataset",
+    "dataset_subset",
+    "dataset_split",
+    "dataset_revision",
+    "dataset_source",
+    "source_id",
+    "source_index",
+    "language",
+    "language_name",
+    "category",
+)
+
+
+def _trace_metadata(channel_metrics: dict[str, Any]) -> dict[str, Any]:
+    """Retain canonical dataset/slice identity in request-level artifacts."""
+
+    return {
+        key: channel_metrics[key]
+        for key in _TRACE_METADATA_FIELDS
+        if channel_metrics.get(key) is not None
+    }
+
 
 def _pcm_byte_count(total_bytes: int, *, raw_pcm: bool) -> int:
     if raw_pcm:
@@ -65,8 +88,11 @@ class AudioRequestMetrics:
     end_to_end_latency: float
     generated_audio_duration: float
     rtf: float
+    streaming_rtf: float | None
     chunk_count: int
     pcm_byte_count: int
+    audio_encoding: str = ""
+    audio_channels: int = 1
     input_chars: int = 0
     audio_task: AudioTask | None = None
     asr: ASRRequestMetrics | None = None
@@ -84,6 +110,7 @@ class AudioRequestMetrics:
     aborted: bool = False
     success: bool = True
     error_code: int | None = None
+    trace_metadata: dict[str, Any] | None = None
 
 
 class AudioPerformanceEvaluator:
@@ -109,6 +136,12 @@ class AudioPerformanceEvaluator:
                 AudioMetricKey.GENERATED_AUDIO_DURATION.value, unit="ms"
             ),
             AudioMetricKey.RTF.value: CDFSketch(AudioMetricKey.RTF.value),
+            AudioMetricKey.STREAMING_RTF.value: CDFSketch(
+                AudioMetricKey.STREAMING_RTF.value
+            ),
+            AudioMetricKey.WS_CONNECT_LATENCY_MS.value: CDFSketch(
+                AudioMetricKey.WS_CONNECT_LATENCY_MS.value, unit="ms"
+            ),
             AudioMetricKey.CHUNK_COUNT.value: CDFSketch(
                 AudioMetricKey.CHUNK_COUNT.value
             ),
@@ -133,7 +166,10 @@ class AudioPerformanceEvaluator:
             ),
             "interactivity": CDFSketch("interactivity", unit="ms"),
         }
-        self._asr_metrics = ASRMetricAccumulator()
+        self._asr_metrics = ASRMetricAccumulator(
+            normalizer=self.channel_config.asr_text_normalizer,
+            compute_cer=self.channel_config.asr_compute_cer,
+        )
         self._stt_request_count = 0
         self._asr_scoring_seconds = 0.0
 
@@ -295,6 +331,12 @@ class AudioPerformanceEvaluator:
         ws_connect_latency_ms = (
             float(ws_connect_latency) if ws_connect_latency is not None else None
         )
+        raw_streaming_rtf = cm.get(AudioMetricKey.STREAMING_RTF.value)
+        streaming_rtf = (
+            float(raw_streaming_rtf) if raw_streaming_rtf is not None else None
+        )
+        audio_encoding = str(cm.get(AudioMetricKey.AUDIO_ENCODING.value, ""))
+        audio_channels = int(cm.get(AudioMetricKey.AUDIO_CHANNELS.value, 1))
         interactivity: InteractivityMetrics | None = None
         raw_timing_row: dict[str, Any] | None = None
         if (
@@ -327,6 +369,8 @@ class AudioPerformanceEvaluator:
                     raw_timing_row = self._build_raw_timing_row(
                         request_id, session_id, cm, timing
                     )
+                if streaming_rtf is None:
+                    streaming_rtf = interactivity.streaming_rtf
 
         asr_metrics: ASRRequestMetrics | None = None
         asr_scoring_seconds = 0.0
@@ -356,8 +400,11 @@ class AudioPerformanceEvaluator:
                 end_to_end_latency=end_to_end_latency,
                 generated_audio_duration=generated_audio_duration,
                 rtf=rtf,
+                streaming_rtf=streaming_rtf,
                 chunk_count=chunk_count,
                 pcm_byte_count=pcm_byte_count,
+                audio_encoding=audio_encoding,
+                audio_channels=audio_channels,
                 input_chars=input_chars,
                 input_tokens=input_tokens,
                 audio_task=audio_task,
@@ -377,6 +424,7 @@ class AudioPerformanceEvaluator:
                 aborted=aborted,
                 success=success,
                 error_code=error_code,
+                trace_metadata=_trace_metadata(cm),
             )
             self._completed_metrics.append(metrics)
             if aborted:
@@ -434,6 +482,14 @@ class AudioPerformanceEvaluator:
                     generated_audio_duration
                 )
                 self.summaries[AudioMetricKey.RTF.value].put(rtf)
+                if streaming_rtf is not None:
+                    self.summaries[AudioMetricKey.STREAMING_RTF.value].put(
+                        streaming_rtf
+                    )
+                if ws_connect_latency_ms is not None:
+                    self.summaries[AudioMetricKey.WS_CONNECT_LATENCY_MS.value].put(
+                        ws_connect_latency_ms
+                    )
                 self.summaries[AudioMetricKey.CHUNK_COUNT.value].put(chunk_count)
                 self.summaries[AudioMetricKey.INPUT_TOKENS.value].put(input_tokens)
 
@@ -470,9 +526,7 @@ class AudioPerformanceEvaluator:
             (AudioMetricKey.ZERO_DELAY_STALL_COUNT, None),
             (AudioMetricKey.ZERO_DELAY_TOTAL_STALL_MS, "ms"),
             (AudioMetricKey.ZERO_DELAY_LONGEST_STALL_MS, "ms"),
-            (AudioMetricKey.STREAMING_RTF, None),
             (AudioMetricKey.DONE_AFTER_LAST_AUDIO_MS, "ms"),
-            (AudioMetricKey.WS_CONNECT_LATENCY_MS, "ms"),
             (AudioMetricKey.USER_AUDIO_FLUIDITY_INDEX, None),
             (AudioMetricKey.TTS_SERVICE_FLUIDITY_INDEX, None),
             (AudioMetricKey.TTS_SERVICE_FLUIDITY_ELIGIBLE, None),
@@ -549,12 +603,10 @@ class AudioPerformanceEvaluator:
         put(AudioMetricKey.ZERO_DELAY_STALL_COUNT, float(zero_delay.stall_count))
         put(AudioMetricKey.ZERO_DELAY_TOTAL_STALL_MS, zero_delay.total_stall_ms)
         put(AudioMetricKey.ZERO_DELAY_LONGEST_STALL_MS, zero_delay.longest_stall_ms)
-        put(AudioMetricKey.STREAMING_RTF, interactivity.streaming_rtf)
         put(
             AudioMetricKey.DONE_AFTER_LAST_AUDIO_MS,
             interactivity.done_after_last_audio_ms,
         )
-        put(AudioMetricKey.WS_CONNECT_LATENCY_MS, metrics.ws_connect_latency_ms)
         if interactivity.user_audio_fluidity is not None:
             put(
                 AudioMetricKey.USER_AUDIO_FLUIDITY_INDEX,
@@ -786,8 +838,15 @@ class AudioPerformanceEvaluator:
                     metrics.generated_audio_duration, 3
                 ),
                 AudioMetricKey.RTF.value: round(metrics.rtf, 5),
+                AudioMetricKey.STREAMING_RTF.value: (
+                    round(metrics.streaming_rtf, 5)
+                    if metrics.streaming_rtf is not None
+                    else None
+                ),
                 AudioMetricKey.CHUNK_COUNT.value: metrics.chunk_count,
                 AudioMetricKey.PCM_BYTE_COUNT.value: metrics.pcm_byte_count,
+                AudioMetricKey.AUDIO_ENCODING.value: metrics.audio_encoding,
+                AudioMetricKey.AUDIO_CHANNELS.value: metrics.audio_channels,
                 AudioMetricKey.INPUT_CHARS.value: metrics.input_chars,
                 AudioMetricKey.INPUT_TOKENS.value: metrics.input_tokens,
                 AudioMetricKey.INPUT_TEXT.value: metrics.input_text,
@@ -801,12 +860,18 @@ class AudioPerformanceEvaluator:
                 row[AudioMetricKey.TEXT_PACING_UNIT.value] = metrics.text_pacing_unit
             if metrics.text_pacing_rate is not None:
                 row[AudioMetricKey.TEXT_PACING_RATE.value] = metrics.text_pacing_rate
+            if metrics.ws_connect_latency_ms is not None:
+                row[AudioMetricKey.WS_CONNECT_LATENCY_MS.value] = round(
+                    metrics.ws_connect_latency_ms, 3
+                )
             if self.channel_config.max_expected_audio_ms is not None:
                 row["suspected_length_cap_truncation"] = int(
                     metrics.suspected_length_cap_truncation
                 )
             if metrics.asr is not None:
                 row.update(metrics.asr.to_request_row())
+            elif metrics.trace_metadata:
+                row.update(metrics.trace_metadata)
             row.update(self._interactivity_row_fields(metrics))
             rows.append(row)
         return rows
@@ -874,7 +939,6 @@ class AudioPerformanceEvaluator:
             zero_delay.longest_stall_ms,
         )
         fields[AudioMetricKey.ZERO_DELAY_STALL_FREE.value] = int(zero_delay.stall_free)
-        add(AudioMetricKey.STREAMING_RTF.value, interactivity.streaming_rtf, 5)
         add(
             AudioMetricKey.DONE_AFTER_LAST_AUDIO_MS.value,
             interactivity.done_after_last_audio_ms,

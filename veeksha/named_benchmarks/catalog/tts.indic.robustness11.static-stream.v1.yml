@@ -1,0 +1,211 @@
+schema_version: 1
+id: tts.indic.robustness11.static-stream.v1
+name: Indic TTS robustness latency and continuity
+description: >-
+  Sarvam's pinned 11-language production-robustness prompt set, preserving every
+  prompt exactly and measuring complete-text to streaming-audio behavior.
+modality: tts
+input_mode: static
+output_mode: streaming
+interaction:
+  transport: websocket
+  connection_scope: per_request
+  connection_setup_in_headline_latency: false
+  connection_setup_metric: ws_connect_latency_ms
+  synthesis_trigger: provider_native_complete_text_append_or_explicit_trigger
+  output_audio_encoding: pcm_s16le
+  output_sample_rate_hz: 24000
+  output_channels: 1
+  playable_frame_ms: 20
+  language_routing: request_metadata_or_provider_auto
+  language_metadata_key: language
+  required_languages: [bn, en, gu, hi, kn, ml, mr, od, pa, ta, te]
+client_overrides:
+  sample_rate: 24000
+  input_output_mode: complete_text
+  language_metadata_key: language
+  strict_audio_contract: true
+datasets:
+  - id: sarvam_tts_robustness
+    name: Sarvam TTS Robustness Benchmark
+    source:
+      kind: huggingface
+      uri: sarvamai/tts-robustness-benchmark
+      revision: c61f8aaa61f59d401a5306a08f369bd25a1d7025
+      config: default
+      split: train
+      license: other; verify terms before redistribution
+      expected_rows: 959
+    session_generator:
+      type: trace
+      trace_file: ""
+      wrap_mode: false
+      warmup_sessions: 1
+      flavor:
+        type: seed_tts_text
+        dataset_name: sarvamai/tts-robustness-benchmark
+        subset: default
+        split: train
+        revision: c61f8aaa61f59d401a5306a08f369bd25a1d7025
+        text_column: text
+        id_column: ""
+        preserve_text: true
+        expected_rows: 959
+        metadata_columns: [language, category]
+execution:
+  seed: 42
+  traffic_scheduler:
+    type: concurrent
+    target_concurrent_sessions: 1
+    rampup_seconds: 0
+  evaluators:
+    - type: performance
+      target_channels: [audio]
+      audio_channel:
+        interactivity_enabled: true
+        fluidity_frame_ms: 20
+        fluidity_startup_delay_ms: 0
+        startup_delay_ms_values: [0, 40, 80, 160, 320, 500]
+        startup_buffer_ms_values: [0, 40, 80, 160, 320, 500]
+        fluidity_attribution_mode: conservative
+        persist_raw_timing: true
+      slos:
+        - type: constant
+          name: P90 trigger-to-first-playable-audio under 1 second
+          metric: trigger_to_first_playable_audio_ms
+          percentile: 0.90
+          value: 1000
+        - type: constant
+          name: P1 user fluidity at least 0.99
+          metric: user_audio_fluidity_index
+          percentile: 0.01
+          value: 0.99
+  runtime:
+    max_sessions: -1
+    benchmark_timeout: 14400
+metrics:
+  - id: trigger_to_first_playable_audio_ms
+    role: primary
+    unit: ms
+    description: >-
+      Time from client invocation of the provider-native synthesis-triggering
+      message on an already-ready WebSocket until one complete 20 ms mono
+      PCM16 frame is available. For implicit-trigger APIs, that message is the
+      complete-text append itself; at 24 kHz one frame is 960 audio bytes.
+    dataset_aggregation:
+      method: distribution
+      source: trigger_to_first_playable_audio_ms
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+    benchmark_aggregation:
+      method: pooled_distribution
+      source: trigger_to_first_playable_audio_ms
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+  - id: first_content_byte_ms
+    role: diagnostic
+    unit: ms
+    description: >-
+      Time from the provider-native synthesis trigger to the first non-empty
+      decoded audio payload. This is not a TCP byte and can precede one
+      complete playable frame.
+    dataset_aggregation:
+      method: distribution
+      source: ttfc
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+    benchmark_aggregation:
+      method: pooled_distribution
+      source: ttfc
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+  - id: stream_delivery_rtf
+    role: primary
+    unit: ratio
+    description: >-
+      Time from the first received audio payload to the last received audio
+      payload, divided by the playable duration delivered after the first
+      payload. WebSocket setup and startup latency are excluded; values below
+      1.0 mean steady-state delivery outpaces playback.
+    dataset_aggregation:
+      method: distribution
+      source: streaming_rtf
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+    benchmark_aggregation:
+      method: pooled_distribution
+      source: streaming_rtf
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+  - id: connection_inclusive_request_rtf
+    role: diagnostic
+    unit: ratio
+    description: >-
+      Full request wall time divided by generated-audio duration, including
+      WebSocket establishment. Retained as an operational diagnostic only.
+    dataset_aggregation:
+      method: distribution
+      source: rtf
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+    benchmark_aggregation:
+      method: pooled_distribution
+      source: rtf
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+  - id: websocket_setup_ms
+    role: diagnostic
+    unit: ms
+    description: WebSocket connection establishment measured separately.
+    dataset_aggregation:
+      method: distribution
+      source: ws_connect_latency_ms
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+    benchmark_aggregation:
+      method: pooled_distribution
+      source: ws_connect_latency_ms
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+  - id: user_audio_fluidity
+    role: primary
+    unit: fraction
+    description: >-
+      Accepted 20 ms playback deadlines after the declared startup buffer.
+      A value of 1.0 means no client-observed playback underrun; it does not
+      imply low startup latency or high speech quality.
+    dataset_aggregation:
+      method: distribution
+      source: user_audio_fluidity_index
+      quantiles: [0.01, 0.5, 0.9]
+    benchmark_aggregation:
+      method: pooled_distribution
+      source: user_audio_fluidity_index
+      quantiles: [0.01, 0.5, 0.9]
+  - id: required_startup_delay_ms
+    role: diagnostic
+    unit: ms
+    description: >-
+      Exact minimum fixed startup delay implied by the observed PCM delivery
+      timeline: the maximum cumulative delivery deficit required to avoid all
+      playback underruns for the request.
+    dataset_aggregation:
+      method: distribution
+      source: required_startup_delay_ms
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+    benchmark_aggregation:
+      method: pooled_distribution
+      source: required_startup_delay_ms
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+  - id: request_error_rate
+    role: primary
+    unit: fraction
+    dataset_aggregation:
+      method: ratio_of_sums
+      numerator: Number of Errored Requests
+      denominator: Number of Requests
+    benchmark_aggregation:
+      method: ratio_of_sums
+      numerator: Number of Errored Requests
+      denominator: Number of Requests
+  - id: request_cancellation_rate
+    role: primary
+    unit: fraction
+    dataset_aggregation:
+      method: ratio_of_sums
+      numerator: Number of Cancelled Requests
+      denominator: Number of Requests
+    benchmark_aggregation:
+      method: ratio_of_sums
+      numerator: Number of Cancelled Requests
+      denominator: Number of Requests

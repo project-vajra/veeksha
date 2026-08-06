@@ -1,0 +1,292 @@
+schema_version: 1
+id: asr.indic.multidomain16.v1
+name: Indic multilingual multidomain realtime ASR
+description: >-
+  Full pinned Indic ASR Eval corpus, executed as seven independent dataset
+  runs under one 16 kHz realtime streaming and Unicode WER/CER contract.
+modality: asr
+input_mode: streaming
+output_mode: streaming
+interaction:
+  connection_scope: per_request
+  connection_setup_in_latency: false
+  connection_setup_metric: ws_connect_latency_ms
+  audio_encoding: pcm_s16le
+  sample_rate_hz: 16000
+  input_frame_ms: 20
+  input_pacing: realtime
+  transcript_events: provider_native_interim_and_final
+  language_routing: request_metadata
+  language_metadata_key: language
+  required_languages:
+    [bn, bho, hne, gu, hi, kn, mag, mai, ml, mr, or, pa, sa, ta, te, ur]
+client_overrides:
+  sample_rate: 16000
+  ws_chunk_size: 640
+  ws_realtime_pacing: true
+  language_metadata_key: language
+datasets:
+  - id: kathbath
+    name: Kathbath
+    source:
+      kind: huggingface
+      uri: ayush-shunyalabs/Indic_ASR_Eval
+      revision: 7c1d7dde6aee30d98075522bc9ec9eb26898f6ab
+      config: kathbath
+      split: test
+      license: CC-BY-4.0 compilation; upstream sample terms apply
+      expected_rows: 1200
+    session_generator:
+      type: trace
+      trace_file: ${DATASET_ROOT}/asr.indic.multidomain16.v1/kathbath/manifest.jsonl
+      wrap_mode: false
+      warmup_sessions: 1
+      flavor:
+        type: audio
+        audio_dir: ""
+  - id: kathbath_noisy
+    name: Kathbath Noisy
+    source:
+      kind: huggingface
+      uri: ayush-shunyalabs/Indic_ASR_Eval
+      revision: 7c1d7dde6aee30d98075522bc9ec9eb26898f6ab
+      config: kathbath_noisy
+      split: test
+      license: CC-BY-4.0 compilation; upstream sample terms apply
+      expected_rows: 1200
+    session_generator:
+      type: trace
+      trace_file: ${DATASET_ROOT}/asr.indic.multidomain16.v1/kathbath_noisy/manifest.jsonl
+      wrap_mode: false
+      warmup_sessions: 1
+      flavor:
+        type: audio
+        audio_dir: ""
+  - id: fleurs
+    name: FLEURS
+    source:
+      kind: huggingface
+      uri: ayush-shunyalabs/Indic_ASR_Eval
+      revision: 7c1d7dde6aee30d98075522bc9ec9eb26898f6ab
+      config: fleurs
+      split: test
+      license: CC-BY-4.0 compilation; upstream sample terms apply
+      expected_rows: 1100
+    session_generator:
+      type: trace
+      trace_file: ${DATASET_ROOT}/asr.indic.multidomain16.v1/fleurs/manifest.jsonl
+      wrap_mode: false
+      warmup_sessions: 1
+      flavor:
+        type: audio
+        audio_dir: ""
+  - id: indictts
+    name: IndicTTS
+    source:
+      kind: huggingface
+      uri: ayush-shunyalabs/Indic_ASR_Eval
+      revision: 7c1d7dde6aee30d98075522bc9ec9eb26898f6ab
+      config: indictts
+      split: test
+      license: CC-BY-4.0 compilation; upstream sample terms apply
+      expected_rows: 900
+    session_generator:
+      type: trace
+      trace_file: ${DATASET_ROOT}/asr.indic.multidomain16.v1/indictts/manifest.jsonl
+      wrap_mode: false
+      warmup_sessions: 1
+      flavor:
+        type: audio
+        audio_dir: ""
+  - id: respin
+    name: RESPIN
+    source:
+      kind: huggingface
+      uri: ayush-shunyalabs/Indic_ASR_Eval
+      revision: 7c1d7dde6aee30d98075522bc9ec9eb26898f6ab
+      config: respin
+      split: test
+      license: CC-BY-4.0 compilation; upstream sample terms apply
+      expected_rows: 900
+    session_generator:
+      type: trace
+      trace_file: ${DATASET_ROOT}/asr.indic.multidomain16.v1/respin/manifest.jsonl
+      wrap_mode: false
+      warmup_sessions: 1
+      flavor:
+        type: audio
+        audio_dir: ""
+  - id: commonvoice
+    name: Common Voice
+    source:
+      kind: huggingface
+      uri: ayush-shunyalabs/Indic_ASR_Eval
+      revision: 7c1d7dde6aee30d98075522bc9ec9eb26898f6ab
+      config: commonvoice
+      split: test
+      license: CC-BY-4.0 compilation; upstream sample terms apply
+      expected_rows: 769
+    session_generator:
+      type: trace
+      trace_file: ${DATASET_ROOT}/asr.indic.multidomain16.v1/commonvoice/manifest.jsonl
+      wrap_mode: false
+      warmup_sessions: 1
+      flavor:
+        type: audio
+        audio_dir: ""
+  - id: gramvaani
+    name: GramVaani
+    source:
+      kind: huggingface
+      uri: ayush-shunyalabs/Indic_ASR_Eval
+      revision: 7c1d7dde6aee30d98075522bc9ec9eb26898f6ab
+      config: gramvaani
+      split: test
+      license: CC-BY-4.0 compilation; upstream sample terms apply
+      expected_rows: 100
+    session_generator:
+      type: trace
+      trace_file: ${DATASET_ROOT}/asr.indic.multidomain16.v1/gramvaani/manifest.jsonl
+      wrap_mode: false
+      warmup_sessions: 1
+      flavor:
+        type: audio
+        audio_dir: ""
+execution:
+  seed: 42
+  traffic_scheduler:
+    type: concurrent
+    target_concurrent_sessions: 1
+    rampup_seconds: 0
+  evaluators:
+    - type: performance
+      target_channels: [audio]
+      audio_channel:
+        asr_text_normalizer: unicode
+        asr_compute_cer: true
+  runtime:
+    max_sessions: -1
+    benchmark_timeout: 72000
+metrics:
+  - id: final_corpus_wer
+    role: primary
+    unit: percent
+    description: Corpus WER from exact edit and reference-word totals.
+    requires_all_requests_successful: true
+    dataset_aggregation:
+      method: ratio_of_sums
+      numerator: asr_final_errors
+      denominator: asr_final_reference_words
+      scale: 100
+    benchmark_aggregation:
+      method: ratio_of_sums
+      numerator: asr_final_errors
+      denominator: asr_final_reference_words
+      scale: 100
+  - id: final_corpus_cer
+    role: primary
+    unit: percent
+    description: Unicode character error rate excluding whitespace boundaries.
+    requires_all_requests_successful: true
+    dataset_aggregation:
+      method: ratio_of_sums
+      numerator: asr_final_cer_errors
+      denominator: asr_final_reference_characters
+      scale: 100
+    benchmark_aggregation:
+      method: ratio_of_sums
+      numerator: asr_final_cer_errors
+      denominator: asr_final_reference_characters
+      scale: 100
+  - id: first_visible_transcript_ms
+    role: diagnostic
+    unit: ms
+    description: >-
+      Time from sending the first input-audio byte to receiving the first
+      non-empty provider transcript event. This is a stream-start latency, not
+      word-end-to-word-display interactivity.
+    dataset_aggregation:
+      method: distribution
+      source: time_to_first_visible_text
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+    benchmark_aggregation:
+      method: pooled_distribution
+      source: time_to_first_visible_text
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+  - id: final_transcript_ms
+    role: diagnostic
+    unit: ms
+    description: >-
+      Time from the end of input-audio transmission to the provider's terminal
+      transcript event.
+    dataset_aggregation:
+      method: distribution
+      source: time_to_final_transcript
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+    benchmark_aggregation:
+      method: pooled_distribution
+      source: time_to_final_transcript
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+  - id: stream_delivery_rtf
+    role: primary
+    unit: ratio
+    description: >-
+      Time from the first transmitted input-audio byte to the terminal
+      transcript event, divided by input-audio duration. WebSocket setup is
+      excluded; values at or below 1.0 keep pace with realtime input.
+    dataset_aggregation:
+      method: distribution
+      source: streaming_rtf
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+    benchmark_aggregation:
+      method: pooled_distribution
+      source: streaming_rtf
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+  - id: connection_inclusive_request_rtf
+    role: diagnostic
+    unit: ratio
+    description: >-
+      Full client request wall time divided by input-audio duration, including
+      connection establishment. Retained as an operational diagnostic only.
+    dataset_aggregation:
+      method: distribution
+      source: rtf
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+    benchmark_aggregation:
+      method: pooled_distribution
+      source: rtf
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+  - id: websocket_setup_ms
+    role: diagnostic
+    unit: ms
+    description: WebSocket connection establishment measured separately.
+    dataset_aggregation:
+      method: distribution
+      source: ws_connect_latency_ms
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+    benchmark_aggregation:
+      method: pooled_distribution
+      source: ws_connect_latency_ms
+      quantiles: [0.5, 0.9, 0.95, 0.99]
+  - id: request_error_rate
+    role: primary
+    unit: fraction
+    dataset_aggregation:
+      method: ratio_of_sums
+      numerator: Number of Errored Requests
+      denominator: Number of Requests
+    benchmark_aggregation:
+      method: ratio_of_sums
+      numerator: Number of Errored Requests
+      denominator: Number of Requests
+  - id: request_cancellation_rate
+    role: primary
+    unit: fraction
+    dataset_aggregation:
+      method: ratio_of_sums
+      numerator: Number of Cancelled Requests
+      denominator: Number of Requests
+    benchmark_aggregation:
+      method: ratio_of_sums
+      numerator: Number of Cancelled Requests
+      denominator: Number of Requests

@@ -84,8 +84,15 @@ class TraceFlavorGeneratorBase:
         """Wrap the trace for a new epoch."""
 
     def get_warmup_sessions(self) -> List[Session]:
-        """Return warmup sessions. Default empty, override for RAG."""
-        return []
+        """Materialize leading sessions without consuming the measured trace."""
+        sessions: List[Session] = []
+        if self.config.warmup_sessions <= 0:
+            return sessions
+        for _, group in self.trace_df.groupby("session_id", sort=False):
+            sessions.append(self.prepare_session(group))
+            if len(sessions) >= self.config.warmup_sessions:
+                break
+        return sessions
 
     def _load_trace(self, trace_file: str) -> pd.DataFrame:
         """Load trace from JSONL or CSV based on file extension."""

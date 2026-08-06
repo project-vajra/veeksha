@@ -13,7 +13,7 @@ import yaml
 from tqdm import tqdm
 
 from veeksha.config.benchmark import BenchmarkConfig
-from veeksha.config.utils import to_serializable_config_dict
+from veeksha.config.utils import redact_config_secrets, to_serializable_config_dict
 from veeksha.core.seeding import SeedManager
 from veeksha.evaluator.base import BaseEvaluator
 from veeksha.evaluator.composite import CompositeEvaluator
@@ -42,7 +42,7 @@ def _persist_config_yaml(benchmark_config: BenchmarkConfig) -> str:
         Path to the persisted YAML file.
     """
     os.makedirs(benchmark_config.output_dir, exist_ok=True)
-    config_dict = to_serializable_config_dict(benchmark_config)
+    config_dict = redact_config_secrets(to_serializable_config_dict(benchmark_config))
     config_path = os.path.join(benchmark_config.output_dir, "config.yml")
     with open(config_path, "w", encoding="utf-8") as config_file:
         yaml.safe_dump(

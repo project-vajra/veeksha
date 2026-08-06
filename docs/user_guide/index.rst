@@ -12,6 +12,7 @@ integrating with external tools.
    trace_flavors
    asr_benchmarking
    tts_benchmarking
+   named_benchmarks
    capacity_search
    sweeps
    server_management

@@ -7,6 +7,7 @@ client:
   api_base: https://api.deepgram.com
   api_key_env: DEEPGRAM_API_KEY
   model: aura-2-thalia-en
+  input_output_mode: duplex
   sample_rate: 24000
   pacing:
     # Legacy key: the current pacing unit is a whitespace-delimited word.

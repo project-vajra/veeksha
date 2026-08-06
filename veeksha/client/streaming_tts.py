@@ -8,7 +8,7 @@ import json
 import math
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Protocol
 from urllib.parse import quote, urlencode, urljoin
 from uuid import uuid4
@@ -257,7 +257,9 @@ class VajraStreamingProtocol(_ImplicitResponseProtocol):
     protocol_name = "native_streaming_text"
     default_api_key_env = "OPENAI_API_KEY"
     requires_api_key = False
-    has_ready_event = True
+    # The native protocol has no pre-synthesis session-ready acknowledgement;
+    # audio.start is a response event emitted only after input.text.
+    has_ready_event = False
 
     def __init__(self, config: StreamingTTSClientConfig, api_key: str | None) -> None:
         self.config = config
@@ -309,7 +311,6 @@ class VajraStreamingProtocol(_ImplicitResponseProtocol):
         if event_type == "audio.start":
             sample_rate = event.get("sample_rate")
             return StreamingProtocolEvent(
-                ready=True,
                 response_started=True,
                 sample_rate=sample_rate if isinstance(sample_rate, int) else None,
             )
@@ -343,14 +344,15 @@ class ElevenLabsStreamingProtocol(_ImplicitResponseProtocol):
     def build_ws_url(self, api_base: str) -> str:
         normalized = api_base.rstrip("/") + "/"
         path = f"v1/text-to-speech/{quote(self.config.voice_id, safe='')}/stream-input"
-        query = urlencode(
-            {
-                "model_id": self.config.model,
-                "output_format": f"pcm_{self.config.sample_rate}",
-                "auto_mode": str(self.config.auto_mode).lower(),
-                "apply_text_normalization": self.config.apply_text_normalization,
-            }
-        )
+        parameters = {
+            "model_id": self.config.model,
+            "output_format": f"pcm_{self.config.sample_rate}",
+            "auto_mode": str(self.config.auto_mode).lower(),
+            "apply_text_normalization": self.config.apply_text_normalization,
+        }
+        if self.config.language is not None:
+            parameters["language_code"] = self.config.language
+        query = urlencode(parameters)
         return f"{to_websocket_url(urljoin(normalized, path))}?{query}"
 
     def headers(self) -> dict[str, str]:
@@ -438,7 +440,6 @@ class CartesiaStreamingProtocol(_ImplicitResponseProtocol):
             "model_id": self.config.model,
             "transcript": transcript,
             "voice": {"mode": "id", "id": self.config.voice_id},
-            "language": self.config.language or "en",
             "context_id": self.context_id,
             "output_format": {
                 "container": "raw",
@@ -447,6 +448,8 @@ class CartesiaStreamingProtocol(_ImplicitResponseProtocol):
             },
             "continue": continuing,
         }
+        if self.config.language is not None:
+            payload["language"] = self.config.language
         if self.config.max_buffer_delay_ms is not None:
             payload["max_buffer_delay_ms"] = self.config.max_buffer_delay_ms
         return json.dumps(payload)
@@ -623,15 +626,44 @@ class StreamingTTSClient(BaseLLMClient):
         self._streaming_config = config
         self._protocol = protocol_class(config, self.api_key)
 
-    def _connect(self) -> Any:
+    def _connect(self, protocol: StreamingProviderProtocol | None = None) -> Any:
+        protocol = protocol or self._protocol
         open_timeout = min(self._streaming_config.request_timeout, 30)
         return connect(
-            self._protocol.build_ws_url(str(self.api_base)),
+            protocol.build_ws_url(str(self.api_base)),
             max_size=None,
             compression=None,
             open_timeout=open_timeout,
-            additional_headers=self._protocol.headers(),
+            additional_headers=protocol.headers(),
         )
+
+    def _request_language(self, metadata: dict[str, Any]) -> str | None:
+        """Resolve one request's language without mutating shared client state."""
+
+        mode = self._streaming_config.language_mode
+        if mode == "auto":
+            return None
+        if mode == "fixed":
+            return self._streaming_config.language
+
+        key = self._streaming_config.language_metadata_key
+        value = metadata.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"Streaming TTS request metadata must contain a non-empty {key!r} "
+                "string when language_mode=request_metadata"
+            )
+        language = value.strip()
+        supported = {
+            item.strip().casefold()
+            for item in self._streaming_config.supported_languages
+        }
+        if supported and language.casefold() not in supported:
+            raise ValueError(
+                f"Streaming TTS target {self._streaming_config.model!r} does not "
+                f"declare support for request language {language!r}"
+            )
+        return language
 
     async def measure_websocket_rtt_ms(self, samples: int = 5) -> list[float]:
         """Measure ping/pong RTT on independent provider WebSocket connections.
@@ -678,11 +710,40 @@ class StreamingTTSClient(BaseLLMClient):
             )
 
         input_text = text_content.input_text
+        try:
+            request_language = self._request_language(request.metadata)
+        except ValueError as error:
+            if on_request_dispatched is not None:
+                on_request_dispatched()
+            if on_request_sent is not None:
+                on_request_sent()
+            return RequestResult(
+                request_id=request.id,
+                session_id=session_id,
+                session_total_requests=session_total_requests,
+                success=False,
+                error_code=400,
+                error_msg=str(error),
+                client_completed_at=time.monotonic(),
+            )
         # Protocol instances are request-scoped so providers such as Cartesia can
         # safely retain per-utterance continuation state under concurrency.
-        protocol = type(self._protocol)(self._streaming_config, self.api_key)
+        request_config = replace(self._streaming_config, language=request_language)
+        protocol = type(self._protocol)(request_config, self.api_key)
+        if self._streaming_config.strict_audio_contract and not protocol.raw_pcm:
+            raise ValueError(
+                f"{protocol.provider} does not provide raw PCM required by the "
+                "strict streaming TTS audio contract"
+            )
         pacing = self._streaming_config.pacing
-        segments = segment_text(input_text, pacing.tokens_per_delta)
+        if self._streaming_config.input_output_mode == "complete_text":
+            # ``streaming_tts`` describes the WebSocket transport, not the
+            # input interaction.  A complete-text benchmark must make the
+            # entire prompt eligible for synthesis in one append and must not
+            # accidentally emulate an upstream LLM token cadence.
+            segments = segment_text(input_text, max(1, len(input_text.split())))
+        else:
+            segments = segment_text(input_text, pacing.tokens_per_delta)
         pacer = TextDeltaPacer(pacing, seed=pacing.seed + request.id)
         input_tokens = text_content.target_prompt_tokens or sum(
             segment.n_tokens for segment in segments
@@ -717,6 +778,7 @@ class StreamingTTSClient(BaseLLMClient):
         sent_fired = False
         aborted = False
         stream_completed = asyncio.Event()
+        session_ready = asyncio.Event()
         start = time.monotonic()
 
         def fire_sent_once() -> None:
@@ -727,17 +789,24 @@ class StreamingTTSClient(BaseLLMClient):
 
         async def send_loop(websocket: ClientConnection) -> None:
             nonlocal input_complete_offset, response_trigger_offset
-            if pacer.initial_delay_s > 0:
+            # Application-level session readiness is separate from the WS
+            # handshake. Do not let text or the synthesis trigger race provider
+            # configuration, and keep trigger-to-audio latency independent of
+            # connection/session setup.
+            await session_ready.wait()
+            paced_input = self._streaming_config.input_output_mode == "duplex"
+            if paced_input and pacer.initial_delay_s > 0:
                 await asyncio.sleep(pacer.initial_delay_s)
             deadline = time.monotonic()
             response_triggered = False
             sent_words = 0
 
             for segment_idx, segment in enumerate(segments):
-                deadline += pacer.next_gap()
-                sleep_s = deadline - time.monotonic()
-                if sleep_s > 0:
-                    await asyncio.sleep(sleep_s)
+                if paced_input:
+                    deadline += pacer.next_gap()
+                    sleep_s = deadline - time.monotonic()
+                    if sleep_s > 0:
+                        await asyncio.sleep(sleep_s)
                 offset_ms = (time.monotonic() - start) * 1000
                 if not protocol.explicit_response_trigger and not response_triggered:
                     # Native streaming providers treat the first real text
@@ -791,10 +860,17 @@ class StreamingTTSClient(BaseLLMClient):
                     raise StreamingTTSError(event.error)
                 if event.ready and session_ready_offset is None:
                     session_ready_offset = wire_offset_ms
+                    session_ready.set()
                 if event.response_started and response_created_offset is None:
                     response_created_offset = wire_offset_ms
                 if event.sample_rate is not None and event.sample_rate > 0:
                     if event.sample_rate != sample_rate:
+                        if self._streaming_config.strict_audio_contract:
+                            raise StreamingTTSError(
+                                f"{protocol.provider} sent sample_rate="
+                                f"{event.sample_rate}; benchmark requires "
+                                f"{sample_rate}"
+                            )
                         logger.warning(
                             "%s sent sample_rate=%d (configured %d); "
                             "using the provider value",
@@ -804,6 +880,14 @@ class StreamingTTSClient(BaseLLMClient):
                         )
                     sample_rate = event.sample_rate
                 if event.audio:
+                    if (
+                        self._streaming_config.strict_audio_contract
+                        and len(event.audio) % 2
+                    ):
+                        raise StreamingTTSError(
+                            f"{protocol.provider} sent an odd-length PCM16 payload "
+                            f"({len(event.audio)} bytes)"
+                        )
                     playable_offset_ms = (time.monotonic() - start) * 1000
                     audio_chunks.append(event.audio)
                     audio_chunk_timestamps.append(
@@ -841,12 +925,13 @@ class StreamingTTSClient(BaseLLMClient):
         error_msg: str | None = None
         try:
             async with asyncio.timeout(self._streaming_config.request_timeout):
-                async with self._connect() as websocket:
+                async with self._connect(protocol) as websocket:
                     ws_connect_latency = (time.monotonic() - start) * 1000
                     for message in protocol.initial_messages():
                         await websocket.send(message)
                     if not protocol.has_ready_event:
                         session_ready_offset = (time.monotonic() - start) * 1000
+                        session_ready.set()
                     if on_request_dispatched is not None:
                         on_request_dispatched()
                     async with asyncio.TaskGroup() as task_group:
@@ -894,11 +979,23 @@ class StreamingTTSClient(BaseLLMClient):
             AudioMetricKey.CHUNK_COUNT.value: len(audio_chunks),
             AudioMetricKey.RAW_PCM.value: protocol.raw_pcm,
             AudioMetricKey.SAMPLE_RATE.value: sample_rate,
+            AudioMetricKey.AUDIO_ENCODING.value: "pcm_s16le",
+            AudioMetricKey.AUDIO_CHANNELS.value: 1,
             AudioMetricKey.INPUT_CHARS.value: len(input_text),
             AudioMetricKey.INPUT_TOKENS.value: input_tokens,
             AudioMetricKey.INPUT_TEXT.value: input_text,
-            AudioMetricKey.TEXT_PACING_UNIT.value: "whitespace_word",
-            AudioMetricKey.TEXT_PACING_RATE.value: pacing.tokens_per_second,
+            AudioMetricKey.TEXT_PACING_UNIT.value: (
+                "whitespace_word"
+                if self._streaming_config.input_output_mode == "duplex"
+                else "complete_text"
+            ),
+            AudioMetricKey.TEXT_PACING_RATE.value: (
+                pacing.tokens_per_second
+                if self._streaming_config.input_output_mode == "duplex"
+                else None
+            ),
+            "language_routing_mode": self._streaming_config.language_mode,
+            "provider_language_value": request_language,
             AudioMetricKey.ABORTED.value: aborted,
             AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value: text_delta_timestamps,
             AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value: audio_chunk_timestamps,
@@ -920,6 +1017,8 @@ class StreamingTTSClient(BaseLLMClient):
                 response_done_offset
             ),
         }
+        for key, value in request.metadata.items():
+            metrics.setdefault(key, value)
 
         channels: dict[ChannelModality, ChannelResponse] = {}
         if success or audio_chunks or text_delta_timestamps or aborted:

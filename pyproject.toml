@@ -102,6 +102,7 @@ veeksha = [
     "dashboard/templates/*",
     "dashboard/static/*",
     "sample_configs/*.yml",
+    "named_benchmarks/catalog/*.yml",
 ]
 
 [tool.setuptools_scm]

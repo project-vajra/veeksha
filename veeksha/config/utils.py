@@ -14,6 +14,10 @@ from veeksha.types import ChannelModality
 
 logger = logging.getLogger(__name__)
 
+_SENSITIVE_CONFIG_KEYS = frozenset(
+    {"api_key", "authorization", "access_token", "token", "secret", "password"}
+)
+
 
 def dict_to_args(class_dict):
     args = []
@@ -110,6 +114,33 @@ def to_serializable_config_dict(config: Any) -> Dict[str, Any]:
     serialized = serialize_config_value(config_as_dict)
     assert isinstance(serialized, dict), f"Expected dict, got {type(serialized)}"
     return serialized
+
+
+def redact_config_secrets(value: Any) -> Any:
+    """Return a copy with credential values removed from persisted artifacts."""
+
+    if isinstance(value, dict):
+        return {
+            key: (
+                item
+                if (
+                    isinstance(key, str)
+                    and key.casefold() in _SENSITIVE_CONFIG_KEYS
+                    and item in (None, "")
+                )
+                else (
+                    "<redacted>"
+                    if isinstance(key, str) and key.casefold() in _SENSITIVE_CONFIG_KEYS
+                    else redact_config_secrets(item)
+                )
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_config_secrets(item) for item in value]
+    if isinstance(value, tuple):
+        return [redact_config_secrets(item) for item in value]
+    return value
 
 
 def _build_unique_output_dir(root: str, model_name: str, config_hash: str) -> str:

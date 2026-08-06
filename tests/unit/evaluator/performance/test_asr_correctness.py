@@ -4,8 +4,11 @@ import pytest
 
 from veeksha.evaluator.performance.asr import (
     ASRMetricAccumulator,
+    CERStats,
     WERStats,
+    compute_cer_stats,
     compute_wer_stats,
+    normalize_unicode_text,
 )
 
 
@@ -59,6 +62,8 @@ def test_asr_aggregates_distinguish_sample_corpus_and_duration_weighted_wer() ->
     assert summary["asr_final_sample_mean_wer"] == pytest.approx(31.25)
     assert summary["asr_final_corpus_wer"] == pytest.approx(20.0)
     assert summary["asr_final_duration_weighted_wer"] == pytest.approx(21.875)
+    assert summary["asr_final_errors"] == 2
+    assert summary["asr_final_reference_words"] == 10
     assert summary["asr_dataset_short_final_corpus_wer"] == pytest.approx(50.0)
     assert summary["asr_dataset_long_final_corpus_wer"] == pytest.approx(12.5)
 
@@ -78,3 +83,24 @@ def test_asr_empty_reference_has_explicit_zero_or_full_error_semantics() -> None
         partial_stats=None,
     )
     assert accumulator.get_summary()["asr_final_corpus_wer"] == 100.0
+
+
+@pytest.mark.unit
+def test_unicode_normalizer_preserves_indic_combining_marks() -> None:
+    text = "नमस्ते दुनिया!"
+
+    assert normalize_unicode_text(text) == "नमस्ते दुनिया"
+    assert compute_wer_stats(text, text, normalizer="unicode") == WERStats(
+        errors=0,
+        reference_words=2,
+        wer=0.0,
+    )
+
+
+@pytest.mark.unit
+def test_unicode_cer_reports_exact_sufficient_statistics() -> None:
+    stats = compute_cer_stats("नमस्ते", "नमस्त", normalizer="unicode")
+
+    assert stats == CERStats(
+        errors=1, reference_characters=6, cer=pytest.approx(100 / 6)
+    )

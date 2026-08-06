@@ -422,39 +422,36 @@ class TTSClient(BaseLLMClient):
         channels: dict[ChannelModality, ChannelResponse] = {}
         if success:
             rounded_latency = round(latency_ms, 3)
+            metrics = {
+                "audio_task": AudioTask.TTS,
+                AudioMetricKey.PROVIDER.value: self._protocol.provider,
+                AudioMetricKey.PROVIDER_MODEL.value: self._http_config.model,
+                AudioMetricKey.PROVIDER_PROTOCOL.value: (self._protocol.protocol_name),
+                AudioMetricKey.TTFC.value: (
+                    round(ttfc, 3) if ttfc is not None else None
+                ),
+                AudioMetricKey.END_TO_END_LATENCY.value: rounded_latency,
+                AudioMetricKey.CHUNK_COUNT.value: len(audio_chunks),
+                AudioMetricKey.RAW_PCM.value: self._protocol.raw_pcm,
+                AudioMetricKey.SAMPLE_RATE.value: self._http_config.sample_rate,
+                AudioMetricKey.INPUT_CHARS.value: len(input_text),
+                AudioMetricKey.INPUT_TOKENS.value: (
+                    text_content.target_prompt_tokens or 0
+                ),
+                AudioMetricKey.INPUT_TEXT.value: input_text,
+                AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value: [[0.0, len(input_text)]],
+                AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value: (audio_chunk_timestamps),
+                AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value: 0.0,
+                AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value: 0.0,
+                AudioMetricKey.AUDIO_DONE_OFFSET_MS.value: rounded_latency,
+                AudioMetricKey.RESPONSE_DONE_OFFSET_MS.value: rounded_latency,
+            }
+            for key, value in request.metadata.items():
+                metrics.setdefault(key, value)
             channels[ChannelModality.AUDIO] = ChannelResponse(
                 modality=ChannelModality.AUDIO,
                 content=b"".join(audio_chunks),
-                metrics={
-                    "audio_task": AudioTask.TTS,
-                    AudioMetricKey.PROVIDER.value: self._protocol.provider,
-                    AudioMetricKey.PROVIDER_MODEL.value: self._http_config.model,
-                    AudioMetricKey.PROVIDER_PROTOCOL.value: (
-                        self._protocol.protocol_name
-                    ),
-                    AudioMetricKey.TTFC.value: (
-                        round(ttfc, 3) if ttfc is not None else None
-                    ),
-                    AudioMetricKey.END_TO_END_LATENCY.value: rounded_latency,
-                    AudioMetricKey.CHUNK_COUNT.value: len(audio_chunks),
-                    AudioMetricKey.RAW_PCM.value: self._protocol.raw_pcm,
-                    AudioMetricKey.SAMPLE_RATE.value: self._http_config.sample_rate,
-                    AudioMetricKey.INPUT_CHARS.value: len(input_text),
-                    AudioMetricKey.INPUT_TOKENS.value: (
-                        text_content.target_prompt_tokens or 0
-                    ),
-                    AudioMetricKey.INPUT_TEXT.value: input_text,
-                    AudioMetricKey.TEXT_DELTA_TIMESTAMPS.value: [
-                        [0.0, len(input_text)]
-                    ],
-                    AudioMetricKey.AUDIO_CHUNK_TIMESTAMPS.value: (
-                        audio_chunk_timestamps
-                    ),
-                    AudioMetricKey.RESPONSE_TRIGGER_OFFSET_MS.value: 0.0,
-                    AudioMetricKey.INPUT_COMMIT_OFFSET_MS.value: 0.0,
-                    AudioMetricKey.AUDIO_DONE_OFFSET_MS.value: rounded_latency,
-                    AudioMetricKey.RESPONSE_DONE_OFFSET_MS.value: rounded_latency,
-                },
+                metrics=metrics,
             )
 
         return RequestResult(

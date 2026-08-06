@@ -385,6 +385,27 @@ class StreamingTTSClientConfig(BaseClientConfig):
     language: Optional[str] = field(
         None, help="Optional language for protocols that support it."
     )
+    language_mode: str = field(
+        "fixed",
+        help=(
+            "How synthesis language is selected: fixed uses the optional "
+            "language value for every request, request_metadata reads "
+            "language_metadata_key from each trace row, and auto omits an "
+            "explicit provider language hint."
+        ),
+    )
+    language_metadata_key: str = field(
+        "language",
+        help="Request metadata field used when language_mode=request_metadata.",
+    )
+    supported_languages: list[str] = field(
+        default_factory=list,
+        help=(
+            "Canonical language codes this exact model/endpoint is declared to "
+            "support. Named multilingual benchmarks use this declaration to "
+            "reject incomplete target coverage before execution."
+        ),
+    )
     instructions: Optional[str] = field(
         None, help="Optional synthesis instructions for protocols that support them."
     )
@@ -409,6 +430,13 @@ class StreamingTTSClientConfig(BaseClientConfig):
         help=(
             "Optional Cartesia server-side transcript buffer cap in milliseconds. "
             "Set it explicitly for reproducible benchmark runs."
+        ),
+    )
+    strict_audio_contract: bool = field(
+        False,
+        help=(
+            "Fail when streamed audio violates the configured mono PCM16 sample "
+            "rate contract. Named latency benchmarks enable this."
         ),
     )
 
@@ -462,6 +490,44 @@ class StreamingTTSClientConfig(BaseClientConfig):
             raise ValueError(
                 "StreamingTTSClientConfig.duplex_start_after_tokens must be >= 1"
             )
+        if self.language_mode not in {"fixed", "request_metadata", "auto"}:
+            raise ValueError(
+                "StreamingTTSClientConfig.language_mode must be one of "
+                "('fixed', 'request_metadata', 'auto')"
+            )
+        if (
+            self.language_mode == "request_metadata"
+            and not self.language_metadata_key.strip()
+        ):
+            raise ValueError(
+                "StreamingTTSClientConfig.language_metadata_key is required when "
+                "language_mode=request_metadata"
+            )
+        normalized_languages = [value.strip() for value in self.supported_languages]
+        if any(not value for value in normalized_languages):
+            raise ValueError(
+                "StreamingTTSClientConfig.supported_languages cannot contain "
+                "empty values"
+            )
+        normalized_language_keys = [value.casefold() for value in normalized_languages]
+        if len(set(normalized_language_keys)) != len(normalized_language_keys):
+            raise ValueError(
+                "StreamingTTSClientConfig.supported_languages cannot contain "
+                "duplicates"
+            )
+        if self.language_mode == "request_metadata":
+            providers_with_request_language = {"vajra", "elevenlabs", "cartesia"}
+            if self.provider not in providers_with_request_language:
+                raise ValueError(
+                    f"Streaming TTS provider {self.provider!r} does not accept a "
+                    "per-request language hint; use language_mode=auto or a "
+                    "language-specific target"
+                )
+            if self.provider == "elevenlabs" and self.model == "eleven_multilingual_v2":
+                raise ValueError(
+                    "ElevenLabs eleven_multilingual_v2 does not accept "
+                    "language_code; use language_mode=auto"
+                )
         if self.provider == "elevenlabs":
             if not self.chunk_length_schedule or any(
                 value <= 0 for value in self.chunk_length_schedule
@@ -543,6 +609,26 @@ class STTClientConfig(BaseClientConfig):
         help="Optional provider API-key environment variable override.",
     )
     language: str = field("en", help="Requested transcription language.")
+    language_mode: str = field(
+        "fixed",
+        help=(
+            "How the transcription language is selected: fixed uses language for "
+            "every request, request_metadata reads language_metadata_key from each "
+            "trace row, and auto omits the provider language hint."
+        ),
+    )
+    language_metadata_key: str = field(
+        "language",
+        help="Request metadata field used when language_mode=request_metadata.",
+    )
+    supported_languages: list[str] = field(
+        default_factory=list,
+        help=(
+            "Canonical language codes this exact model/endpoint is declared to "
+            "support. Named multilingual benchmarks use this declaration to reject "
+            "incomplete target coverage before execution."
+        ),
+    )
     mip_opt_out: bool = field(
         False, help="Opt out of the Deepgram Model Improvement Program."
     )
@@ -589,6 +675,45 @@ class STTClientConfig(BaseClientConfig):
             raise ValueError("STTClientConfig.api_base is required.")
         if self.sample_rate <= 0:
             raise ValueError("STTClientConfig.sample_rate must be > 0")
+        if self.language_mode not in {"fixed", "request_metadata", "auto"}:
+            raise ValueError(
+                "STTClientConfig.language_mode must be one of "
+                "('fixed', 'request_metadata', 'auto')"
+            )
+        if self.language_mode == "request_metadata":
+            providers_with_request_language = {
+                "deepgram_flux",
+                "deepgram_nova",
+                "elevenlabs",
+                "cartesia",
+                "together",
+            }
+            if self.provider not in providers_with_request_language:
+                raise ValueError(
+                    f"STT provider {self.provider!r} does not accept a per-request "
+                    "language hint; use language_mode=auto"
+                )
+        if self.language_mode == "fixed" and not self.language.strip():
+            raise ValueError(
+                "STTClientConfig.language is required when language_mode=fixed"
+            )
+        if (
+            self.language_mode == "request_metadata"
+            and not self.language_metadata_key.strip()
+        ):
+            raise ValueError(
+                "STTClientConfig.language_metadata_key is required when "
+                "language_mode=request_metadata"
+            )
+        normalized_languages = [value.strip() for value in self.supported_languages]
+        if any(not value for value in normalized_languages):
+            raise ValueError(
+                "STTClientConfig.supported_languages cannot contain empty values"
+            )
+        if len(set(normalized_languages)) != len(normalized_languages):
+            raise ValueError(
+                "STTClientConfig.supported_languages cannot contain duplicates"
+            )
         if self.ws_chunk_size <= 0:
             raise ValueError("STTClientConfig.ws_chunk_size must be > 0")
         if self.ws_ping_interval_s is not None and self.ws_ping_interval_s <= 0:
