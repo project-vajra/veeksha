@@ -21,7 +21,7 @@ import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Optional, Protocol, Sequence
 from urllib.parse import urlencode, urljoin
 
 import numpy as np
@@ -885,7 +885,7 @@ class _STTProviderProtocol(Protocol):
 
 
 def _stt_ws_url(
-    api_base: str, path: str, query: dict[str, str | int | bool] | None = None
+    api_base: str, path: str, query: Mapping[str, str | int | bool] | None = None
 ) -> str:
     normalized = api_base.rstrip("/") + "/"
     url = to_websocket_url(urljoin(normalized, path.lstrip("/")))
